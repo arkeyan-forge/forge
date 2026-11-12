@@ -1,0 +1,28 @@
+// The local CMake build's identity; player kits add these resources at the final Arkeyan-Builder link.
+#pragma code_page(65001)
+@ARKEYAN_ICON_RESOURCE@
+1 VERSIONINFO
+FILEVERSION @ARKEYAN_GAME_VERSION_PARTS@
+PRODUCTVERSION @ARKEYAN_GAME_VERSION_PARTS@
+FILEOS 0x40004
+FILETYPE 1
+{
+    BLOCK "StringFileInfo"
+    {
+        BLOCK "040904B0"
+        {
+            VALUE "CompanyName", "Arkeyan project"
+            VALUE "LegalCopyright", "Copyright (c) 2026 the Arkeyan contributors; third-party notices apply"
+            VALUE "FileDescription", "Arkeyan runtime: @ARKEYAN_RUNTIME_NAME@"
+            VALUE "ProductName", "Arkeyan runtime: @ARKEYAN_RUNTIME_NAME@"
+            VALUE "InternalName", "@ARKEYAN_RUNTIME_NAME@"
+            VALUE "OriginalFilename", "@ARKEYAN_RUNTIME_NAME@.exe"
+            VALUE "FileVersion", "@ARKEYAN_GAME_VERSION@"
+            VALUE "ProductVersion", "@ARKEYAN_GAME_VERSION@"
+        }
+    }
+    BLOCK "VarFileInfo"
+    {
+        VALUE "Translation", 0x409, 0x4B0
+    }
+}

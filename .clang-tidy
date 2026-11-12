@@ -1,0 +1,26 @@
+# Bug finders only, no style noise. Run on changed files (tools/git-hooks/pre-commit, CI), never on private/ or the
+# generated PPC code.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-reserved-identifier,
+  -bugprone-macro-parentheses,
+  clang-analyzer-*,
+  -clang-analyzer-optin.performance.Padding,
+  concurrency-mt-unsafe,
+  misc-redundant-expression,
+  misc-unused-using-decls,
+  performance-*,
+  -performance-enum-size,
+  readability-misleading-indentation,
+  readability-suspicious-call-argument,
+  modernize-use-override,
+  modernize-use-nullptr
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(.*/)?(runtime|games|engines)/'
+CheckOptions:
+  - key: bugprone-unused-return-value.CheckedFunctions
+    value: '::std::lock_guard;::std::unique_lock;::fopen;::fread;::fwrite'

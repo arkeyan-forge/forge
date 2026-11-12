@@ -1,0 +1,59 @@
+diff --git a/plume_metal.cpp b/plume_metal.cpp
+index 05a8151..c37e370 100644
+--- a/plume_metal.cpp
++++ b/plume_metal.cpp
+@@ -2264,6 +2264,7 @@ namespace plume {
+         mtl = queue->mtl->commandBufferWithUnretainedReferences();
+         mtl->retain();
+         mtl->setLabel(MTLSTR("RT64 Command List"));
++        mtl->encodeWait(queue->orderEvent, queue->orderValue);
+ 
+         // Reset fence waits and updates for new command list.
+         fenceSlots.updateDirtyBits = ~0;
+@@ -3673,6 +3674,7 @@ namespace plume {
+         MetalAutoreleasePool releasePool;
+         this->device = device;
+         this->mtl = device->mtl->newCommandQueue();
++        this->orderEvent = device->mtl->newEvent();
+ 
+         if (device->residencySet != nullptr) {
+             // Automatically add residency set for device resources to all command buffers in the queue.
+@@ -3682,6 +3684,7 @@ namespace plume {
+ 
+     MetalCommandQueue::~MetalCommandQueue() {
+         MetalAutoreleasePool releasePool;
++        orderEvent->release();
+         mtl->release();
+     }
+ 
+@@ -3718,6 +3721,7 @@ namespace plume {
+             const MetalCommandList *interfaceCommandList = static_cast<const MetalCommandList *>(commandLists[i]);
+             MetalCommandList *mutableCommandList = const_cast<MetalCommandList*>(interfaceCommandList);
+             mutableCommandList->mtl->enqueue();
++            mutableCommandList->mtl->encodeSignalEvent(orderEvent, ++orderValue);
+             mutableCommandList->commit();
+         }
+ 
+@@ -3737,6 +3741,7 @@ namespace plume {
+         }
+ 
+         MetalCommandList *mutableCommandList = const_cast<MetalCommandList*>(interfaceCommandList);
++        mutableCommandList->mtl->encodeSignalEvent(orderEvent, ++orderValue);
+         mutableCommandList->commit();
+     }
+ 
+diff --git a/plume_metal.h b/plume_metal.h
+index 1a9cc5e..0acd9fd 100644
+--- a/plume_metal.h
++++ b/plume_metal.h
+@@ -543,6 +543,10 @@ namespace plume {
+     struct MetalCommandQueue : RenderCommandQueue {
+         MTL::CommandQueue *mtl = nullptr;
+         MetalDevice *device = nullptr;
++        // Resources are untracked and barrier fences belong to one command list, so nothing orders work across command
++        // buffers: each command buffer waits for the previous one's signal of this event.
++        MTL::Event *orderEvent = nullptr;
++        uint64_t orderValue = 0;
+ 
+         MetalCommandQueue(MetalDevice *device, RenderCommandListType type);
+         ~MetalCommandQueue() override;

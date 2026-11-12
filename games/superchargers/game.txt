@@ -1,0 +1,19 @@
+# What the player kit's Arkeyan-Builder knows about this game. No game data: the hash identifies the player's own default.xex and
+# must be the one games/superchargers/info.cpp accepts. In the kit from 0.9.0.
+id=superchargers
+name=Skylanders SuperChargers
+runtime=Skylanders SuperChargers
+version=0.1.5
+toml=SuperChargers.toml
+# Disc shaders: one archive, IGA v11 big-endian / IGZ v9 (games/superchargers/docs/shaders.md).
+shaders=igz:/archives/shaders_xenon.pak
+xex_sha256=02ff6672d460c9aaa54e69d584af67a7138c6c93cde5e04b0da4284207be7c61
+# The releases' loaded images (decrypted, decompressed; same order as xex_sha256), labels and title ID: a disc of
+# another edition with one of these images runs the same code (docs/tools/edition_finder.md).
+image_sha256=f2c26c0153255c100bd5f1baceec7f2d3f26903f79047a0dc6ceb51d9a8e70bc
+releases=Europe
+title_id=4156091F
+# Run-time collection: 8 containers the disc lacks, 6 built at start and Bink's two YUV to RGB shaders, built when the first logo
+# movie plays (2.6 s later on a quiet Mac, 5.4 s on a loaded one). Without a target the pass ended 8 s after the first one: a slower start
+# missed Bink's two and every movie was black. Needs no portal or press.
+movie_shaders=8

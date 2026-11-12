@@ -1,0 +1,1994 @@
+diff --git a/XenosRecomp/CMakeLists.txt b/XenosRecomp/CMakeLists.txt
+index b187f59..826eafb 100644
+--- a/XenosRecomp/CMakeLists.txt
++++ b/XenosRecomp/CMakeLists.txt
+@@ -1,8 +1,7 @@
+ project(XenosRecomp)
+ 
+-if (WIN32)
+-    option(XENOS_RECOMP_DXIL "Generate DXIL shader cache" ON)
+-endif()
++# Skylanders: DXIL on every build machine (D3D12 on Windows and Xbox); the containers are signed by signDxil.
++option(XENOS_RECOMP_DXIL "Generate DXIL shader cache" ON)
+ 
+ if (APPLE)
+     option(XENOS_RECOMP_AIR "Generate Metal AIR shader cache" ON)
+@@ -46,7 +45,9 @@ endif()
+ 
+ if (XENOS_RECOMP_DXIL)
+     target_compile_definitions(XenosRecomp PRIVATE XENOS_RECOMP_DXIL)
+-    target_link_libraries(XenosRecomp PRIVATE Microsoft::DXIL)
++    if (TARGET Microsoft::DXIL)
++        target_link_libraries(XenosRecomp PRIVATE Microsoft::DXIL)
++    endif()
+ endif()
+ 
+ if (XENOS_RECOMP_AIR)
+diff --git a/XenosRecomp/air_compiler.cpp b/XenosRecomp/air_compiler.cpp
+index adea4d9..bbe67f7 100644
+--- a/XenosRecomp/air_compiler.cpp
++++ b/XenosRecomp/air_compiler.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include <fstream>
+ #include <iterator>
++#include <mutex>
+ #include <spawn.h>
+ #include <unistd.h>
+ 
+@@ -30,6 +31,50 @@ static int executeCommand(const char** argv)
+     return status;
+ }
+ 
++// Skylanders: nearly all of a shader's Metal compile is reading shader_common.h (Metal's texture templates), so it is
++// compiled once into a precompiled header that every shader is given; the shader's own copy of the header, at its start,
++// is then skipped by its include guard. The code compiled is the same; only the AIR's metadata (the command line, one
++// more file) differs. Without a header (commonHeader empty) or if Metal fails to make it, each shader reads it itself.
++static const char* const MetalOptions[] = { "-Wno-unused-variable", "-frecord-sources", "-gline-tables-only", "-fmetal-math-mode=relaxed", "-fpreserve-invariance", "-D__air__",
++#ifdef UNLEASHED_RECOMP
++    "-DUNLEASHED_RECOMP",
++#endif
++};
++
++std::string AirCompiler::signature()
++{
++    std::string text;
++    for (const char* option : MetalOptions)
++        text.append(option).push_back('\n');
++    return text;
++}
++
++static const std::string& commonHeaderPch()
++{
++    static std::once_flag once;
++    static std::string headerPath, pchPath;
++    std::call_once(once, []
++    {
++        char headerTemplate[PATH_MAX] = "/tmp/xenos_metal_XXXXXX.h";
++        const int fd = AirCompiler::commonHeader.empty() ? -1 : mkstemps(headerTemplate, 2);
++        if (fd == -1)
++            return;
++        const ssize_t written = write(fd, AirCompiler::commonHeader.data(), AirCompiler::commonHeader.size());
++        close(fd);
++        headerPath = headerTemplate;
++        std::string pch = headerPath + ".pch";
++        std::vector<const char*> command = { "/usr/bin/xcrun", "-sdk", "macosx", "metal", "-x", "metal-header", "-o", pch.c_str(), headerPath.c_str() };
++        command.insert(command.end(), std::begin(MetalOptions), std::end(MetalOptions));
++        command.push_back(nullptr);
++        if (written == ssize_t(AirCompiler::commonHeader.size()) && executeCommand(command.data()) == 0)
++            pchPath = pch;
++        else
++            unlink(pch.c_str());
++    });
++    static const TemporaryPath removeHeader(headerPath), removePch(pchPath);
++    return pchPath;
++}
++
+ std::vector<uint8_t> AirCompiler::compile(const std::string& shaderSource)
+ {
+     // Save source to a location on disk for the compiler to read.
+@@ -53,26 +98,20 @@ std::vector<uint8_t> AirCompiler::compile(const std::string& shaderSource)
+         std::exit(1);
+     }
+ 
+-    const char* compileCommand[] = {
+-        "/usr/bin/xcrun", "-sdk", "macosx", "metal", "-o", irPath.path.c_str(), "-c", sourcePath.path.c_str(), "-Wno-unused-variable", "-frecord-sources", "-gline-tables-only", "-fmetal-math-mode=relaxed", "-D__air__",
+-#ifdef UNLEASHED_RECOMP
+-        "-DUNLEASHED_RECOMP",
+-#endif
+-        nullptr
+-    };
+-    if (const int compileStatus = executeCommand(compileCommand); compileStatus != 0)
++    std::vector<const char*> compileCommand = { "/usr/bin/xcrun", "-sdk", "macosx", "metal", "-o", irPath.path.c_str(), "-c", sourcePath.path.c_str() };
++    compileCommand.insert(compileCommand.end(), std::begin(MetalOptions), std::end(MetalOptions));
++    if (const std::string& pch = commonHeaderPch(); !pch.empty())
++        compileCommand.insert(compileCommand.end(), { "-include-pch", pch.c_str() });
++    compileCommand.push_back(nullptr);
++    if (const int compileStatus = executeCommand(compileCommand.data()); compileStatus != 0)
+     {
+-        fmt::println("Metal compiler exited with status: {}", compileStatus);
+-        fmt::println("Generated source:\n{}", shaderSource);
+-        std::exit(1);
++        throw std::runtime_error(fmt::format("Metal compiler exited with status {}", compileStatus));
+     }
+ 
+     const char* linkCommand[] = { "/usr/bin/xcrun", "-sdk", "macosx", "metallib", "-o", metalLibPath.path.c_str(), irPath.path.c_str(), nullptr };
+     if (const int linkStatus = executeCommand(linkCommand); linkStatus != 0)
+     {
+-        fmt::println("Metal linker exited with status: {}", linkStatus);
+-        fmt::println("Generated source:\n{}", shaderSource);
+-        std::exit(1);
++        throw std::runtime_error(fmt::format("Metal linker exited with status {}", linkStatus));
+     }
+ 
+     std::ifstream libStream(metalLibPath.path, std::ios::binary);
+diff --git a/XenosRecomp/air_compiler.h b/XenosRecomp/air_compiler.h
+index 66a0326..fe57095 100644
+--- a/XenosRecomp/air_compiler.h
++++ b/XenosRecomp/air_compiler.h
+@@ -7,4 +7,10 @@ class AirCompiler
+ {
+ public:
+     [[nodiscard]] static std::vector<uint8_t> compile(const std::string& shaderSource);
++
++    // Skylanders: Metal's options (the shader cache's key).
++    static std::string signature();
++
++    // Skylanders: shader_common.h, which every translated shader starts with (see compile).
++    static inline std::string commonHeader;
+ };
+\ No newline at end of file
+diff --git a/XenosRecomp/dxc_compiler.cpp b/XenosRecomp/dxc_compiler.cpp
+index 7c4b433..681d991 100644
+--- a/XenosRecomp/dxc_compiler.cpp
++++ b/XenosRecomp/dxc_compiler.cpp
+@@ -11,14 +11,10 @@ DxcCompiler::~DxcCompiler()
+     dxcCompiler->Release();
+ }
+ 
+-IDxcBlob* DxcCompiler::compile(const std::string& shaderSource, bool compilePixelShader, bool compileLibrary, bool compileSpirv)
++// Skylanders: the arguments of one compile, kept apart so that signature() names exactly what compile() passes.
++static std::vector<std::wstring> arguments(bool compilePixelShader, bool compileLibrary, bool compileSpirv, uint32_t specConstants)
+ {
+-    DxcBuffer source{};
+-    source.Ptr = shaderSource.c_str();
+-    source.Size = shaderSource.size();
+-
+-    const wchar_t* args[32]{};
+-    uint32_t argCount = 0;
++    std::vector<std::wstring> args;
+ 
+     const wchar_t* target = nullptr;
+     if (compileLibrary)
+@@ -36,35 +32,61 @@ IDxcBlob* DxcCompiler::compile(const std::string& shaderSource, bool compilePixe
+ 
+     if (!compileLibrary)
+     {
+-        args[argCount++] = L"-E shaderMain";
++        args.push_back(L"-E shaderMain");
+     }
+ 
+-    args[argCount++] = target;
+-    args[argCount++] = L"-HV 2021";
+-    args[argCount++] = L"-all-resources-bound";
++    args.push_back(target);
++    args.push_back(L"-HV 2021");
++    args.push_back(L"-all-resources-bound");
+ 
+     if (compileSpirv)
+     {
+-        args[argCount++] = L"-spirv";
+-        args[argCount++] = L"-fvk-use-dx-layout";
++        args.push_back(L"-spirv");
++        args.push_back(L"-fvk-use-dx-layout");
+ 
+         if (!compilePixelShader)
+-            args[argCount++] = L"-fvk-invert-y";
++            args.push_back(L"-fvk-invert-y");
+     }
+     else
+     {
+-        args[argCount++] = L"-Wno-ignored-attributes";
+-        args[argCount++] = L"-Qstrip_reflect";
++        args.push_back(L"-Wno-ignored-attributes");
++        args.push_back(L"-Qstrip_reflect");
+     }
+ 
+-    args[argCount++] = L"-Qstrip_debug";
++    args.push_back(L"-Qstrip_debug");
++
++    if (!compileSpirv)
++        args.push_back(L"-DSPEC_CONSTANTS=" + std::to_wstring(specConstants));
+ 
+ #ifdef UNLEASHED_RECOMP
+-    args[argCount++] = L"-DUNLEASHED_RECOMP";
++    args.push_back(L"-DUNLEASHED_RECOMP");
+ #endif
++    return args;
++}
++
++std::string DxcCompiler::signature()
++{
++    std::string text;
++    for (bool spirv : { false, true })
++        for (bool pixel : { false, true })
++            for (const std::wstring& argument : arguments(pixel, false, spirv, 0))
++                text.append(argument.begin(), argument.end()).push_back('\n');
++    return text;
++}
++
++IDxcBlob* DxcCompiler::compile(const std::string& shaderSource, bool compilePixelShader, bool compileLibrary, bool compileSpirv, uint32_t specConstants)
++{
++    DxcBuffer source{};
++    source.Ptr = shaderSource.c_str();
++    source.Size = shaderSource.size();
++
++    const std::vector<std::wstring> argumentText = arguments(compilePixelShader, compileLibrary, compileSpirv, specConstants);
++    std::vector<const wchar_t*> args;
++    for (const std::wstring& argument : argumentText)
++        args.push_back(argument.c_str());
+ 
+     IDxcResult* result = nullptr;
+-    HRESULT hr = dxcCompiler->Compile(&source, args, argCount, nullptr, IID_PPV_ARGS(&result));
++    HRESULT hr = dxcCompiler->Compile(&source, args.data(), uint32_t(args.size()), nullptr, IID_PPV_ARGS(&result));
+ 
+     IDxcBlob* object = nullptr;
+     if (SUCCEEDED(hr))
+@@ -103,3 +125,83 @@ IDxcBlob* DxcCompiler::compile(const std::string& shaderSource, bool compilePixe
+ 
+     return object;
+ }
++
++// The container hash is MD5 over the bytes after the hash field, with a different final block: the bit count first and
++// (byte count * 2) | 1 last, where MD5 puts the 64-bit bit count at the end.
++void signDxil(uint8_t* container, size_t size)
++{
++    static constexpr uint32_t K[64] =
++    {
++        0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
++        0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821,
++        0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8,
++        0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a,
++        0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
++        0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665,
++        0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
++        0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
++    };
++    static constexpr uint32_t S[16] = { 7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21 };
++
++    uint32_t state[4] = { 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476 };
++    auto block = [&](const uint8_t* data)
++    {
++        uint32_t x[16];
++        for (uint32_t i = 0; i < 16; i++)
++            x[i] = data[i * 4] | (data[i * 4 + 1] << 8) | (data[i * 4 + 2] << 16) | (uint32_t(data[i * 4 + 3]) << 24);
++        uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
++        for (uint32_t i = 0; i < 64; i++)
++        {
++            uint32_t f, g;
++            if (i < 16) { f = (b & c) | (~b & d); g = i; }
++            else if (i < 32) { f = (b & d) | (c & ~d); g = (5 * i + 1) % 16; }
++            else if (i < 48) { f = b ^ c ^ d; g = (3 * i + 5) % 16; }
++            else { f = c ^ (b | ~d); g = (7 * i) % 16; }
++            f += a + K[i] + x[g];
++            uint32_t s = S[(i / 16) * 4 + i % 4];
++            a = d;
++            d = c;
++            c = b;
++            b += (f << s) | (f >> (32 - s));
++        }
++        state[0] += a;
++        state[1] += b;
++        state[2] += c;
++        state[3] += d;
++    };
++    auto put32 = [](uint8_t* out, uint32_t value)
++    {
++        for (uint32_t i = 0; i < 4; i++)
++            out[i] = uint8_t(value >> (i * 8));
++    };
++
++    constexpr size_t HashedFrom = 20; // "DXBC", then the 16-byte hash
++    const uint8_t* data = container + HashedFrom;
++    size_t length = size - HashedFrom;
++    size_t full = length / 64 * 64, rest = length % 64;
++    for (size_t offset = 0; offset < full; offset += 64)
++        block(data + offset);
++
++    uint8_t tail[128] = {};
++    uint32_t bitCount = uint32_t(length * 8), lastWord = uint32_t(length * 2) | 1;
++    if (rest < 56)
++    {
++        put32(tail, bitCount);
++        memcpy(tail + 4, data + full, rest);
++        tail[4 + rest] = 0x80;
++        put32(tail + 60, lastWord);
++        block(tail);
++    }
++    else
++    {
++        memcpy(tail, data + full, rest);
++        tail[rest] = 0x80;
++        put32(tail + 64, bitCount);
++        put32(tail + 124, lastWord);
++        block(tail);
++        block(tail + 64);
++    }
++
++    for (uint32_t i = 0; i < 4; i++)
++        put32(container + 4 + i * 4, state[i]);
++}
+diff --git a/XenosRecomp/dxc_compiler.h b/XenosRecomp/dxc_compiler.h
+index d49bd32..e4f7d32 100644
+--- a/XenosRecomp/dxc_compiler.h
++++ b/XenosRecomp/dxc_compiler.h
+@@ -7,5 +7,13 @@ struct DxcCompiler
+     DxcCompiler();
+     ~DxcCompiler();
+ 
+-    IDxcBlob* compile(const std::string& shaderSource, bool compilePixelShader, bool compileLibrary, bool compileSpirv);
++    // `specConstants`: for DXIL, the value g_SpecConstants() returns (shader_common.h).
++    IDxcBlob* compile(const std::string& shaderSource, bool compilePixelShader, bool compileLibrary, bool compileSpirv, uint32_t specConstants = 0);
++
++    // Skylanders: the arguments compile() gives dxc for vertex and pixel shaders, DXIL and SPIR-V (the shader cache's key).
++    static std::string signature();
+ };
++
++// Skylanders: fills in the hash of a DXIL container, which D3D12 checks ("signed"). dxc only writes it when it finds
++// the validator library (dxil.dll, libdxil.so), which macOS lacks.
++void signDxil(uint8_t* container, size_t size);
+diff --git a/XenosRecomp/main.cpp b/XenosRecomp/main.cpp
+index a8b87a6..e6cc2d9 100644
+--- a/XenosRecomp/main.cpp
++++ b/XenosRecomp/main.cpp
+@@ -1,10 +1,12 @@
+ #include <deque>
++#include <future>
+ #include <mutex>
+ #include <thread>
+ 
+ #include "shader.h"
+ #include "shader_recompiler.h"
+ #include "dxc_compiler.h"
++#include "shader_cache_key.h"
+ 
+ #ifdef XENOS_RECOMP_AIR
+ #include "air_compiler.h"
+@@ -32,43 +34,239 @@ static void writeAllBytes(const char* filePath, const void* data, size_t dataSiz
+ struct RecompiledShader
+ {
+     uint8_t* data = nullptr;
+-    IDxcBlob* dxil = nullptr;
++    std::vector<uint8_t> dxil; // see appendDxil
+     std::vector<uint8_t> spirv;
+     std::vector<uint8_t> air;
+     uint32_t specConstantsMask = 0;
++    std::string error; // set when the shader could not be translated; it is then left out of the cache
++    std::string dxilError; // set when only the DXIL failed: the entry then has no DXIL (not drawn on D3D12)
+ };
+ 
+-void recompileShader(RecompiledShader& shader, const std::string_view include, std::atomic<uint32_t>& progress, uint32_t numShaders)
++// Skylanders: the streams compiled. A game reads one or two (macOS the AIR, Linux the SPIR-V, Windows the DXIL and the
++// SPIR-V): SkyBuild names them in the 5th argument ("air", "spirv", "dxil,spirv"), the others are written empty. Without
++// it, every stream this build has (the developer tools: one cache for every build).
++enum : uint32_t { StreamDxil = 1, StreamSpirv = 2, StreamAir = 4 };
++static constexpr uint32_t BuiltStreams = StreamSpirv
++#ifdef XENOS_RECOMP_DXIL
++    | StreamDxil
++#endif
++#ifdef XENOS_RECOMP_AIR
++    | StreamAir
++#endif
++    ;
++static uint32_t g_streams = BuiltStreams;
++
++// Skylanders: a compiled shader is kept in <cache dir>/<hash>.bin, keyed by the hash of the translated HLSL (and what
++// else the compilers are given), not by the original shader: a second run (SkyBuild's movie pass, or the run after a
++// game update whose translator changed) translates every shader again, which is fast, and compiles only those whose
++// translated text is new (the text starts with shader_common.h, so that is covered). SkyBuild empties the folder when
++// the compilers (dxc) change.
++// What an entry's compiled outputs depend on besides the translated text: this format, the streams this build can make
++// and the compilers' arguments. Bump CacheFormat when the outputs change in a way none of these show (signDxil, the
++// entry layout). The key's low 12 bits are 0x100 | the entry's streams; the rest is this hash.
++static constexpr uint32_t CacheFormat = 3;
++static uint64_t configurationKey()
++{
++    std::string text = fmt::format("XenosRecomp shader cache {}\nstreams {}\n", CacheFormat, uint32_t(BuiltStreams));
++    text += DxcCompiler::signature();
++#ifdef XENOS_RECOMP_AIR
++    text += AirCompiler::signature();
++#endif
++    return XXH3_64bits(text.data(), text.size()) & ~0xFFFull;
++}
++
++struct ShaderCache
++{
++    std::filesystem::path dir;
++    uint64_t configuration = 0; // configurationKey()
++    uint64_t key = 0;           // what this run writes: configuration | 0x100 | the streams it compiles
++
++    static constexpr uint32_t MAGIC = 0x32435853; // "SXC2"
++
++    std::filesystem::path pathOf(XXH64_hash_t hash) const { return dir / fmt::format("{:016X}.bin", hash); }
++
++    bool load(XXH64_hash_t hash, RecompiledShader& shader) const
++    {
++        FILE* file = fopen(pathOf(hash).string().c_str(), "rb");
++        if (file == nullptr)
++            return false;
++        std::vector<uint8_t> bytes;
++        uint8_t chunk[1 << 16];
++        for (size_t n; (n = fread(chunk, 1, sizeof(chunk), file)) > 0;)
++            bytes.insert(bytes.end(), chunk, chunk + n);
++        fclose(file);
++
++        size_t at = 0;
++        auto take = [&](void* out, size_t size) { if (at + size > bytes.size()) return false; memcpy(out, bytes.data() + at, size); at += size; return true; };
++        uint32_t magic = 0, mask = 0;
++        uint64_t fileKey = 0, sizes[5] = {};
++        // The entry was made with these compilers and arguments, and has the streams asked for. An entry of an older
++        // format (key 1, or 0x100 | streams) never matches: a cache filled without DXIL, or with other options, is
++        // compiled again instead of giving shaders without DXIL and no error.
++        auto covers = [this](uint64_t fileKey) { return CacheKeyCovers(fileKey, configuration, g_streams); };
++        if (!take(&magic, 4) || magic != MAGIC || !take(&fileKey, 8) || !covers(fileKey) || !take(&mask, 4) || !take(sizes, sizeof(sizes)))
++            return false;
++        uint64_t total = 0;
++        for (uint64_t size : sizes)
++            total += size;
++        if (at + total != bytes.size())
++            return false;
++        // A shader that failed with other streams (a SPIR-V error) is compiled again with these; the others are dropped.
++        if (sizes[3] != 0 && fileKey != key)
++            return false;
++
++        shader.specConstantsMask = mask;
++        auto bytesOf = [&](uint64_t size) { auto begin = bytes.begin() + at; at += size; return std::vector<uint8_t>(begin, begin + size); };
++        shader.dxil = bytesOf(sizes[0]);
++        shader.spirv = bytesOf(sizes[1]);
++        shader.air = bytesOf(sizes[2]);
++        auto errorOf = [&](uint64_t size) { auto begin = bytes.begin() + at; at += size; return std::string(begin, begin + size); };
++        shader.error = errorOf(sizes[3]);
++        shader.dxilError = errorOf(sizes[4]);
++        if ((g_streams & StreamDxil) == 0)
++            shader.dxil.clear(), shader.dxilError.clear();
++        if ((g_streams & StreamSpirv) == 0)
++            shader.spirv.clear();
++        if ((g_streams & StreamAir) == 0)
++            shader.air.clear();
++        return true;
++    }
++
++    void store(XXH64_hash_t hash, const RecompiledShader& shader) const
++    {
++        std::vector<uint8_t> bytes;
++        auto put = [&](const void* data, size_t size) { auto begin = reinterpret_cast<const uint8_t*>(data); bytes.insert(bytes.end(), begin, begin + size); };
++        uint32_t magic = MAGIC;
++        uint64_t sizes[5] = { shader.dxil.size(), shader.spirv.size(), shader.air.size(), shader.error.size(), shader.dxilError.size() };
++        put(&magic, 4);
++        put(&key, 8);
++        put(&shader.specConstantsMask, 4);
++        put(sizes, sizeof(sizes));
++        put(shader.dxil.data(), shader.dxil.size());
++        put(shader.spirv.data(), shader.spirv.size());
++        put(shader.air.data(), shader.air.size());
++        put(shader.error.data(), shader.error.size());
++        put(shader.dxilError.data(), shader.dxilError.size());
++
++        // Written under another name and renamed: an interrupted run never leaves a half file.
++        auto temporary = pathOf(hash).string() + ".tmp";
++        writeAllBytes(temporary.c_str(), bytes.data(), bytes.size());
++        std::error_code error;
++        std::filesystem::rename(temporary, pathOf(hash), error);
++    }
++};
++
++static ShaderCache* g_shaderCache = nullptr;
++
++void recompileShader(RecompiledShader& shader, const std::string_view include)
+ {
++    XXH64_hash_t contentHash = 0; // Skylanders: of the translated text, 0 until it exists
++    try
++    {
+     thread_local ShaderRecompiler recompiler;
+     recompiler = {};
+     recompiler.recompile(shader.data, include);
+ 
+     shader.specConstantsMask = recompiler.specConstantsMask;
+ 
++    // Skylanders: the compiled outputs depend on the translated text and these three values only.
++    if (g_shaderCache != nullptr)
++    {
++        contentHash = XXH3_64bits(recompiler.out.data(), recompiler.out.size());
++        uint32_t extra[3] = { recompiler.isPixelShader ? 1u : 0u, recompiler.exportsPointSize ? 1u : 0u, recompiler.specConstantsMask };
++        contentHash ^= XXH3_64bits(extra, sizeof(extra)) * 0x9E3779B97F4A7C15ull;
++        if (g_shaderCache->load(contentHash, shader))
++            return;
++    }
++
+     thread_local DxcCompiler dxcCompiler;
+ 
+ #ifdef XENOS_RECOMP_DXIL
+-    shader.dxil = dxcCompiler.compile(recompiler.out, recompiler.isPixelShader, recompiler.specConstantsMask != 0, false);
+-    assert(shader.dxil != nullptr);
+-    assert(*(reinterpret_cast<uint32_t *>(shader.dxil->GetBufferPointer()) + 1) != 0 && "DXIL was not signed properly!");
++    // Skylanders: D3D12 has no specialization constants, so the shader is compiled once per combination of the ones it
++    // uses (at most 2 here). Its DXIL entry is: flags (bit 0: the vertex shader outputs a point size), the variant
++    // count, each variant's size, then the signed containers, in increasing order of their g_SpecConstants() value.
++    if (g_streams & StreamDxil)
++    try
++    {
++    std::vector<uint32_t> variants;
++    for (uint32_t value = 0; value <= recompiler.specConstantsMask; value++)
++    {
++        if ((value & ~recompiler.specConstantsMask) == 0)
++            variants.push_back(value);
++    }
++
++    auto appendWord = [&](uint32_t value) { shader.dxil.insert(shader.dxil.end(), reinterpret_cast<uint8_t*>(&value), reinterpret_cast<uint8_t*>(&value) + 4); };
++    appendWord(!recompiler.isPixelShader && recompiler.exportsPointSize ? 1 : 0);
++    appendWord(uint32_t(variants.size()));
++    size_t sizesOffset = shader.dxil.size();
++    for (size_t i = 0; i < variants.size(); i++)
++        appendWord(0);
++
++    for (size_t i = 0; i < variants.size(); i++)
++    {
++        IDxcBlob* dxil = dxcCompiler.compile(recompiler.out, recompiler.isPixelShader, false, false, variants[i]);
++        if (dxil == nullptr)
++            throw std::runtime_error(fmt::format("DXIL compilation failed (specialization constants {})", variants[i]));
++
++        size_t offset = shader.dxil.size();
++        uint32_t size = uint32_t(dxil->GetBufferSize());
++        auto bytes = reinterpret_cast<uint8_t*>(dxil->GetBufferPointer());
++        shader.dxil.insert(shader.dxil.end(), bytes, bytes + size);
++        dxil->Release();
++
++        signDxil(shader.dxil.data() + offset, size);
++        memcpy(shader.dxil.data() + sizesOffset + i * 4, &size, 4);
++    }
++    }
++    catch (const std::exception& exception)
++    {
++        shader.dxil.clear();
++        shader.dxilError = exception.what();
++    }
+ #endif
+ 
+ #ifdef XENOS_RECOMP_AIR
+-    shader.air = AirCompiler::compile(recompiler.out);
++    if (g_streams & StreamAir)
++        shader.air = AirCompiler::compile(recompiler.out);
+ #endif
+ 
++    if (g_streams & StreamSpirv)
++    {
+     IDxcBlob* spirv = dxcCompiler.compile(recompiler.out, recompiler.isPixelShader, false, true);
+-    assert(spirv != nullptr);
++    // Skylanders: skipped like a shader Metal rejects (on macOS AIR fails first; elsewhere this was a crash).
++    if (spirv == nullptr)
++        throw std::runtime_error("SPIR-V compilation failed");
+ 
+     bool result = smolv::Encode(spirv->GetBufferPointer(), spirv->GetBufferSize(), shader.spirv, smolv::kEncodeFlagStripDebugInfo);
+     assert(result);
+ 
+     spirv->Release();
++    }
++    }
++    catch (const std::exception& exception)
++    {
++        shader.error = exception.what();
++    }
++    if (g_shaderCache != nullptr && contentHash != 0)
++        g_shaderCache->store(contentHash, shader);
++}
+ 
+-    size_t currentProgress = ++progress;
+-    if ((currentProgress % 10) == 0 || (currentProgress == numShaders - 1))
+-        fmt::println("Recompiling shaders... {}%", currentProgress / float(numShaders) * 100.0f);
++static std::string label_lower(const char* name)
++{
++    std::string text(name);
++    text[0] = char(tolower(text[0]));
++    return text;
++}
++
++// SkyBuild reads these lines while the program runs (the launcher's progress bar): flushed, as stdout is a file.
++static void reportProgress(size_t done, size_t total)
++{
++    if ((done % 10) == 0 || done == total)
++    {
++        fmt::println("Recompiling shaders... {}%", done / float(total) * 100.0f);
++        fmt::println("Progress {} {}", done, total);
++        fflush(stdout);
++    }
+ }
+ 
+ int main(int argc, char** argv)
+@@ -109,6 +307,39 @@ int main(int argc, char** argv)
+     auto includeData = readAllBytes(includeInput, includeSize);
+     std::string_view include(reinterpret_cast<const char*>(includeData.get()), includeSize);
+ 
++    // Optional 4th argument: the folder of the translated shaders (ShaderCache).
++    ShaderCache cache;
++#ifndef XENOS_RECOMP_INPUT
++    if (argc > 4)
++    {
++        cache.dir = argv[4];
++        cache.configuration = configurationKey(); // the translated text starts with shader_common.h: its hash covers that
++        std::filesystem::create_directories(cache.dir);
++        g_shaderCache = &cache;
++    }
++    // Optional 5th argument: the streams (see BuiltStreams).
++    if (argc > 5)
++    {
++        g_streams = 0;
++        for (std::string_view list = argv[5]; !list.empty();)
++        {
++            std::string_view name = list.substr(0, list.find(','));
++            list.remove_prefix(std::min(list.size(), name.size() + 1));
++            uint32_t stream = name == "dxil" ? StreamDxil : name == "spirv" ? StreamSpirv : name == "air" ? StreamAir : 0;
++            if ((stream & BuiltStreams) == 0)
++            {
++                fmt::println("Unknown or unsupported stream: {}", name);
++                return 1;
++            }
++            g_streams |= stream;
++        }
++    }
++    cache.key = cache.configuration | 0x100 | g_streams;
++#endif
++#ifdef XENOS_RECOMP_AIR
++    AirCompiler::commonHeader = include;
++#endif
++
+     if (std::filesystem::is_directory(input))
+     {
+         std::vector<std::unique_ptr<uint8_t[]>> files;
+@@ -185,7 +416,9 @@ int main(int argc, char** argv)
+                         shaderHash = shaderQueue.front();
+                         shaderQueue.pop_front();
+                     }
+-                    recompileShader(shaders[shaderHash], include, progress, shaders.size());
++                    RecompiledShader& shader = shaders[shaderHash];
++                    recompileShader(shader, include);
++                    reportProgress(++progress, shaders.size());
+                 }
+             });
+         }
+@@ -194,6 +427,30 @@ int main(int argc, char** argv)
+             thread.join();
+         }
+ 
++        size_t failedCount = 0;
++        for (auto& [hash, shader] : shaders)
++        {
++            if (!shader.error.empty())
++            {
++                fmt::println("Skipped {:016X} ({}): {}", hash, shaderFilenames[hash], shader.error);
++                failedCount++;
++            }
++        }
++        fmt::println("{} of {} shaders translated", shaders.size() - failedCount, shaders.size());
++
++        size_t dxilFailedCount = 0;
++        for (auto& [hash, shader] : shaders)
++        {
++            if (shader.error.empty() && !shader.dxilError.empty())
++            {
++                fmt::println("No DXIL for {:016X} ({}): {}", hash, shaderFilenames[hash], shader.dxilError);
++                dxilFailedCount++;
++            }
++        }
++#ifdef XENOS_RECOMP_DXIL
++        fmt::println("{} of them without DXIL", dxilFailedCount);
++#endif
++
+         fmt::println("Creating shader cache...");
+ 
+         StringBuffer f;
+@@ -206,6 +463,9 @@ int main(int argc, char** argv)
+ 
+         for (auto& [hash, shader] : shaders)
+         {
++            if (!shader.error.empty())
++                continue;
++
+             const std::string& fullFilename = shaderFilenames[hash];
+             std::string filename = fullFilename;
+             size_t shaderPos = filename.find("shader");
+@@ -215,14 +475,10 @@ int main(int argc, char** argv)
+                 std::replace(filename.begin(), filename.end(), '\\', '/');
+             }
+             f.println("\t{{ 0x{:X}, {}, {}, {}, {}, {}, {}, {}, \"{}\" }},",
+-                hash, dxil.size(), (shader.dxil != nullptr) ? shader.dxil->GetBufferSize() : 0,
++                hash, dxil.size(), shader.dxil.size(),
+                 spirv.size(), shader.spirv.size(), air.size(), shader.air.size(), shader.specConstantsMask, filename);
+ 
+-            if (shader.dxil != nullptr)
+-            {
+-                dxil.insert(dxil.end(), reinterpret_cast<uint8_t *>(shader.dxil->GetBufferPointer()),
+-                    reinterpret_cast<uint8_t *>(shader.dxil->GetBufferPointer()) + shader.dxil->GetBufferSize());
+-            }
++            dxil.insert(dxil.end(), shader.dxil.begin(), shader.dxil.end());
+ 
+ #ifdef XENOS_RECOMP_AIR
+             air.insert(air.end(), shader.air.begin(), shader.air.end());
+@@ -233,55 +489,57 @@ int main(int argc, char** argv)
+ 
+         f.println("}};");
+ 
+-        fmt::println("Compressing DXIL cache...");
+-
+-        int level = ZSTD_maxCLevel();
++        // Skylanders: the three caches are compressed (one core each) and written as C arrays side by side; the text is
++        // the same as when this ran one after the other. zstd level 12 with a 128 MB long-distance window finds the
++        // repeats across shaders that level 22 found, 15 to 20 times faster, for about a fifth more bytes (Giants' AIR:
++        // 4 s instead of 59 s, 49 MB instead of 42 MB); the game decompresses either the same way.
++        auto block = [](const std::vector<uint8_t>& data, const char* name, const char* label)
++        {
++            fmt::println("Compressing {} cache...", label);
++            fflush(stdout);
++            std::vector<uint8_t> compressed(ZSTD_compressBound(data.size()));
++            ZSTD_CCtx* context = ZSTD_createCCtx();
++            ZSTD_CCtx_setParameter(context, ZSTD_c_compressionLevel, 12);
++            ZSTD_CCtx_setParameter(context, ZSTD_c_enableLongDistanceMatching, 1);
++            ZSTD_CCtx_setParameter(context, ZSTD_c_windowLog, 27);
++            size_t size = ZSTD_compress2(context, compressed.data(), compressed.size(), data.data(), data.size());
++            ZSTD_freeCCtx(context);
++            if (ZSTD_isError(size))
++            {
++                fmt::println("Compressing the {} cache failed: {}", label, ZSTD_getErrorName(size));
++                std::exit(1);
++            }
++            compressed.resize(size);
++
++            StringBuffer text;
++            text.print("const uint8_t g_compressed{}Cache[] = {{", name);
++            for (auto byte : compressed)
++                text.print("{},", byte);
++            text.println("}};");
++            text.println("const size_t g_{}CacheCompressedSize = {};", label_lower(name), compressed.size());
++            text.println("const size_t g_{}CacheDecompressedSize = {};", label_lower(name), data.size());
++            return text.out;
++        };
+ 
+ #ifdef XENOS_RECOMP_DXIL
+-        std::vector<uint8_t> dxilCompressed(ZSTD_compressBound(dxil.size()));
+-        dxilCompressed.resize(ZSTD_compress(dxilCompressed.data(), dxilCompressed.size(), dxil.data(), dxil.size(), level));
+-
+-        f.print("const uint8_t g_compressedDxilCache[] = {{");
+-
+-        for (auto data : dxilCompressed)
+-            f.print("{},", data);
+-
+-        f.println("}};");
+-        f.println("const size_t g_dxilCacheCompressedSize = {};", dxilCompressed.size());
+-        f.println("const size_t g_dxilCacheDecompressedSize = {};", dxil.size());
++        auto dxilText = std::async(std::launch::async, block, std::cref(dxil), "Dxil", "DXIL");
+ #endif
+-
+ #ifdef XENOS_RECOMP_AIR
+-        fmt::println("Compressing AIR cache...");
+-
+-        std::vector<uint8_t> airCompressed(ZSTD_compressBound(air.size()));
+-        airCompressed.resize(ZSTD_compress(airCompressed.data(), airCompressed.size(), air.data(), air.size(), level));
+-
+-        f.print("const uint8_t g_compressedAirCache[] = {{");
+-
+-        for (auto data : airCompressed)
+-            f.print("{},", data);
+-
+-        f.println("}};");
+-        f.println("const size_t g_airCacheCompressedSize = {};", airCompressed.size());
+-        f.println("const size_t g_airCacheDecompressedSize = {};", air.size());
++        auto airText = std::async(std::launch::async, block, std::cref(air), "Air", "AIR");
+ #endif
++        auto spirvText = std::async(std::launch::async, block, std::cref(spirv), "Spirv", "SPIRV");
+ 
+-        fmt::println("Compressing SPIRV cache...");
+-
+-        std::vector<uint8_t> spirvCompressed(ZSTD_compressBound(spirv.size()));
+-        spirvCompressed.resize(ZSTD_compress(spirvCompressed.data(), spirvCompressed.size(), spirv.data(), spirv.size(), level));
+-
+-        f.print("const uint8_t g_compressedSpirvCache[] = {{");
+-
+-        for (auto data : spirvCompressed)
+-            f.print("{},", data);
+-
+-        f.println("}};");
+-
+-        f.println("const size_t g_spirvCacheCompressedSize = {};", spirvCompressed.size());
+-        f.println("const size_t g_spirvCacheDecompressedSize = {};", spirv.size());
+-        f.println("const size_t g_shaderCacheEntryCount = {};", shaders.size());
++#ifdef XENOS_RECOMP_DXIL
++        // Skylanders: only Windows builds use the DXIL (D3D12); the others would carry it for nothing.
++        f.println("#if defined(_WIN32)");
++        f.out += dxilText.get();
++        f.println("#endif");
++#endif
++#ifdef XENOS_RECOMP_AIR
++        f.out += airText.get();
++#endif
++        f.out += spirvText.get();
++        f.println("const size_t g_shaderCacheEntryCount = {};", shaders.size() - failedCount);
+ 
+         writeAllBytes(output, f.out.data(), f.out.size());
+     }
+diff --git a/XenosRecomp/pch.h b/XenosRecomp/pch.h
+index b080943..5d352a4 100644
+--- a/XenosRecomp/pch.h
++++ b/XenosRecomp/pch.h
+@@ -17,8 +17,15 @@
+ #include <fmt/core.h>
+ #include <string>
+ #include <unordered_map>
++#include <unordered_set>
+ #include <xxhash.h>
+ #include <zstd.h>
++#include <stdexcept>
++
++// A shader the translator cannot handle is reported and left out of the cache instead of aborting the whole run.
++#undef assert
++#define assert(condition) \
++    do { if (!(condition)) throw std::runtime_error(std::string("assertion failed: " #condition " (" __FILE__ ":") + std::to_string(__LINE__) + ")"); } while (0)
+ 
+ template<typename T>
+ static T byteSwap(T value)
+diff --git a/XenosRecomp/shader_cache_key.h b/XenosRecomp/shader_cache_key.h
+new file mode 100644
+index 0000000..65d5a44
+--- /dev/null
++++ b/XenosRecomp/shader_cache_key.h
+@@ -0,0 +1,11 @@
++#pragma once
++
++#include <cstdint>
++
++// Skylanders: whether a shader cache entry written with `fileKey` serves a run whose compilers and arguments hash to
++// `configuration` (low 12 bits clear) and that needs `streams`. A key is configuration | 0x100 | the entry's streams;
++// older formats (1, or 0x100 | streams, with no configuration) never match.
++inline bool CacheKeyCovers(uint64_t fileKey, uint64_t configuration, uint32_t streams)
++{
++    return (fileKey & ~0xFFFull) == configuration && (fileKey & 0xF00) == 0x100 && (fileKey & streams) == streams;
++}
+diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
+index 9191a28..861852b 100644
+--- a/XenosRecomp/shader_common.h
++++ b/XenosRecomp/shader_common.h
+@@ -3,6 +3,10 @@
+ 
+ #define SPEC_CONSTANT_R11G11B10_NORMAL  (1 << 0)
+ #define SPEC_CONSTANT_ALPHA_TEST        (1 << 1)
++#ifndef UNLEASHED_RECOMP
++    // Skylanders: blend indices arrive as floats (FLOAT4), not UBYTE4: their 32-bit words are reinterpreted.
++    #define SPEC_CONSTANT_BLEND_INDICES_FLOAT (1 << 2)
++#endif
+ 
+ #ifdef UNLEASHED_RECOMP
+     #define SPEC_CONSTANT_BICUBIC_GI_FILTER (1 << 2)
+@@ -17,6 +21,13 @@
+ #define FLT_MAX asfloat(0x7f7fffff)
+ #endif
+ 
++// Skylanders: the host texel coordinate of an unnormalized fetch (texCoordDenorm, with or without a LOD). The guest
++// coordinate lands on texel h's left and top edge, where the console, Apple and AMD read texel h but NVIDIA (its
++// fixed-point coordinate truncated after the float error) reads texel h - 1: each such pass moved the picture one host
++// pixel right and down (Trap Team's title halo). 1/256 of a texel (D3D's 8-bit subtexel step) inside the edge reads
++// texel h on every GPU and moves a bilinear fetch by 1/256 of a texel.
++#define DENORM_TEXEL(texCoord, offset, scale) (((texCoord) + (offset)) * (scale) + 0.5 * ((scale) - 1.0) + 1.0 / 256.0)
++
+ #ifdef __spirv__
+ 
+ struct PushConstants
+@@ -32,6 +43,25 @@ struct PushConstants
+ #define g_SwappedTexcoords         vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 260)
+ #define g_HalfPixelOffset          vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 264)
+ #define g_AlphaThreshold           vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 272)
++#define g_PositionScale            vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 280)
++#define g_ResolutionScale          vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 300)
++#define g_ParamGen                 vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 276)
++#define g_ScaledTextures           vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 312)
++#define g_MipBias                  vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 316)
++// Skylanders: the vertices a fetch with a computed index reads, gathered by the host as float4s (count 0: none, and the
++// address is then 0: never read).
++#define g_PulledVertices           vk::RawBufferLoad<uint64_t>(g_PushConstants.SharedConstants + 288)
++#define g_PulledCount              vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 296)
++
++float4 pulledVertex(float index)
++{
++    uint count = g_PulledCount;
++    if (count == 0)
++        return float4(0.0, 0.0, 0.0, 0.0);
++    return vk::RawBufferLoad<float4>(g_PulledVertices + uint64_t(min(uint(index), count - 1)) * 16, 16);
++}
++
++#define PULLED_VERTEX(index) pulledVertex(index)
+ 
+ [[vk::constant_id(0)]] const uint g_SpecConstants = 0;
+ 
+@@ -62,6 +92,18 @@ struct PushConstants
+ #define g_SwappedTexcoords (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + 260)))
+ #define g_HalfPixelOffset (*(reinterpret_cast<device float2*>(g_PushConstants.SharedConstants + 264)))
+ #define g_AlphaThreshold (*(reinterpret_cast<device float*>(g_PushConstants.SharedConstants + 272)))
++#define g_PositionScale (*(reinterpret_cast<device float2*>(g_PushConstants.SharedConstants + 280)))
++#define g_ParamGen (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + 276)))
++// Skylanders: the vertices a fetch with a computed index reads, gathered by the host as float4s (count 0: none).
++#define g_PulledVertices (*(reinterpret_cast<device ulong*>(g_PushConstants.SharedConstants + 288)))
++#define g_PulledCount (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + 296)))
++// Skylanders: host render targets are this multiple of the guest's (point sizes and vPos are in guest pixels).
++#define g_ResolutionScale (*(reinterpret_cast<device float*>(g_PushConstants.SharedConstants + 300)))
++// Skylanders: sampler registers whose texture is g_ResolutionScale times its guest size (resolves), bit n = register n.
++#define g_ScaledTextures (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + 312)))
++// Skylanders: the texture LOD bias of an upscaled scene (docs/runtime/gpu/upscaling.md): 0 otherwise.
++#define g_MipBias (*(reinterpret_cast<device float*>(g_PushConstants.SharedConstants + 316)))
++#define PULLED_VERTEX(index) (g_PulledCount != 0 ? *(reinterpret_cast<device float4*>(g_PulledVertices + min(uint(index), g_PulledCount - 1) * 16)) : float4(0.0))
+ 
+ #else
+ 
+@@ -69,9 +111,24 @@ struct PushConstants
+     uint g_Booleans : packoffset(c16.x); \
+     uint g_SwappedTexcoords : packoffset(c16.y); \
+     float2 g_HalfPixelOffset : packoffset(c16.z); \
+-    float g_AlphaThreshold : packoffset(c17.x);
++    float g_AlphaThreshold : packoffset(c17.x); \
++    uint g_ParamGen : packoffset(c17.y); \
++    float2 g_PositionScale : packoffset(c17.z); \
++    uint g_PulledCount : packoffset(c18.z); \
++    float g_ResolutionScale : packoffset(c18.w); \
++    uint g_ScaledTextures : packoffset(c19.z); \
++    float g_MipBias : packoffset(c19.w);
++
++// Skylanders: D3D12 has no specialization constants. XenosRecomp compiles one DXIL shader per combination of the
++// shader's specialization constants, each with SPEC_CONSTANTS defined to it.
++#ifndef SPEC_CONSTANTS
++#define SPEC_CONSTANTS 0
++#endif
++#define g_SpecConstants() uint(SPEC_CONSTANTS)
+ 
+-uint g_SpecConstants();
++// Skylanders: the vertices a fetch with a computed index reads, gathered by the host as float4s (root SRV; count 0: none).
++StructuredBuffer<float4> g_PulledVertexBuffer : register(t0, space5);
++#define PULLED_VERTEX(index) (g_PulledCount != 0 ? g_PulledVertexBuffer[min(uint(index), max(g_PulledCount, 1u) - 1)] : float4(0.0, 0.0, 0.0, 0.0))
+ 
+ #endif
+ 
+@@ -108,47 +165,89 @@ uint2 getTexture2DDimensions(texture2d<float> texture)
+     return uint2(texture.get_width(), texture.get_height());
+ }
+ 
++// Skylanders: `scale` is g_ResolutionScale for a resolved texture (host size = guest size x scale), else 1: the offset is in
++// guest texels.
+ float4 tfetch2D(constant Texture2DDescriptorHeap* textureHeap,
+                 constant SamplerDescriptorHeap* samplerHeap,
+                 uint resourceDescriptorIndex,
+                 uint samplerDescriptorIndex,
+-                float2 texCoord, float2 offset)
++                float2 texCoord, float2 offset, float scale, float mipBias)
++{
++    texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
++    sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
++    return texture.sample(sampler, texCoord + offset * scale / (float2)getTexture2DDimensions(texture), bias(mipBias));
++}
++
++// Skylanders: a vertex shader's fetch, at level 0.
++float4 tfetch2DVertex(constant Texture2DDescriptorHeap* textureHeap,
++                      constant SamplerDescriptorHeap* samplerHeap,
++                      uint resourceDescriptorIndex,
++                      uint samplerDescriptorIndex,
++                      float2 texCoord, float2 offset)
+ {
+     texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
+     sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
+-    return texture.sample(sampler, texCoord + offset / (float2)getTexture2DDimensions(texture));
++    return texture.sample(sampler, texCoord + offset / (float2)getTexture2DDimensions(texture), level(0));
+ }
+ 
++// Skylanders: the bilinear weights on the guest texel grid (the host one divided by `scale`), to go with offsets in guest texels.
+ float2 getWeights2D(constant Texture2DDescriptorHeap* textureHeap,
+                     constant SamplerDescriptorHeap* samplerHeap,
+                     uint resourceDescriptorIndex,
+                     uint samplerDescriptorIndex,
+-                    float2 texCoord, float2 offset)
++                    float2 texCoord, float2 offset, float scale)
+ {
+     texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
+-    return select(fract(texCoord * float2(getTexture2DDimensions(texture)) + offset - 0.5), 0.0, isnan(texCoord));
++    return select(fract(texCoord * float2(getTexture2DDimensions(texture)) / scale + offset - 0.5), 0.0, isnan(texCoord));
++}
++
++// Skylanders: fetches with unnormalized coordinates (the instruction's texCoordDenorm bit): the coordinates are guest
++// texels; `scale` is g_ResolutionScale for a resolved texture (host size = guest size x scale), else 1. Swap Force's
++// screen-space passes fetch at the pixel position this way.
++float4 tfetch2DDenorm(constant Texture2DDescriptorHeap* textureHeap,
++                      constant SamplerDescriptorHeap* samplerHeap,
++                      uint resourceDescriptorIndex,
++                      uint samplerDescriptorIndex,
++                      float2 texCoord, float2 offset, float scale, float mipBias)
++{
++    texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
++    sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
++    // Skylanders: the pixel position is guest pixels (iPos / scale - 0.5), so at scale N a host pixel h lands on host texel
++    // coordinate h + 0.5 - N / 2: the centre of texel h - 1 at scale 2, and even pixels read the previous guest pixel (a
++    // dark checker on the left and top edges of every silhouette). (scale - 1) / 2 puts it back on texel h's left edge,
++    // where the fetch lands at scale 1 and on the console.
++    return texture.sample(sampler, DENORM_TEXEL(texCoord, offset, scale) / (float2)getTexture2DDimensions(texture), bias(mipBias));
++}
++
++float2 getWeights2DDenorm(constant Texture2DDescriptorHeap* textureHeap,
++                          constant SamplerDescriptorHeap* samplerHeap,
++                          uint resourceDescriptorIndex,
++                          uint samplerDescriptorIndex,
++                          float2 texCoord, float2 offset, float scale)
++{
++    return select(fract(texCoord + offset - 0.5), 0.0, isnan(texCoord));
+ }
+ 
+ float4 tfetch3D(constant Texture3DDescriptorHeap* textureHeap,
+                 constant SamplerDescriptorHeap* samplerHeap,
+                 uint resourceDescriptorIndex,
+                 uint samplerDescriptorIndex,
+-                float3 texCoord)
++                float3 texCoord, float mipBias)
+ {
+     texture3d<float> texture = textureHeap[resourceDescriptorIndex].tex;
+     sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
+-    return texture.sample(sampler, texCoord);
++    return texture.sample(sampler, texCoord, bias(mipBias));
+ }
+ 
+ float4 tfetchCube(constant TextureCubeDescriptorHeap* textureHeap,
+                   constant SamplerDescriptorHeap* samplerHeap,
+                   uint resourceDescriptorIndex,
+                   uint samplerDescriptorIndex,
+-                  float3 texCoord, thread CubeMapData* cubeMapData)
++                  float3 texCoord, thread CubeMapData* cubeMapData, float mipBias)
+ {
+     texturecube<float> texture = textureHeap[resourceDescriptorIndex].tex;
+     sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
+-    return texture.sample(sampler, cubeMapData->cubeMapDirections[(uint)texCoord.z]);
++    return texture.sample(sampler, cubeMapData->cubeMapDirections[(uint)texCoord.z], bias(mipBias));
+ }
+ 
+ float4 cube(float4 value, thread CubeMapData* cubeMapData)
+@@ -174,26 +273,47 @@ uint2 getTexture2DDimensions(Texture2D<float4> texture)
+     return dimensions;
+ }
+ 
+-float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
++// Skylanders: `scale` as above (offsets in guest texels).
++float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float scale, float mipBias)
+ {
+     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
+-    return texture.Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + offset / getTexture2DDimensions(texture));
++    return texture.SampleBias(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + offset * scale / getTexture2DDimensions(texture), mipBias);
+ }
+ 
+-float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
++// Skylanders: a vertex shader's fetch, at level 0.
++float4 tfetch2DVertex(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
+ {
+     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
+-    return select(isnan(texCoord), 0.0, frac(texCoord * getTexture2DDimensions(texture) + offset - 0.5));
++    return texture.SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + offset / getTexture2DDimensions(texture), 0);
+ }
+ 
+-float4 tfetch3D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord)
++float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float scale)
+ {
+-    return g_Texture3DDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord);
++    Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
++    return select(isnan(texCoord), 0.0, frac(texCoord * getTexture2DDimensions(texture) / scale + offset - 0.5));
+ }
+ 
+-float4 tfetchCube(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, inout CubeMapData cubeMapData)
++// Skylanders: unnormalized coordinates (texCoordDenorm), in texels.
++float4 tfetch2DDenorm(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float scale, float mipBias)
+ {
+-    return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z]);
++    Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
++    // Skylanders: (scale - 1) / 2 keeps the fetch on the host pixel's own texel at scale N (see the Metal version).
++    return texture.SampleBias(g_SamplerDescriptorHeap[samplerDescriptorIndex], DENORM_TEXEL(texCoord, offset, scale) / getTexture2DDimensions(texture), mipBias);
++}
++
++float2 getWeights2DDenorm(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float scale)
++{
++    return select(isnan(texCoord), 0.0, frac(texCoord + offset - 0.5));
++}
++
++float4 tfetch3D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, float mipBias)
++{
++    return g_Texture3DDescriptorHeap[resourceDescriptorIndex].SampleBias(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord, mipBias);
++}
++
++float4 tfetchCube(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, inout CubeMapData cubeMapData, float mipBias)
++{
++    return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].SampleBias(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z], mipBias);
+ }
+ 
+ float4 cube(float4 value, inout CubeMapData cubeMapData)
+@@ -211,11 +331,10 @@ float4 tfetchR11G11B10(uint4 value)
+ {
+     if (g_SpecConstants() & SPEC_CONSTANT_R11G11B10_NORMAL)
+     {
+-        return float4(
+-            (value.x & 0x00000400 ? -1.0 : 0.0) + ((value.x & 0x3FF) / 1024.0),
+-            (value.x & 0x00200000 ? -1.0 : 0.0) + (((value.x >> 11) & 0x3FF) / 1024.0),
+-            (value.x & 0x80000000 ? -1.0 : 0.0) + (((value.x >> 22) & 0x1FF) / 512.0),
+-            0.0);
++        // Skylanders packs normals as DEC3N: three signed normalized 10-bit components, X in the low bits.
++        float3 magnitude = float3(value.x & 0x1FF, (value.x >> 10) & 0x1FF, (value.x >> 20) & 0x1FF);
++        float3 sign = float3(value.x & 0x200 ? 512.0 : 0.0, (value.x >> 10) & 0x200 ? 512.0 : 0.0, (value.x >> 20) & 0x200 ? 512.0 : 0.0);
++        return float4(max((magnitude - sign) / 511.0, -1.0), 0.0);
+     }
+     else
+     {
+@@ -227,6 +346,22 @@ float4 tfetchR11G11B10(uint4 value)
+     }
+ }
+ 
++#ifndef UNLEASHED_RECOMP
++// BLENDINDICES are declared uint4: integer formats (UBYTE4) convert by value; float formats are fed as their bits.
++float4 tfetchBlendIndices(uint4 value)
++{
++    if (g_SpecConstants() & SPEC_CONSTANT_BLEND_INDICES_FLOAT)
++    {
++#ifdef __air__
++        return as_type<float4>(value);
++#else
++        return asfloat(value);
++#endif
++    }
++    return float4(value);
++}
++#endif
++
+ #ifdef __air__
+ #define selectWrapper(a, b, c) select(c, b, a)
+ #else
+@@ -257,6 +392,17 @@ float4x4 mul(T a, T b)
+ }
+ #endif
+ 
++// Skylanders: shaders with jumps run their blocks in a loop from block `pc` on, falling through to the next block. Metal
++// and SPIR-V dispatch with a switch whose cases fall through; DXIL uses a chain of `if (pc <= N)` blocks instead, the same
++// order without fallthrough, which compilers that translate DXIL (dxil-spirv) structure correctly.
++#if defined(__air__) || defined(__spirv__)
++#define PC_DISPATCH switch (pc)
++#define PC_CASE(N) case N:
++#else
++#define PC_DISPATCH
++#define PC_CASE(N) } if (pc <= N) {
++#endif
++
+ #ifdef __air__
+ #define UNROLL
+ #define BRANCH
+diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
+index fd59693..74d6d27 100644
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -1,6 +1,77 @@
+ #include "shader_recompiler.h"
+ #include "shader_common.h"
+ 
++// Emit only for shaders with explicit LOD state. Keeping shader_common.h unchanged also keeps the complete
++// translated text (and its compilation cache key) byte-identical for shaders without these instructions.
++static constexpr std::string_view TEXTURE_LOD_HELPERS = R"(
++#ifdef __air__
++float4 tfetch2DLod(constant Texture2DDescriptorHeap* textureHeap,
++                  constant SamplerDescriptorHeap* samplerHeap,
++                  uint resourceDescriptorIndex, uint samplerDescriptorIndex,
++                  float2 texCoord, float2 offset, float scale, float lod)
++{
++    texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
++    sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
++    return texture.sample(sampler, texCoord + offset * scale / (float2)getTexture2DDimensions(texture), level(lod));
++}
++
++// The pixel-position offset of tfetch2DDenorm (shader_common.h): the host pixel's own texel at any resolution scale.
++float4 tfetch2DLodDenorm(constant Texture2DDescriptorHeap* textureHeap,
++                        constant SamplerDescriptorHeap* samplerHeap,
++                        uint resourceDescriptorIndex, uint samplerDescriptorIndex,
++                        float2 texCoord, float2 offset, float scale, float lod)
++{
++    texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
++    sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
++    return texture.sample(sampler, DENORM_TEXEL(texCoord, offset, scale) / (float2)getTexture2DDimensions(texture), level(lod));
++}
++
++float4 tfetch3DLod(constant Texture3DDescriptorHeap* textureHeap,
++                  constant SamplerDescriptorHeap* samplerHeap,
++                  uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, float lod)
++{
++    return textureHeap[resourceDescriptorIndex].tex.sample(samplerHeap[samplerDescriptorIndex].samp, texCoord, level(lod));
++}
++
++float4 tfetchCubeLod(constant TextureCubeDescriptorHeap* textureHeap,
++                    constant SamplerDescriptorHeap* samplerHeap,
++                    uint resourceDescriptorIndex, uint samplerDescriptorIndex,
++                    float3 texCoord, thread CubeMapData* cubeMapData, float lod)
++{
++    return textureHeap[resourceDescriptorIndex].tex.sample(samplerHeap[samplerDescriptorIndex].samp,
++        cubeMapData->cubeMapDirections[(uint)texCoord.z], level(lod));
++}
++#else
++float4 tfetch2DLod(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
++                  float2 texCoord, float2 offset, float scale, float lod)
++{
++    Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
++    return texture.SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex],
++        texCoord + offset * scale / getTexture2DDimensions(texture), lod);
++}
++
++float4 tfetch2DLodDenorm(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
++                        float2 texCoord, float2 offset, float scale, float lod)
++{
++    Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
++    return texture.SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex],
++        DENORM_TEXEL(texCoord, offset, scale) / getTexture2DDimensions(texture), lod);
++}
++
++float4 tfetch3DLod(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, float lod)
++{
++    return g_Texture3DDescriptorHeap[resourceDescriptorIndex].SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord, lod);
++}
++
++float4 tfetchCubeLod(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
++                    float3 texCoord, inout CubeMapData cubeMapData, float lod)
++{
++    return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex],
++        cubeMapData.cubeMapDirections[(uint)texCoord.z], lod);
++}
++#endif
++)";
++
+ static constexpr char SWIZZLES[] = 
+ { 
+     'x',
+@@ -94,6 +165,8 @@ static constexpr DeclUsageLocation USAGE_LOCATIONS[] =
+     { DeclUsage::TexCoord, 6, 14 },
+     { DeclUsage::TexCoord, 7, 15 },
+     { DeclUsage::Position, 1, 15 },
++    { DeclUsage::PointSize, 0, 16 }, // particle point sprites
++    { DeclUsage::TexCoord, 8, 17 }, // Trap Team: with TexCoord 7 (15), so not 16 (the point size) either
+ };
+ 
+ static constexpr std::pair<DeclUsage, size_t> INTERPOLATORS[] =
+@@ -115,7 +188,8 @@ static constexpr std::pair<DeclUsage, size_t> INTERPOLATORS[] =
+     { DeclUsage::TexCoord, 14 },
+     { DeclUsage::TexCoord, 15 },
+     { DeclUsage::Color, 0 },
+-    { DeclUsage::Color, 1 }
++    { DeclUsage::Color, 1 },
++    { DeclUsage::Normal, 0 }, // Skylanders passes normals as their own interpolator
+ };
+ 
+ static constexpr std::string_view TEXTURE_DIMENSIONS[] = 
+@@ -125,6 +199,13 @@ static constexpr std::string_view TEXTURE_DIMENSIONS[] =
+     "Cube" 
+ };
+ 
++// Skylanders: where a vertex shader's texture and sampler descriptor indices are in the shared constants (after the
++// pixel shader's 4 x 16 and the fields of shader_common.h), for VERTEX_SAMPLER_COUNT samplers.
++static constexpr uint32_t VERTEX_SAMPLER_COUNT = 4;
++static constexpr uint32_t VERTEX_TEXTURE_OFFSET = 320;
++static constexpr uint32_t VERTEX_SAMPLER_OFFSET = VERTEX_TEXTURE_OFFSET + VERTEX_SAMPLER_COUNT * 4;
++static constexpr uint32_t VERTEX_FETCH_BASE = 16; // the first vertex fetch constant
++
+ static FetchDestinationSwizzle getDestSwizzle(uint32_t dstSwizzle, uint32_t index)
+ {
+     return FetchDestinationSwizzle((dstSwizzle >> (index * 3)) & 0x7);
+@@ -177,53 +258,76 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
+         ++indentation;
+     }
+ 
+-    indent();
+-    print("r{}.", instr.dstRegister);
+-    uint32_t size = printDstSwizzle(instr.dstSwizzle, false);
+-
+-    out += " = ";
+-
+-    if (size <= 1)
+-        out += "(float)(";
+-    else
+-        print("(float{})(", size);
+-
+     auto findResult = vertexElements.find(address);
+     assert(findResult != vertexElements.end());
+ 
+-    switch (findResult->second.usage)
++    // Skylanders: a fetch whose index is not the vertex index (r0.x) reads the vertices the host gathered for it.
++    DeclUsage usage = findResult->second.usage;
++    bool pulled = (instr.srcRegister != 0 || instr.srcSwizzle != 0) && usage != DeclUsage::Normal &&
++        usage != DeclUsage::Tangent && usage != DeclUsage::Binormal && usage != DeclUsage::TexCoord;
++
++    auto printFetch = [&](bool fromPulled)
+     {
+-    case DeclUsage::Normal:
+-    case DeclUsage::Tangent:
+-    case DeclUsage::Binormal:
+-        specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL;
+-        print("tfetchR11G11B10(");
+-        break;
++        indent();
++        print("r{}.", instr.dstRegister);
++        uint32_t size = printDstSwizzle(instr.dstSwizzle, false);
+ 
+-    case DeclUsage::TexCoord:
+-        print("swapFloats(g_SwappedTexcoords, (float4)");
+-        break;
+-    }
++        out += " = ";
+ 
+-    print("(input.i{}{})", USAGE_VARIABLES[uint32_t(findResult->second.usage)], uint32_t(findResult->second.usageIndex));
++        if (size <= 1)
++            out += "(float)(";
++        else
++            print("(float{})(", size);
+ 
+-    switch (findResult->second.usage)
+-    {
+-    case DeclUsage::Normal:
+-    case DeclUsage::Tangent:
+-    case DeclUsage::Binormal:
+-        out += ')';
+-        break;
++        if (fromPulled)
++        {
++            print("PULLED_VERTEX(floor(r{}.{}{}))", uint32_t(instr.srcRegister), "xyzw"[instr.srcSwizzle], instr.isIndexRounded ? " + 0.5" : "");
++        }
++        else
++        {
++            switch (usage)
++            {
++            case DeclUsage::Normal:
++            case DeclUsage::Tangent:
++            case DeclUsage::Binormal:
++                specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL;
++                print("tfetchR11G11B10(");
++                break;
+ 
+-    case DeclUsage::TexCoord:
+-        print(", {})", uint32_t(findResult->second.usageIndex));
+-        break;
+-    }
++            case DeclUsage::TexCoord:
++                print("swapFloats(g_SwappedTexcoords, (float4)");
++                break;
+ 
+-    out += ").";
+-    printDstSwizzle(instr.dstSwizzle, true);
++            case DeclUsage::BlendIndices:
++                specConstantsMask |= SPEC_CONSTANT_BLEND_INDICES_FLOAT;
++                print("tfetchBlendIndices(");
++                break;
++            }
+ 
+-    out += ";\n";
++            print("(input.i{}{})", USAGE_VARIABLES[uint32_t(usage)], uint32_t(findResult->second.usageIndex));
++
++            switch (usage)
++            {
++            case DeclUsage::Normal:
++            case DeclUsage::Tangent:
++            case DeclUsage::Binormal:
++            case DeclUsage::BlendIndices:
++                out += ')';
++                break;
++
++            case DeclUsage::TexCoord:
++                print(", {})", uint32_t(findResult->second.usageIndex));
++                break;
++            }
++        }
++
++        out += ").";
++        printDstSwizzle(instr.dstSwizzle, true);
++
++        out += ";\n";
++    };
++
++    printFetch(pulled);
+ 
+     printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
+ 
+@@ -237,9 +341,27 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
+ 
+ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicubic)
+ {
++    if (isPixelShader && instr.opcode == FetchOpcode::SetTextureLod)
++    {
++        usesTextureLod = true;
++        indent();
++        if (instr.isPredicated)
++            print("if ({}p0) ", instr.predCondition ? "" : "!");
++        println("textureLod = r{}.{};", uint32_t(instr.srcRegister), SWIZZLES[instr.srcSwizzle & 3]);
++        return;
++    }
++
+     if (instr.opcode != FetchOpcode::TextureFetch && instr.opcode != FetchOpcode::GetTextureWeights)
+         return;
+ 
++    const bool explicitLod = isPixelShader && instr.opcode == FetchOpcode::TextureFetch && instr.useRegLod;
++    // Skylanders: a vertex shader has no derivatives, so its fetches sample level 0: a normalized 2D fetch through
++    // tfetch2DVertex, every other one (1D, unnormalized 2D, 3D, cube) through the explicit-LOD helpers at level 0
++    // (an implicit-LOD Sample does not compile in a vertex shader).
++    const bool vertexLevelZero = !isPixelShader && instr.opcode == FetchOpcode::TextureFetch &&
++        !(instr.dimension == TextureDimension::Texture2D && !instr.texCoordDenorm);
++    usesTextureLod |= explicitLod || vertexLevelZero;
++
+     if (instr.isPredicated)
+     {
+         indent();
+@@ -325,7 +447,8 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+     switch (instr.dimension)
+     {
+     case TextureDimension::Texture1D:
+-        dimension = "1D";
++        // Skylanders: a 1D texture is bound as a 2D one of one row (the runtime's TextureFor), sampled at v = 0.5.
++        dimension = "2D";
+         componentCount = 1;
+         break;
+     case TextureDimension::Texture2D:
+@@ -343,11 +466,18 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+     }
+ 
+     out += dimension;
++    if (explicitLod || vertexLevelZero)
++        out += "Lod";
++    if (!isPixelShader && instr.opcode == FetchOpcode::TextureFetch && !vertexLevelZero)
++        out += "Vertex"; // Skylanders: a normalized 2D fetch, sampled at level 0 (a vertex shader has no derivatives)
+ 
+ #ifdef UNLEASHED_RECOMP
+     if (bicubic)
+         out += "Bicubic";
+ #endif
++    // Skylanders: unnormalized (texel) coordinates; only 2D fetches have a variant for them.
++    if (instr.texCoordDenorm && instr.dimension == TextureDimension::Texture2D)
++        out += "Denorm";
+ 
+     println("(");
+ 
+@@ -360,12 +490,26 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+ 
+     indent();
+     print("\t{0}_Texture{1}DescriptorIndex, {0}_SamplerDescriptorIndex, ", constNamePtr, dimension);
++    if (instr.dimension == TextureDimension::Texture1D)
++        out += "float2(";
+     printSrcRegister(componentCount);
+-
++    if (instr.dimension == TextureDimension::Texture1D)
++        out += ", 0.5)";
++
++    // Skylanders: the scale of a resolved texture (host size = guest size x g_ResolutionScale, bit n of g_ScaledTextures =
++    // sampler register n): the fetch's offsets are guest texels, so the helpers multiply them by it (and the weights of a
++    // getWeights fetch are taken on the guest texel grid). The kernels of blurs and shadow filters then cover the same
++    // screen area at every scale. 1 in a vertex shader (its samplers are not in g_ScaledTextures).
++    std::string scale = isPixelShader ? fmt::format("(g_ScaledTextures & {}u) != 0 ? g_ResolutionScale : 1.0", 1u << instr.constIndex) : "1.0";
+     switch (instr.dimension)
+     {
++    case TextureDimension::Texture1D:
++        print(", float2({}, 0.0), {}", instr.offsetX * 0.5f, scale);
++        break;
+     case TextureDimension::Texture2D:
+         print(", float2({}, {})", instr.offsetX * 0.5f, instr.offsetY * 0.5f);
++        if (instr.texCoordDenorm || isPixelShader || instr.opcode != FetchOpcode::TextureFetch)
++            print(", {}", scale);
+         break;
+     case TextureDimension::TextureCube:
+         println("\n#ifdef __air__");
+@@ -378,6 +522,18 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+         break;
+     }
+ 
++    if (explicitLod)
++    {
++        out += ", textureLod";
++        // The signed instruction bias is in sixteenths of a mip level.
++        if (instr.lodBias != 0)
++            print(" + ({})", instr.lodBias / 16.0f);
++    }
++    else if (vertexLevelZero)
++        out += ", 0.0";
++    else if (isPixelShader && instr.opcode == FetchOpcode::TextureFetch)
++        out += ", g_MipBias"; // Skylanders: an upscaled scene's texture LOD bias (0 otherwise), as D3D's sampler bias
++
+     out += ").";
+ 
+     printDstSwizzle(instr.dstSwizzle, true);
+@@ -496,6 +652,8 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
+             else
+             {
+                 auto findResult = float4Constants.find(reg);
++                if (literalConstants.count(reg) != 0 && !instr.const0Relative && !instr.const1Relative)
++                    findResult = float4Constants.end();
+                 if (findResult != float4Constants.end())
+                 {
+                     const char* constantName = reinterpret_cast<const char*>(constantTableData + findResult->second->name);
+@@ -558,6 +716,7 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
+ 
+                 case AluVectorOpcode::Dp4:
+                 case AluVectorOpcode::Max4:
++                case AluVectorOpcode::Cube:
+                     mask = 0b1111;
+                     break;
+ 
+@@ -652,6 +811,11 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
+         {
+             switch (ExportRegister(instr.vectorDest))
+             {
++            case ExportRegister::VSPointSizeEdgeFlagKillVertex:
++                exportRegister = "pts"; // x: point size (Skylanders: point sprites)
++                exportsPointSize = true;
++                break;
++
+             case ExportRegister::VSPosition:
+                 exportRegister = "output.oPos";
+ 
+@@ -922,15 +1086,27 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
+             }
+ 
+         case AluVectorOpcode::Cube:
++        {
+             operationResultComponentCount = 4;
++            // CUBE packs a direction as src0 = (z,z,x,y), src1 = (y,x,z,z). Decode after applying
++            // operand selection, swizzles and modifiers, rather than assuming the register contains xyz.
++            // Keep the old spelling for the canonical case, including its compilation cache key.
++            const bool canonical = instr.src1Select && instr.src2Select &&
++                instr.src1Register < 64 && instr.src1Register == instr.src2Register &&
++                instr.src1Swizzle == 0xA6 && instr.src2Swizzle == 0xCD &&
++                !instr.src1Negate && !instr.src2Negate;
++            const std::string direction = canonical ? fmt::format("r{}", instr.src1Register) :
++                fmt::format("float4(({}).z, ({}).x, ({}).z, 0.0)",
++                    op(VECTOR_0).expression, op(VECTOR_1).expression, op(VECTOR_1).expression);
+             println("\n#ifdef __air__");
+             indent();
+-            print("cube(r{}, &cubeMapData)", instr.src1Register);
++            print("cube({}, &cubeMapData)", direction);
+             println("\n#else");
+             indent();
+-            print("cube(r{}, cubeMapData)", instr.src1Register);
++            print("cube({}, cubeMapData)", direction);
+             println("\n#endif");
+             break;
++        }
+ 
+         case AluVectorOpcode::Max4:
+             operationResultComponentCount = 4;
+@@ -1289,21 +1465,77 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
+     }
+ }
+ 
++std::vector<uint8_t> ShaderRecompiler::synthesizeConstantTable() const
++{
++    struct Entry { std::string name; RegisterSet set; uint16_t index; uint16_t count; };
++    std::vector<Entry> entries{ { "g_C", RegisterSet::Float4, 0, uint16_t(isPixelShader ? 224 : 256) } };
++    for (uint16_t i = 0; i < 16; i++)
++    {
++        entries.push_back({ fmt::format("g_S{}", i), RegisterSet::Sampler, i, 1 });
++        entries.push_back({ fmt::format("g_B{}", i), RegisterSet::Bool, i, 1 });
++    }
++
++    // ConstantTableContainer: size, then the table; offsets inside are from the table (after the size).
++    constexpr uint32_t TableSize = 28, InfoSize = 20;
++    std::vector<uint8_t> data(4 + TableSize + entries.size() * InfoSize);
++    auto put32 = [&](size_t at, uint32_t v) { for (int i = 0; i < 4; i++) data[at + i] = uint8_t(v >> (24 - 8 * i)); };
++    auto put16 = [&](size_t at, uint16_t v) { data[at] = uint8_t(v >> 8); data[at + 1] = uint8_t(v); };
++    put32(4 + 12, uint32_t(entries.size()));
++    put32(4 + 16, TableSize);
++    for (size_t i = 0; i < entries.size(); i++)
++    {
++        size_t info = 4 + TableSize + i * InfoSize;
++        put32(info, uint32_t(data.size() - 4));
++        data.insert(data.end(), entries[i].name.begin(), entries[i].name.end());
++        data.push_back(0);
++        put16(info + 4, uint16_t(entries[i].set));
++        put16(info + 6, entries[i].index);
++        put16(info + 8, entries[i].count);
++    }
++    put32(0, uint32_t(data.size()));
++    put32(4, uint32_t(data.size() - 4));
++    return data;
++}
++
+ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_view& include)
+ {
+     const auto shaderContainer = reinterpret_cast<const ShaderContainer*>(shaderData);
+ 
+     assert((shaderContainer->flags & 0xFFFFFF00) == 0x102A1100);
+-    assert(shaderContainer->constantTableOffset != NULL);
+ 
+     out += include;
+     out += '\n';
++    const size_t textureHelpersPosition = out.size();
+ 
+     isPixelShader = (shaderContainer->flags & 0x1) == 0;
+ 
+-    const auto constantTableContainer = reinterpret_cast<const ConstantTableContainer*>(shaderData + shaderContainer->constantTableOffset);
++    // Some engines strip the constant table (Alchemy: Skylanders Giants keeps only what D3D needs). Then every register
++    // gets a name: one float4 array g_C over all constants, samplers g_S0-g_S15, booleans g_B0-g_B15.
++    std::vector<uint8_t> syntheticTable;
++    if (shaderContainer->constantTableOffset == NULL)
++        syntheticTable = synthesizeConstantTable();
++
++    const auto constantTableContainer = reinterpret_cast<const ConstantTableContainer*>(syntheticTable.empty()
++        ? shaderData + shaderContainer->constantTableOffset : syntheticTable.data());
+     constantTableData = reinterpret_cast<const uint8_t*>(&constantTableContainer->constantTable);
+ 
++    // Skylanders: a vertex shader can fetch a texture (SSA's grass reads its wind simulation). Its samplers are the
++    // vertex fetch constants 16-19 (instr.constIndex) but sampler registers 0-3 in the table; their descriptor indices
++    // sit after the pixel shader's in the shared constants (VERTEX_SAMPLER_*), and the Metal entry point gets the
++    // descriptor heaps. Only with a real constant table: the synthetic one of Alchemy lists 16 samplers in every shader
++    // (and no Giants vertex shader fetches a texture).
++    vertexSamplers = false;
++    if (!isPixelShader && syntheticTable.empty())
++    {
++        for (uint32_t i = 0; i < constantTableContainer->constantTable.constants; i++)
++        {
++            const auto constantInfo = reinterpret_cast<const ConstantInfo*>(
++                constantTableData + constantTableContainer->constantTable.constantInfo + i * sizeof(ConstantInfo));
++            if (constantInfo->registerSet == RegisterSet::Sampler && constantInfo->registerIndex < VERTEX_SAMPLER_COUNT)
++                vertexSamplers = true;
++        }
++    }
++
+     out += "#ifdef __spirv__\n\n";
+ 
+ #ifdef UNLEASHED_RECOMP
+@@ -1362,6 +1594,19 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+ 
+         case RegisterSet::Sampler:
+         {
++            if (vertexSamplers)
++            {
++                if (constantInfo->registerIndex < VERTEX_SAMPLER_COUNT)
++                {
++                    println("#define {}_Texture2DDescriptorIndex vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {})",
++                        constantName, VERTEX_TEXTURE_OFFSET + constantInfo->registerIndex * 4);
++                    println("#define {}_SamplerDescriptorIndex vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {})",
++                        constantName, VERTEX_SAMPLER_OFFSET + constantInfo->registerIndex * 4);
++                    samplers.emplace(VERTEX_FETCH_BASE + constantInfo->registerIndex, constantName);
++                }
++                break;
++            }
++
+             for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+             {
+                 println("#define {}_Texture{}DescriptorIndex vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {})",
+@@ -1431,6 +1676,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+ 
+         case RegisterSet::Sampler:
+         {
++            if (vertexSamplers)
++            {
++                if (constantInfo->registerIndex < VERTEX_SAMPLER_COUNT)
++                {
++                    println("#define {}_Texture2DDescriptorIndex (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + {})))",
++                        constantName, VERTEX_TEXTURE_OFFSET + constantInfo->registerIndex * 4);
++                    println("#define {}_SamplerDescriptorIndex (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + {})))",
++                        constantName, VERTEX_SAMPLER_OFFSET + constantInfo->registerIndex * 4);
++                }
++                break;
++            }
++
+             for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+             {
+                 println("#define {}_Texture{}DescriptorIndex (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + {})))",
+@@ -1490,6 +1747,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         {
+             const char* constantName = reinterpret_cast<const char*>(constantTableData + constantInfo->name);
+ 
++            if (vertexSamplers)
++            {
++                if (constantInfo->registerIndex < VERTEX_SAMPLER_COUNT)
++                {
++                    println("\tuint {}_Texture2DDescriptorIndex : packoffset(c{}.{});",
++                        constantName, VERTEX_TEXTURE_OFFSET / 16, SWIZZLES[constantInfo->registerIndex % 4]);
++                    println("\tuint {}_SamplerDescriptorIndex : packoffset(c{}.{});",
++                        constantName, VERTEX_SAMPLER_OFFSET / 16, SWIZZLES[constantInfo->registerIndex % 4]);
++                }
++                continue;
++            }
++
+             for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+             {
+                 println("\tuint {}_Texture{}DescriptorIndex : packoffset(c{}.{});",
+@@ -1542,6 +1811,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         for (auto& [usage, usageIndex] : INTERPOLATORS)
+             println("\tfloat4 i{0}{1} : {2}{1};", USAGE_VARIABLES[uint32_t(usage)], usageIndex, USAGE_SEMANTICS[uint32_t(usage)]);
+ 
++        // Skylanders (DXIL): D3D12 has no point sprites; a geometry shader expands points and writes the point
++        // coordinate here (gpu/shaders/point_sprite.hlsl). Every vertex shader outputs it so that the stages link.
++        out += "#ifndef __spirv__\n";
++        out += "\tfloat4 iPointCoord : POINTCOORD;\n";
++        out += "#endif\n";
++
+         out += "#endif\n";
+     }
+     else
+@@ -1587,8 +1862,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+             }
+ 
+             if (!foundUsage) {
+-                fmt::println("Missing mapping for vertex element usage: {} {}", USAGE_VARIABLES[uint32_t(vertexElement.usage)], uint32_t(vertexElement.usageIndex));
+-                exit(1);
++                throw std::runtime_error(fmt::format("missing mapping for vertex element usage: {} {}", USAGE_VARIABLES[uint32_t(vertexElement.usage)], uint32_t(vertexElement.usageIndex)));
+             }
+ 
+             vertexElements.emplace(uint32_t(vertexElement.address), vertexElement);
+@@ -1616,19 +1890,24 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+             }
+         #endif
+ 
+-            out += '\t';
+-
++            // Skylanders: D3D12 input layouts name every input ATTRIBUTE<location> (gpu/draw.cpp), as Vulkan numbers them.
++            uint32_t location = 0;
+             for (auto& usageLocation : USAGE_LOCATIONS)
+             {
+                 if (usageLocation.usage == vertexElement.usage && usageLocation.usageIndex == vertexElement.usageIndex)
+                 {
+-                    print("[[vk::location({})]] ", usageLocation.location);
++                    location = usageLocation.location;
+                     break;
+                 }
+             }
+ 
+-            println("{0} i{1}{2} : {3}{2};", usageType, USAGE_VARIABLES[uint32_t(vertexElement.usage)],
++            out += "#ifdef __spirv__\n";
++            println("\t[[vk::location({0})]] {1} i{2}{3} : {4}{3};", location, usageType, USAGE_VARIABLES[uint32_t(vertexElement.usage)],
+                 uint32_t(vertexElement.usageIndex), USAGE_SEMANTICS[uint32_t(vertexElement.usage)]);
++            out += "#else\n";
++            println("\t{0} i{1}{2} : ATTRIBUTE{3};", usageType, USAGE_VARIABLES[uint32_t(vertexElement.usage)],
++                uint32_t(vertexElement.usageIndex), location);
++            out += "#endif\n";
+         }
+ 
+         out += "#endif\n";
+@@ -1675,6 +1954,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         out += "#ifdef __air__\n";
+ 
+         out += "\tfloat4 oPos [[position]] [[invariant]];\n";
++        out += "\tfloat oPointSize [[point_size]];\n"; // Skylanders: point sprites
+ 
+         for (auto& [usage, usageIndex] : INTERPOLATORS)
+             print("\tfloat4 o{0}{1} [[user({2}{1})]];\n", USAGE_VARIABLES[uint32_t(usage)], usageIndex, USAGE_SEMANTICS[uint32_t(usage)]);
+@@ -1682,15 +1962,29 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         out += "#else\n";
+ 
+         out += "\tprecise float4 oPos : SV_Position;\n";
++        out += "#ifdef __spirv__\n";
++        out += "\t[[vk::builtin(\"PointSize\")]] float oPointSize : PSIZE;\n";
++        out += "#endif\n";
+ 
+         for (auto& [usage, usageIndex] : INTERPOLATORS)
+             print("\tfloat4 o{0}{1} : {2}{1};\n", USAGE_VARIABLES[uint32_t(usage)], usageIndex, USAGE_SEMANTICS[uint32_t(usage)]);
+ 
++        // Skylanders (DXIL): the point coordinate the pixel shaders take (zero unless the point sprite geometry shader
++        // writes it), then the point size last, so that the pixel shader's inputs are a prefix of these outputs.
++        out += "#ifndef __spirv__\n";
++        out += "\tfloat4 oPointCoord : POINTCOORD;\n";
++        out += "\t[[vk::builtin(\"PointSize\")]] float oPointSize : PSIZE;\n";
++        out += "#endif\n";
++
+         out += "#endif\n";
+     }
+ 
+     out += "};\n";
+ 
++    // Skylanders (SPIR-V): the point coordinate param_gen writes; dxc has no semantic for the PointCoord built-in.
++    if (isPixelShader)
++        out += "#ifdef __spirv__\n[[vk::ext_builtin_input(16)]] static const float2 iPointCoord;\n#endif\n";
++
+     out += "#ifdef __air__\n";
+ 
+     if (isPixelShader)
+@@ -1715,6 +2009,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+ 
+         out += "\tInterpolators input [[stage_in]],\n";
+         out += "\tbool iFace [[front_facing]],\n";
++        out += "\tfloat2 iPointCoord [[point_coord]],\n"; // Skylanders: point sprites
+ 
+         out += "\tconstant Texture2DDescriptorHeap* g_Texture2DDescriptorHeap [[buffer(0)]],\n";
+         out += "\tconstant Texture3DDescriptorHeap* g_Texture3DDescriptorHeap [[buffer(1)]],\n";
+@@ -1737,12 +2032,26 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+     else
+     {
+         out += "#ifdef __air__\n";
++        if (vertexSamplers)
++        {
++            out += "\tconstant Texture2DDescriptorHeap* g_Texture2DDescriptorHeap [[buffer(0)]],\n";
++            out += "\tconstant SamplerDescriptorHeap* g_SamplerDescriptorHeap [[buffer(3)]],\n";
++        }
+         out += "\tconstant PushConstants& g_PushConstants [[buffer(8)]],\n";
+         out += "\tVertexShaderInput input [[stage_in]]\n";
+         out += "#else\n";
+         out += "\tVertexShaderInput input\n";
+         out += "#endif\n";
+ 
++    #ifndef UNLEASHED_RECOMP
++        // Skylanders: the vertex index, which the hardware puts in r0.x.
++        out += "#ifdef __air__\n";
++        out += "\t, uint iVertexId [[vertex_id]]\n";
++        out += "#else\n";
++        out += "\t, in uint iVertexId : SV_VertexID\n";
++        out += "#endif\n";
++    #endif
++
+     #ifdef UNLEASHED_RECOMP
+         if (hasIndexCount)
+         {
+@@ -1794,6 +2103,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+             auto value = reinterpret_cast<const be<uint32_t>*>(shaderData + shaderContainer->virtualSize + definition->physicalOffset);
+             for (uint16_t i = 0; i < (definition->count + 3) / 4; i++)
+             {
++                // The synthetic g_C covers every register: as in D3D9, the shader's own literal wins over the buffer.
++                if (!syntheticTable.empty())
++                    literalConstants.insert(definition->registerIndex + i - (isPixelShader ? 256 : 0));
+                 println("#ifdef __air__");
+                 println("\tfloat4 c{} = as_type<float4>(uint4(0x{:X}, 0x{:X}, 0x{:X}, 0x{:X}));",
+                     definition->registerIndex + i - (isPixelShader ? 256 : 0), value[0].get(), value[1].get(), value[2].get(), value[3].get());
+@@ -1872,6 +2184,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         for (auto& [usage, usageIndex] : INTERPOLATORS)
+             println("\toutput.o{}{} = 0.0;", USAGE_VARIABLES[uint32_t(usage)], usageIndex);
+ 
++        out += "\tfloat4 pts = float4(1.0, 0.0, 0.0, 0.0);\n";
+         out += "\n";
+     }
+ 
+@@ -1882,13 +2195,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+             print("\tfloat4 r{} = ", i);
+             if (isPixelShader && i == ((shader->fieldC >> 8) & 0xFF))
+             {
+-                out += "float4((input.iPos.xy - 0.5) * float2(iFace ? 1.0 : -1.0, 1.0), 0.0, 0.0);\n";
++                out += "float4((input.iPos.xy / g_ResolutionScale - 0.5) * float2(iFace ? 1.0 : -1.0, 1.0), 0.0, 0.0);\n";
+             }
+         #ifdef UNLEASHED_RECOMP
+             else if (!isPixelShader && hasIndexCount && i == 0)
+             {
+                 out += "float4(iVertexId + g_IndexCount.x * iInstanceId, 0.0, 0.0, 0.0);\n";
+             }
++        #else
++            else if (!isPixelShader && i == 0)
++            {
++                out += "float4(float(iVertexId), 0.0, 0.0, 0.0);\n"; // Skylanders: screen-tile passes compute from it
++            }
+         #endif
+             else
+             {
+@@ -1897,10 +2215,32 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         }
+     }
+ 
++    // Skylanders: point sprites. With SQ_PROGRAM_CNTL.param_gen, the hardware writes register SQ_CONTEXT_MISC.param_gen_pos
++    // (g_ParamGen, bit 31 = enabled): the pixel position in XY (X negative on back faces, as games take its absolute
++    // value) and the point coordinate in ZW (layout as in Xenia). Screen-space passes drawn as points (lights) read XY.
++    if (isPixelShader)
++    {
++        out += "#if defined(__air__) || defined(__spirv__)\n";
++        out += "\tif (g_ParamGen & 0x80000000u)\n\t{\n\t\tfloat4 gen = float4((input.iPos.xy / g_ResolutionScale - 0.5) * float2(iFace ? 1.0 : -1.0, 1.0), iPointCoord);\n\t\tswitch (g_ParamGen & 0xFu)\n\t\t{\n";
++        for (uint32_t i = 0; i < 16; i++)
++            println("\t\tcase {0}: r{0} = gen; break;", i);
++        out += "\t\t}\n\t}\n";
++        // DXIL: the same without control flow (the point coordinate comes from shaders/point_sprite.hlsl on D3D12).
++        out += "#else\n";
++        out += "\tuint paramGenRegister = (g_ParamGen & 0x80000000u) != 0 ? (g_ParamGen & 0xFu) : 16u;\n";
++        out += "\tfloat4 paramGen = float4((input.iPos.xy / g_ResolutionScale - 0.5) * float2(iFace ? 1.0 : -1.0, 1.0), input.iPointCoord.xy);\n";
++        for (uint32_t i = 0; i < 16; i++)
++            println("\tr{0} = paramGenRegister == {0} ? paramGen : r{0};", i);
++        out += "#endif\n";
++    }
++
+     out += "\tint a0 = 0;\n";
+     out += "\tint aL = 0;\n";
+     out += "\tbool p0 = false;\n";
+     out += "\tfloat ps = 0.0;\n";
++    // Insert LOD state here after instruction emission tells us whether it is needed. This is outside all
++    // guest branches, loop iterations and PC dispatch blocks, so only an executed setter changes the state.
++    const size_t textureLodPosition = out.size();
+     if (isPixelShader)
+     {
+ #ifdef UNLEASHED_RECOMP
+@@ -1991,7 +2331,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         out += "\n\tuint pc = 0;\n";
+         out += "\twhile (true)\n";
+         out += "\t{\n";
+-        out += "\t\tswitch (pc)\n";
++        out += "\t\tPC_DISPATCH\n"; // Skylanders: switch (pc) except on DXIL (shader_common.h)
+         out += "\t\t{\n";
+     }
+ 
+@@ -2011,7 +2351,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+             if (!simpleControlFlow)
+             {
+                 indentation = 3;
+-                println("\t\tcase {}:", pc);
++                println("\t\tPC_CASE({})", pc);
+             }
+             else
+             {
+@@ -2115,7 +2455,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+                     }
+                     else
+                     {
+-                        auto findResult = boolConstants.find(cfInstr.condJmp.boolAddress);
++                        // Pixel shader booleans are registers 128-255, while the constant table numbers them from 0.
++                        uint32_t boolAddress = cfInstr.condJmp.boolAddress;
++                        if (isPixelShader && boolAddress >= 128)
++                            boolAddress -= 128;
++
++                        auto findResult = boolConstants.find(boolAddress);
+                         if (findResult != boolConstants.end())
+                             println("if ((g_Booleans & {}) {}= 0)", findResult->second, cfInstr.condJmp.condition ^ simpleControlFlow ? "!" : "=");
+                         else
+@@ -2253,7 +2598,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+                     if (!hasMtxProjection)
+                 #endif
+                     {
+-                        out += "\toutput.oPos.xy += g_HalfPixelOffset * output.oPos.w;\n";
++                        // Skylanders: g_PositionScale also turns screen-space positions (viewport transform disabled) into clip space.
++                        out += "\toutput.oPos.xy = output.oPos.xy * g_PositionScale + g_HalfPixelOffset * output.oPos.w;\n";
++                        out += "\toutput.oPointSize = pts.x * g_ResolutionScale;\n\tif (pts.z != 0.0)\n\t\toutput.oPos = float4(-2.0, -2.0, 0.0, 1.0); // kill vertex\n";
+                     }
+                 }
+ 
+@@ -2295,7 +2642,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         out += "\t}\n";
+ 
+     if (!isPixelShader && hasMtxProjection)
+-        out += "\toutput.oPos.xy += g_HalfPixelOffset * output.oPos.w;\n";
++    {
++        // Skylanders: g_PositionScale also turns screen-space positions (viewport transform disabled) into clip space.
++        out += "\toutput.oPos.xy = output.oPos.xy * g_PositionScale + g_HalfPixelOffset * output.oPos.w;\n";
++        out += "\toutput.oPointSize = pts.x * g_ResolutionScale;\n\tif (pts.z != 0.0)\n\t\toutput.oPos = float4(-2.0, -2.0, 0.0, 1.0); // kill vertex\n";
++    }
+ #endif
+ 
+     if (!simpleControlFlow)
+@@ -2306,4 +2657,22 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+ #endif
+ 
+     out += "}";
++
++    if (usesTextureLod)
++    {
++        out.insert(textureLodPosition, "\tfloat textureLod = 0.0;\n");
++        out.insert(textureHelpersPosition, TEXTURE_LOD_HELPERS);
++    }
++
++    // Skylanders: Metal rejects a point size output in pipelines that draw triangles, so only vertex shaders that
++    // export one keep it (with the kill-vertex flag of the same export, pts.z: a killed point goes off screen).
++    if (!isPixelShader && !exportsPointSize)
++    {
++        for (std::string_view line : { "\tfloat oPointSize [[point_size]];\n", "\t[[vk::builtin(\"PointSize\")]] float oPointSize : PSIZE;\n",
++            "\toutput.oPointSize = pts.x * g_ResolutionScale;\n", "\tif (pts.z != 0.0)\n\t\toutput.oPos = float4(-2.0, -2.0, 0.0, 1.0); // kill vertex\n" })
++        {
++            for (size_t position; (position = out.find(line)) != std::string::npos;)
++                out.erase(position, line.size());
++        }
++    }
+ }
+diff --git a/XenosRecomp/shader_recompiler.h b/XenosRecomp/shader_recompiler.h
+index 4f468ec..aba7fa2 100644
+--- a/XenosRecomp/shader_recompiler.h
++++ b/XenosRecomp/shader_recompiler.h
+@@ -26,13 +26,19 @@ struct ShaderRecompiler : StringBuffer
+     uint32_t indentation = 0;
+     bool isPixelShader = false;
+     const uint8_t* constantTableData = nullptr;
++
++    std::vector<uint8_t> synthesizeConstantTable() const;
+     std::unordered_map<uint32_t, VertexElement> vertexElements;
+     std::unordered_map<uint32_t, std::string> interpolators;
+     std::unordered_map<uint32_t, const ConstantInfo*> float4Constants;
++    std::unordered_set<uint32_t> literalConstants; // Skylanders: def registers that win over a synthetic g_C
+     std::unordered_map<uint32_t, const char*> boolConstants;
+     std::unordered_map<uint32_t, const char*> samplers;
+     std::unordered_map<uint32_t, uint32_t> ifEndLabels;
+     uint32_t specConstantsMask = 0;
++    bool exportsPointSize = false; // Skylanders: point sprites
++    bool vertexSamplers = false;   // Skylanders: a vertex shader whose constant table lists samplers (vertex texture fetch)
++    bool usesTextureLod = false;
+ 
+ #ifdef UNLEASHED_RECOMP
+     bool hasMtxProjection = false;

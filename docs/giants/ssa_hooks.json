@@ -1,0 +1,5231 @@
+{
+ "description": "Every SSA-specific guest address the port depends on: name, role, scope and, per entry, the shape of its byte signature (length in words, candidates, occurrence, data reference). NO game bytes are committed. The signatures themselves (SSA's code with relocations and operands masked) are generated from the user's own disc into private/giants/ssa_sigs.json (untracked) by `python3 -I tools/sigmatch/sigmatch.py make docs/giants/ssa_hooks.json`, and read by `... match`. scope: lux = Lux engine code (expected in Giants), xbox = XDK/CRT code (expected in Giants, maybe a newer XDK), ssa = this build's layout only.",
+ "not_signed": {
+  "switch_tables": "config/SSA_switch_tables.toml (~1000 tables): regenerate with tools/find_switch_tables.py on the new image; never port by hand",
+  "setjmp": "setjmp_address/longjmp_address are config entries below; XenonRecomp's setjmp handling needs only those two",
+  "midasm_hooks": "none: SSA.toml has no midasm_hook entries; all runtime hooks are whole-function overrides (PPC_FUNC)",
+  "struct_offsets": "d3d/*.cpp and d3d/ring.h rely on D3D device offsets (device+0x328C pixel shader, +0x3290 vertex shader, +0x2B1C fence, +0x35E8 command buffer...) of the XDK D3D9 build SSA links; check each against the Giants functions sigmatch finds (same XDK = same offsets)",
+  "loose_matches": "tools/sigmatch masks immediates in loose mode, so a hook found loose may have a changed struct offset: read its asm before trusting the hook's offsets",
+  "test_aids": "SKY_SKIP_MOVIES (Movie_Update), SKY_LEVEL (paths in kernel/files.cpp, not addresses), SKY_PORTAL_LOG (Portal_Log)"
+ },
+ "entries": [
+  {
+   "name": "inflateInit2_",
+   "kind": "replaced",
+   "ssa": "0x825F2298",
+   "what": "zlib inflateInit2_ (inflateInit_ 0x825F23B8 branches here, windowBits 15)",
+   "why": "host zlib is much faster than the recompiled one (file/STR decompression)",
+   "files": [
+    "runtime/inflate.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "inflate",
+   "kind": "replaced",
+   "ssa": "0x825F24F8",
+   "what": "zlib inflate(strm, flush)",
+   "why": "host zlib, same reason",
+   "files": [
+    "runtime/inflate.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "inflateEnd",
+   "kind": "replaced",
+   "ssa": "0x825F3B80",
+   "what": "zlib inflateEnd(strm)",
+   "why": "host zlib, same reason",
+   "files": [
+    "runtime/inflate.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 34
+   }
+  },
+  {
+   "name": "Audio_SetLanguage",
+   "kind": "hook",
+   "ssa": "0x82864B90",
+   "what": "audio start-up language (r3 = language code): sets Wwise's language folder and every file package's language",
+   "why": "voices in another language than the text (settings voice_language)",
+   "files": [
+    "games/ssa/language.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "Movie_VoiceTrack",
+   "kind": "hook",
+   "ssa": "0x827F4400",
+   "what": "picks a cutscene's Bink voice track (r3 out, r4 = has localized voices)",
+   "why": "cutscene voices follow the voice language",
+   "files": [
+    "games/ssa/language.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 60
+   }
+  },
+  {
+   "name": "Ngl_SceneTraversal",
+   "kind": "patch",
+   "ssa": "0x82631098",
+   "what": "NGL scene traversal from ListSendModule; skipped when the current scene (NglCurrentScene) is null",
+   "why": "a frame submitted with no scene (first movie) dereferenced null",
+   "files": [
+    "engines/lux/patches.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "Ngl_ListSubmit",
+   "kind": "patch",
+   "ssa": "0x822895E0",
+   "what": "NGL render list submission (scene+0x348); skipped when r3 is null",
+   "why": "frames drawn while a movie has no picture: empty list crashed",
+   "files": [
+    "engines/lux/patches.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "Heap_Free",
+   "kind": "patch",
+   "ssa": "0x828A25F8",
+   "what": "main heap free (r3 heap, r4 payload); a double free or a free next to a corrupt block is logged and leaked",
+   "why": "users crashed in coalescing while the frontend loads (docs/handoff_sigbus.md); cause not found",
+   "files": [
+    "engines/lux/patches.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 22
+   }
+  },
+  {
+   "name": "Xma1_Init",
+   "kind": "hook",
+   "ssa": "0x82503F40",
+   "what": "XMA engine 1 (XAudio2 copy) init: creates the context array first",
+   "why": "each engine reads the context array address once at init",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 6
+   }
+  },
+  {
+   "name": "Xma2_Init",
+   "kind": "hook",
+   "ssa": "0x82616A80",
+   "what": "XMA engine 2 (Wwise copy) init: creates the context array first",
+   "why": "same",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 6
+   }
+  },
+  {
+   "name": "Xma1_VoiceClear",
+   "kind": "hook",
+   "ssa": "0x82503FA0",
+   "what": "engine 1 register writer (voice group create/clear) run under the XMA mutex (CallWriter)",
+   "why": "the APU context registers are emulated; writes must be observed",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma1_VoiceKick",
+   "kind": "hook",
+   "ssa": "0x82504938",
+   "what": "engine 1 register writer (kick)",
+   "why": "same",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma2_VoiceClear",
+   "kind": "hook",
+   "ssa": "0x82616B50",
+   "what": "engine 2 register writer (create/clear)",
+   "why": "same",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 50
+   }
+  },
+  {
+   "name": "Xma2_VoiceLock",
+   "kind": "hook",
+   "ssa": "0x82616D10",
+   "what": "engine 2 register writer (lock)",
+   "why": "same",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 38
+   }
+  },
+  {
+   "name": "Xma2_VoiceKick",
+   "kind": "hook",
+   "ssa": "0x82616EF8",
+   "what": "engine 2 register writer (kick)",
+   "why": "same",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma1_LockAll",
+   "kind": "hook",
+   "ssa": "0x825047C8",
+   "what": "engine 1 locks all voices; the hook takes Engine1CriticalSection first",
+   "why": "lock order guest-then-ours avoids a deadlock",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Portal_Log",
+   "kind": "hook",
+   "ssa": "0x826434D8",
+   "what": "the title's printf-like portal log, silent in retail; echoed with SKY_PORTAL_LOG",
+   "why": "portal debugging",
+   "files": [
+    "runtime/kernel/portal.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "D3DDevice_BeginCommandBuffer",
+   "kind": "hook",
+   "ssa": "0x822A6BC8",
+   "what": "D3DDevice_BeginCommandBuffer(device, cb)",
+   "why": "recorded command buffers are replayed by the host (docs/command_buffers.md)",
+   "files": [
+    "runtime/d3d/command_buffers.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_EndCommandBuffer",
+   "kind": "hook",
+   "ssa": "0x822A6FB8",
+   "what": "D3DDevice_EndCommandBuffer(device)",
+   "why": "same",
+   "files": [
+    "runtime/d3d/command_buffers.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_RunCommandBuffer",
+   "kind": "replaced",
+   "ssa": "0x822A73D8",
+   "what": "D3DDevice_RunCommandBuffer: guest version emits INDIRECT_BUFFER nobody executes; host replays and marks non-persisted groups dirty",
+   "why": "autosave panel texture etc.",
+   "files": [
+    "runtime/d3d/command_buffers.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_NextRingSegment",
+   "kind": "hook",
+   "ssa": "0x822A2D78",
+   "what": "moves the ring write position to the next segment (from ReserveCommandSpace, KickOff, Swap)",
+   "why": "the PM4 ring is read by the host at segment boundaries (d3d/ring.h)",
+   "files": [
+    "runtime/d3d/ring.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_CreateVertexShader",
+   "kind": "hook",
+   "ssa": "0x82290508",
+   "what": "CreateVertexShader(container) -> object",
+   "why": "maps guest shaders to the XenosRecomp cache",
+   "files": [
+    "runtime/d3d/shaders.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 60
+   }
+  },
+  {
+   "name": "D3DDevice_CreatePixelShader",
+   "kind": "hook",
+   "ssa": "0x82290160",
+   "what": "CreatePixelShader(container) -> object",
+   "why": "same",
+   "files": [
+    "runtime/d3d/shaders.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 60
+   }
+  },
+  {
+   "name": "D3DDevice_KickOff",
+   "kind": "hook",
+   "ssa": "0x822A3BB0",
+   "what": "D3DDevice_KickOff",
+   "why": "no real GPU: kick-off executes immediately (null_gpu)",
+   "files": [
+    "runtime/d3d/null_gpu.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_BlockOnFence",
+   "kind": "replaced",
+   "ssa": "0x822A3CB8",
+   "what": "BlockOnFence: a fence in unsubmitted commands needs a kick-off; nothing else is pending",
+   "why": "the guest spins on a GPU-written fence otherwise",
+   "files": [
+    "runtime/d3d/null_gpu.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 62
+   }
+  },
+  {
+   "name": "D3DDevice_InsertCallback",
+   "kind": "replaced",
+   "ssa": "0x822A3DB0",
+   "what": "InsertCallback queues the callback instead of writing CP-interrupt packets",
+   "why": "no CP interrupts",
+   "files": [
+    "runtime/d3d/null_gpu.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_DrawVertices",
+   "kind": "hook",
+   "ssa": "0x8229AD58",
+   "what": "DrawVertices(device, prim, start, count): drawn once the guest wrote its state into the ring",
+   "why": "host draws",
+   "files": [
+    "runtime/d3d/render.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_DrawIndexedVertices",
+   "kind": "hook",
+   "ssa": "0x8229B170",
+   "what": "DrawIndexedVertices(device, prim, baseVertex, startIndex, count)",
+   "why": "host draws",
+   "files": [
+    "runtime/d3d/render.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_BeginVertices",
+   "kind": "hook",
+   "ssa": "0x8229A850",
+   "what": "BeginVertices(device, prim, count, stride) -> buffer the game fills",
+   "why": "host draws (UP draws)",
+   "files": [
+    "runtime/d3d/render.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_Resolve",
+   "kind": "hook",
+   "ssa": "0x822A1560",
+   "what": "Resolve(device, flags, rect, dest, point, level, slice, clear...)",
+   "why": "EDRAM resolves done by the host",
+   "files": [
+    "runtime/d3d/render.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_ClearF_Worker",
+   "kind": "hook",
+   "ssa": "0x822ADDE0",
+   "what": "ClearF/BeginTiling/BeginZPass worker: clears with a rectangle draw",
+   "why": "host clear",
+   "files": [
+    "runtime/d3d/render.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_Swap",
+   "kind": "hook",
+   "ssa": "0x822A95C0",
+   "what": "Swap(device, frontBuffer, ...): presents the resolved texture",
+   "why": "host present",
+   "files": [
+    "runtime/d3d/render.cpp"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "LightTile_ClassifyJob",
+   "kind": "hook",
+   "ssa": "0x821404D8",
+   "what": "light pre-pass tile classification job (worker): r4 first tile of the depth resolve, r8 tiles/row, r10 first row; records the resolve address for WriteBackDepth",
+   "why": "the job reads tiled EDRAM depth from guest memory: host must write depth back first (shadow tile job)",
+   "files": [
+    "engines/lux/light_tiles.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 1,
+    "candidates": 2,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "BinkDoFrame",
+   "kind": "hook",
+   "ssa": "0x829EDCF8",
+   "what": "BinkDoFrame(HBINK)",
+   "why": "Bink frames drawn by the GPU path (d3d/bink_display.cpp)",
+   "files": [
+    "runtime/d3d/bink_display.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "Movie_Update",
+   "kind": "hook",
+   "ssa": "0x82852D90",
+   "what": "Movie_Update(movie) returns movie+0x80 (playing); SKY_SKIP_MOVIES=1 clears it after one frame",
+   "why": "test runs skip movies",
+   "files": [
+    "engines/lux/movie.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "LanguageIndex",
+   "kind": "data",
+   "ssa": "0x82AA7048",
+   "what": "the title's language index (set by sub_82808190)",
+   "why": "read or locked by the runtime",
+   "files": [
+    "games/ssa/language.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   },
+   "ref": {
+    "function": "0x8264C490",
+    "lis_offset": 40,
+    "pair_distance": 4,
+    "delta": 48
+   }
+  },
+  {
+   "name": "LanguageCodes",
+   "kind": "data",
+   "ssa": "0x82AA5EBC",
+   "what": "table of 15 char* language codes (disc folder names)",
+   "why": "read or locked by the runtime",
+   "files": [
+    "games/ssa/language.cpp"
+   ],
+   "scope": "lux",
+   "ref": {
+    "function": "0x8267CDC0",
+    "lis_offset": 28,
+    "pair_distance": 2,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "NglCurrentScene",
+   "kind": "data",
+   "ssa": "0x82BB4F4C",
+   "what": "scene list nglListSend hands to ListSendModule",
+   "why": "read or locked by the runtime",
+   "files": [
+    "engines/lux/patches.cpp"
+   ],
+   "scope": "lux",
+   "ref": {
+    "function": "0x8213B658",
+    "lis_offset": 384,
+    "pair_distance": 4,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Engine1CriticalSection",
+   "kind": "data",
+   "ssa": "0x82A3CC30",
+   "what": "XMA engine 1 critical section",
+   "why": "read or locked by the runtime",
+   "files": [
+    "runtime/kernel/xma.cpp"
+   ],
+   "scope": "lux",
+   "ref": {
+    "function": "0x825047C8",
+    "lis_offset": 16,
+    "pair_distance": 1,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "DeviceGlobal",
+   "kind": "data",
+   "ssa": "0x82BB4F94",
+   "what": "NGL global holding the D3D device pointer",
+   "why": "read or locked by the runtime",
+   "files": [
+    "runtime/d3d/device.h"
+   ],
+   "scope": "lux",
+   "ref": {
+    "function": "0x82132E80",
+    "lis_offset": 88,
+    "pair_distance": 7,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 56
+   }
+  },
+  {
+   "name": "restgprlr_14_address",
+   "kind": "config",
+   "ssa": "0x825F5CE0",
+   "what": "XenonRecomp [main] restgprlr_14_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savegprlr_14_address",
+   "kind": "config",
+   "ssa": "0x825F5C90",
+   "what": "XenonRecomp [main] savegprlr_14_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restfpr_14_address",
+   "kind": "config",
+   "ssa": "0x825F647C",
+   "what": "XenonRecomp [main] restfpr_14_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savefpr_14_address",
+   "kind": "config",
+   "ssa": "0x825F6430",
+   "what": "XenonRecomp [main] savefpr_14_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restvmx_14_address",
+   "kind": "config",
+   "ssa": "0x825FF3D8",
+   "what": "XenonRecomp [main] restvmx_14_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savevmx_14_address",
+   "kind": "config",
+   "ssa": "0x825FF140",
+   "what": "XenonRecomp [main] savevmx_14_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restvmx_64_address",
+   "kind": "config",
+   "ssa": "0x825FF46C",
+   "what": "XenonRecomp [main] restvmx_64_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savevmx_64_address",
+   "kind": "config",
+   "ssa": "0x825FF1D4",
+   "what": "XenonRecomp [main] savevmx_64_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "longjmp_address",
+   "kind": "config",
+   "ssa": "0x825F8430",
+   "what": "XenonRecomp [main] longjmp_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "setjmp_address",
+   "kind": "config",
+   "ssa": "0x825FECA0",
+   "what": "XenonRecomp [main] setjmp_address",
+   "why": "CRT register save/restore helpers or setjmp/longjmp, needed by the recompiler",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "invalid_instructions@0x825FFC00",
+   "kind": "config_data",
+   "ssa": "0x825FFC00",
+   "what": "XenonRecomp invalid_instructions (EH handler + data before EH functions)",
+   "why": "the analyzer must skip these words",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 14
+   }
+  },
+  {
+   "name": "invalid_instructions@0x829E6114",
+   "kind": "config_data",
+   "ssa": "0x829E6114",
+   "what": "XenonRecomp invalid_instructions (EH handler + data before EH functions)",
+   "why": "the analyzer must skip these words",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 81,
+    "candidates": 203,
+    "past_end": true,
+    "length": 64
+   }
+  },
+  {
+   "name": "invalid_instructions@0x8260CA80",
+   "kind": "config_data",
+   "ssa": "0x8260CA80",
+   "what": "XenonRecomp invalid_instructions (EH handler + data before EH functions)",
+   "why": "the analyzer must skip these words",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "xbox",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 10
+   }
+  },
+  {
+   "name": "function@0x821244B0",
+   "kind": "config_function",
+   "ssa": "0x821244B0",
+   "what": "XenonRecomp functions[] entry, size 0x68",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x68",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 26
+   }
+  },
+  {
+   "name": "function@0x82127450",
+   "kind": "config_function",
+   "ssa": "0x82127450",
+   "what": "XenonRecomp functions[] entry, size 0x1A8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x1A8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x8212C6F8",
+   "kind": "config_function",
+   "ssa": "0x8212C6F8",
+   "what": "XenonRecomp functions[] entry, size 0xB8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xB8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82133218",
+   "kind": "config_function",
+   "ssa": "0x82133218",
+   "what": "XenonRecomp functions[] entry, size 0x94",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x94",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x821588F0",
+   "kind": "config_function",
+   "ssa": "0x821588F0",
+   "what": "XenonRecomp functions[] entry, size 0x68",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x68",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 26
+   }
+  },
+  {
+   "name": "function@0x822026E0",
+   "kind": "config_function",
+   "ssa": "0x822026E0",
+   "what": "XenonRecomp functions[] entry, size 0x84",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x84",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82202768",
+   "kind": "config_function",
+   "ssa": "0x82202768",
+   "what": "XenonRecomp functions[] entry, size 0xA4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xA4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82202810",
+   "kind": "config_function",
+   "ssa": "0x82202810",
+   "what": "XenonRecomp functions[] entry, size 0xB4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xB4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x8228AF10",
+   "kind": "config_function",
+   "ssa": "0x8228AF10",
+   "what": "XenonRecomp functions[] entry, size 0x120",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x120",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x822B8D10",
+   "kind": "config_function",
+   "ssa": "0x822B8D10",
+   "what": "XenonRecomp functions[] entry, size 0x18",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x18",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x822ECE30",
+   "kind": "config_function",
+   "ssa": "0x822ECE30",
+   "what": "XenonRecomp functions[] entry, size 0x224",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x224",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82371308",
+   "kind": "config_function",
+   "ssa": "0x82371308",
+   "what": "XenonRecomp functions[] entry, size 0x110",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x110",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x823D8508",
+   "kind": "config_function",
+   "ssa": "0x823D8508",
+   "what": "XenonRecomp functions[] entry, size 0x80",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x80",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x8247E2E0",
+   "kind": "config_function",
+   "ssa": "0x8247E2E0",
+   "what": "XenonRecomp functions[] entry, size 0x74",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x74",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "function@0x824CB200",
+   "kind": "config_function",
+   "ssa": "0x824CB200",
+   "what": "XenonRecomp functions[] entry, size 0x68",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x68",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 26
+   }
+  },
+  {
+   "name": "function@0x824CB268",
+   "kind": "config_function",
+   "ssa": "0x824CB268",
+   "what": "XenonRecomp functions[] entry, size 0x64",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x64",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 26
+   }
+  },
+  {
+   "name": "function@0x824CB2D0",
+   "kind": "config_function",
+   "ssa": "0x824CB2D0",
+   "what": "XenonRecomp functions[] entry, size 0x5C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x5C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 24
+   }
+  },
+  {
+   "name": "function@0x824CB330",
+   "kind": "config_function",
+   "ssa": "0x824CB330",
+   "what": "XenonRecomp functions[] entry, size 0x198",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x198",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x824CB4C8",
+   "kind": "config_function",
+   "ssa": "0x824CB4C8",
+   "what": "XenonRecomp functions[] entry, size 0x16C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x16C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x824FA1E8",
+   "kind": "config_function",
+   "ssa": "0x824FA1E8",
+   "what": "XenonRecomp functions[] entry, size 0x270",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x270",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82522DB8",
+   "kind": "config_function",
+   "ssa": "0x82522DB8",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x82528A00",
+   "kind": "config_function",
+   "ssa": "0x82528A00",
+   "what": "XenonRecomp functions[] entry, size 0x84",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x84",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82528B80",
+   "kind": "config_function",
+   "ssa": "0x82528B80",
+   "what": "XenonRecomp functions[] entry, size 0x178",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x178",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82538348",
+   "kind": "config_function",
+   "ssa": "0x82538348",
+   "what": "XenonRecomp functions[] entry, size 0x54",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x54",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 22
+   }
+  },
+  {
+   "name": "function@0x82566948",
+   "kind": "config_function",
+   "ssa": "0x82566948",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82567830",
+   "kind": "config_function",
+   "ssa": "0x82567830",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x8256A930",
+   "kind": "config_function",
+   "ssa": "0x8256A930",
+   "what": "XenonRecomp functions[] entry, size 0x9C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x9C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x8256B5F8",
+   "kind": "config_function",
+   "ssa": "0x8256B5F8",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x8256CD10",
+   "kind": "config_function",
+   "ssa": "0x8256CD10",
+   "what": "XenonRecomp functions[] entry, size 0x150",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x150",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82572748",
+   "kind": "config_function",
+   "ssa": "0x82572748",
+   "what": "XenonRecomp functions[] entry, size 0x10",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x10",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 48
+   }
+  },
+  {
+   "name": "function@0x82572750",
+   "kind": "config_function",
+   "ssa": "0x82572750",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 24
+   }
+  },
+  {
+   "name": "function@0x82574A58",
+   "kind": "config_function",
+   "ssa": "0x82574A58",
+   "what": "XenonRecomp functions[] entry, size 0x10",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x10",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 48
+   }
+  },
+  {
+   "name": "function@0x82574A60",
+   "kind": "config_function",
+   "ssa": "0x82574A60",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 48
+   }
+  },
+  {
+   "name": "function@0x82576040",
+   "kind": "config_function",
+   "ssa": "0x82576040",
+   "what": "XenonRecomp functions[] entry, size 0x10",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x10",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 48
+   }
+  },
+  {
+   "name": "function@0x82576048",
+   "kind": "config_function",
+   "ssa": "0x82576048",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 48
+   }
+  },
+  {
+   "name": "function@0x825776F8",
+   "kind": "config_function",
+   "ssa": "0x825776F8",
+   "what": "XenonRecomp functions[] entry, size 0x2C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x2C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 11
+   }
+  },
+  {
+   "name": "function@0x825781E8",
+   "kind": "config_function",
+   "ssa": "0x825781E8",
+   "what": "XenonRecomp functions[] entry, size 0x240",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x240",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x825781F8",
+   "kind": "config_function",
+   "ssa": "0x825781F8",
+   "what": "XenonRecomp functions[] entry, size 0xB8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xB8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x825782B0",
+   "kind": "config_function",
+   "ssa": "0x825782B0",
+   "what": "XenonRecomp functions[] entry, size 0x178",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x178",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82593D58",
+   "kind": "config_function",
+   "ssa": "0x82593D58",
+   "what": "XenonRecomp functions[] entry, size 0x74",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x74",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "function@0x8259D0E0",
+   "kind": "config_function",
+   "ssa": "0x8259D0E0",
+   "what": "XenonRecomp functions[] entry, size 0x44",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x44",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 18
+   }
+  },
+  {
+   "name": "function@0x825D5D78",
+   "kind": "config_function",
+   "ssa": "0x825D5D78",
+   "what": "XenonRecomp functions[] entry, size 0xB8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xB8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x825F6390",
+   "kind": "config_function",
+   "ssa": "0x825F6390",
+   "what": "XenonRecomp functions[] entry, size 0xA0",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xA0",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x825FCFE0",
+   "kind": "config_function",
+   "ssa": "0x825FCFE0",
+   "what": "XenonRecomp functions[] entry, size 0x4C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 20
+   }
+  },
+  {
+   "name": "function@0x82627090",
+   "kind": "config_function",
+   "ssa": "0x82627090",
+   "what": "XenonRecomp functions[] entry, size 0x40",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x40",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 16
+   }
+  },
+  {
+   "name": "function@0x826270D0",
+   "kind": "config_function",
+   "ssa": "0x826270D0",
+   "what": "XenonRecomp functions[] entry, size 0xB8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xB8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82627188",
+   "kind": "config_function",
+   "ssa": "0x82627188",
+   "what": "XenonRecomp functions[] entry, size 0x58",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x58",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 22
+   }
+  },
+  {
+   "name": "function@0x826271E0",
+   "kind": "config_function",
+   "ssa": "0x826271E0",
+   "what": "XenonRecomp functions[] entry, size 0x33C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x33C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82627520",
+   "kind": "config_function",
+   "ssa": "0x82627520",
+   "what": "XenonRecomp functions[] entry, size 0x70",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x70",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 28
+   }
+  },
+  {
+   "name": "function@0x82627590",
+   "kind": "config_function",
+   "ssa": "0x82627590",
+   "what": "XenonRecomp functions[] entry, size 0xE4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xE4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82627678",
+   "kind": "config_function",
+   "ssa": "0x82627678",
+   "what": "XenonRecomp functions[] entry, size 0x3C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x3C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 16
+   }
+  },
+  {
+   "name": "function@0x826276B8",
+   "kind": "config_function",
+   "ssa": "0x826276B8",
+   "what": "XenonRecomp functions[] entry, size 0x30",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x30",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826276E8",
+   "kind": "config_function",
+   "ssa": "0x826276E8",
+   "what": "XenonRecomp functions[] entry, size 0x20",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x20",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 8
+   }
+  },
+  {
+   "name": "function@0x82627708",
+   "kind": "config_function",
+   "ssa": "0x82627708",
+   "what": "XenonRecomp functions[] entry, size 0x20",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x20",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 8
+   }
+  },
+  {
+   "name": "function@0x82631D78",
+   "kind": "config_function",
+   "ssa": "0x82631D78",
+   "what": "XenonRecomp functions[] entry, size 0xC8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xC8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x826409A0",
+   "kind": "config_function",
+   "ssa": "0x826409A0",
+   "what": "XenonRecomp functions[] entry, size 0x2C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x2C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826409D0",
+   "kind": "config_function",
+   "ssa": "0x826409D0",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826409D8",
+   "kind": "config_function",
+   "ssa": "0x826409D8",
+   "what": "XenonRecomp functions[] entry, size 0xC",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xC",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x826409E8",
+   "kind": "config_function",
+   "ssa": "0x826409E8",
+   "what": "XenonRecomp functions[] entry, size 0x24",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x24",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 10
+   }
+  },
+  {
+   "name": "function@0x82640A10",
+   "kind": "config_function",
+   "ssa": "0x82640A10",
+   "what": "XenonRecomp functions[] entry, size 0xB4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xB4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82640AC8",
+   "kind": "config_function",
+   "ssa": "0x82640AC8",
+   "what": "XenonRecomp functions[] entry, size 0x74",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x74",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "function@0x82640B40",
+   "kind": "config_function",
+   "ssa": "0x82640B40",
+   "what": "XenonRecomp functions[] entry, size 0x8C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82640BD0",
+   "kind": "config_function",
+   "ssa": "0x82640BD0",
+   "what": "XenonRecomp functions[] entry, size 0x70",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x70",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 28
+   }
+  },
+  {
+   "name": "function@0x82640C40",
+   "kind": "config_function",
+   "ssa": "0x82640C40",
+   "what": "XenonRecomp functions[] entry, size 0x8C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82640CD0",
+   "kind": "config_function",
+   "ssa": "0x82640CD0",
+   "what": "XenonRecomp functions[] entry, size 0x28",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x28",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 10
+   }
+  },
+  {
+   "name": "function@0x82640CF8",
+   "kind": "config_function",
+   "ssa": "0x82640CF8",
+   "what": "XenonRecomp functions[] entry, size 0x28",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x28",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 10
+   }
+  },
+  {
+   "name": "function@0x82640D20",
+   "kind": "config_function",
+   "ssa": "0x82640D20",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82640D28",
+   "kind": "config_function",
+   "ssa": "0x82640D28",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82640D30",
+   "kind": "config_function",
+   "ssa": "0x82640D30",
+   "what": "XenonRecomp functions[] entry, size 0xB0",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xB0",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82640DE0",
+   "kind": "config_function",
+   "ssa": "0x82640DE0",
+   "what": "XenonRecomp functions[] entry, size 0x8C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82640E70",
+   "kind": "config_function",
+   "ssa": "0x82640E70",
+   "what": "XenonRecomp functions[] entry, size 0x44",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x44",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 18
+   }
+  },
+  {
+   "name": "function@0x82640EB8",
+   "kind": "config_function",
+   "ssa": "0x82640EB8",
+   "what": "XenonRecomp functions[] entry, size 0x60",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x60",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 24
+   }
+  },
+  {
+   "name": "function@0x82643BE8",
+   "kind": "config_function",
+   "ssa": "0x82643BE8",
+   "what": "XenonRecomp functions[] entry, size 0x1B4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x1B4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x8264E4F0",
+   "kind": "config_function",
+   "ssa": "0x8264E4F0",
+   "what": "XenonRecomp functions[] entry, size 0xD0",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xD0",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x8264E5C0",
+   "kind": "config_function",
+   "ssa": "0x8264E5C0",
+   "what": "XenonRecomp functions[] entry, size 0xD0",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xD0",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82685390",
+   "kind": "config_function",
+   "ssa": "0x82685390",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x82685398",
+   "kind": "config_function",
+   "ssa": "0x82685398",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826853A0",
+   "kind": "config_function",
+   "ssa": "0x826853A0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826853A8",
+   "kind": "config_function",
+   "ssa": "0x826853A8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x826853B0",
+   "kind": "config_function",
+   "ssa": "0x826853B0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826853B8",
+   "kind": "config_function",
+   "ssa": "0x826853B8",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x826853C0",
+   "kind": "config_function",
+   "ssa": "0x826853C0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 24
+   }
+  },
+  {
+   "name": "function@0x826853C8",
+   "kind": "config_function",
+   "ssa": "0x826853C8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 24
+   }
+  },
+  {
+   "name": "function@0x826853D0",
+   "kind": "config_function",
+   "ssa": "0x826853D0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 24
+   }
+  },
+  {
+   "name": "function@0x826853D8",
+   "kind": "config_function",
+   "ssa": "0x826853D8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826853E0",
+   "kind": "config_function",
+   "ssa": "0x826853E0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826853E8",
+   "kind": "config_function",
+   "ssa": "0x826853E8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826853F0",
+   "kind": "config_function",
+   "ssa": "0x826853F0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826853F8",
+   "kind": "config_function",
+   "ssa": "0x826853F8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685400",
+   "kind": "config_function",
+   "ssa": "0x82685400",
+   "what": "XenonRecomp functions[] entry, size 0x14",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x14",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685418",
+   "kind": "config_function",
+   "ssa": "0x82685418",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685420",
+   "kind": "config_function",
+   "ssa": "0x82685420",
+   "what": "XenonRecomp functions[] entry, size 0x50",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x50",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 20
+   }
+  },
+  {
+   "name": "function@0x82685470",
+   "kind": "config_function",
+   "ssa": "0x82685470",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685478",
+   "kind": "config_function",
+   "ssa": "0x82685478",
+   "what": "XenonRecomp functions[] entry, size 0x10",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x10",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685488",
+   "kind": "config_function",
+   "ssa": "0x82685488",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685490",
+   "kind": "config_function",
+   "ssa": "0x82685490",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685498",
+   "kind": "config_function",
+   "ssa": "0x82685498",
+   "what": "XenonRecomp functions[] entry, size 0xC",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xC",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x826854A8",
+   "kind": "config_function",
+   "ssa": "0x826854A8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826854B0",
+   "kind": "config_function",
+   "ssa": "0x826854B0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x826854B8",
+   "kind": "config_function",
+   "ssa": "0x826854B8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x826854C0",
+   "kind": "config_function",
+   "ssa": "0x826854C0",
+   "what": "XenonRecomp functions[] entry, size 0x48",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x48",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 18
+   }
+  },
+  {
+   "name": "function@0x82685508",
+   "kind": "config_function",
+   "ssa": "0x82685508",
+   "what": "XenonRecomp functions[] entry, size 0x28",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x28",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 10
+   }
+  },
+  {
+   "name": "function@0x82685530",
+   "kind": "config_function",
+   "ssa": "0x82685530",
+   "what": "XenonRecomp functions[] entry, size 0x34",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x34",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 14
+   }
+  },
+  {
+   "name": "function@0x82685568",
+   "kind": "config_function",
+   "ssa": "0x82685568",
+   "what": "XenonRecomp functions[] entry, size 0x3C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x3C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 16
+   }
+  },
+  {
+   "name": "function@0x826855A8",
+   "kind": "config_function",
+   "ssa": "0x826855A8",
+   "what": "XenonRecomp functions[] entry, size 0x3C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x3C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 16
+   }
+  },
+  {
+   "name": "function@0x826855E8",
+   "kind": "config_function",
+   "ssa": "0x826855E8",
+   "what": "XenonRecomp functions[] entry, size 0x8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826855F0",
+   "kind": "config_function",
+   "ssa": "0x826855F0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826855F8",
+   "kind": "config_function",
+   "ssa": "0x826855F8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685600",
+   "kind": "config_function",
+   "ssa": "0x82685600",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685608",
+   "kind": "config_function",
+   "ssa": "0x82685608",
+   "what": "XenonRecomp functions[] entry, size 0x10",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x10",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x82685618",
+   "kind": "config_function",
+   "ssa": "0x82685618",
+   "what": "XenonRecomp functions[] entry, size 0x50",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x50",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 20
+   }
+  },
+  {
+   "name": "function@0x82685668",
+   "kind": "config_function",
+   "ssa": "0x82685668",
+   "what": "XenonRecomp functions[] entry, size 0x24",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x24",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 10
+   }
+  },
+  {
+   "name": "function@0x82685690",
+   "kind": "config_function",
+   "ssa": "0x82685690",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 24
+   }
+  },
+  {
+   "name": "function@0x82685698",
+   "kind": "config_function",
+   "ssa": "0x82685698",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826856A0",
+   "kind": "config_function",
+   "ssa": "0x826856A0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826856A8",
+   "kind": "config_function",
+   "ssa": "0x826856A8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 12
+   }
+  },
+  {
+   "name": "function@0x826856B0",
+   "kind": "config_function",
+   "ssa": "0x826856B0",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "function@0x826856B8",
+   "kind": "config_function",
+   "ssa": "0x826856B8",
+   "what": "XenonRecomp functions[] entry, size 0x4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 48
+   }
+  },
+  {
+   "name": "function@0x826856C0",
+   "kind": "config_function",
+   "ssa": "0x826856C0",
+   "what": "XenonRecomp functions[] entry, size 0x42C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x42C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82685AF0",
+   "kind": "config_function",
+   "ssa": "0x82685AF0",
+   "what": "XenonRecomp functions[] entry, size 0x42C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x42C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82685F20",
+   "kind": "config_function",
+   "ssa": "0x82685F20",
+   "what": "XenonRecomp functions[] entry, size 0x42C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x42C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82693D80",
+   "kind": "config_function",
+   "ssa": "0x82693D80",
+   "what": "XenonRecomp functions[] entry, size 0xDC",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xDC",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x8271BD30",
+   "kind": "config_function",
+   "ssa": "0x8271BD30",
+   "what": "XenonRecomp functions[] entry, size 0x70",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x70",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 28
+   }
+  },
+  {
+   "name": "function@0x827A4140",
+   "kind": "config_function",
+   "ssa": "0x827A4140",
+   "what": "XenonRecomp functions[] entry, size 0x1EC",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x1EC",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x827F4400",
+   "kind": "config_function",
+   "ssa": "0x827F4400",
+   "what": "XenonRecomp functions[] entry, size 0xF0",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xF0",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x827FF030",
+   "kind": "config_function",
+   "ssa": "0x827FF030",
+   "what": "XenonRecomp functions[] entry, size 0xA8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xA8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x827FF428",
+   "kind": "config_function",
+   "ssa": "0x827FF428",
+   "what": "XenonRecomp functions[] entry, size 0xC4",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xC4",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82801990",
+   "kind": "config_function",
+   "ssa": "0x82801990",
+   "what": "XenonRecomp functions[] entry, size 0x40",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x40",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 16
+   }
+  },
+  {
+   "name": "function@0x82854078",
+   "kind": "config_function",
+   "ssa": "0x82854078",
+   "what": "XenonRecomp functions[] entry, size 0xE8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xE8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x828793E0",
+   "kind": "config_function",
+   "ssa": "0x828793E0",
+   "what": "XenonRecomp functions[] entry, size 0x104",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x104",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82879560",
+   "kind": "config_function",
+   "ssa": "0x82879560",
+   "what": "XenonRecomp functions[] entry, size 0x150",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x150",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x828796B0",
+   "kind": "config_function",
+   "ssa": "0x828796B0",
+   "what": "XenonRecomp functions[] entry, size 0xC0",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xC0",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82879770",
+   "kind": "config_function",
+   "ssa": "0x82879770",
+   "what": "XenonRecomp functions[] entry, size 0x9C",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x9C",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x828A3D08",
+   "kind": "config_function",
+   "ssa": "0x828A3D08",
+   "what": "XenonRecomp functions[] entry, size 0x304",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0x304",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82958798",
+   "kind": "config_function",
+   "ssa": "0x82958798",
+   "what": "XenonRecomp functions[] entry, size 0xE8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xE8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "function@0x82959C30",
+   "kind": "config_function",
+   "ssa": "0x82959C30",
+   "what": "XenonRecomp functions[] entry, size 0xE8",
+   "why": "non-.pdata function the analyzer can't size (mostly regenerated by tools/find_switch_tables.py)",
+   "files": [
+    "config/SSA.toml"
+   ],
+   "scope": "ssa",
+   "size": "0xE8",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DResource_Release",
+   "kind": "symbol",
+   "ssa": "0x82296948",
+   "what": "atomic --refcount at +4, destroys at 0; 97 callers",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetPixelShader",
+   "kind": "symbol",
+   "ssa": "0x82290250",
+   "what": "stores r4 at device+0x328C; clears PS-constant dirty bits (device+0x8); shader flush 0x822A5E08 IM_LOADs +0x328C with type 1 (pixel). Was mislabelled VS",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetVertexShader",
+   "kind": "symbol",
+   "ssa": "0x822905F8",
+   "what": "stores r4 at device+0x3290; object has 0x368-byte VS header (CreateVertexShader 0x82290508); clears VS-constant dirty bits (device+0x0). Was mislabelled PS",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_InitializeRingBuffer",
+   "kind": "symbol",
+   "ssa": "0x822A4210",
+   "what": "calls VdInitializeRingBuffer, VdEnableRingBufferRPtrWriteBack; emits INDIRECT_BUFFER",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3D_SetDisplayMode",
+   "kind": "symbol",
+   "ssa": "0x822B21B0",
+   "what": "only caller of VdSetDisplayMode",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3D_InitializeEngines",
+   "kind": "symbol",
+   "ssa": "0x822B2348",
+   "what": "only caller of VdInitializeEngines, VdSetGraphicsInterruptCallback",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3D_GraphicsInterrupt",
+   "kind": "symbol",
+   "ssa": "0x822A4000",
+   "what": "registered via VdSetGraphicsInterruptCallback; source 1 calls info+16(info+20), source 0 handles vblank",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "Direct3D_CreateDevice",
+   "kind": "symbol",
+   "ssa": "0x822A09F0",
+   "what": "allocs 0x5F80-byte device (128-aligned), stores it via r6; NGL global device ptr 0x82BB4F94",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetStateToDefaults",
+   "kind": "symbol",
+   "ssa": "0x822B1AB8",
+   "what": "walks RS table 0x82A426C0 {Get,Set,Default}x101 and SS table 0x82A42B80 x20, copies Set/Get ptrs to device+0x40/+0x224/+0x1D4/+0x3B8",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_DrawVerticesUP",
+   "kind": "symbol",
+   "ssa": "0x8229AD10",
+   "what": "BeginVertices + memcpy + inline EndVertices",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 18
+   }
+  },
+  {
+   "name": "D3DDevice_DrawTessellatedVertices?",
+   "kind": "symbol",
+   "ssa": "0x8229B5E8",
+   "what": "uncertain: draw writing VGT_OUTPUT_PATH_CNTL/VGT_GROUP_* (+0x2974,+0x2988..); caller 0x8262B3D0",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_DrawIndexedTessellatedVertices?",
+   "kind": "symbol",
+   "ssa": "0x8229BA88",
+   "what": "uncertain: as above with index buffer; caller 0x8262B430",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetVertexShaderConstantF",
+   "kind": "symbol",
+   "ssa": "0x8228FDB8",
+   "what": "(dev, start, data, vec4Count, dirtyMask): copies to dev+0x780+16*start, dev+0x0 |= mask",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetPixelShaderConstantF",
+   "kind": "symbol",
+   "ssa": "0x8228FE90",
+   "what": "dev+0x1780+16*start, dev+0x8 |= mask",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetVertexShaderConstantB",
+   "kind": "symbol",
+   "ssa": "0x8228FF68",
+   "what": "bits at dev+0x2780, dev+0x20 |= 1<<56",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 24
+   }
+  },
+  {
+   "name": "D3DDevice_SetPixelShaderConstantB",
+   "kind": "symbol",
+   "ssa": "0x8228FFC8",
+   "what": "bits at dev+0x2790",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 24
+   }
+  },
+  {
+   "name": "D3DDevice_SetVertexShaderConstantI",
+   "kind": "symbol",
+   "ssa": "0x82290028",
+   "what": "loop consts at dev+0x27A0+4*i",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 22
+   }
+  },
+  {
+   "name": "D3DDevice_SetPixelShaderConstantI?",
+   "kind": "symbol",
+   "ssa": "0x82290080",
+   "what": "sibling of 0x82290028 (unverified offset)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 22
+   }
+  },
+  {
+   "name": "XGGetMicrocodeShaderParts",
+   "kind": "symbol",
+   "ssa": "0x822900D8",
+   "what": "(pFunction, parts): cached part = header, physical part at +0x28 or +0x368",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 20
+   }
+  },
+  {
+   "name": "D3DVertexShader_Init",
+   "kind": "symbol",
+   "ssa": "0x82290410",
+   "what": "resets VS bind slots",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_CreateVertexDeclaration",
+   "kind": "symbol",
+   "ssa": "0x82290908",
+   "what": "elements (12 bytes, end 0xFF); object 0x38+12n, Common 0x00100005",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DVertexDeclaration_Init",
+   "kind": "symbol",
+   "ssa": "0x82290818",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetFVF",
+   "kind": "symbol",
+   "ssa": "0x822907C8",
+   "what": "stores FVF at +0x3188, derives declaration -> +0x2F58 (current vertex declaration), dirty +0x10 bit 19",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 20
+   }
+  },
+  {
+   "name": "D3DDevice_SetShaderGPRAllocation",
+   "kind": "symbol",
+   "ssa": "0x82290988",
+   "what": "(dev, flags, vsGPRs, psGPRs), runs 3 indirect buffers; ListSendModule sets 32/96",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetTexture",
+   "kind": "symbol",
+   "ssa": "0x8229E100",
+   "what": "(dev, sampler, tex, dirtyMask): tex fetch const (+0x1C..+0x30) merged into dev+0x480+0x18*s, ptr at +0x31F8+4s",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetStreamSource",
+   "kind": "symbol",
+   "ssa": "0x82299E98",
+   "what": "(dev, stream, vb, offset, stride, dirtyMask): vfetch const 95-s at dev+0x778-8s, ptr +0x31A4+4s, stride byte +0x31E8+s",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetIndices",
+   "kind": "symbol",
+   "ssa": "0x82299FB8",
+   "what": "ptr at +0x318C",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderTarget",
+   "kind": "symbol",
+   "ssa": "0x8229A048",
+   "what": "(dev, idx, surf): +0x3190+4i, copies surf+0x1C to RB_COLOR_INFO shadow (+0x2884/+0x288C..)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetDepthStencilSurface",
+   "kind": "symbol",
+   "ssa": "0x8229A3D8",
+   "what": "+0x31A0, RB_DEPTH_INFO shadow +0x2888",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_UpdateSurfaceInfo?",
+   "kind": "symbol",
+   "ssa": "0x82297430",
+   "what": "RB_SURFACE_INFO/PA_SC_AA_CONFIG from surface, resets scissor+viewport (called by SetRT/SetDS)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetViewport",
+   "kind": "symbol",
+   "ssa": "0x82299E18",
+   "what": "D3DVIEWPORT9 ints -> SetViewportF",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetViewportF",
+   "kind": "symbol",
+   "ssa": "0x822977B0",
+   "what": "floats f1..f6; viewport at +0x3260..+0x3274, PA_CL_VPORT_* shadows +0x2908..+0x291C",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetScissorRect",
+   "kind": "symbol",
+   "ssa": "0x82299D20",
+   "what": "rect at +0x327C..+0x3288, clipped with viewport, calls 0x822974C0",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_WriteWindowScissor",
+   "kind": "symbol",
+   "ssa": "0x822974C0",
+   "what": "writes PA_SC_WINDOW_OFFSET/SCISSOR (0x2080..0x2082) DIRECTLY into the ring (per tile when tiling)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetPredication",
+   "kind": "symbol",
+   "ssa": "0x822AE608",
+   "what": "(dev, mask) tile predication (SET_BIN_MASK/SELECT)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_BeginTiling",
+   "kind": "symbol",
+   "ssa": "0x822AE778",
+   "what": "predicated tiling; tile rects +0x32CC.., count +0x32C4; caller 0x8262D3E8",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_EndTiling",
+   "kind": "symbol",
+   "ssa": "0x822AEAD0",
+   "what": "resolves every tile via Resolve; caller 0x8262D608",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_BeginZPass?",
+   "kind": "symbol",
+   "ssa": "0x822AEF88",
+   "what": "uncertain; from nglSceneTraverse",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_EndZPass?",
+   "kind": "symbol",
+   "ssa": "0x822AF218",
+   "what": "uncertain; builds fixup list +0x34B0 used by predicated draws",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_BeginConditionalSurvey?",
+   "kind": "symbol",
+   "ssa": "0x8229E290",
+   "what": "uncertain: VIZ_QUERY packet, PA_SC_VIZ_QUERY (+0x29B0)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_EndConditionalSurvey?",
+   "kind": "symbol",
+   "ssa": "0x8229E360",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_BeginConditionalRendering?",
+   "kind": "symbol",
+   "ssa": "0x8229E440",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_EndConditionalRendering?",
+   "kind": "symbol",
+   "ssa": "0x8229E5E8",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_FlushShaders",
+   "kind": "symbol",
+   "ssa": "0x822A5E08",
+   "what": "dirty +0x10 bits 17-20: links VS/PS, IM_LOAD microcode (type 0 VS / 1 PS), SQ_PROGRAM_CNTL",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_WriteDirtyRegisters",
+   "kind": "symbol",
+   "ssa": "0x822A4C50",
+   "what": "(dev, mask<<, firstReg, shadowPtr): type-0 packets for set bits (bit63 = firstReg)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_WriteDirtyAluConstants",
+   "kind": "symbol",
+   "ssa": "0x822A4FE8",
+   "what": "1 mask bit = 4 vec4 constants",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_WriteDirtyFetchConstants",
+   "kind": "symbol",
+   "ssa": "0x822A4E90",
+   "what": "bit63 = fetch slot 0, 6 dwords from dev+0x480",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_FlushHiZ?",
+   "kind": "symbol",
+   "ssa": "0x822A48B8",
+   "what": "called when dirty+0x10 & dirty+0x28",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_MakeSpaceForRegisters",
+   "kind": "symbol",
+   "ssa": "0x822A4608",
+   "what": "ring overflow path of the writers",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_ReserveCommandSpace?",
+   "kind": "symbol",
+   "ssa": "0x822A25E8",
+   "what": "19 callers",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "D3DDevice_AllocateTransient?",
+   "kind": "symbol",
+   "ssa": "0x822A2BD8",
+   "what": "used by BeginVertices",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DResource_LockInternal",
+   "kind": "symbol",
+   "ssa": "0x822963B8",
+   "what": "blocks on resource fence, ++lock count (Common bits 8-11), CPU cache coherency packets",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DResource_UnlockInternal",
+   "kind": "symbol",
+   "ssa": "0x822966B8",
+   "what": "dcbst ranges BaseFlush(+0x14)/MipFlush(+0x18), --lock count",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DResource_AddRef",
+   "kind": "symbol",
+   "ssa": "0x822968D0",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "D3DResource_GetDevice",
+   "kind": "symbol",
+   "ssa": "0x822969C8",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "D3DResource_GetType",
+   "kind": "symbol",
+   "ssa": "0x82296A40",
+   "what": "3 tex, 0x11 vol, 0x12 cube, 0x13 array, 0x14 line, 0x10 volume",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DTexture_GetLevelDesc",
+   "kind": "symbol",
+   "ssa": "0x8229CCB0",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DVolumeTexture_GetLevelDesc",
+   "kind": "symbol",
+   "ssa": "0x8229CDB0",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DTexture_LockRect",
+   "kind": "symbol",
+   "ssa": "0x8229D3F0",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DVolumeTexture_LockBox",
+   "kind": "symbol",
+   "ssa": "0x8229D480",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DSurface_GetDesc",
+   "kind": "symbol",
+   "ssa": "0x8229DFC8",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DSurface_LockRect",
+   "kind": "symbol",
+   "ssa": "0x8229E060",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 8
+   }
+  },
+  {
+   "name": "D3DSurface_UnlockRect",
+   "kind": "symbol",
+   "ssa": "0x8229E080",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 6
+   }
+  },
+  {
+   "name": "D3DBaseTexture_GetLevelCount",
+   "kind": "symbol",
+   "ssa": "0x8229DA90",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "D3DDevice_UnbindAll?",
+   "kind": "symbol",
+   "ssa": "0x822A0C50",
+   "what": "sets RT/DS/shaders/streams/textures/indices to NULL",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_CaptureStateBlock?",
+   "kind": "symbol",
+   "ssa": "0x822A86C8",
+   "what": "uncertain (caller 0x82850698)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DStateBlock_Apply?",
+   "kind": "symbol",
+   "ssa": "0x822A8A40",
+   "what": "uncertain",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_FrameEnd?",
+   "kind": "symbol",
+   "ssa": "0x822A9088",
+   "what": "uncertain; ListSendModule before Swap",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetGammaRamp?",
+   "kind": "symbol",
+   "ssa": "0x8229A6B0",
+   "what": "uncertain (+0x425C, +0x5EAC)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 64
+   }
+  },
+  {
+   "name": "XGraphics_ShaderAssembler?",
+   "kind": "symbol",
+   "ssa": "0x82291448",
+   "what": "0x82291448-0x82296028 runtime microcode assembler (ctx stride 0x26D0); D3DX HLSL compiler \"2.0.20500.0\" lives at 0x822F..0x823F",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_ZENABLE",
+   "kind": "symbol",
+   "ssa": "0x82298148",
+   "what": "RB_DEPTHCONTROL shadow +0x2934 (reg 0x2200)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 14
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_CULLMODE",
+   "kind": "symbol",
+   "ssa": "0x82297A10",
+   "what": "PA_SU_SC_MODE_CNTL +0x2948 (0x2205)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 8
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_ALPHABLENDENABLE",
+   "kind": "symbol",
+   "ssa": "0x82297AA8",
+   "what": "RB_BLENDCONTROL0..3 +0x2938/+0x2958..+0x2960",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_SRCBLEND",
+   "kind": "symbol",
+   "ssa": "0x82297BC8",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_DESTBLEND",
+   "kind": "symbol",
+   "ssa": "0x82297C58",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_ALPHATESTENABLE",
+   "kind": "symbol",
+   "ssa": "0x82297A70",
+   "what": "RB_COLORCONTROL +0x293C (0x2202)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 10
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_ALPHAREF",
+   "kind": "symbol",
+   "ssa": "0x82297ED0",
+   "what": "RB_ALPHA_REF +0x2904 (0x210E)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 14
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_COLORWRITEENABLE",
+   "kind": "symbol",
+   "ssa": "0x82298700",
+   "what": "RB_COLOR_MASK +0x28DC (0x2104)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 14
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_SCISSORTESTENABLE",
+   "kind": "symbol",
+   "ssa": "0x82298520",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "D3DDevice_SetRenderState_PRESENTINTERVAL",
+   "kind": "symbol",
+   "ssa": "0x822992C0",
+   "what": "+0x3630",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "nglInit",
+   "kind": "symbol",
+   "ssa": "0x826324D0",
+   "what": "CreateDevice(1,1,&pp 0x82B94E98,&0x82BB4F94)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "nglPresent",
+   "kind": "symbol",
+   "ssa": "0x8262D690",
+   "what": "Swap(dev, frontBufferTex+0x14), double-buffered front textures 0x82C54698/0x82C54720",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "nglResolveTiles",
+   "kind": "symbol",
+   "ssa": "0x8262D540",
+   "what": "per tile: SetPredication(3<<2i) + Resolve",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "ngl_WriteStencilRefDirect",
+   "kind": "symbol",
+   "ssa": "0x8213BBB8",
+   "what": "writes type-0 RB_STENCILREFMASK (0x210D) straight into the ring: bypasses the shadow",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "ngl_FlushHiZDirect?",
+   "kind": "symbol",
+   "ssa": "0x82893F10",
+   "what": "EVENT_WRITE 0xF straight into the ring + RB_HIZCONTROL shadow bit",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "ngl_DrawQuadUP",
+   "kind": "symbol",
+   "ssa": "0x8228B3E8",
+   "what": "inline SetVertexDeclaration (+0x2F58) + BeginVertices(QUADLIST)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "ngl_UnbindStream",
+   "kind": "symbol",
+   "ssa": "0x82289248",
+   "what": "SetStreamSource(NULL) + inline decl NULL",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "ListSendModule",
+   "kind": "symbol",
+   "ssa": "0x826320C8",
+   "what": "job module \"ListSendModule\": kicks D3D, inserts callback 0x826319B8, traverses the submitted frame",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "nglListBeginScene",
+   "kind": "symbol",
+   "ssa": "0x82633FD8",
+   "what": "allocates a scene, links it under the current one (0x82BB4F44) or as next root (0x82BB4F48)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "nglInitScene",
+   "kind": "symbol",
+   "ssa": "0x82633E78",
+   "what": "clears the scene, render list (+0x348) = 0",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "nglListSend",
+   "kind": "symbol",
+   "ssa": "0x829075F8",
+   "what": "frame submit: waits for the previous ListSendModule, root = next root, queues the job; string \"nglListSend called while...\"",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "GameMaster_IntroMovies",
+   "kind": "symbol",
+   "ssa": "0x827F5E80",
+   "what": "main-thread loop over the 4 intro movies (legal, atvilogo, xpeclogo, tfb)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "JobWorker_Loop",
+   "kind": "symbol",
+   "ssa": "0x82635CF8",
+   "what": "\"JQ Worker\" thread body",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "JobGroup_Wait",
+   "kind": "symbol",
+   "ssa": "0x826360F8",
+   "what": "executes pending jobs on the caller while the group counters are non-zero",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "RecursiveSpinLock_Acquire",
+   "kind": "symbol",
+   "ssa": "0x8213EFB0",
+   "what": "owner = GetCurrentThreadId, ldarx/stdcx on *(lock+12)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "GetTickCount",
+   "kind": "symbol",
+   "ssa": "0x822DF0D0",
+   "what": "KeTimeStampBundle->TickCount",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "GetCurrentThreadId",
+   "kind": "symbol",
+   "ssa": "0x822DCD50",
+   "what": "KTHREAD+0x14C",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "BinkWait",
+   "kind": "symbol",
+   "ssa": "0x829EA3F0",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "BinkShouldSkip",
+   "kind": "symbol",
+   "ssa": "0x829EA388",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 26
+   }
+  },
+  {
+   "name": "BinkNextFrame",
+   "kind": "symbol",
+   "ssa": "0x829EDD00",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "RADTimerRead",
+   "kind": "symbol",
+   "ssa": "0x829EEF90",
+   "what": "ms timer on GetTickCount",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 24
+   }
+  },
+  {
+   "name": "Game_InitSound",
+   "kind": "symbol",
+   "ssa": "0x82865448",
+   "what": "MemoryMgr, StreamMgr, low-level IO, then AK::SoundEngine::Init",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "AK_SoundEngine_Init",
+   "kind": "symbol",
+   "ssa": "0x825852C0",
+   "what": "",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "XAudio2_RenderDriverCallback",
+   "kind": "symbol",
+   "ssa": "0x82522E80",
+   "what": "registered via XAudioRegisterRenderDriverClient (wrapper 0x82523060 dereferences the context cell)",
+   "why": "identified function (tools/ppcinfo.py, docs)",
+   "files": [
+    "config/SSA_symbols.txt"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "Ultrawide_DisplayAspect",
+   "kind": "hooked",
+   "ssa": "0x827F56A0",
+   "what": "divides the video mode's width by its height into the display aspect global (0x82BB45EC) that every camera reads",
+   "why": "ultrawide: the global is set to the window's aspect after the call (Hor+ camera)",
+   "files": [
+    "engines/lux/ultrawide.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 48
+   }
+  },
+  {
+   "name": "Ultrawide_CreateTexture",
+   "kind": "hooked",
+   "ssa": "0x829611D8",
+   "what": "texture creation (r5 width, r6 height); the scene is 1120x704, half 560x352, quarter 280x176 / 288x176, eighth 144x96",
+   "why": "ultrawide: the scene's targets are made as wide as the window",
+   "files": [
+    "engines/lux/ultrawide.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 48
+   }
+  },
+  {
+   "name": "Ultrawide_TextureHeader",
+   "kind": "hooked",
+   "ssa": "0x823B38E0",
+   "what": "texture header setup (r3 width, r4 height); the 1120x704 header made by sub_82929EE8 (call returns to 0x82929FCC)",
+   "why": "ultrawide: that header gets the wide scene width",
+   "files": [
+    "engines/lux/ultrawide.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 48
+   }
+  },
+  {
+   "name": "Ultrawide_LightManagerSetup",
+   "kind": "hooked",
+   "ssa": "0x828924B8",
+   "what": "sun light manager: scene size +488/+492, 32-pixel tile grid +496/+500",
+   "why": "ultrawide: width and columns set after the call",
+   "files": [
+    "engines/lux/ultrawide.cpp"
+   ],
+   "scope": "lux",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 48
+   }
+  }
+ ]
+}

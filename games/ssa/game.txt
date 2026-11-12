@@ -1,0 +1,18 @@
+# What the player kit's Arkeyan-Builder knows about this game (tools/make_kit.sh copies it to config/ssa/game.txt). No game data:
+# the hashes identify the player's own default.xex and must be the ones games/ssa/info.cpp accepts.
+id=ssa
+name=Skylanders Spyro's Adventure
+runtime=Skylanders Spyro's Adventure
+# The game's own version (1.0 = the game at 100 %): each fix bumps the last number. The kit carries it (kit.txt game_version.<id>),
+# the release says it (games.json), Skylauncher offers UPDATE when its release has a higher one.
+version=0.9.12
+toml=SSA.toml
+xex_sha256=e195f5130c1e23fb4654baf7c383ef97d02c89aeb7d4389705ae31235646ef7b
+# The releases' loaded images (decrypted, decompressed; same order as xex_sha256), labels and title ID: a disc of
+# another edition with one of these images runs the same code (docs/tools/edition_finder.md).
+image_sha256=f53c42d4e3575f56d39ffa2428bcf86923b7dd80e5b59927b86cf070b33b4c62
+releases=USA, Europe
+title_id=415608AB
+# Shaders: shaders.lsa and effects.lsa on the disc, plus the loaded default.xex image.
+shaders=lsa
+movie_shaders=3

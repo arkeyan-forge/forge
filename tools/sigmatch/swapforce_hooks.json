@@ -1,0 +1,679 @@
+{
+ "description": "Writes a ported game's hook inventory as a sigmatch hooks file, to find that game's hooks in a later Alchemy game.",
+ "entries": [
+  {
+   "name": "D3DDevice_NextRingSegment",
+   "kind": "hook",
+   "ssa": "0x82F58760",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_KickOff",
+   "kind": "hook",
+   "ssa": "0x82F59840",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_BlockOnFence",
+   "kind": "hook",
+   "ssa": "0x82F58460",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 52
+   }
+  },
+  {
+   "name": "D3DDevice_InsertCallback",
+   "kind": "hook",
+   "ssa": "0x82F58EF0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_DrawVertices",
+   "kind": "hook",
+   "ssa": "0x82F651B8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_DrawIndexedVertices",
+   "kind": "hook",
+   "ssa": "0x82F655D0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_Resolve",
+   "kind": "hook",
+   "ssa": "0x82F64AB0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 20
+   }
+  },
+  {
+   "name": "D3DDevice_ClearF_Worker",
+   "kind": "hook",
+   "ssa": "0x82F626B0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_Swap",
+   "kind": "hook",
+   "ssa": "0x82F5D018",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DVertexShader_Init",
+   "kind": "hook",
+   "ssa": "0x82F527F8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 62
+   }
+  },
+  {
+   "name": "D3DPixelShader_Init",
+   "kind": "hook",
+   "ssa": "0x82F51A10",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 14
+   }
+  },
+  {
+   "name": "Xma1_Init",
+   "kind": "hook",
+   "ssa": "0x82FAB058",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 6
+   }
+  },
+  {
+   "name": "Xma2_Init",
+   "kind": "hook",
+   "ssa": "0x82F9FA20",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 6
+   }
+  },
+  {
+   "name": "Xma1_VoiceClear",
+   "kind": "hook",
+   "ssa": "0x82FAB0B8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma1_VoiceKick",
+   "kind": "hook",
+   "ssa": "0x82FABA50",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma2_VoiceClear",
+   "kind": "hook",
+   "ssa": "0x82F9FAF0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 50
+   }
+  },
+  {
+   "name": "Xma2_VoiceLock",
+   "kind": "hook",
+   "ssa": "0x82F9FCF0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 38
+   }
+  },
+  {
+   "name": "Xma2_VoiceKick",
+   "kind": "hook",
+   "ssa": "0x82F9FED8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma1_LockAll",
+   "kind": "hook",
+   "ssa": "0x82FAB8E0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "LzmaDec_DecodeReal",
+   "kind": "hook",
+   "ssa": "0x82476EF8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "BinkOpen",
+   "kind": "hook",
+   "ssa": "0x83083260",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 38
+   }
+  },
+  {
+   "name": "BinkClose",
+   "kind": "hook",
+   "ssa": "0x83084128",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Zone_IndexByName",
+   "kind": "hook",
+   "ssa": "0x829EA688",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 48
+   }
+  },
+  {
+   "name": "SaveTask_Poll",
+   "kind": "hook",
+   "ssa": "0x829CF1C0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 22
+   }
+  },
+  {
+   "name": "SwapWait_Status",
+   "kind": "hook",
+   "ssa": "0x82F5CB30",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 10
+   }
+  },
+  {
+   "name": "NightmareUnlocked",
+   "kind": "hook",
+   "ssa": "0x829CC788",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 26
+   }
+  },
+  {
+   "name": "FallCheck",
+   "kind": "hook",
+   "ssa": "0x82A4A828",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Language_Get",
+   "kind": "hook",
+   "ssa": "0x823EFC68",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Language_SoundPak",
+   "kind": "hook",
+   "ssa": "0x825F5B48",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Movie_Open",
+   "kind": "hook",
+   "ssa": "0x825A71D0",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "String_Intern",
+   "kind": "hook",
+   "ssa": "0x823EC0D8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Font_CharMetrics",
+   "kind": "hook",
+   "ssa": "0x82553E48",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Ultrawide_ScenePass",
+   "kind": "hook",
+   "ssa": "0x8258EBE8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Ultrawide_WorldCamera",
+   "kind": "hook",
+   "ssa": "0x82B992A8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Scene_Tiles",
+   "kind": "hook",
+   "ssa": "0x825138F8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Scene_SurfaceTiles",
+   "kind": "hook",
+   "ssa": "0x82516EB8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Engine1CriticalSection",
+   "kind": "data",
+   "ssa": "0x831106E4",
+   "what": "games/swapforce/addresses.h",
+   "scope": "xbox",
+   "ref": {
+    "function": "0x82FAB8E0",
+    "lis_offset": 16,
+    "pair_distance": 1,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "NameTable",
+   "kind": "data",
+   "ssa": "0x831379A8",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "ref": {
+    "function": "0x82954BA0",
+    "lis_offset": 36,
+    "pair_distance": 2,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 30
+   }
+  },
+  {
+   "name": "GameInstance",
+   "kind": "data",
+   "ssa": "0x83209B18",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "ref": {
+    "function": "0x829B05A8",
+    "lis_offset": 52,
+    "pair_distance": 1,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 60
+   }
+  },
+  {
+   "name": "SaveTaskDone",
+   "kind": "data",
+   "ssa": "0x8320ABC1",
+   "what": "games/swapforce/addresses.h",
+   "scope": "alchemy",
+   "ref": {
+    "function": "0x829CAA90",
+    "lis_offset": 32,
+    "pair_distance": 3,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 16
+   }
+  },
+  {
+   "name": "restgprlr_14_address",
+   "kind": "config",
+   "ssa": "0x82FF2D50",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savegprlr_14_address",
+   "kind": "config",
+   "ssa": "0x82FF2D00",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restfpr_14_address",
+   "kind": "config",
+   "ssa": "0x82FF401C",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savefpr_14_address",
+   "kind": "config",
+   "ssa": "0x82FF3FD0",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restvmx_14_address",
+   "kind": "config",
+   "ssa": "0x82FFB578",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savevmx_14_address",
+   "kind": "config",
+   "ssa": "0x82FFB2E0",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restvmx_64_address",
+   "kind": "config",
+   "ssa": "0x82FFB60C",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savevmx_64_address",
+   "kind": "config",
+   "ssa": "0x82FFB374",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "longjmp_address",
+   "kind": "config",
+   "ssa": "0x82FFAE90",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "setjmp_address",
+   "kind": "config",
+   "ssa": "0x82FFC090",
+   "what": "games/swapforce/config",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  }
+ ]
+}

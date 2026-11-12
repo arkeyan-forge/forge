@@ -1,0 +1,36 @@
+# Game files and anything derived from them: never commit.
+/private/
+/build/
+/build-*/
+/dist/
+.DS_Store
+/.cache/
+
+# Local data (discs, derived data, work clones)
+office/discs/*
+!office/discs/.gitkeep
+office/games/*/private/
+office/work/*
+!office/work/.gitkeep
+
+# Launcher artifacts (screenshots are written to private/ keep ignored)
+private/launcher-shots/
+private/launcher-home/
+
+# Anywhere in the tree: disc images, game files, figure dumps, packages, signing material, runtime output.
+*.iso
+*.xex
+*.sky
+*.bin
+*.dmp
+*.msix
+*.appx
+*.cer
+*.pfx
+*.p12
+*.pem
+*.key
+*.log
+pipelines.bin
+portal.txt
+launcher.ini

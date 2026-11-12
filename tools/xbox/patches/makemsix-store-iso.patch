@@ -1,0 +1,12 @@
+diff --git a/src/msix/pack/ContentType.cpp b/src/msix/pack/ContentType.cpp
+index eaac6c8e..4fb943f7 100644
+--- a/src/msix/pack/ContentType.cpp
++++ b/src/msix/pack/ContentType.cpp
+@@ -28,6 +28,7 @@ namespace MSIX {
+             { "dtd",   ContentType("application/xml-dtd", APPX_COMPRESSION_OPTION_NORMAL) },
+             { "exe",   ContentType("application/x-msdownload", APPX_COMPRESSION_OPTION_NORMAL) },
+             { "gz",    ContentType("application/x-gzip-compressed", APPX_COMPRESSION_OPTION_NONE) },
++            { "iso",   ContentType("application/x-iso9660-image", APPX_COMPRESSION_OPTION_NONE) },
+             { "java",  ContentType("application/java", APPX_COMPRESSION_OPTION_NORMAL) },
+             { "json",  ContentType("application/json", APPX_COMPRESSION_OPTION_NORMAL) },
+             { "p7s",   ContentType("application/x-pkcs7-signature", APPX_COMPRESSION_OPTION_NORMAL) },

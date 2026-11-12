@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# No sign-off lines, a short subject.
+msg="$1"
+grep -qiE '^(co-author|signed-off-by|generated with)' "$msg" \
+    && { echo "commit-msg: sign-off lines are not allowed" >&2; exit 1; }
+subject=$(head -1 "$msg")
+[ ${#subject} -le 72 ] || { echo "commit-msg: subject over 72 characters" >&2; exit 1; }
+exit 0

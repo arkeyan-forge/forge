@@ -1,0 +1,68 @@
+Skylanders player kit (@PLATFORM@)
+==================================
+
+This kit builds Skylanders Spyro's Adventure, Giants, Swap Force, Trap Team, SuperChargers and Imaginators (all Xbox 360), on your own machine from your own disc image; Arkeyan-Builder recognises which game the disc is. It contains no game code and no game file: the game's code and shaders are translated from
+your disc here, and the result is for your own use only. Never share the built game or its work folder.
+
+Normally Arkeyan Launcher runs Arkeyan-Builder for you. By hand:
+
+    Arkeyan-Builder --iso <your disc .iso> --out <game folder> [--jobs N] [--toolchain <folder>]
+
+It prints one event per line (@step, @progress, @log, @error, @done) and ends with "@done <path of the game>".
+A second run only redoes what changed. Work files stay in <game folder>/arkeyan-work (existing ssabuild-work folders are reused in place; about 2-3 GB; delete it
+once the game runs if you need the space, the next build will then start over).
+
+Windows 10 (1903 or later) or 11, x64:
+- if SmartScreen warns about the launcher or Arkeyan-Builder: More info, then Run anyway;
+- internet for the first build: Arkeyan-Builder downloads the llvm-mingw 20260922 compiler (190 MB, from
+  github.com/mstorsjo/llvm-mingw, checked against its SHA-256) into %APPDATA%\Skylanders\toolchains
+  (about 750 MB once extracted); Arkeyan-Builder downloads and unpacks it itself, no other program is started for that;
+- about 5 GB free next to the game folder, 8 GB of RAM or more;
+- the first build takes 15-45 minutes depending on the CPU;
+- a GPU with a Vulkan 1.2 driver (any recent NVIDIA, AMD or Intel driver), else Direct3D 12;
+- an Xbox 360 portal needs Windows' own WinUSB driver, once (nothing to download): Device Manager, right-click the portal
+  ("Spyro Portal", or an unknown device), Update driver, Browse my computer, Let me pick, Universal Serial Bus devices,
+  WinUsb Device, then unplug it and plug it in again. An Xbox One portal needs nothing;
+- a Wii, PlayStation or PC portal works on Windows' own driver or on WinUSB; on libusbK or libusb0 (Zadig), the launcher's
+  portal Test shows the way back (Device Manager, Uninstall device with "Attempt to remove the driver for this device",
+  then if it comes back: pnputil /enum-drivers and pnputil /delete-driver oemNN.inf /uninstall /force, as administrator).
+
+macOS (Apple silicon): Xcode with its Metal toolchain (xcodebuild -downloadComponent MetalToolchain on Xcode 26+).
+The launcher and Arkeyan-Builder are not notarized: on macOS 15 or later, the first time, try to open it, then
+System Settings > Privacy & Security > Open Anyway.
+
+Linux, x86_64 (Ubuntu 22.04 or later, Fedora, Arch, SteamOS 3.5 or later on the Steam Deck; glibc 2.34 or later):
+- no root and no development package: Arkeyan-Builder downloads the zig 0.17.0 compiler (55 MB, from ziglang.org, checked
+  against its SHA-256) into ~/.local/share/Skylanders/toolchains (about 410 MB once extracted, plus about 100 MB the first
+  build adds there) with curl (or wget), tar and xz, which every desktop has; the shader compiler (dxc) needs
+  libstdc++ (GCC 11 or later) and zlib, also on every desktop;
+- about 6 GB free next to the game folder, 8 GB of RAM or more; the first build takes 15-45 minutes;
+- to play: a Vulkan driver (Mesa or NVIDIA; libvulkan.so.1), X11 or Wayland and PipeWire, PulseAudio or ALSA;
+- the portal: /dev/hidraw* and /dev/bus/usb/* belong to root, so the portal needs udev rules once (it is the only
+  step that needs sudo; on the Steam Deck, set a password with passwd first). The first line is for the Wii, Wii U,
+  PlayStation and PC portals, the other two for the Xbox 360 and Xbox One portals (1430:1F17, 1430:09AA). In a terminal:
+
+    printf '%s\n' 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1430", ATTRS{idProduct}=="0150", MODE="0660", TAG+="uaccess"' 'SUBSYSTEM=="usb", ATTRS{idVendor}=="1430", MODE="0660", TAG+="uaccess"' 'SUBSYSTEM=="usb", ATTRS{idVendor}=="24c6", ATTRS{idProduct}=="fa00", MODE="0660", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-skylanders-portal.rules
+    sudo udevadm control --reload-rules && sudo udevadm trigger
+
+  then unplug the portal and plug it in again. Without them the game's log says "Linux needs this udev rule". An Xbox
+  portal also needs libusb-1.0 (the libusb-1.0-0 package; most desktops have it).
+
+In this kit:
+- Arkeyan-Builder: the build driver; bin/XenonRecomp and bin/XenosRecomp: the code and shader translators (separate
+  programs); dxc (DirectX Shader Compiler) next to XenosRecomp (libdxcompiler.so on Linux);
+- lib/, include/, commands/: the prebuilt runtime (everything but the game code) and how to compile and link against it;
+- config/: XenonRecomp's settings for this game; res/: fonts and notices copied next to the game;
+- licenses/: LICENSE, THIRD_PARTY_NOTICES.md, and the source of the (L)GPL parts shipped as binaries: XenonRecomp
+  (its PowerPC disassembler is GPL-2.0-or-later) and FFmpeg 8.1.2 (LGPL-2.1-or-later, also linked into Arkeyan-Builder
+  for disc menu music; ffmpeg-build.sh is how the libraries were configured);
+- relink/: Arkeyan-Builder objects, libraries and its link recipe for replacing FFmpeg; see relink/README.txt.
+
+---
+FR : ce kit construit le jeu sur votre machine à partir de votre propre ISO. Il ne contient rien du jeu.
+Arkeyan Launcher lance Arkeyan-Builder tout seul ; à la main : Arkeyan-Builder --iso <ISO> --out <dossier du jeu>.
+Windows : il faut Internet au premier lancement (téléchargement du compilateur, 190 Mo), ~5 Go libres, et
+15 à 45 min pour la première construction. Linux : le compilateur zig (55 Mo) est téléchargé, sans sudo ;
+le portail demande une fois la règle udev ci-dessus. Ne partagez jamais le jeu construit.
+SmartScreen (Windows) : Informations complémentaires, puis Exécuter quand même. macOS 15 ou plus, la première fois :
+Réglages Système > Confidentialité et sécurité > Ouvrir quand même.

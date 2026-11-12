@@ -1,0 +1,139 @@
+# Functions identified in default.xex (no symbols available). One per line: address name  # evidence
+# Read by tools/ppcinfo.py; hooks in runtime/ reference these addresses.
+
+# Direct3D (statically linked XDK D3D9LTCG; many setters are inlined into game code)
+0x82296948 D3DResource_Release            # atomic --refcount at +4, destroys at 0; 97 callers
+0x82290250 D3DDevice_SetPixelShader       # stores r4 at device+0x328C; clears PS-constant dirty bits (device+0x8); shader flush 0x822A5E08 IM_LOADs +0x328C with type 1 (pixel). Was mislabelled VS
+0x822905F8 D3DDevice_SetVertexShader      # stores r4 at device+0x3290; object has 0x368-byte VS header (CreateVertexShader 0x82290508); clears VS-constant dirty bits (device+0x0). Was mislabelled PS
+0x822A3BB0 D3DDevice_KickOff              # submits commands, then BlockOnFence(current fence - 2)
+0x822A3CB8 D3DDevice_BlockOnFence         # spins until (device+0x2B1C - fence) >= (device+0x2B1C - *(device+0x2B10))
+0x822A4210 D3DDevice_InitializeRingBuffer # calls VdInitializeRingBuffer, VdEnableRingBufferRPtrWriteBack; emits INDIRECT_BUFFER
+0x822A95C0 D3DDevice_Swap                 # calls VdGetSystemCommandBuffer, VdSwap; emits EVENT_WRITE_SHD
+0x822B21B0 D3D_SetDisplayMode             # only caller of VdSetDisplayMode
+0x822B2348 D3D_InitializeEngines          # only caller of VdInitializeEngines, VdSetGraphicsInterruptCallback
+0x822A3DB0 D3DDevice_InsertCallback       # (device, cmdbuf, flags, callback, context): packets make the GPU fill device+0x2B14 info and raise a CP interrupt
+0x822A4000 D3D_GraphicsInterrupt          # registered via VdSetGraphicsInterruptCallback; source 1 calls info+16(info+20), source 0 handles vblank
+0x822A6BC8 D3DDevice_BeginCommandBuffer   # switches device+0x35E8.. command buffer fields to a recorded buffer (r4); unverified name
+0x822A73D8 D3DDevice_RunCommandBuffer     # merges the buffer's state masks into device+0..0x20, emits INDIRECT_BUFFER (0xC0013F00) per segment
+
+0x822A09F0 Direct3D_CreateDevice          # allocs 0x5F80-byte device (128-aligned), stores it via r6; NGL global device ptr 0x82BB4F94
+0x822B1AB8 D3DDevice_SetStateToDefaults   # walks RS table 0x82A426C0 {Get,Set,Default}x101 and SS table 0x82A42B80 x20, copies Set/Get ptrs to device+0x40/+0x224/+0x1D4/+0x3B8
+0x8229AD58 D3DDevice_DrawVertices         # (dev, primType, startVertex, vertexCount): inlined dirty flush, VGT_INDX_OFFSET + DRAW_INDX(auto) 0xC0012201
+0x8229B170 D3DDevice_DrawIndexedVertices  # (dev, primType, baseVertex, startIndex, indexCount): index buffer = device+0x318C, DRAW_INDX 0xC0032201
+0x8229A850 D3DDevice_BeginVertices        # (dev, primType, vertexCount, stride) -> ptr; allocs via 0x822A2BD8, writes vfetch const 95 + DRAW_INDX; EndVertices is inlined (device+0x30 = +0x3594)
+0x8229AD10 D3DDevice_DrawVerticesUP       # BeginVertices + memcpy + inline EndVertices
+0x8229B5E8 D3DDevice_DrawTessellatedVertices?        # uncertain: draw writing VGT_OUTPUT_PATH_CNTL/VGT_GROUP_* (+0x2974,+0x2988..); caller 0x8262B3D0
+0x8229BA88 D3DDevice_DrawIndexedTessellatedVertices? # uncertain: as above with index buffer; caller 0x8262B430
+0x8228FDB8 D3DDevice_SetVertexShaderConstantF  # (dev, start, data, vec4Count, dirtyMask): copies to dev+0x780+16*start, dev+0x0 |= mask
+0x8228FE90 D3DDevice_SetPixelShaderConstantF   # dev+0x1780+16*start, dev+0x8 |= mask
+0x8228FF68 D3DDevice_SetVertexShaderConstantB  # bits at dev+0x2780, dev+0x20 |= 1<<56
+0x8228FFC8 D3DDevice_SetPixelShaderConstantB   # bits at dev+0x2790
+0x82290028 D3DDevice_SetVertexShaderConstantI  # loop consts at dev+0x27A0+4*i
+0x82290080 D3DDevice_SetPixelShaderConstantI?  # sibling of 0x82290028 (unverified offset)
+0x822900D8 XGGetMicrocodeShaderParts      # (pFunction, parts): cached part = header, physical part at +0x28 or +0x368
+0x82290160 D3DDevice_CreatePixelShader    # type 7 object, 0x28 header + cached part; microcode in physical mem (ptr at +0x18)
+0x82290508 D3DDevice_CreateVertexShader   # type 6 object, 0x368 header (2 x 0x1A0 bind slots) + cached part; microcode ptr +0x20
+0x82290410 D3DVertexShader_Init           # resets VS bind slots
+0x82290908 D3DDevice_CreateVertexDeclaration  # elements (12 bytes, end 0xFF); object 0x38+12n, Common 0x00100005
+0x82290818 D3DVertexDeclaration_Init
+0x822907C8 D3DDevice_SetFVF               # stores FVF at +0x3188, derives declaration -> +0x2F58 (current vertex declaration), dirty +0x10 bit 19
+0x82290988 D3DDevice_SetShaderGPRAllocation  # (dev, flags, vsGPRs, psGPRs), runs 3 indirect buffers; ListSendModule sets 32/96
+0x8229E100 D3DDevice_SetTexture           # (dev, sampler, tex, dirtyMask): tex fetch const (+0x1C..+0x30) merged into dev+0x480+0x18*s, ptr at +0x31F8+4s
+0x82299E98 D3DDevice_SetStreamSource      # (dev, stream, vb, offset, stride, dirtyMask): vfetch const 95-s at dev+0x778-8s, ptr +0x31A4+4s, stride byte +0x31E8+s
+0x82299FB8 D3DDevice_SetIndices           # ptr at +0x318C
+0x8229A048 D3DDevice_SetRenderTarget      # (dev, idx, surf): +0x3190+4i, copies surf+0x1C to RB_COLOR_INFO shadow (+0x2884/+0x288C..)
+0x8229A3D8 D3DDevice_SetDepthStencilSurface  # +0x31A0, RB_DEPTH_INFO shadow +0x2888
+0x82297430 D3DDevice_UpdateSurfaceInfo?   # RB_SURFACE_INFO/PA_SC_AA_CONFIG from surface, resets scissor+viewport (called by SetRT/SetDS)
+0x82299E18 D3DDevice_SetViewport          # D3DVIEWPORT9 ints -> SetViewportF
+0x822977B0 D3DDevice_SetViewportF         # floats f1..f6; viewport at +0x3260..+0x3274, PA_CL_VPORT_* shadows +0x2908..+0x291C
+0x82299D20 D3DDevice_SetScissorRect       # rect at +0x327C..+0x3288, clipped with viewport, calls 0x822974C0
+0x822974C0 D3DDevice_WriteWindowScissor   # writes PA_SC_WINDOW_OFFSET/SCISSOR (0x2080..0x2082) DIRECTLY into the ring (per tile when tiling)
+0x822A1560 D3DDevice_Resolve              # (dev, flags, srcRect, destTex, destPoint, level, slice, clearColor, f1=clearZ, ...) RB_COPY_* shadows +0x2A18..+0x2A44
+0x822AE608 D3DDevice_SetPredication       # (dev, mask) tile predication (SET_BIN_MASK/SELECT)
+0x822AE778 D3DDevice_BeginTiling          # predicated tiling; tile rects +0x32CC.., count +0x32C4; caller 0x8262D3E8
+0x822AEAD0 D3DDevice_EndTiling            # resolves every tile via Resolve; caller 0x8262D608
+0x822AEF88 D3DDevice_BeginZPass?          # uncertain; from nglSceneTraverse
+0x822AF218 D3DDevice_EndZPass?            # uncertain; builds fixup list +0x34B0 used by predicated draws
+0x8229E290 D3DDevice_BeginConditionalSurvey?  # uncertain: VIZ_QUERY packet, PA_SC_VIZ_QUERY (+0x29B0)
+0x8229E360 D3DDevice_EndConditionalSurvey?
+0x8229E440 D3DDevice_BeginConditionalRendering?
+0x8229E5E8 D3DDevice_EndConditionalRendering?
+0x822A5E08 D3DDevice_FlushShaders         # dirty +0x10 bits 17-20: links VS/PS, IM_LOAD microcode (type 0 VS / 1 PS), SQ_PROGRAM_CNTL
+0x822A4C50 D3DDevice_WriteDirtyRegisters  # (dev, mask<<, firstReg, shadowPtr): type-0 packets for set bits (bit63 = firstReg)
+0x822A4FE8 D3DDevice_WriteDirtyAluConstants  # 1 mask bit = 4 vec4 constants
+0x822A4E90 D3DDevice_WriteDirtyFetchConstants  # bit63 = fetch slot 0, 6 dwords from dev+0x480
+0x822A48B8 D3DDevice_FlushHiZ?            # called when dirty+0x10 & dirty+0x28
+0x822A4608 D3DDevice_MakeSpaceForRegisters   # ring overflow path of the writers
+0x822A25E8 D3DDevice_ReserveCommandSpace? # 19 callers
+0x822A2BD8 D3DDevice_AllocateTransient?   # used by BeginVertices
+0x822963B8 D3DResource_LockInternal       # blocks on resource fence, ++lock count (Common bits 8-11), CPU cache coherency packets
+0x822966B8 D3DResource_UnlockInternal     # dcbst ranges BaseFlush(+0x14)/MipFlush(+0x18), --lock count
+0x822968D0 D3DResource_AddRef
+0x822969C8 D3DResource_GetDevice
+0x82296A40 D3DResource_GetType            # 3 tex, 0x11 vol, 0x12 cube, 0x13 array, 0x14 line, 0x10 volume
+0x8229CCB0 D3DTexture_GetLevelDesc
+0x8229CDB0 D3DVolumeTexture_GetLevelDesc
+0x8229D3F0 D3DTexture_LockRect
+0x8229D480 D3DVolumeTexture_LockBox
+0x8229DFC8 D3DSurface_GetDesc
+0x8229E060 D3DSurface_LockRect
+0x8229E080 D3DSurface_UnlockRect
+0x8229DA90 D3DBaseTexture_GetLevelCount
+0x822A0C50 D3DDevice_UnbindAll?           # sets RT/DS/shaders/streams/textures/indices to NULL
+0x822A86C8 D3DDevice_CaptureStateBlock?   # uncertain (caller 0x82850698)
+0x822A8A40 D3DStateBlock_Apply?           # uncertain
+0x822A6FB8 D3DDevice_EndCommandBuffer?    # uncertain: flushes dirty state into recorded buffer (caller 0x828519B0)
+0x822A9088 D3DDevice_FrameEnd?            # uncertain; ListSendModule before Swap
+0x8229A6B0 D3DDevice_SetGammaRamp?        # uncertain (+0x425C, +0x5EAC)
+0x82291448 XGraphics_ShaderAssembler?     # 0x82291448-0x82296028 runtime microcode assembler (ctx stride 0x26D0); D3DX HLSL compiler "2.0.20500.0" lives at 0x822F..0x823F
+
+# D3D render-state setters: table 0x82A426C0 {Get,Set,Default} per D3DRS (value = 4*index, first 10 unused)
+0x82298148 D3DDevice_SetRenderState_ZENABLE        # RB_DEPTHCONTROL shadow +0x2934 (reg 0x2200)
+0x82297A10 D3DDevice_SetRenderState_CULLMODE       # PA_SU_SC_MODE_CNTL +0x2948 (0x2205)
+0x82297AA8 D3DDevice_SetRenderState_ALPHABLENDENABLE  # RB_BLENDCONTROL0..3 +0x2938/+0x2958..+0x2960
+0x82297BC8 D3DDevice_SetRenderState_SRCBLEND
+0x82297C58 D3DDevice_SetRenderState_DESTBLEND
+0x82297A70 D3DDevice_SetRenderState_ALPHATESTENABLE   # RB_COLORCONTROL +0x293C (0x2202)
+0x82297ED0 D3DDevice_SetRenderState_ALPHAREF       # RB_ALPHA_REF +0x2904 (0x210E)
+0x82298700 D3DDevice_SetRenderState_COLORWRITEENABLE  # RB_COLOR_MASK +0x28DC (0x2104)
+0x82298520 D3DDevice_SetRenderState_SCISSORTESTENABLE
+0x822992C0 D3DDevice_SetRenderState_PRESENTINTERVAL  # +0x3630
+# (all 101 RS + 20 sampler setters with addresses: private/re/rsdump.txt, summarized in docs/d3d_map.md)
+
+# NGL renderer (engine "lux")
+0x826324D0 nglInit                        # CreateDevice(1,1,&pp 0x82B94E98,&0x82BB4F94)
+0x8262D690 nglPresent                     # Swap(dev, frontBufferTex+0x14), double-buffered front textures 0x82C54698/0x82C54720
+0x8262D540 nglResolveTiles                # per tile: SetPredication(3<<2i) + Resolve
+0x8213BBB8 ngl_WriteStencilRefDirect      # writes type-0 RB_STENCILREFMASK (0x210D) straight into the ring: bypasses the shadow
+0x82893F10 ngl_FlushHiZDirect?            # EVENT_WRITE 0xF straight into the ring + RB_HIZCONTROL shadow bit
+0x8228B3E8 ngl_DrawQuadUP                 # inline SetVertexDeclaration (+0x2F58) + BeginVertices(QUADLIST)
+0x82289248 ngl_UnbindStream               # SetStreamSource(NULL) + inline decl NULL
+0x826320C8 ListSendModule                 # job module "ListSendModule": kicks D3D, inserts callback 0x826319B8, traverses the submitted frame
+0x82631098 nglSceneTraverse               # recursive; current scene in 0x82BB4F4C
+0x822895E0 nglRenderListSubmit            # (scene+0x348 render list), sentinel 0x82B5FAAC
+0x82633FD8 nglListBeginScene              # allocates a scene, links it under the current one (0x82BB4F44) or as next root (0x82BB4F48)
+0x82633E78 nglInitScene                   # clears the scene, render list (+0x348) = 0
+0x829075F8 nglListSend                    # frame submit: waits for the previous ListSendModule, root = next root, queues the job; string "nglListSend called while..."
+
+# Engine
+0x827F5E80 GameMaster_IntroMovies         # main-thread loop over the 4 intro movies (legal, atvilogo, xpeclogo, tfb)
+0x82852D90 Movie_Update                   # BinkWait/BinkDoFrame/BinkNextFrame, done when FrameNum == Frames
+0x82635CF8 JobWorker_Loop                 # "JQ Worker" thread body
+0x826360F8 JobGroup_Wait                  # executes pending jobs on the caller while the group counters are non-zero
+0x8213EFB0 RecursiveSpinLock_Acquire      # owner = GetCurrentThreadId, ldarx/stdcx on *(lock+12)
+
+# CRT / XAPI
+0x822DF0D0 GetTickCount                   # KeTimeStampBundle->TickCount
+0x822DCD50 GetCurrentThreadId             # KTHREAD+0x14C
+
+# Bink (BINK section)
+0x829EA3F0 BinkWait
+0x829EDCF8 BinkDoFrame
+0x829EA388 BinkShouldSkip
+0x829EDD00 BinkNextFrame
+0x829EEF90 RADTimerRead                   # ms timer on GetTickCount
+
+# Wwise
+0x82865448 Game_InitSound                 # MemoryMgr, StreamMgr, low-level IO, then AK::SoundEngine::Init
+0x825852C0 AK_SoundEngine_Init
+0x82522E80 XAudio2_RenderDriverCallback   # registered via XAudioRegisterRenderDriverClient (wrapper 0x82523060 dereferences the context cell)

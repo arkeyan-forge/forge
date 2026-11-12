@@ -1,0 +1,16 @@
+--- a/plume_metal.cpp
++++ b/plume_metal.cpp
+@@ -1237,11 +1237,9 @@
+         descriptor->setArrayLength(desc.arraySize);
+         descriptor->setSampleCount(desc.multisampling.sampleCount);
+ 
++        // Shader write only for UNORDERED_ACCESS (resolveTextureRegion's compute path needs it on its destination): on
++        // Apple GPUs it turns off the lossless compression of render and depth targets.
+         MTL::TextureUsage usage = mapTextureUsage(desc.flags);
+-        // Add shader write usage if this texture might be used as a resolve target
+-        if (desc.multisampling.sampleCount == 1 && (usage & MTL::TextureUsageRenderTarget)) {
+-            usage |= MTL::TextureUsageShaderWrite;
+-        }
+         descriptor->setUsage(usage);
+ 
+         this->mtl = device->mtl->newTexture(descriptor);

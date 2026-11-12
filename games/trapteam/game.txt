@@ -1,0 +1,21 @@
+# What the player kit's Arkeyan-Builder knows about this game. No game data: the hashes identify the player's own default.xex and
+# must be the ones games/trapteam/info.cpp accepts. Copied to config/trapteam/game.txt by tools/make_kit.sh.
+id=trapteam
+name=Skylanders Trap Team
+runtime=Skylanders Trap Team
+version=0.1.5
+toml=TrapTeam.toml
+xex_sha256=f1d2373e4507e21cc371e6f22d02e909602a1b5bc4704896c3c099cc64002a35,95e273f479ad71198d7daaa6234e6ee6364861ce29b002ba782154a1fcf08d3c
+# The releases' loaded images (decrypted, decompressed; same order as xex_sha256), labels and title ID: a disc of
+# another edition with one of these images runs the same code (docs/tools/edition_finder.md).
+image_sha256=265c807d93716525e611839fb30859c1eb8a2a7cc700074d57f7b4cb3f78d458,265c807d93716525e611839fb30859c1eb8a2a7cc700074d57f7b4cb3f78d458
+releases=Europe;Europe (Fr, Nl)
+title_id=41560911
+# Disc shaders span the .arc/.bld archives (IGA v11 / IGZ v8); deduplicate by container content.
+shaders=igz:all
+# Run-time collection: 18 containers: 16 absent from the disc that the game builds at start, and Bink's two YUV to RGB
+# shaders, built when the first logo movie plays; stopping at 16 ends the run before them and every movie is black.
+# The kit ships no dumps. See games/trapteam/docs/shaders.md for the limits and manual cache recipe.
+movie_portal=emulated
+movie_press=a:12,a:16,a:20,a:24,a:28,a:32,a:36,a:40,a:44,a:48,a:52,a:56,a:60,a:64,a:68,a:72,a:76,a:80,a:84,a:88,a:92,a:96,a:100,a:104,a:108,a:112
+movie_shaders=18

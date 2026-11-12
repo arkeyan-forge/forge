@@ -1,0 +1,19 @@
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -3235,6 +3235,16 @@
+         stencilRef = desc.stencilReference;
+         psoDesc.NumRenderTargets = desc.renderTargetCount;
+         psoDesc.BlendState.AlphaToCoverageEnable = desc.alphaToCoverageEnabled;
++        // Each target its own blend and write mask, as on Metal and Vulkan (otherwise every target takes target 0's).
++        // D3D12 requires it off with a logic op.
++        psoDesc.BlendState.IndependentBlendEnable = !desc.logicOpEnabled;
++        for (uint32_t i = desc.renderTargetCount; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
++            D3D12_RENDER_TARGET_BLEND_DESC &targetDesc = psoDesc.BlendState.RenderTarget[i];
++            targetDesc.SrcBlend = targetDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
++            targetDesc.DestBlend = targetDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
++            targetDesc.BlendOp = targetDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
++            targetDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
++        }
+ 
+         for (uint32_t i = 0; i < desc.renderTargetCount; i++) {
+             psoDesc.RTVFormats[i] = toDXGI(desc.renderTargetFormat[i]);

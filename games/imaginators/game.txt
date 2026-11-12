@@ -1,0 +1,19 @@
+# What the player kit's Arkeyan-Builder knows about this game. No game data: the hash identifies the player's own default.xex and
+# must be the one games/imaginators/info.cpp accepts. In the kit from 0.9.0.
+id=imaginators
+name=Skylanders Imaginators
+runtime=Skylanders Imaginators
+version=0.1.5
+toml=Imaginators.toml
+# Disc shaders: one archive, IGA v11 big-endian like SuperChargers' (games/imaginators/docs/research.md).
+shaders=igz:/archives/shaders_xenon.pak
+xex_sha256=1c6d7e05ef6d30ba0b86ff3a810ba115bef3050998254471230cd8c07641d0ac
+# The releases' loaded images (decrypted, decompressed; same order as xex_sha256), labels and title ID: a disc of
+# another edition with one of these images runs the same code (docs/tools/edition_finder.md).
+image_sha256=4f793c38af18299cc2dd71a062dcd5ab5e9c4fb8b42769b791bd947a32859d02
+releases=Europe
+title_id=41560930
+# Run-time collection: 8 containers the disc lacks, 6 built at start and Bink's two YUV to RGB shaders, built when the first logo
+# movie plays (2.6 s later on a quiet Mac, 5.4 s on a loaded one). Without a target the pass ended 8 s after the first one: a slower start
+# missed Bink's two and every movie was black. Needs no portal or press.
+movie_shaders=8

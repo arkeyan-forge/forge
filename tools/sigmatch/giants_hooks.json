@@ -1,0 +1,511 @@
+{
+ "description": "Writes Giants' hook inventory as a sigmatch hooks file, to find Giants' hooks in a later Alchemy game (Swap Force...).",
+ "entries": [
+  {
+   "name": "D3DDevice_NextRingSegment",
+   "kind": "hook",
+   "ssa": "0x823D0DB8",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_KickOff",
+   "kind": "hook",
+   "ssa": "0x823D1C10",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_BlockOnFence",
+   "kind": "hook",
+   "ssa": "0x823D1D10",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 62
+   }
+  },
+  {
+   "name": "D3DDevice_InsertCallback",
+   "kind": "hook",
+   "ssa": "0x823D1E08",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_DrawVertices",
+   "kind": "hook",
+   "ssa": "0x823E03E0",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_DrawIndexedVertices",
+   "kind": "hook",
+   "ssa": "0x823E07F8",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_Resolve",
+   "kind": "hook",
+   "ssa": "0x823DED00",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_ClearF_Worker",
+   "kind": "hook",
+   "ssa": "0x823DDF38",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DDevice_Swap",
+   "kind": "hook",
+   "ssa": "0x823DA640",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "D3DVertexShader_Init",
+   "kind": "hook",
+   "ssa": "0x823DC7E8",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 62
+   }
+  },
+  {
+   "name": "D3DPixelShader_Init",
+   "kind": "hook",
+   "ssa": "0x823DC5F0",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 14
+   }
+  },
+  {
+   "name": "Xma1_Init",
+   "kind": "hook",
+   "ssa": "0x82436480",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 6
+   }
+  },
+  {
+   "name": "Xma2_Init",
+   "kind": "hook",
+   "ssa": "0x823561C0",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma1_VoiceClear",
+   "kind": "hook",
+   "ssa": "0x824364E0",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma1_VoiceKick",
+   "kind": "hook",
+   "ssa": "0x82436E78",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma2_VoiceClear",
+   "kind": "hook",
+   "ssa": "0x823CD048",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 50
+   }
+  },
+  {
+   "name": "Xma2_VoiceLock",
+   "kind": "hook",
+   "ssa": "0x823CD1F0",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 38
+   }
+  },
+  {
+   "name": "Xma2_VoiceKick",
+   "kind": "hook",
+   "ssa": "0x823CD4A0",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Xma1_LockAll",
+   "kind": "hook",
+   "ssa": "0x82436D08",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Ultrawide_CameraAspect",
+   "kind": "hook",
+   "ssa": "0x8219B900",
+   "what": "games/giants/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Ultrawide_SceneWidth",
+   "kind": "hook",
+   "ssa": "0x8218ED90",
+   "what": "games/giants/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 18
+   }
+  },
+  {
+   "name": "Ultrawide_SceneHeight",
+   "kind": "hook",
+   "ssa": "0x8218EDD8",
+   "what": "games/giants/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 18
+   }
+  },
+  {
+   "name": "Ultrawide_SceneTargets",
+   "kind": "hook",
+   "ssa": "0x82196150",
+   "what": "games/giants/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Ultrawide_ScenePasses",
+   "kind": "hook",
+   "ssa": "0x8219EC20",
+   "what": "games/giants/addresses.h",
+   "scope": "alchemy",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "BinkOpen",
+   "kind": "hook",
+   "ssa": "0x821550A0",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 38
+   }
+  },
+  {
+   "name": "BinkClose",
+   "kind": "hook",
+   "ssa": "0x82155B08",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "Engine1CriticalSection",
+   "kind": "data",
+   "ssa": "0x82627B90",
+   "what": "games/giants/addresses.h",
+   "scope": "xbox",
+   "ref": {
+    "function": "0x82436D08",
+    "lis_offset": 16,
+    "pair_distance": 1,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "UltrawideDisplayAspect",
+   "kind": "data",
+   "ssa": "0x826565C0",
+   "what": "games/giants/addresses.h",
+   "scope": "alchemy",
+   "ref": {
+    "function": "0x821864D0",
+    "lis_offset": 176,
+    "pair_distance": 2,
+    "delta": 0
+   },
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 64
+   }
+  },
+  {
+   "name": "restgprlr_14_address",
+   "kind": "config",
+   "ssa": "0x825DF9F0",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savegprlr_14_address",
+   "kind": "config",
+   "ssa": "0x825DF9A0",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restfpr_14_address",
+   "kind": "config",
+   "ssa": "0x825E066C",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savefpr_14_address",
+   "kind": "config",
+   "ssa": "0x825E0620",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restvmx_14_address",
+   "kind": "config",
+   "ssa": "0x825E0388",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savevmx_14_address",
+   "kind": "config",
+   "ssa": "0x825E00F0",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "restvmx_64_address",
+   "kind": "config",
+   "ssa": "0x825E041C",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "savevmx_64_address",
+   "kind": "config",
+   "ssa": "0x825E0184",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": true,
+    "length": 6
+   }
+  },
+  {
+   "name": "longjmp_address",
+   "kind": "config",
+   "ssa": "0x825DD6A0",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  },
+  {
+   "name": "setjmp_address",
+   "kind": "config",
+   "ssa": "0x82608880",
+   "what": "games/giants/config/Giants.toml",
+   "scope": "xbox",
+   "sig": {
+    "occurrence": 0,
+    "candidates": 1,
+    "past_end": false,
+    "length": 32
+   }
+  }
+ ]
+}

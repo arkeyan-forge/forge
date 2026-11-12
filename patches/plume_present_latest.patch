@@ -1,0 +1,192 @@
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index 2b702c7..3aa24a2 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -1570,6 +1570,30 @@ namespace plume {
+         return 0;
+     }
+ 
++    bool D3D12SwapChain::setPresentLatest(bool latest) {
++#ifdef PLUME_D3D12_COREWINDOW
++        (void)latest;
++        return false;
++#else
++        // Sync interval 0 without DXGI_PRESENT_ALLOW_TEARING, as with present wait (see present): the newest frame at the
++        // next refresh. wait() is not used.
++        desc.enablePresentWait = latest;
++        return latest;
++#endif
++    }
++
++    bool D3D12SwapChain::getDisplayStats(RenderDisplayStats &stats) const {
++        DXGI_FRAME_STATISTICS statistics = {};
++        if ((d3d == nullptr) || FAILED(d3d->GetFrameStatistics(&statistics))) {
++            return false;
++        }
++
++        stats.frames = statistics.PresentCount;
++        stats.refreshes = statistics.PresentRefreshCount;
++        stats.timeNs = 0;
++        return true;
++    }
++
+     // D3D12Framebuffer
+     
+     D3D12Framebuffer::D3D12Framebuffer(D3D12Device *device, const RenderFramebufferDesc &desc) {
+diff --git a/plume_d3d12.h b/plume_d3d12.h
+index b7ef209..8c40747 100644
+--- a/plume_d3d12.h
++++ b/plume_d3d12.h
+@@ -121,6 +121,8 @@ namespace plume {
+         bool needsResize() const override;
+         void setVsyncEnabled(bool vsyncEnabled) override;
+         bool isVsyncEnabled() const override;
++        bool setPresentLatest(bool latest) override;
++        bool getDisplayStats(RenderDisplayStats &stats) const override;
+         uint32_t getWidth() const override;
+         uint32_t getHeight() const override;
+         RenderTexture *getTexture(uint32_t textureIndex) override;
+diff --git a/plume_metal.cpp b/plume_metal.cpp
+index 332dc0f..f393cbc 100644
+--- a/plume_metal.cpp
++++ b/plume_metal.cpp
+@@ -1958,6 +1958,15 @@ namespace plume {
+         // According to Apple, presenting via scheduled handler is more performant than using the presentDrawable method.
+         // We grab the underlying drawable because we might've acquired a new one by now and the old one would have been released.
+         CA::MetalDrawable *drawableMtl = drawable.mtl->retain();
++        // SSA: the time each frame reached the display (0: it was not shown).
++        drawableMtl->addPresentedHandler([shared = displayStats](MTL::Drawable *shown) {
++            const double seconds = shown->presentedTime();
++            if (seconds > 0.0) {
++                std::lock_guard lock(shared->mutex);
++                shared->stats.frames++;
++                shared->stats.timeNs = uint64_t(seconds * 1e9);
++            }
++        });
+         presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
+             drawableMtl->present();
+         });
+@@ -2024,6 +2033,12 @@ namespace plume {
+         layer->setDisplaySyncEnabled(vsyncEnabled);
+     }
+ 
++    bool MetalSwapChain::getDisplayStats(RenderDisplayStats &stats) const {
++        std::lock_guard lock(displayStats->mutex);
++        stats = displayStats->stats;
++        return true;
++    }
++
+     bool MetalSwapChain::isVsyncEnabled() const {
+         MetalAutoreleasePool releasePool;
+         return layer->displaySyncEnabled();
+diff --git a/plume_metal.h b/plume_metal.h
+index 0acd9fd..b501058 100644
+--- a/plume_metal.h
++++ b/plume_metal.h
+@@ -247,6 +247,13 @@ namespace plume {
+         std::mutex lastPresentedIdMutex;
+         std::condition_variable lastPresentedIdCondVar;
+ 
++        // SSA: the frames shown (presented handlers), shared with the handlers, which may outlive the swap chain.
++        struct DisplayStats {
++            std::mutex mutex;
++            RenderDisplayStats stats;
++        };
++        std::shared_ptr<DisplayStats> displayStats = std::make_shared<DisplayStats>();
++
+         MetalSwapChain(MetalCommandQueue *commandQueue, const RenderSwapChainDesc &desc);
+         ~MetalSwapChain() override;
+         bool present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) override;
+@@ -255,6 +262,7 @@ namespace plume {
+         bool needsResize() const override;
+         void setVsyncEnabled(bool vsyncEnabled) override;
+         bool isVsyncEnabled() const override;
++        bool getDisplayStats(RenderDisplayStats &stats) const override;
+         uint32_t getWidth() const override;
+         uint32_t getHeight() const override;
+         RenderTexture *getTexture(uint32_t textureIndex) override;
+diff --git a/plume_render_interface.h b/plume_render_interface.h
+index d5ae9e3..4106275 100644
+--- a/plume_render_interface.h
++++ b/plume_render_interface.h
+@@ -85,6 +85,13 @@ namespace plume {
+         virtual void setAccelerationStructure(uint32_t descriptorIndex, const RenderAccelerationStructure *accelerationStructure) = 0;
+     };
+ 
++    // SSA: what the display has shown (RenderSwapChain::getDisplayStats; plume_present_latest.patch).
++    struct RenderDisplayStats {
++        uint64_t frames = 0; // frames shown since a start the backend picks
++        uint64_t refreshes = 0; // the display refresh the last of them was shown at (0: unknown)
++        uint64_t timeNs = 0; // the time it was shown at, in the backend's clock (0: unknown)
++    };
++
+     struct RenderSwapChain {
+         virtual ~RenderSwapChain() { }
+         virtual bool present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) = 0;
+@@ -105,6 +112,13 @@ namespace plume {
+ 
+         // Only valid if displayTiming is enabled in capabilities.
+         virtual uint32_t getRefreshRate() const = 0;
++        // SSA: with vsync on, show the newest frame at each refresh without waiting for the display (Vulkan MAILBOX,
++        // D3D12 flip model at sync interval 0 without tearing). Returns whether it is in effect: false where the backend
++        // cannot (vsync stays FIFO). Vulkan applies it at the next resize, as setVsyncEnabled.
++        virtual bool setPresentLatest(bool latest) { (void)latest; return false; }
++        // SSA: the frames the display has shown, where the backend tells (D3D12: frame statistics; Metal: presented
++        // handlers); false elsewhere.
++        virtual bool getDisplayStats(RenderDisplayStats &stats) const { (void)stats; return false; }
+     };
+ 
+     struct RenderFramebuffer {
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index eb3742a..7eaeed3 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -2420,17 +2420,27 @@ namespace plume {
+     }
+ 
+     void VulkanSwapChain::setVsyncEnabled(bool vsyncEnabled) {
++        vsyncRequested = vsyncEnabled;
+         // Immediate mode must be supported and the presentation mode will only be used on the next resize.
+         // needsResize() will return as true as long as the created and required present mode do not match.
+         if (immediatePresentModeSupported && !vsyncEnabled) {
+             requiredPresentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+         }
++        else if (vsyncEnabled && presentLatest) {
++            requiredPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
++        }
+         // FIFO is guaranteed to be supported.
+         else {
+             requiredPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+         }
+     }
+ 
++    bool VulkanSwapChain::setPresentLatest(bool latest) {
++        presentLatest = latest && mailboxPresentModeSupported;
++        setVsyncEnabled(vsyncRequested);
++        return presentLatest;
++    }
++
+     bool VulkanSwapChain::isVsyncEnabled() const {
+         return (createdPresentMode == VK_PRESENT_MODE_FIFO_KHR) || (createdPresentMode == VK_PRESENT_MODE_MAILBOX_KHR);
+     }
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+index 87356b8..3eddbb2 100644
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -230,6 +230,8 @@ namespace plume {
+         std::unique_ptr<CocoaWindow> windowWrapper;
+ #endif
+         uint64_t presentCount = 0;
++        bool vsyncRequested = true; // SSA: setVsyncEnabled's, for setPresentLatest
++        bool presentLatest = false; // SSA: MAILBOX instead of FIFO while vsync is on
+         uint32_t width = 0;
+         uint32_t height = 0;
+         VkSwapchainCreateInfoKHR createInfo = {};
+@@ -251,6 +253,7 @@ namespace plume {
+         bool needsResize() const override;
+         void setVsyncEnabled(bool vsyncEnabled) override;
+         bool isVsyncEnabled() const override;
++        bool setPresentLatest(bool latest) override;
+         uint32_t getWidth() const override;
+         uint32_t getHeight() const override;
+         RenderTexture *getTexture(uint32_t textureIndex) override;

@@ -1,0 +1,22 @@
+[submodule "thirdparty/XenonRecomp"]
+	path = thirdparty/XenonRecomp
+	url = https://github.com/hedge-dev/XenonRecomp.git
+	ignore = dirty
+[submodule "thirdparty/SDL"]
+	path = thirdparty/SDL
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "thirdparty/XenosRecomp"]
+	path = thirdparty/XenosRecomp
+	url = https://github.com/squidbus/XenosRecomp.git
+	ignore = dirty
+[submodule "thirdparty/plume"]
+	path = thirdparty/plume
+	url = https://github.com/renderbag/plume.git
+	ignore = dirty
+[submodule "thirdparty/imgui"]
+	path = thirdparty/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "thirdparty/FidelityFX-SDK"]
+	path = thirdparty/FidelityFX-SDK
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git
+	shallow = true

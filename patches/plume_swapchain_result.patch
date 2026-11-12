@@ -1,0 +1,65 @@
+diff --git a/plume_d3d12.h b/plume_d3d12.h
+index c6b4f2d..b7ef209 100644
+--- a/plume_d3d12.h
++++ b/plume_d3d12.h
+@@ -129,6 +129,7 @@ namespace plume {
+         RenderWindow getWindow() const override;
+         bool isEmpty() const override;
+         uint32_t getRefreshRate() const override;
++        int32_t getLastResult() const override { return int32_t(lastResult); }
+         void getWindowSize(uint32_t &dstWidth, uint32_t &dstHeight) const;
+         void setTextures();
+     };
+diff --git a/plume_render_interface.h b/plume_render_interface.h
+index 57b2abb..d5ae9e3 100644
+--- a/plume_render_interface.h
++++ b/plume_render_interface.h
+@@ -100,6 +100,8 @@ namespace plume {
+         virtual bool acquireTexture(RenderCommandSemaphore *signalSemaphore, uint32_t *textureIndex) = 0;
+         virtual RenderWindow getWindow() const = 0;
+         virtual bool isEmpty() const = 0;
++        // The backend's code for the last acquireTexture or present (Vulkan: the VkResult); 0 where there is none.
++        virtual int32_t getLastResult() const { return 0; }
+ 
+         // Only valid if displayTiming is enabled in capabilities.
+         virtual uint32_t getRefreshRate() const = 0;
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index f8ccf41..eb3742a 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -2297,6 +2297,7 @@ namespace plume {
+             const std::scoped_lock queueLock(*commandQueue->queue->mutex);
+             res = vkQueuePresentKHR(commandQueue->queue->vk, &presentInfo);
+         }
++        lastResult = res;
+ 
+ #if defined(__APPLE__)
+         // Under MoltenVK, VK_SUBOPTIMAL_KHR does not result in a valid state for rendering. We intentionally
+@@ -2499,6 +2500,7 @@ namespace plume {
+ 
+         VulkanCommandSemaphore *interfaceSemaphore = static_cast<VulkanCommandSemaphore *>(signalSemaphore);
+         VkResult res = vkAcquireNextImageKHR(commandQueue->device->vk, vk, UINT64_MAX, interfaceSemaphore->vk, VK_NULL_HANDLE, textureIndex);
++        lastResult = res;
+         if ((res != VK_SUCCESS) && (res != VK_SUBOPTIMAL_KHR)) {
+             return false;
+         }
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+index ea20552..87356b8 100644
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -241,6 +241,7 @@ namespace plume {
+         uint64_t currentPresentId = 0;
+         bool immediatePresentModeSupported = false;
+         bool mailboxPresentModeSupported = false;
++        VkResult lastResult = VK_SUCCESS;
+ 
+         VulkanSwapChain(VulkanCommandQueue *commandQueue, const RenderSwapChainDesc &desc);
+         ~VulkanSwapChain() override;
+@@ -258,6 +259,7 @@ namespace plume {
+         RenderWindow getWindow() const override;
+         bool isEmpty() const override;
+         uint32_t getRefreshRate() const override;
++        int32_t getLastResult() const override { return int32_t(lastResult); }
+         void getWindowSize(uint32_t &dstWidth, uint32_t &dstHeight) const;
+         void releaseSwapChain();
+         void releaseImageViews();

@@ -1,0 +1,468 @@
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index f910f1d..2961002 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -36,6 +36,11 @@
+ #define D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE (D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+ #endif
+ 
++// mingw-w64's d3d12.h (D3D12_SDK_VERSION 602) predates GPU upload heaps; the value is the Agility SDK 1.613 one.
++#if defined(__MINGW32__) && !defined(PLUME_D3D12_AGILITY_SDK_ENABLED) && D3D12_SDK_VERSION < 613
++#define D3D12_HEAP_TYPE_GPU_UPLOAD D3D12_HEAP_TYPE(5)
++#endif
++
+ #ifdef PLUME_D3D12_AGILITY_SDK_ENABLED
+ extern "C" {
+     __declspec(dllexport) extern const UINT D3D12SDKVersion = D3D12_SDK_VERSION;
+@@ -1175,7 +1180,27 @@ namespace plume {
+                 setSRV(descriptorIndex, nativeResource, &srvDesc);
+             }
+             else if (nativeResource != nullptr) {
+-                setSRV(descriptorIndex, nativeResource, nullptr);
++                // SSA: a view without a description needs a fully typed resource format. Depth-stencil textures are
++                // created typeless (R32G8X24_TYPELESS): CreateShaderResourceView(resource, nullptr) on them is invalid
++                // (a real driver may remove the device). Give them their depth plane's view format.
++                const RenderTextureDesc &textureDesc = interfaceTexture->desc;
++                const DXGI_FORMAT viewFormat = toDXGITextureView(textureDesc.format);
++                if ((viewFormat != toDXGI(textureDesc.format)) && (textureDesc.dimension == RenderTextureDimension::TEXTURE_2D)) {
++                    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
++                    srvDesc.Format = viewFormat;
++                    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
++                    if (textureDesc.multisampling.sampleCount != RenderSampleCount::COUNT_1) {
++                        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
++                    }
++                    else {
++                        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
++                        srvDesc.Texture2D.MipLevels = textureDesc.mipLevels;
++                    }
++                    setSRV(descriptorIndex, nativeResource, &srvDesc);
++                }
++                else {
++                    setSRV(descriptorIndex, nativeResource, nullptr);
++                }
+             }
+             else {
+                 D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+@@ -1317,7 +1342,11 @@ namespace plume {
+ 
+     D3D12SwapChain::D3D12SwapChain(D3D12CommandQueue *commandQueue, const RenderSwapChainDesc &desc) {
+         assert(commandQueue != nullptr);
++#ifdef PLUME_D3D12_COREWINDOW
++        assert(desc.renderWindow.coreWindow != nullptr);
++#else
+         assert(desc.renderWindow != 0);
++#endif
+ 
+         this->commandQueue = commandQueue;
+         this->desc = desc;
+@@ -1327,10 +1356,16 @@ namespace plume {
+ 
+         getWindowSize(width, height);
+ 
++#ifdef PLUME_D3D12_COREWINDOW
++        // SSA: on Xbox a swap chain with the waitable or tearing flags presented without errors but was never composed
++        // (the splash screen stayed); Microsoft's UWP template, without either flag, shows. Create it exactly so.
++        swapChainFlags = 0;
++#else
+         swapChainFlags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+         if (commandQueue->device->renderInterface->allowTearing) {
+             swapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+         }
++#endif
+         
+         DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+         swapChainDesc.BufferCount = desc.textureCount;
+@@ -1341,9 +1376,21 @@ namespace plume {
+         swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+         swapChainDesc.SampleDesc.Count = 1;
+         swapChainDesc.Flags = swapChainFlags;
++#ifdef PLUME_D3D12_COREWINDOW
++        // SSA: as Microsoft's CoreWindow samples set them (and tools/xbox/testapp).
++        swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
++        swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
++#endif
+ 
+         IDXGISwapChain1 *swapChain1;
+         IDXGIFactory4 *dxgiFactory = commandQueue->device->renderInterface->dxgiFactory;
++#ifdef PLUME_D3D12_COREWINDOW
++        HRESULT res = dxgiFactory->CreateSwapChainForCoreWindow(commandQueue->d3d, desc.renderWindow.coreWindow, &swapChainDesc, nullptr, &swapChain1);
++        if (FAILED(res)) {
++            fprintf(stderr, "CreateSwapChainForCoreWindow failed with error code 0x%lX.\n", res);
++            return;
++        }
++#else
+         HRESULT res = dxgiFactory->CreateSwapChainForHwnd(commandQueue->d3d, desc.renderWindow, &swapChainDesc, nullptr, nullptr, &swapChain1);
+         if (FAILED(res)) {
+             fprintf(stderr, "CreateSwapChainForHwnd failed with error code 0x%lX.\n", res);
+@@ -1355,10 +1402,13 @@ namespace plume {
+             fprintf(stderr, "MakeWindowAssociation failed with error code 0x%lX.\n", res);
+             return;
+         }
++#endif
+ 
+         d3d = static_cast<IDXGISwapChain3 *>(swapChain1);
+-        d3d->SetMaximumFrameLatency(desc.maxFrameLatency);
+-        waitableObject = d3d->GetFrameLatencyWaitableObject();
++        if (swapChainFlags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) {
++            d3d->SetMaximumFrameLatency(desc.maxFrameLatency);
++            waitableObject = d3d->GetFrameLatencyWaitableObject();
++        }
+ 
+         textures.resize(desc.textureCount);
+ 
+@@ -1391,9 +1441,21 @@ namespace plume {
+     bool D3D12SwapChain::present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) {
+         // If using present wait, we prefer using a SyncInterval of 0 even when Vsync is enabled. Tearing won't happen if DXGI_PRESENT_ALLOW_TEARING is not specified.
+         const bool tearingAllowed = (swapChainFlags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) != 0U;
++#ifdef PLUME_D3D12_COREWINDOW
++        UINT syncInterval = 1; // SSA: as Microsoft's UWP template (see the constructor)
++        UINT flags = 0;
++        (void)tearingAllowed;
++#else
+         UINT syncInterval = (vsyncEnabled && !desc.enablePresentWait) ? 1 : 0;
+         UINT flags = (!vsyncEnabled && tearingAllowed) ? DXGI_PRESENT_ALLOW_TEARING : 0;
++#endif
+         HRESULT res = d3d->Present(syncInterval, flags);
++        lastResult = res; // SSA: getLastResult (plume_swapchain_result.patch)
++        // SSA: log the first failures (a removed device makes every present fail).
++        static uint32_t failures = 0;
++        if (FAILED(res) && failures++ < 4) {
++            fprintf(stderr, "Present failed with error code 0x%lX.\n", res);
++        }
+         return SUCCEEDED(res);
+     }
+ 
+@@ -1406,6 +1468,12 @@ namespace plume {
+     }
+ 
+     bool D3D12SwapChain::resize() {
++#ifdef PLUME_D3D12_COREWINDOW
++        // SSA: the CoreWindow swap chain keeps the size it was created with: no ResizeBuffers (the template has none).
++        if (d3d != nullptr) {
++            return true;
++        }
++#endif
+         getWindowSize(width, height);
+ 
+         // Don't resize the swap chain at all if the window doesn't have a valid size.
+@@ -1451,10 +1519,15 @@ namespace plume {
+     }
+ 
+     void D3D12SwapChain::getWindowSize(uint32_t &dstWidth, uint32_t &dstHeight) const {
++#ifdef PLUME_D3D12_COREWINDOW
++        dstWidth = desc.renderWindow.width;
++        dstHeight = desc.renderWindow.height;
++#else
+         RECT rect;
+         GetClientRect(desc.renderWindow, &rect);
+         dstWidth = rect.right - rect.left;
+         dstHeight = rect.bottom - rect.top;
++#endif
+     }
+ 
+     void D3D12SwapChain::setTextures() {
+@@ -2174,6 +2247,10 @@ namespace plume {
+         }
+     }
+ 
++    void D3D12CommandList::setBlendFactor(const float rgba[4]) {
++        d3d->OMSetBlendFactor(rgba);
++    }
++
+     void D3D12CommandList::setViewports(const RenderViewport *viewports, uint32_t count) {
+         if (count > 1) {
+             thread_local std::vector<D3D12_VIEWPORT> viewportVector;
+@@ -2781,12 +2858,24 @@ namespace plume {
+             range.End = readRange->end;
+         }
+ 
++        // SSA: no buffer (its creation failed) or a failed Map (a removed device) gives null instead of crashing here.
+         void *outputData = nullptr;
+-        d3d->Map(subresource, (readRange != nullptr) ? &range : nullptr, &outputData);
+-        return outputData;
++        if (d3d == nullptr) {
++            return nullptr;
++        }
++        HRESULT res = d3d->Map(subresource, (readRange != nullptr) ? &range : nullptr, &outputData);
++        static uint32_t failures = 0;
++        if (FAILED(res) && failures++ < 4) {
++            fprintf(stderr, "Map failed with error code 0x%lX.\n", res);
++        }
++        return SUCCEEDED(res) ? outputData : nullptr;
+     }
+ 
+     void D3D12Buffer::unmap(uint32_t subresource, const RenderRange *writtenRange) {
++        if (d3d == nullptr) {
++            return;
++        }
++
+         D3D12_RANGE range;
+         if (writtenRange != nullptr) {
+             range.Begin = writtenRange->begin;
+@@ -3200,7 +3289,31 @@ namespace plume {
+ 
+         psoDesc.InputLayout = { inputElements.data(), UINT(inputElements.size()) };
+ 
+-        device->d3d->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&d3d));
++        // SSA: pipelines with a cache key come from the device's pipeline library when it has them.
++        wchar_t libraryName[17] = {};
++        const bool useLibrary = (device->pipelineLibrary != nullptr) && (desc.cacheKey != 0);
++        if (useLibrary) {
++            swprintf(libraryName, 17, L"%016llX", static_cast<unsigned long long>(desc.cacheKey));
++            std::lock_guard lock(device->pipelineLibraryMutex);
++            if (SUCCEEDED(device->pipelineLibrary->LoadGraphicsPipeline(libraryName, &psoDesc, IID_PPV_ARGS(&d3d)))) {
++                device->pipelineLibraryHits++;
++                return;
++            }
++            d3d = nullptr;
++        }
++
++        HRESULT res = device->d3d->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&d3d));
++        if (FAILED(res)) {
++            fprintf(stderr, "CreateGraphicsPipelineState failed with error code 0x%lX.\n", res);
++        }
++        else if (useLibrary) {
++            std::lock_guard lock(device->pipelineLibraryMutex);
++            device->pipelineLibraryMisses++;
++            // Fails when the name is already stored with another description (a stale entry): it is then just not kept.
++            if (SUCCEEDED(device->pipelineLibrary->StorePipeline(libraryName, d3d))) {
++                device->pipelineLibraryChanged = true;
++            }
++        }
+     }
+ 
+     D3D12GraphicsPipeline::~D3D12GraphicsPipeline() {
+@@ -3911,7 +4024,12 @@ namespace plume {
+     }
+ 
+     std::unique_ptr<RenderPipeline> D3D12Device::createGraphicsPipeline(const RenderGraphicsPipelineDesc &desc) {
+-        return std::make_unique<D3D12GraphicsPipeline>(this, desc);
++        auto pipeline = std::make_unique<D3D12GraphicsPipeline>(this, desc);
++        // SSA: report a pipeline D3D12 rejected instead of handing back one that is bound as a null pipeline state.
++        if (pipeline->d3d == nullptr) {
++            return nullptr;
++        }
++        return pipeline;
+     }
+ 
+     std::unique_ptr<RenderPipeline> D3D12Device::createRaytracingPipeline(const RenderRaytracingPipelineDesc &desc, const RenderPipeline *previousPipeline) {
+diff --git a/plume_d3d12.h b/plume_d3d12.h
+index 4827452..c6b4f2d 100644
+--- a/plume_d3d12.h
++++ b/plume_d3d12.h
+@@ -111,6 +111,7 @@ namespace plume {
+         uint32_t refreshRate = 0;
+         bool vsyncEnabled = true;
+         UINT swapChainFlags = 0;
++        HRESULT lastResult = S_OK; // SSA: the last present's
+ 
+         D3D12SwapChain(D3D12CommandQueue *commandQueue, const RenderSwapChainDesc &desc);
+         ~D3D12SwapChain() override;
+@@ -209,6 +210,7 @@ namespace plume {
+         void setVertexBuffers(uint32_t startSlot, const RenderVertexBufferView *views, uint32_t viewCount, const RenderInputSlot *inputSlots) override;
+         void setViewports(const RenderViewport *viewports, uint32_t count) override;
+         void setScissors(const RenderRect *scissorRects, uint32_t count) override;
++        void setBlendFactor(const float rgba[4]) override;
+         void setFramebuffer(const RenderFramebuffer *framebuffer) override;
+         void setDepthBias(float depthBias, float depthBiasClamp, float slopeScaledDepthBias) override;
+         void clearColor(uint32_t attachmentIndex, RenderColor colorValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;
+@@ -433,6 +435,13 @@ namespace plume {
+ 
+     struct D3D12Device : RenderDevice {
+         ID3D12Device8 *d3d = nullptr;
++        // SSA: the pipeline library graphics pipelines with a cacheKey are loaded from and stored in (the caller creates
++        // it, persists it and owns it), its mutex, and its hit and miss counts.
++        ID3D12PipelineLibrary *pipelineLibrary = nullptr;
++        std::mutex pipelineLibraryMutex;
++        uint32_t pipelineLibraryHits = 0;
++        uint32_t pipelineLibraryMisses = 0;
++        bool pipelineLibraryChanged = false;
+         D3D12Interface *renderInterface = nullptr;
+         IDXGIAdapter1 *adapter = nullptr;
+         D3D12MA::Allocator *allocator = nullptr;
+diff --git a/plume_metal.cpp b/plume_metal.cpp
+index b670ed3..05a8151 100644
+--- a/plume_metal.cpp
++++ b/plume_metal.cpp
+@@ -2711,6 +2711,13 @@ namespace plume {
+         }
+     }
+ 
++    void MetalCommandList::setBlendFactor(const float rgba[4]) {
++        if (memcmp(blendFactor, rgba, sizeof(blendFactor)) != 0) {
++            memcpy(blendFactor, rgba, sizeof(blendFactor));
++            dirtyGraphicsState.blendFactor = 1;
++        }
++    }
++
+     void MetalCommandList::setScissors(const RenderRect *scissorRects, const uint32_t count) {
+         scissorVector.resize(count);
+ 
+@@ -3469,6 +3476,12 @@ namespace plume {
+             dirtyGraphicsState.viewports = 0;
+         }
+ 
++        // Blend constant
++        if (dirtyGraphicsState.blendFactor) {
++            activeRenderEncoder->setBlendColor(blendFactor[0], blendFactor[1], blendFactor[2], blendFactor[3]);
++            dirtyGraphicsState.blendFactor = 0;
++        }
++
+         // Scissors
+         if (dirtyGraphicsState.scissors) {
+             if (!scissorVector.empty() && scissorVector != stateCache.lastScissors) {
+@@ -3913,7 +3926,12 @@ namespace plume {
+     }
+ 
+     std::unique_ptr<RenderPipeline> MetalDevice::createGraphicsPipeline(const RenderGraphicsPipelineDesc &desc) {
+-        return std::make_unique<MetalGraphicsPipeline>(this, desc);
++        auto pipeline = std::make_unique<MetalGraphicsPipeline>(this, desc);
++        // SSA: report a pipeline Metal rejected instead of handing back one that crashes when drawn with.
++        if (pipeline->state.renderPipelineState == nullptr) {
++            return nullptr;
++        }
++        return pipeline;
+     }
+ 
+     std::unique_ptr<RenderPipeline> MetalDevice::createRaytracingPipeline(const RenderRaytracingPipelineDesc &desc, const RenderPipeline *previousPipeline) {
+diff --git a/plume_metal.h b/plume_metal.h
+index 59ae129..1a9cc5e 100644
+--- a/plume_metal.h
++++ b/plume_metal.h
+@@ -118,6 +118,7 @@ namespace plume {
+                 uint32_t depthBias : 1;
+                 uint32_t depthStencil : 1;
+                 uint32_t rasterizer : 1;
++                uint32_t blendFactor : 1;
+             };
+             uint32_t value;
+         };
+@@ -129,7 +130,7 @@ namespace plume {
+         uint32_t vertexBufferSlots;
+ 
+         void setAll() {
+-            value = 0x1FF; // All 9 bits set
++            value = 0x3FF; // All 10 bits set
+             descriptorSetDirtyIndex = 0;
+             vertexBufferSlots = (1U << MAX_VERTEX_BUFFER_BINDINGS) - 1;
+         }
+@@ -419,6 +420,7 @@ namespace plume {
+         MTL::Buffer* vertexBuffers[MAX_VERTEX_BUFFER_BINDINGS] = {};
+         uint32_t vertexBufferOffsets[MAX_VERTEX_BUFFER_BINDINGS] = {};
+         std::vector<MTL::Viewport> viewportVector;
++        float blendFactor[4] = {};
+         std::vector<MTL::ScissorRect> scissorVector;
+         std::vector<PushConstantData> pushConstants;
+ 
+@@ -479,6 +481,7 @@ namespace plume {
+         void setVertexBuffers(uint32_t startSlot, const RenderVertexBufferView *views, uint32_t viewCount, const RenderInputSlot *inputSlots) override;
+         void setViewports(const RenderViewport *viewports, uint32_t count) override;
+         void setScissors(const RenderRect *scissorRects, uint32_t count) override;
++        void setBlendFactor(const float rgba[4]) override;
+         void setFramebuffer(const RenderFramebuffer *framebuffer) override;
+         void setDepthBias(float depthBias, float depthBiasClamp, float slopeScaledDepthBias) override;
+         void clearColor(uint32_t attachmentIndex, RenderColor colorValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;
+diff --git a/plume_render_interface.h b/plume_render_interface.h
+index 2048557..57b2abb 100644
+--- a/plume_render_interface.h
++++ b/plume_render_interface.h
+@@ -135,6 +135,7 @@ namespace plume {
+         virtual void setVertexBuffers(uint32_t startSlot, const RenderVertexBufferView *views, uint32_t viewCount, const RenderInputSlot *inputSlots) = 0;
+         virtual void setViewports(const RenderViewport *viewports, uint32_t count) = 0;
+         virtual void setScissors(const RenderRect *scissorRects, uint32_t count) = 0;
++        virtual void setBlendFactor(const float rgba[4]) = 0; // the constant RenderBlend::BLEND_FACTOR uses
+         virtual void setFramebuffer(const RenderFramebuffer *framebuffer) = 0;
+         virtual void setDepthBias(float depthBias, float depthBiasClamp, float slopeScaledDepthBias) = 0;
+         virtual void clearColor(uint32_t attachmentIndex = 0, RenderColor colorValue = RenderColor(), const RenderRect *clearRects = nullptr, uint32_t clearRectsCount = 0) = 0;
+diff --git a/plume_render_interface_types.h b/plume_render_interface_types.h
+index ad63e0e..e2b68fb 100644
+--- a/plume_render_interface_types.h
++++ b/plume_render_interface_types.h
+@@ -21,6 +21,9 @@
+ 
+ #if defined(_WIN32)
+ #include <Windows.h>
++#if defined(PLUME_D3D12_COREWINDOW)
++#include <unknwn.h>
++#endif
+ #elif defined(__ANDROID__)
+ #include "android/native_window.h"
+ #elif defined(__linux__) && !defined(PLUME_SDL_VULKAN_ENABLED)
+@@ -40,7 +43,20 @@
+ #endif
+ 
+ namespace plume {
+-#if defined(_WIN32)
++#if defined(_WIN32) && defined(PLUME_D3D12_COREWINDOW)
++    // UWP (CoreApplication): the view's CoreWindow (ABI::Windows::UI::Core::ICoreWindow) and the swap chain size in
++    // pixels, which the caller chooses (the window's bounds are in view pixels). The swap chain keeps that size.
++    struct RenderWindow {
++        IUnknown* coreWindow;
++        uint32_t width;
++        uint32_t height;
++
++        bool operator==(const struct RenderWindow& rhs) const {
++            return coreWindow == rhs.coreWindow && width == rhs.width && height == rhs.height;
++        }
++        bool operator!=(const struct RenderWindow& rhs) const { return !(*this == rhs); }
++    };
++#elif defined(_WIN32)
+     // Native HWND handle to the target window.
+     typedef HWND RenderWindow;
+ #elif defined(__ANDROID__)
+@@ -1277,6 +1293,9 @@ namespace plume {
+         static const uint32_t MaxRenderTargets = 8;
+ 
+         const RenderPipelineLayout *pipelineLayout = nullptr;
++        // SSA: a stable name for the pipeline (0: none). D3D12 keeps the pipelines it builds in the device's pipeline
++        // library under it (D3D12Device::pipelineLibrary), so a later run loads them instead of compiling them again.
++        uint64_t cacheKey = 0;
+         const RenderShader *vertexShader = nullptr;
+         const RenderShader *geometryShader = nullptr;
+         const RenderShader *pixelShader = nullptr;
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index a09dd93..6bef677 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -1612,6 +1612,7 @@ namespace plume {
+         dynamicStates.clear();
+         dynamicStates.emplace_back(VK_DYNAMIC_STATE_VIEWPORT);
+         dynamicStates.emplace_back(VK_DYNAMIC_STATE_SCISSOR);
++        dynamicStates.emplace_back(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
+ 
+         if (desc.dynamicDepthBiasEnabled) {
+             dynamicStates.emplace_back(VK_DYNAMIC_STATE_DEPTH_BIAS);
+@@ -2810,6 +2811,10 @@ namespace plume {
+             fprintf(stderr, "vkBeginCommandBuffer failed with error code 0x%X.\n", res);
+             return;
+         }
++
++        // The blend constant is dynamic in every pipeline: give it a value before any draw.
++        const float zero[4] = {};
++        vkCmdSetBlendConstants(vk, zero);
+     }
+ 
+     void VulkanCommandList::end() {
+@@ -3062,6 +3067,10 @@ namespace plume {
+         }
+     }
+ 
++    void VulkanCommandList::setBlendFactor(const float rgba[4]) {
++        vkCmdSetBlendConstants(vk, rgba);
++    }
++
+     void VulkanCommandList::setViewports(const RenderViewport *viewports, uint32_t count) {
+         if (count > 1) {
+             thread_local std::vector<VkViewport> viewportVector;
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+index 1d36b12..ea20552 100644
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -327,6 +327,7 @@ namespace plume {
+         void setVertexBuffers(uint32_t startSlot, const RenderVertexBufferView *views, uint32_t viewCount, const RenderInputSlot *inputSlots) override;
+         void setViewports(const RenderViewport *viewports, uint32_t count) override;
+         void setScissors(const RenderRect *scissorRects, uint32_t count) override;
++        void setBlendFactor(const float rgba[4]) override;
+         void setFramebuffer(const RenderFramebuffer *framebuffer) override;
+         void setDepthBias(float depthBias, float depthBiasClamp, float slopeScaledDepthBias) override;
+         void clearColor(uint32_t attachmentIndex, RenderColor colorValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;

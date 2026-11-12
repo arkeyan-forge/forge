@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Template filled by tools/xbox/package.sh (@KEY@ placeholders). See tools/xbox/README.md for the choices. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity Name="@NAME@" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>@DISPLAY_NAME@</DisplayName>
+    <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!-- 19041 = the Xbox Series X|S launch OS; Xbox One consoles in Dev Mode run the same OS line. -->
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+    <TargetDeviceFamily Name="Windows.Xbox" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="@EXECUTABLE@" EntryPoint="@NAME@.App">
+      <uap:VisualElements DisplayName="@DISPLAY_NAME@" Description="@DESCRIPTION@" BackgroundColor="#1B2A4A"
+        Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#1B2A4A" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- USB drives: broadFileSystemAccess + the *FromApp file APIs (as RetroArch and PPSSPP do on Xbox);
+         removableStorage covers the StorageFolder route (KnownFolders.RemovableDevices). -->
+    <rescap:Capability Name="broadFileSystemAccess" />
+    <rescap:Capability Name="expandedResources" />
+    <uap:Capability Name="removableStorage" />
+    <!-- HID portals (Wii, Wii U, PS3, PS4, PC; 1430:0150, a vendor-defined usage page) for
+         Windows.Devices.HumanInterfaceDevice. The Xbox One portal (GIP) needs no capability. -->
+    <DeviceCapability Name="humaninterfacedevice">
+      <Device Id="vidpid:1430 0150">
+        <Function Type="usage:ff00 *" />
+      </Device>
+    </DeviceCapability>
+  </Capabilities>
+
+  <Extensions>
+    <!-- The figure collection shared by every app of this publisher (docs/runtime/host/collection.md). -->
+    <Extension Category="windows.publisherCacheFolders">
+      <PublisherCacheFolders>
+        <Folder Name="Skylanders" />
+      </PublisherCacheFolders>
+    </Extension>
+  </Extensions>
+</Package>
