@@ -144,15 +144,24 @@ std::array<float, 2> upscale::Jitter() { return g_jitter; }
 
 float upscale::MipBias() { return -std::log2(Ratio()); }
 
-void upscale::SceneDraw(uint64_t identity, const float* rows, uint32_t weight, gpu::Texture* depth, float minDepth,
-    float maxDepth, bool greaterTest)
+// SKY_FSR_OBJECTS=0 (test aid): no per-object motion (=camera: the mask is made, the objects keep the camera's
+// motion: gpu/fsr/fsr.cpp).
+static bool Objects()
+{
+    static const bool off = skyenv::Get("SKY_FSR_OBJECTS") != nullptr && strcmp(skyenv::Get("SKY_FSR_OBJECTS"), "0") == 0;
+    return !off;
+}
+
+uint32_t upscale::SceneDraw(uint64_t identity, const float* rows, uint32_t weight, gpu::Texture* depth, float minDepth,
+    float maxDepth, bool greaterTest, bool writesDepth, bool skinned)
 {
     (greaterTest ? g_greaterWeight : g_lessWeight) += weight;
+    uint32_t object = 0;
     if (rows != nullptr)
     {
         const Matrix matrix = FromRowVectors(rows);
         if (identity != 0)
-            g_vote.Add(identity, matrix, weight);
+            object = g_vote.Add(identity, matrix, weight, writesDepth && Objects(), skinned);
         upscale::Camera camera;
         if (weight > g_cameraWeight && CameraOf(matrix, camera))
             g_camera = camera, g_cameraWeight = weight;
@@ -172,7 +181,7 @@ void upscale::SceneDraw(uint64_t identity, const float* rows, uint32_t weight, g
     if (i == g_depthCount)
     {
         if (g_depthCount == g_depths.size())
-            return;
+            return object;
         g_depths[g_depthCount++] = { depth, 0, {}, 0 };
     }
     DepthUse& use = g_depths[i];
@@ -184,6 +193,7 @@ void upscale::SceneDraw(uint64_t identity, const float* rows, uint32_t weight, g
         use.ranges[use.rangeCount++] = { minDepth, maxDepth, 0 };
     if (r < use.rangeCount)
         use.ranges[r].weight += weight;
+    return object;
 }
 
 // game::Adapter::sceneMotionLayers; SKY_FSR_LAYERS=0 (test aid): the camera's motion alone, as in the other games.
@@ -218,6 +228,7 @@ gpu::Texture* upscale::Composite(gpu::Texture* scene)
             .format = size.format,
             .usage = gpu::TextureUsage::Sampled | gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Storage });
         g_history = false;
+        g_phases = upscale::JitterPhases(Ratio()); // the frame may have followed the window (d3d/ultrawide.h)
         if (g_output == nullptr)
             return nullptr;
     }
@@ -248,7 +259,20 @@ gpu::Texture* upscale::Composite(gpu::Texture* scene)
         .motionLayers = MotionLayers(),
         .cutShift = game::Current().frameGenerationCutShift,
         .otherMotionCount = 0,
-        .otherMotions = {} };
+        .otherMotions = {},
+        .objectCount = 0,
+        .objectMotions = nullptr };
+    // Each moving object's own reprojection (rows), by its number.
+    static_assert(CameraVote::MaxObjects == gpu::MaxUpscaleObjects);
+    static std::array<float, (CameraVote::MaxObjects + 1) * 16> objectRows;
+    if (const Matrix* motions = nullptr; camera)
+    {
+        desc.objectCount = g_vote.Objects(motions);
+        for (uint32_t n = 1; n <= desc.objectCount; n++)
+            for (uint32_t i = 0; i < 16; i++)
+                objectRows[n * 16 + i] = float(motions[n][i]);
+        desc.objectMotions = objectRows.data();
+    }
     if (desc.motionLayers && camera)
     {
         Matrix others[2];

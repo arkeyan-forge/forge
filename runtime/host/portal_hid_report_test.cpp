@@ -121,11 +121,13 @@ namespace
         return same;
     }
 
+#ifndef _WIN32
     void WriteFile(const std::filesystem::path& file, const char* text)
     {
         std::filesystem::create_directories(file.parent_path());
         std::ofstream(file) << text << "\n";
     }
+#endif
 
     void ControlLinkChecks(const std::filesystem::path& scratch)
     {
@@ -144,7 +146,10 @@ namespace
         CHECK(unknown[0] == WriteMethod::OutputReport && unknown[1] == WriteMethod::HidWrite);
         CHECK(std::string(portal_hid::MethodName(WriteMethod::ControlReport)) == "usb-control");
 
+        portal_hid::UsbAddress address{ 1, 7, 0 };
+#ifndef _WIN32
         // sysfs: /dev/hidraw2 is the HID device 0003:1430:0150.0004 in interface 1-2:1.0 of device 1-2 (bus 1, address 7).
+        // Not on Windows, whose paths cannot hold its colons.
         namespace fs = std::filesystem;
         const fs::path sys = scratch / "sys";
         fs::remove_all(sys);
@@ -156,11 +161,12 @@ namespace
         WriteFile(device / "busnum", "1");
         WriteFile(device / "devnum", "7");
         WriteFile(device / "1-2:1.0" / "bInterfaceNumber", "00");
-        portal_hid::UsbAddress address = portal_hid::LinuxUsbAddress(sys, "/dev/hidraw2");
+        address = portal_hid::LinuxUsbAddress(sys, "/dev/hidraw2");
         CHECK(address.bus == 1 && address.address == 7 && address.interface == 0);
         CHECK(portal_hid::LinuxUsbAddress(sys, "/dev/hidraw9").bus == -1); // not in sysfs
         CHECK(portal_hid::LinuxUsbAddress(sys, "DevSrvsID:42").bus == -1); // not a hidraw node
         fs::remove_all(sys);
+#endif
 
         // Claim: the Wii portal by its address, its IN endpoint from the descriptor, the kernel's driver detached.
         const portal_usb::Api usb = FakeApi();

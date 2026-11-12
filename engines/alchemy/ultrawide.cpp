@@ -23,7 +23,7 @@ PPC_FUNC_IMPL(GAME_IMP(Ultrawide_SceneWidth));
 PPC_FUNC(GAME_HOOK(Ultrawide_SceneWidth))
 {
     GAME_IMP(Ultrawide_SceneWidth)(ctx, base);
-    if (!ultrawide::Active() || ctx.r3.u32 != ultrawide::SceneWidth16x9)
+    if (!ultrawide::SceneWide() || ctx.r3.u32 != ultrawide::SceneWidth16x9)
         return;
     static std::atomic<bool> logged;
     if (!logged.exchange(true))
@@ -39,7 +39,7 @@ PPC_FUNC_IMPL(GAME_IMP(Ultrawide_SceneHeight));
 PPC_FUNC(GAME_HOOK(Ultrawide_SceneHeight))
 {
     GAME_IMP(Ultrawide_SceneHeight)(ctx, base);
-    if (ultrawide::Active() && ctx.r3.u32 == ultrawide::SceneHeight16x9)
+    if (ultrawide::SceneWide() && ctx.r3.u32 == ultrawide::SceneHeight16x9)
         ctx.r3.u64 = ultrawide::SceneHeight();
 }
 #endif
@@ -48,7 +48,7 @@ PPC_FUNC(GAME_HOOK(Ultrawide_SceneHeight))
 // (r3 object, r4 width, r5 height, ...): the scene's size as its callers capped it.
 static void WidenSceneArgument(PPCContext& ctx)
 {
-    if (ultrawide::Active() && ctx.r4.u32 == ultrawide::SceneWidth16x9 && ctx.r5.u32 == ultrawide::SceneHeight16x9)
+    if (ultrawide::SceneWide() && ctx.r4.u32 == ultrawide::SceneWidth16x9 && ctx.r5.u32 == ultrawide::SceneHeight16x9)
     {
         ctx.r4.u64 = ultrawide::SceneWidth();
         ctx.r5.u64 = ultrawide::SceneHeight();

@@ -4,12 +4,44 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// The object mask (gpu::UpscaleDesc::objectMotions): a pixel of object n (n / 255 in the mask) moves by object n's own
+// reprojection, rows[n * 4] to rows[n * 4 + 3], instead of the camera's. rows[0].x: the frame before's mask is valid,
+// rows[0].y: the reactive value of a pixel an object left (Reactive).
+struct ObjectMotions
+{
+    float4 rows[128 * 4];
+};
+
 struct InputsSet
 {
     depth2d<float> sceneDepth [[id(0)]];
     texture2d<float, access::write> motion [[id(1)]];
     texture2d<float, access::write> depth [[id(2)]];
+    texture2d<float> objectMask [[id(3)]];
+    constant ObjectMotions* objects [[id(4)]];
+    texture2d<float> previousMask [[id(5)]];
+    texture2d<float, access::write> reactive [[id(6)]];
 };
+
+static uint ObjectOf(texture2d<float> mask, uint2 id) { return uint(mask.read(id).r * 255.0 + 0.5); }
+
+// FSR's reactive mask: see fsr_inputs.hlsl (keep in sync).
+static float Reactive(uint2 id, float2 motion, float2 size, texture2d<float> mask, texture2d<float> previousMask,
+    constant ObjectMotions* objects)
+{
+    if (objects->rows[0].x < 0.5)
+        return 0.0;
+    const int2 last = int2(size) - 1;
+    const int2 previous = int2(floor(float2(id) + 0.5 + motion * size));
+    if (any(previous < 0) || any(previous > last))
+        return 0.0;
+    const int2 taps[5] = { int2(0, 0), int2(1, 0), int2(-1, 0), int2(0, 1), int2(0, -1) };
+    for (int i = 0; i < 5; i++)
+        if (previousMask.read(uint2(clamp(previous + taps[i], int2(0), last))).r < 0.5 / 255.0 ||
+            mask.read(uint2(clamp(int2(id) + taps[i], int2(0), last))).r > 0.5 / 255.0)
+            return 0.0;
+    return objects->rows[0].y;
+}
 
 // Shared by the three kernels: the clears read their value from reprojection[0] and the mip's size from size.
 struct Constants
@@ -37,14 +69,20 @@ kernel void InputsCS(uint2 id [[thread_position_in_grid]], constant InputsSet& s
     float z = saturate(unclamped);
     z = isfinite(z) ? z : 1.0;
     float4 current = float4(ndc, z, 1.0);
-    float4 previous = float4(dot(p.reprojection[0], current), dot(p.reprojection[1], current),
-        dot(p.reprojection[2], current), dot(p.reprojection[3], current));
+    const uint object = ObjectOf(set.objectMask, id);
+    const float4 r0 = object != 0 ? set.objects->rows[object * 4] : p.reprojection[0];
+    const float4 r1 = object != 0 ? set.objects->rows[object * 4 + 1] : p.reprojection[1];
+    const float4 r2 = object != 0 ? set.objects->rows[object * 4 + 2] : p.reprojection[2];
+    const float4 r3 = object != 0 ? set.objects->rows[object * 4 + 3] : p.reprojection[3];
+    float4 previous = float4(dot(r0, current), dot(r1, current), dot(r2, current), dot(r3, current));
     // Only finite motion within the picture reaches FSR (a NaN or an infinity would spread through its history: a
     // point near the camera plane, w close to 0, gives one).
     float2 delta = previous.w > 1e-6 ? previous.xy / previous.w - ndc : float2(0.0);
     delta = all(isfinite(delta)) && !layer ? clamp(delta, -2.0, 2.0) : float2(0.0);
     set.motion.write(float4(delta * float2(0.5, -0.5), 0.0, 0.0), id);
     set.depth.write(float4(p.invertDepth > 0.5 ? 1.0 - z : z, 0.0, 0.0, 0.0), id);
+    set.reactive.write(
+        float4(Reactive(id, delta * float2(0.5, -0.5), p.size, set.objectMask, set.previousMask, set.objects)), id);
 }
 
 struct ClearFloatSet
@@ -80,6 +118,10 @@ struct LayersSet
     texture2d<float, access::write> depth [[id(2)]];
     texture2d<float> colour [[id(3)]];
     texture2d<float> previousColour [[id(4)]];
+    texture2d<float> objectMask [[id(5)]];
+    constant ObjectMotions* objects [[id(6)]];
+    texture2d<float> previousMask [[id(7)]];
+    texture2d<float, access::write> reactive [[id(8)]];
 };
 
 struct LayersConstants
@@ -175,6 +217,7 @@ kernel void InputsLayersCS(uint2 id [[thread_position_in_grid]], uint index [[th
     {
         set.motion.write(float4(0.0), id);
         set.depth.write(float4(0.0), id);
+        set.reactive.write(float4(0.0), id);
         return;
     }
     // A pixel at a tile's edge that the camera's motion explains much better (the world beside a ship's mast) keeps it;
@@ -182,9 +225,23 @@ kernel void InputsLayersCS(uint2 id [[thread_position_in_grid]], uint index [[th
     uint choice = sky ? 0 : tileChoice;
     if (choice != 0 && tileCost[index][0] < 0.8 * tileCost[index][choice])
         choice = 0;
-    set.motion.write(float4(motions[choice] * float2(0.5, -0.5), 0.0, 0.0), id);
+    // An object's pixel has its own motion, whatever its tile's.
+    float2 motion = motions[choice];
+    const uint object = ObjectOf(set.objectMask, id);
+    if (object != 0)
+    {
+        constant float4* rows = set.objects->rows + object * 4;
+        motion = LayerMotion(rows[0], rows[1], rows[2], rows[3], current, motion) ? clamp(motion, -2.0, 2.0) : float2(0.0);
+    }
+    set.motion.write(float4(motion * float2(0.5, -0.5), 0.0, 0.0), id);
+    set.reactive.write(
+        float4(Reactive(id, motion * float2(0.5, -0.5), p.size, set.objectMask, set.previousMask, set.objects)), id);
     set.depth.write(float4(p.invertDepth > 0.5 ? 1.0 - z : z, 0.0, 0.0, 0.0), id);
 }
+
+// ObjectMaskPS: the object mask's replays (gpu::detail::ReplayObjects); the blend writes the blend factor, the object's
+// number / 255.
+fragment float4 ObjectMaskPS() { return float4(1.0); }
 
 struct SanitizeSet
 {

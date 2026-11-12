@@ -346,6 +346,8 @@ int64_t PlatformReadFile(PlatformFile file, void* buffer, uint32_t size, uint64_
     return read;
 }
 
+int PlatformLastError() { return int(GetLastError()); }
+
 void PlatformCloseFile(PlatformFile file) { CloseHandle(reinterpret_cast<HANDLE>(file)); }
 
 bool PlatformStartAgain(const char* name, const char* value)

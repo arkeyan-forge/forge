@@ -1,12 +1,13 @@
 // Checks the write watch: a write to a watched page faults once, proceeds, and makes every range on that page changed;
 // pages next to it stay unchanged; WillWrite counts as a write; a page written right after being watched cools down;
-// writes from several threads at once are all seen.
+// writes from several threads at once are all seen; a file read into watched pages works inside a HostWrite (issue #26).
 // usage: ArkeyanWriteWatchTest
 #include "write_watch.h"
 #include "platform/platform.h"
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <thread>
 #include <vector>
 
@@ -143,6 +144,50 @@ int main()
         CHECK(landed);
         CHECK(!writewatch::Unchanged(range, 4 * page, stamp));
         CHECK(writewatch::TakeStats().faults <= 4);
+    }
+
+    // A file read into guest memory (NtReadFile). WillWrite alone: a Watch of a range on the same pages (a texture's
+    // check on the renderer's thread) protects them again before the system call writes, which then fails: the guest
+    // saw the end of its file (#26). In a HostWrite that Watch returns 0, the read lands, and the old stamp is changed.
+    {
+        SkipFrames(writewatch::HotFrames + writewatch::CoolFrames + 1);
+        const std::filesystem::path path =
+            std::filesystem::temp_directory_path() / ("arkeyan_write_watch_" + std::to_string(uintptr_t(base)));
+        std::vector<uint8_t> contents(3 * page);
+        for (size_t i = 0; i < contents.size(); i++)
+            contents[i] = uint8_t(i * 7 + 1);
+        FILE* out = fopen(path.string().c_str(), "wb");
+        CHECK(out != nullptr && fwrite(contents.data(), 1, contents.size(), out) == contents.size());
+        if (out != nullptr)
+            fclose(out);
+        PlatformFile file = PlatformOpenFile(path.string().c_str());
+        CHECK(file != InvalidPlatformFile);
+
+        uint8_t* buffer = memory + 70 * page + 100;     // a read buffer that shares its pages...
+        uint8_t* texture = memory + 70 * page;          // ...with a texture the renderer checks
+        const uint32_t bytes = uint32_t(2 * page);
+        uint64_t stamp = writewatch::Watch(texture, 64);
+        CHECK(stamp != 0);
+        writewatch::WillWrite(buffer, bytes);
+        SkipFrames(writewatch::HotFrames); // not hot: the page may be watched again
+        CHECK(writewatch::Watch(texture, 64) != 0);
+        CHECK(PlatformReadFile(file, buffer, bytes, 0) < 0); // what the guest saw before 0.9.6
+        SkipFrames(writewatch::HotFrames + writewatch::CoolFrames + 1);
+
+        stamp = writewatch::Watch(texture, 64);
+        CHECK(stamp != 0);
+        {
+            writewatch::HostWrite writing(buffer, bytes);
+            SkipFrames(writewatch::HotFrames);
+            CHECK(writewatch::Watch(texture, 64) == 0);
+            CHECK(PlatformReadFile(file, buffer, bytes, 0) == int64_t(bytes));
+        }
+        CHECK(memcmp(buffer, contents.data(), bytes) == 0);
+        CHECK(!writewatch::Unchanged(texture, 64, stamp));
+        SkipFrames(writewatch::HotFrames + writewatch::CoolFrames + 1);
+        CHECK(writewatch::Watch(texture, 64) != 0); // watched again once the read is done
+        PlatformCloseFile(file);
+        std::filesystem::remove(path);
     }
 
     if (g_failures == 0)

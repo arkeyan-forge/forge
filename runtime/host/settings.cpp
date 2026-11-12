@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <charconv>
 #include <atomic>
+#include <optional>
 #include <fmt/format.h>
 
 const KeyAction g_keyActions[22] = {
@@ -259,24 +260,18 @@ namespace
             return true;
         }
     };
-}
 
-bool ParseSettings(const LauncherConfig& config, const std::string& gameSection, const GetEnv& getEnv, int argc,
-    char** argv, RuntimeSettings& settings, std::vector<std::string>& warnings, std::string& error)
-{
-    RuntimeSettings& s = settings;
-    Setter set{ s, warnings };
-    for (size_t i = 0; i < std::size(g_keyActions); i++)
-        s.keys[i] = g_keyActions[i].defaultKey;
-
-    // launcher.ini
-    auto section = [&](const char* name) -> const std::map<std::string, std::string>& {
+    const std::map<std::string, std::string>& SettingsSection(const LauncherConfig& config, const char* name)
+    {
         static const std::map<std::string, std::string> empty;
         auto it = config.find(name);
         return it != config.end() ? it->second : empty;
-    };
-    const char* file = "launcher.ini";
-    auto video = [&](const std::string& key, const std::string& value) {
+    }
+
+    void ParseVideoSetting(const std::string& key, const std::string& value, Setter& set)
+    {
+        RuntimeSettings& s = set.s;
+        const char* file = "launcher.ini";
         if (key == "resolution_scale")
             set.Scale(file, value);
         else if (key == "aspect")
@@ -315,226 +310,265 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
             set.FrameGeneration(file, value);
         else if (key == "gpu_backend")
             set.GpuBackend(file, value);
-    };
-    for (const auto& [key, value] : section("video"))
-        video(key, value);
-    // The game's own video section (the launcher keeps one per game, and PLAY copies it into [video]) wins over [video],
-    // so a game started without PLAY (its own icon, a shortcut to the runtime) still gets what its page shows.
-    for (const auto& [key, value] : section((gameSection + ".video").c_str()))
-        video(key, value);
-    // The master volume, the portal's sound and the speakers: [audio], then the game's own [<game>.audio].
-    for (const std::string& name : { std::string("audio"), gameSection + ".audio" })
-        for (const auto& [key, value] : section(name.c_str()))
+    }
+
+    void ParseAudioSettings(const std::map<std::string, std::string>& section, Setter& set)
+    {
+        RuntimeSettings& s = set.s;
+        const char* file = "launcher.ini";
+        for (const auto& [key, value] : section)
             if (key == "volume")
                 set.Volume(file, value);
             else if (key == "portal_sound")
                 set.Bool(file, "portal_sound", value, s.portalSound);
             else if (key == "speakers")
                 set.Speakers(file, value);
-    for (const auto& [key, value] : section("input"))
-    {
-        if (key == "device")
-            set.Device(file, value);
-        else if (key == "gamepad")
-            s.gamepad = value;
-        else if (key == "glyphs")
-            set.Glyphs(file, value);
-        else if (key.starts_with("key_toybox"))
-            set.ToyboxKey(file, key, value);
-        else if (key.starts_with("key_"))
-            set.Key(file, key.substr(4), value);
-        else if (key.starts_with("pad_"))
-            set.Pad(file, key.substr(4), value);
-        else if (key == "rumble_p1")
-            set.Rumble(file, 0, value);
-        else if (key == "rumble_p2")
-            set.Rumble(file, 1, value);
     }
-    // The game's own keys (Skylauncher keeps one copy per game, [<game>.input], and puts it in [input] at PLAY) win over
-    // [input], so a game started without the launcher still plays with its own bindings.
-    for (const auto& [key, value] : section((gameSection + ".input").c_str()))
-    {
-        if (key == "mouse")
-            set.Bool(file, "mouse", value, s.mouse.enabled);
-        else if (key.starts_with("mouse_"))
-            set.Mouse(file, key.substr(6), value);
-        else if (key.starts_with("key_"))
-            set.Key(file, key.substr(4), value);
-        else if (key.starts_with("pad_"))
-            set.Pad(file, key.substr(4), value);
-        else if (key == "rumble_p1")
-            set.Rumble(file, 0, value);
-        else if (key == "rumble_p2")
-            set.Rumble(file, 1, value);
-    }
-    for (const auto& [key, value] : section("portal"))
-    {
-        if (key == "toybox_auto_open")
-            set.Bool(file, "toybox_auto_open", value, s.toyboxAutoOpen);
-    }
-    const auto& game = section(gameSection.c_str());
-    if (auto it = game.find("language"); it != game.end())
-        s.language = it->second;
-    if (auto it = game.find("voice_language"); it != game.end())
-        s.voiceLanguage = it->second;
-    if (auto it = game.find("nightmare_from_start"); it != game.end())
-        set.Bool(file, "nightmare_from_start", it->second, s.nightmareFromStart);
-    if (auto it = game.find("hd_textures"); it != game.end())
-        set.Bool(file, "hd_textures", it->second, s.hdTextures);
 
-    // Environment
-    if (const char* value = skyenv::Get("SKY_LANGUAGE", getEnv))
-        s.language = value;
-    if (const char* value = skyenv::Get("SKY_VOICE_LANGUAGE", getEnv))
-        s.voiceLanguage = value;
-    if (const char* value = skyenv::Get("SKY_NIGHTMARE_FROM_START", getEnv))
-        set.Bool("SKY_NIGHTMARE_FROM_START", "nightmare_from_start", value, s.nightmareFromStart);
-    if (const char* value = skyenv::Get("SKY_TOYBOX_AUTO_OPEN", getEnv))
-        set.Bool("SKY_TOYBOX_AUTO_OPEN", "toybox_auto_open", value, s.toyboxAutoOpen);
-    if (const char* value = skyenv::Get("SKY_SPEAKERS", getEnv))
-        set.Speakers("SKY_SPEAKERS", value);
-    if (const char* value = skyenv::Get("SKY_UPSCALER", getEnv))
-        set.Upscaler("SKY_UPSCALER", value, true);
-    if (const char* value = skyenv::Get("SKY_FSR_QUALITY", getEnv))
-        set.FsrQuality("SKY_FSR_QUALITY", value);
-    if (const char* value = skyenv::Get("SKY_FSR_FRAME_GENERATION", getEnv))
-        set.FrameGeneration("SKY_FSR_FRAME_GENERATION", value);
-    if (const char* value = skyenv::Get("SKY_TEXTURE_DUMP", getEnv))
-        set.Bool("SKY_TEXTURE_DUMP", "SKY_TEXTURE_DUMP", value, s.textureDump);
-    if (const char* value = skyenv::Get("SKY_TEXTURE_PACKS", getEnv))
-        set.Bool("SKY_TEXTURE_PACKS", "SKY_TEXTURE_PACKS", value, s.texturePacks);
-    if (const char* value = skyenv::Get("SKY_HD_TEXTURES", getEnv))
-        set.Bool("SKY_HD_TEXTURES", "SKY_HD_TEXTURES", value, s.hdTextures);
-
-    // Command line: "--option value" or "--option=value".
-    const char* cli = "command line";
-    for (int i = 1; i < argc; i++)
+    void ParseSharedInputSettings(const std::map<std::string, std::string>& section, Setter& set)
     {
-        std::string option = argv[i], value;
-        bool inlineValue = false;
-        if (size_t equals = option.find('='); option.starts_with("--") && equals != std::string::npos)
+        RuntimeSettings& s = set.s;
+        const char* file = "launcher.ini";
+        for (const auto& [key, value] : section)
         {
-            value = option.substr(equals + 1);
-            option.resize(equals);
-            inlineValue = true;
+            if (key == "device")
+                set.Device(file, value);
+            else if (key == "gamepad")
+                s.gamepad = value;
+            else if (key == "glyphs")
+                set.Glyphs(file, value);
+            else if (key.starts_with("key_toybox"))
+                set.ToyboxKey(file, key, value);
+            else if (key.starts_with("key_"))
+                set.Key(file, key.substr(4), value);
+            else if (key.starts_with("pad_"))
+                set.Pad(file, key.substr(4), value);
+            else if (key == "rumble_p1")
+                set.Rumble(file, 0, value);
+            else if (key == "rumble_p2")
+                set.Rumble(file, 1, value);
         }
-        auto take = [&]() -> bool {
+    }
+
+    void ParseGameInputSettings(const std::map<std::string, std::string>& section, Setter& set)
+    {
+        RuntimeSettings& s = set.s;
+        const char* file = "launcher.ini";
+        for (const auto& [key, value] : section)
+        {
+            if (key == "mouse")
+                set.Bool(file, "mouse", value, s.mouse.enabled);
+            else if (key.starts_with("mouse_"))
+                set.Mouse(file, key.substr(6), value);
+            else if (key.starts_with("key_"))
+                set.Key(file, key.substr(4), value);
+            else if (key.starts_with("pad_"))
+                set.Pad(file, key.substr(4), value);
+            else if (key == "rumble_p1")
+                set.Rumble(file, 0, value);
+            else if (key == "rumble_p2")
+                set.Rumble(file, 1, value);
+        }
+    }
+
+    void ParsePortalSettings(const std::map<std::string, std::string>& section, Setter& set)
+    {
+        RuntimeSettings& s = set.s;
+        const char* file = "launcher.ini";
+        for (const auto& [key, value] : section)
+        {
+            if (key == "toybox_auto_open")
+                set.Bool(file, "toybox_auto_open", value, s.toyboxAutoOpen);
+        }
+    }
+
+    void ParseGameSettings(const std::map<std::string, std::string>& game, Setter& set)
+    {
+        RuntimeSettings& s = set.s;
+        const char* file = "launcher.ini";
+        if (auto it = game.find("language"); it != game.end())
+            s.language = it->second;
+        if (auto it = game.find("voice_language"); it != game.end())
+            s.voiceLanguage = it->second;
+        if (auto it = game.find("nightmare_from_start"); it != game.end())
+            set.Bool(file, "nightmare_from_start", it->second, s.nightmareFromStart);
+        if (auto it = game.find("hd_textures"); it != game.end())
+            set.Bool(file, "hd_textures", it->second, s.hdTextures);
+    }
+
+    void ParseFileSettings(const LauncherConfig& config, const std::string& gameSection, Setter& set)
+    {
+        for (const auto& [key, value] : SettingsSection(config, "video"))
+            ParseVideoSetting(key, value, set);
+        // Per-game sections win over the shared sections when starting without the launcher.
+        for (const auto& [key, value] : SettingsSection(config, (gameSection + ".video").c_str()))
+            ParseVideoSetting(key, value, set);
+        ParseAudioSettings(SettingsSection(config, "audio"), set);
+        ParseAudioSettings(SettingsSection(config, (gameSection + ".audio").c_str()), set);
+        ParseSharedInputSettings(SettingsSection(config, "input"), set);
+        ParseGameInputSettings(SettingsSection(config, (gameSection + ".input").c_str()), set);
+        ParsePortalSettings(SettingsSection(config, "portal"), set);
+        ParseGameSettings(SettingsSection(config, gameSection.c_str()), set);
+    }
+
+    void ParseEnvironmentSettings(const GetEnv& getEnv, Setter& set)
+    {
+        RuntimeSettings& s = set.s;
+        if (const char* value = skyenv::Get("SKY_LANGUAGE", getEnv))
+            s.language = value;
+        if (const char* value = skyenv::Get("SKY_VOICE_LANGUAGE", getEnv))
+            s.voiceLanguage = value;
+        if (const char* value = skyenv::Get("SKY_NIGHTMARE_FROM_START", getEnv))
+            set.Bool("SKY_NIGHTMARE_FROM_START", "nightmare_from_start", value, s.nightmareFromStart);
+        if (const char* value = skyenv::Get("SKY_TOYBOX_AUTO_OPEN", getEnv))
+            set.Bool("SKY_TOYBOX_AUTO_OPEN", "toybox_auto_open", value, s.toyboxAutoOpen);
+        if (const char* value = skyenv::Get("SKY_SPEAKERS", getEnv))
+            set.Speakers("SKY_SPEAKERS", value);
+        if (const char* value = skyenv::Get("SKY_UPSCALER", getEnv))
+            set.Upscaler("SKY_UPSCALER", value, true);
+        if (const char* value = skyenv::Get("SKY_FSR_QUALITY", getEnv))
+            set.FsrQuality("SKY_FSR_QUALITY", value);
+        if (const char* value = skyenv::Get("SKY_FSR_FRAME_GENERATION", getEnv))
+            set.FrameGeneration("SKY_FSR_FRAME_GENERATION", value);
+        if (const char* value = skyenv::Get("SKY_TEXTURE_DUMP", getEnv))
+            set.Bool("SKY_TEXTURE_DUMP", "SKY_TEXTURE_DUMP", value, s.textureDump);
+        if (const char* value = skyenv::Get("SKY_TEXTURE_PACKS", getEnv))
+            set.Bool("SKY_TEXTURE_PACKS", "SKY_TEXTURE_PACKS", value, s.texturePacks);
+        if (const char* value = skyenv::Get("SKY_HD_TEXTURES", getEnv))
+            set.Bool("SKY_HD_TEXTURES", "SKY_HD_TEXTURES", value, s.hdTextures);
+    }
+
+    struct CommandLine
+    {
+        int argc;
+        char** argv;
+        std::string& error;
+        int index = 1;
+        std::string option{};
+        std::string value{};
+        bool inlineValue = false;
+
+        void ReadOption()
+        {
+            option = argv[index];
+            value.clear();
+            inlineValue = false;
+            if (size_t equals = option.find('='); option.starts_with("--") && equals != std::string::npos)
+            {
+                value = option.substr(equals + 1);
+                option.resize(equals);
+                inlineValue = true;
+            }
+        }
+
+        bool TakeValue()
+        {
             if (inlineValue)
                 return true;
-            if (i + 1 >= argc)
+            if (index + 1 >= argc)
             {
                 error = option + " needs a value (see --help)";
                 return false;
             }
-            value = argv[++i];
+            value = argv[++index];
             return true;
-        };
+        }
+    };
 
-        if (option == "--help" || option == "-h")
-            s.help = true;
-        else if (option == "--version")
-            s.version = true;
-        else if (option == "--list-gamepads")
-            s.listGamepads = true;
-        else if (option == "--portal-probe")
-            s.portalProbe = true;
-        else if (option == "--fullscreen")
-            s.fullscreen = true;
-        else if (option == "--windowed")
-            s.fullscreen = false;
-        else if (option == "--scale")
+    // An empty result leaves the option to another group; false stops parsing on a missing or malformed value.
+    std::optional<bool> ParseVideoOption(CommandLine& line, Setter& set)
+    {
+        const std::string& option = line.option;
+        const std::string& value = line.value;
+        RuntimeSettings& s = set.s;
+        const char* cli = "command line";
+        if (option == "--scale")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Scale(cli, value);
         }
         else if (option == "--aspect")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Aspect(cli, value);
         }
         else if (option == "--vsync")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Bool(cli, "vsync", value, s.vsync);
         }
         else if (option == "--anisotropy")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Anisotropy(cli, value);
         }
         else if (option == "--fps-limit")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.FpsLimit(cli, value);
         }
         else if (option == "--texture-dump")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Bool(cli, "texture_dump", value, s.textureDump);
         }
         else if (option == "--texture-packs")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Bool(cli, "texture_packs", value, s.texturePacks);
         }
         else if (option == "--original-resolution")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Bool(cli, "original_resolution", value, s.originalResolution);
         }
         else if (option == "--edge-smoothing")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.EdgeSmoothing(cli, value);
         }
-        else if (option == "--input")
+        else
+            return std::nullopt;
+        return true;
+    }
+
+    std::optional<bool> ParseInputOption(CommandLine& line, Setter& set)
+    {
+        const std::string& option = line.option;
+        const std::string& value = line.value;
+        RuntimeSettings& s = set.s;
+        const char* cli = "command line";
+        std::string& error = line.error;
+        if (option == "--input")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Device(cli, value);
         }
         else if (option == "--gamepad")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             s.gamepad = value;
         }
         else if (option == "--glyphs")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Glyphs(cli, value);
         }
-        else if (option == "--language")
-        {
-            if (!take())
-                return false;
-            s.language = value;
-        }
-        else if (option == "--voice-language")
-        {
-            if (!take())
-                return false;
-            s.voiceLanguage = value;
-        }
-        else if (option == "--nightmare-from-start")
-        {
-            if (!take())
-                return false;
-            set.Bool(cli, "nightmare_from_start", value, s.nightmareFromStart);
-        }
         else if (option == "--key")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             size_t equals = value.find('=');
             if (equals == std::string::npos)
@@ -546,7 +580,7 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         }
         else if (option == "--pad")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             size_t equals = value.find('=');
             if (equals == std::string::npos)
@@ -558,21 +592,105 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
         }
         else if (option == "--rumble")
         {
-            if (!take())
+            if (!line.TakeValue())
                 return false;
             set.Rumble(cli, 0, value);
             set.Rumble(cli, 1, value);
         }
-        else if (option == "--select-iso" || option == "--launcher" || !option.starts_with("--"))
-            s.arguments.push_back(argv[i]);
         else
-        {
-            error = "unknown option " + option + " (see --help)";
-            return false;
-        }
+            return std::nullopt;
+        return true;
     }
-    g_skipIntroMovies = s.skipIntroMovies;
-    SetFpsAutoFallback(s.fpsAutoFallback);
+
+    std::optional<bool> ParseGameOption(CommandLine& line, Setter& set)
+    {
+        const std::string& option = line.option;
+        const std::string& value = line.value;
+        RuntimeSettings& s = set.s;
+        const char* cli = "command line";
+        if (option == "--language")
+        {
+            if (!line.TakeValue())
+                return false;
+            s.language = value;
+        }
+        else if (option == "--voice-language")
+        {
+            if (!line.TakeValue())
+                return false;
+            s.voiceLanguage = value;
+        }
+        else if (option == "--nightmare-from-start")
+        {
+            if (!line.TakeValue())
+                return false;
+            set.Bool(cli, "nightmare_from_start", value, s.nightmareFromStart);
+        }
+        else
+            return std::nullopt;
+        return true;
+    }
+
+    bool ParseCommandLine(int argc, char** argv, Setter& set, std::string& error)
+    {
+        RuntimeSettings& s = set.s;
+        CommandLine line{ argc, argv, error };
+        for (; line.index < argc; line.index++)
+        {
+            line.ReadOption();
+            const std::string& option = line.option;
+            if (option == "--help" || option == "-h")
+                s.help = true;
+            else if (option == "--version")
+                s.version = true;
+            else if (option == "--list-gamepads")
+                s.listGamepads = true;
+            else if (option == "--portal-probe")
+                s.portalProbe = true;
+            else if (option == "--fullscreen")
+                s.fullscreen = true;
+            else if (option == "--windowed")
+                s.fullscreen = false;
+            else if (auto video = ParseVideoOption(line, set); video.has_value())
+            {
+                if (!*video)
+                    return false;
+            }
+            else if (auto input = ParseInputOption(line, set); input.has_value())
+            {
+                if (!*input)
+                    return false;
+            }
+            else if (auto game = ParseGameOption(line, set); game.has_value())
+            {
+                if (!*game)
+                    return false;
+            }
+            else if (option == "--select-iso" || option == "--launcher" || !option.starts_with("--"))
+                s.arguments.push_back(argv[line.index]);
+            else
+            {
+                error = "unknown option " + option + " (see --help)";
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+bool ParseSettings(const LauncherConfig& config, const std::string& gameSection, const GetEnv& getEnv, int argc,
+    char** argv, RuntimeSettings& settings, std::vector<std::string>& warnings, std::string& error)
+{
+    Setter set{ settings, warnings };
+    for (size_t i = 0; i < std::size(g_keyActions); i++)
+        settings.keys[i] = g_keyActions[i].defaultKey;
+
+    ParseFileSettings(config, gameSection, set);
+    ParseEnvironmentSettings(getEnv, set);
+    if (!ParseCommandLine(argc, argv, set, error))
+        return false;
+    g_skipIntroMovies = settings.skipIntroMovies;
+    SetFpsAutoFallback(settings.fpsAutoFallback);
     return true;
 }
 

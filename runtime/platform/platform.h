@@ -65,4 +65,6 @@ constexpr PlatformFile InvalidPlatformFile = -1;
 PlatformFile PlatformOpenFile(const char* path);
 // Bytes read (0 at end of file), -1 on error.
 int64_t PlatformReadFile(PlatformFile file, void* buffer, uint32_t size, uint64_t offset);
+// The calling thread's last system error (errno, GetLastError), right after a failed call, for the log.
+int PlatformLastError();
 void PlatformCloseFile(PlatformFile file);

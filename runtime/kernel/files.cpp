@@ -620,19 +620,22 @@ PPC_FUNC(__imp__NtReadFile)
 
     uint64_t position = TransferPosition(*file, ctx.r10.u32);
     uint32_t read = 0;
-    // A system call writes the buffer: watched pages would make it fail instead of faulting.
-    writewatch::WillWrite(g_memory.Translate(buffer), length);
-    if (!file->OnHost())
     {
-        read = g_disc.Read(*file->entry, position, g_memory.Translate(buffer), length);
-    }
-    else if (!file->directory)
-    {
-        std::lock_guard lock(file->lock);
-        file->stream.clear();
-        file->stream.seekg(std::streamoff(position));
-        file->stream.read(static_cast<char*>(g_memory.Translate(buffer)), length);
-        read = uint32_t(file->stream.gcount());
+        // A system call writes the buffer: a watched page would make it fail instead of faulting, so none is watched
+        // until it is done.
+        writewatch::HostWrite writing(g_memory.Translate(buffer), length);
+        if (!file->OnHost())
+        {
+            read = g_disc.Read(*file->entry, position, g_memory.Translate(buffer), length);
+        }
+        else if (!file->directory)
+        {
+            std::lock_guard lock(file->lock);
+            file->stream.clear();
+            file->stream.seekg(std::streamoff(position));
+            file->stream.read(static_cast<char*>(g_memory.Translate(buffer)), length);
+            read = uint32_t(file->stream.gcount());
+        }
     }
     file->position = position + read;
 

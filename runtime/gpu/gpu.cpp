@@ -411,6 +411,8 @@ namespace gpu::detail
     }
 
     // Runs what was recorded and waits for the whole frame.
+    void WaitForGpu() { WaitForSubmissions(); }
+
     void Submit()
     {
         Flush();
@@ -1217,6 +1219,14 @@ void gpu::Shutdown()
         SDL_Metal_DestroyView(metalView);
 }
 
+uint64_t gpu::detail::TextureBytes(const TextureDesc& desc)
+{
+    const uint32_t block = RenderFormatBlockWidth(desc.format);
+    uint64_t bytes = uint64_t(desc.width) * desc.height * desc.depth * desc.arraySize * RenderFormatSize(desc.format) /
+                     (block * block);
+    return desc.mipLevels > 1 ? bytes + bytes / 3 : bytes;
+}
+
 gpu::Texture* gpu::CreateTexture(const TextureDesc& desc)
 {
     // Not under g_mutex: the GPU thread may be recording. Creating a resource is thread-safe in every backend (Metal's
@@ -1244,15 +1254,17 @@ gpu::Texture* gpu::CreateTexture(const TextureDesc& desc)
     textureDesc.committed = (desc.usage & (TextureUsage::RenderTarget | TextureUsage::DepthStencil)) != 0;
 
     auto texture = new Texture{ .desc = desc };
-#if defined(_WIN32)
-    // D3D12: the big allocations, for the memory budget (the console renders at scale 2).
-    uint64_t bytes = uint64_t(desc.width) * desc.height * desc.depth * desc.arraySize * RenderFormatSize(desc.format) /
-                     (RenderFormatBlockWidth(desc.format) * RenderFormatBlockWidth(desc.format));
-    bool big =
-        bytes >= (16u << 20) && g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::DXIL;
+    // The big allocations, with every texture's total: what the resolution scale costs in video memory.
+    uint64_t bytes = TextureBytes(desc);
+    texture->countedBytes = bytes;
+    uint64_t total = g_textureBytes.fetch_add(bytes) + bytes;
+    bool big = bytes >= (16u << 20);
     if (big)
-        fprintf(stderr, "[gpu] texture %ux%u x%u, format %d, %u mips: %.0f MB\n", desc.width, desc.height,
-            desc.depth * desc.arraySize, int(desc.format), desc.mipLevels, double(bytes) / (1 << 20));
+        fprintf(stderr, "[gpu] texture %ux%u x%u, format %d, %u mips: %.0f MB (%.0f MB in all)\n", desc.width,
+            desc.height, desc.depth * desc.arraySize, int(desc.format), desc.mipLevels, double(bytes) / (1 << 20),
+            double(total) / (1 << 20));
+#if defined(_WIN32)
+    big = big && g_context->renderInterface->getCapabilities().shaderFormat == RenderShaderFormat::DXIL;
 #endif
     if (!DeviceLost())
     {

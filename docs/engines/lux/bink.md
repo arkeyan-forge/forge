@@ -67,3 +67,34 @@ enabled hooks. Neither case is claimed fixed for issue #26; they need the caller
 odd dimensions, padding and truncated storage. `ArkeyanBinkDisplayTest` calls the real hooks with synthetic guest
 memory and stub originals, checking failed opens, zero headers, fallback failures, lifetime cleanup and the GPU-path
 bypass. Both are registered with `sky_add_tests`; neither opens a movie or starts a game.
+
+
+## Movie data that stops arriving (issue #26)
+
+2026-11-12 [SwapForce] [Alchemy] [V]. **What players saw.** Swap Force, Mount Cloudbreak (`tutorial/tutorial_b`), Windows, Direct3D 12, scale 4, HD textures,
+60 FPS: the whole picture plain green (RGB about 0,155,0), the music going on, the game deaf to everything but the port's
+own menu, once on picking up an item by the honey cave, once on a bridge. The disc's `Soul_Gem_*_Mix_360.bk2` previews
+(1024x608, 359 frames for `Soul_Gem_BeeTree`) play full screen over the level when a Soul Gem is picked up; the movie is
+the likely event [?] (not reached in a scripted run: no route to those spots).
+
+**The mechanism, reproduced** [V]. One read of a movie file that returns nothing makes exactly that picture: with the
+11th read of `Tutorial_B_Intro.bk2` (128 KB at 917504) failing, Bink 2's guest decoder draws all-zero planes from then
+on (RGB 0,135,0 on every frame, 84 of 121 frames to the end of the 120 s run) and the game waits for the movie forever.
+`NtReadFile` returned 0 bytes with `STATUS_END_OF_FILE` and nothing in the log.
+
+**Why a read could fail on a player's PC.** Two ways, both silent before: the write watch protecting a page of the read's
+buffer while the read ran ([renderer_threads.md](../../runtime/gpu/renderer_threads.md#the-write-watch-2026-11-04-ssa-giants-swapforce-trapteam-lux-alchemy-xbox-v),
+`ERROR_NOACCESS`), and Windows refusing a big read or the commit of a guest page while memory is short
+(`ERROR_NO_SYSTEM_RESOURCES`, `ERROR_WORKING_SET_QUOTA`, the commit limit): scale 4 (5120x2880 targets, 2.2 GB of
+textures in the tutorial at scale 4 on the Mac) with HD textures is the heaviest setup. Which one the players met is
+not known [?]: their logs were not sent. Two runs on the Mac at scale 4 with HD textures logged no failed read.
+
+**The fix.** `NtReadFile` keeps its buffer writable for the whole read (`writewatch::HostWrite`), and the disc reader
+(`DiscFileSystem::Read`) reads through `readfully::Read` (`runtime/read_fully.h`): a short read goes on, a failed one is
+tried again up to 8 times, each piece half as big down to 64 KB, after 1 to 8 ms; any failure is logged
+(`[file] read <name> ...: K failed attempt(s), system error E`). Checks: `ArkeyanReadFullyTest` (retries, halving, a
+lasting failure), `ArkeyanWriteWatchTest` (the race fails a real read without `HostWrite`, not with it). Scripted runs
+(`SKY_LEVEL=tutorial/tutorial_b`, intro movie on, scale 4, HD textures, 60 FPS, anisotropy 16, edge smoothing light):
+`SKY_TEST_READ_FAIL=intro.bk2:11:1` logs `1 failed attempt(s) ... read in full on a retry` and the movie plays into the
+level (0 green frames); `intro.bk2:11:9` (past the retries) gives the green picture again. A failure that lasts still
+ends the movie's data; the log then says so.

@@ -9,7 +9,36 @@
 // Vulkan: the views' formats (fsr.cpp), not the HLSL types' (DXC would declare rg32f and rgba32f).
 [[vk::binding(1, 0)]] [[vk::image_format("rg16f")]] RWTexture2D<float2> g_motion : register(u1, space0);
 [[vk::binding(2, 0)]] RWTexture2D<float> g_depth : register(u2, space0);
+// The object mask (gpu::UpscaleDesc::objectMotions): a pixel of object n (n / 255 in the mask) moves by object n's own
+// reprojection, rows[n * 4] to rows[n * 4 + 3], instead of the camera's. rows[0].x: the frame before's mask is valid,
+// rows[0].y: the reactive value of a pixel an object left (Reactive).
+[[vk::binding(3, 0)]] Texture2D<float> g_objectMask : register(t3, space0);
+struct ObjectMotions
+{
+    float4 rows[128 * 4];
+};
+[[vk::binding(4, 0)]] ConstantBuffer<ObjectMotions> g_objects : register(b4, space0);
+[[vk::binding(5, 0)]] Texture2D<float> g_previousMask : register(t5, space0);
+[[vk::binding(6, 0)]] [[vk::image_format("r8")]] RWTexture2D<float> g_reactive : register(u6, space0);
 
+// FSR's reactive mask: where an object was in the frame before (all around the place the pixel's motion takes it to)
+// and none is now (nor beside it): FSR's history there holds the object, the trail it leaves; the history is dropped.
+// One pixel's margin either side: the masks' edges move with the jitter.
+float Reactive(uint2 id, float2 motion, float2 size)
+{
+    if (g_objects.rows[0].x < 0.5)
+        return 0.0;
+    const int2 last = int2(size) - 1;
+    const int2 previous = int2(floor(float2(id) + 0.5 + motion * size));
+    if (any(previous < 0) || any(previous > last))
+        return 0.0;
+    const int2 taps[5] = { int2(0, 0), int2(1, 0), int2(-1, 0), int2(0, 1), int2(0, -1) };
+    for (int i = 0; i < 5; i++)
+        if (g_previousMask.Load(int3(clamp(previous + taps[i], int2(0, 0), last), 0)) < 0.5 / 255.0 ||
+            g_objectMask.Load(int3(clamp(int2(id) + taps[i], int2(0, 0), last), 0)) > 0.5 / 255.0)
+            return 0.0;
+    return g_objects.rows[0].y;
+}
 // One push constant block for all three (SPIR-V allows one): the clears read their value from reprojection[0] and the
 // mip's size from size.
 struct Constants
@@ -37,14 +66,26 @@ void InputsCS(uint3 id : SV_DispatchThreadID)
     float z = saturate(unclamped);
     z = isfinite(z) ? z : 1.0;
     float4 current = float4(ndc, z, 1.0);
-    float4 previous = float4(dot(g_inputs.reprojection[0], current), dot(g_inputs.reprojection[1], current),
-        dot(g_inputs.reprojection[2], current), dot(g_inputs.reprojection[3], current));
+    const uint object = uint(g_objectMask.Load(int3(id.xy, 0)) * 255.0 + 0.5);
+    const float4 r0 = object != 0 ? g_objects.rows[object * 4] : g_inputs.reprojection[0];
+    const float4 r1 = object != 0 ? g_objects.rows[object * 4 + 1] : g_inputs.reprojection[1];
+    const float4 r2 = object != 0 ? g_objects.rows[object * 4 + 2] : g_inputs.reprojection[2];
+    const float4 r3 = object != 0 ? g_objects.rows[object * 4 + 3] : g_inputs.reprojection[3];
+    float4 previous = float4(dot(r0, current), dot(r1, current), dot(r2, current), dot(r3, current));
     // Only finite motion within the picture reaches FSR (a NaN or an infinity would spread through its history: a
     // point near the camera plane, w close to 0, gives one).
     float2 delta = previous.w > 1e-6 ? previous.xy / previous.w - ndc : float2(0.0, 0.0);
     delta = all(isfinite(delta)) && !layer ? clamp(delta, -2.0, 2.0) : float2(0.0, 0.0);
     g_motion[id.xy] = delta * float2(0.5, -0.5);
     g_depth[id.xy] = g_inputs.invertDepth > 0.5 ? 1.0 - z : z;
+    g_reactive[id.xy] = Reactive(id.xy, delta * float2(0.5, -0.5), g_inputs.size);
+}
+
+// ObjectMaskPS: the object mask's replays (gpu::detail::ReplayObjects); the blend writes the blend factor, the object's
+// number / 255.
+float4 ObjectMaskPS() : SV_Target0
+{
+    return float4(1.0, 1.0, 1.0, 1.0);
 }
 
 // ClearFloatCS, ClearUintCS: one value in every texel of a mip (FSR's clear jobs). A uint target takes the value's bits,

@@ -51,7 +51,7 @@ PPC_FUNC_IMPL(GAME_IMP(Ultrawide_CreateTexture));
 // Creates a texture (r3 usage, r4 format, r5 width, r6 height, r7 levels, r8 slices).
 PPC_FUNC(GAME_HOOK(Ultrawide_CreateTexture))
 {
-    if (ultrawide::Active())
+    if (ultrawide::SceneWide())
     {
         uint32_t width = ctx.r5.u32, height = ctx.r6.u32;
         if (WideSize(width, height))
@@ -72,7 +72,7 @@ PPC_FUNC_IMPL(GAME_IMP(Ultrawide_TextureHeader));
 // is a scene texture too.
 PPC_FUNC(GAME_HOOK(Ultrawide_TextureHeader))
 {
-    if (ultrawide::Active() && uint32_t(ctx.lr) == game::UltrawideSceneHeaderReturn && ctx.r3.u32 == 1120 &&
+    if (ultrawide::SceneWide() && uint32_t(ctx.lr) == game::UltrawideSceneHeaderReturn && ctx.r3.u32 == 1120 &&
         ctx.r4.u32 == 704)
         ctx.r3.u64 = ultrawide::SceneWidth();
     GAME_IMP(Ultrawide_TextureHeader)(ctx, base);
@@ -87,7 +87,7 @@ PPC_FUNC(GAME_HOOK(Ultrawide_LightManagerSetup))
 {
     uint32_t manager = ctx.r3.u32;
     GAME_IMP(Ultrawide_LightManagerSetup)(ctx, base);
-    if (!ultrawide::Active())
+    if (!ultrawide::SceneWide())
         return;
     g_memory.Write<uint32_t>(manager + LightSceneWidth, ultrawide::SceneWidth());
     g_memory.Write<uint32_t>(manager + LightColumns, (ultrawide::SceneWidth() + 31) / 32);

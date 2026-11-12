@@ -74,7 +74,12 @@ void ultrawide::MovieClosed() { g_openMovies--; }
 const GameInfo g_gameInfo{};
 const game::Adapter& game::Current()
 {
-    static const Adapter adapter{ .info = g_gameInfo };
+    static const Adapter adapter{ .info = g_gameInfo,
+        .ReadPortalPrompt = nullptr,
+        .ultrawide = false,
+        .SetVoiceLanguage = nullptr,
+        .glyphTextures = {},
+        .introMovies = {} };
     return adapter;
 }
 std::string game::MovieName(std::string_view) { return "synthetic_movie"; }

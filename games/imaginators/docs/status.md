@@ -2,6 +2,13 @@
 
 > **Purpose:** which disc Imaginators needs, where the port stands, and where to start · **Status:** current (2026-11-04) · **Tags:** [Xbox] [XDK] [Alchemy] [Imaginators]
 
+## At a glance
+
+- **Played on:** macOS (the test suite, the owner); Windows (issue #47).
+- **Known limits:** Linux not tried yet; a created character's HUD portrait fixed in 0.9.6 (#47).
+
+(The source of the README's game table: `python3 -I tools/game_status.py` writes it from this section and `game.txt`.)
+
 ## Disc
 | | |
 |---|---|

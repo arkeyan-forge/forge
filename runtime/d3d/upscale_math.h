@@ -178,25 +178,38 @@ namespace upscale
     // shaders, index buffer, index range; the n-th draw of an identity pairs with the n-th) gives previous x
     // inverse(current): how its object's clip space moved. Every static object gives the same matrix, the camera's; a
     // moving object (a character) gives its own. The matrix that most of the drawn indices agree on wins.
-    // Fixed capacity: no allocation once constructed.
+    // Objects: a draw whose identity moved apart from the camera in the frame before, or an animated one (skinned: its
+    // bones move it whatever its matrix), gets a number (1 to MaxObjects) from Add, and Close gives each its own reprojection (Objects): FSR's per-object motion, through the
+    // object mask the draws are replayed into (gpu::UpscaleDesc::objectMotions). An object that starts to move is
+    // found one frame late. Fixed capacity: no allocation once constructed.
     class CameraVote
     {
     public:
         static constexpr size_t MaxDraws = 4096;
         static constexpr size_t MaxCandidates = 64;
         static constexpr double Tolerance = 2e-3;
+        static constexpr uint32_t MaxObjects = 127; // the object mask's numbers (0 is the camera's)
 
         CameraVote()
         {
             m_current.reserve(MaxDraws);
             m_previous.reserve(MaxDraws);
             m_pairs.reserve(MaxDraws);
+            m_moving.reserve(MaxDraws);
         }
 
-        void Add(uint64_t identity, const Matrix& position, uint32_t weight)
+        // `object`: the draw may be an object of its own (it writes the depth); `animated`: it is one whether or not it
+        // moved. Returns its number, 0 for none.
+        uint32_t Add(uint64_t identity, const Matrix& position, uint32_t weight, bool object = false, bool animated = false)
         {
-            if (m_current.size() < MaxDraws)
-                m_current.push_back({ identity, uint32_t(m_current.size()), weight, position });
+            if (m_current.size() >= MaxDraws)
+                return 0;
+            uint32_t number = 0;
+            if (object && m_objectCount < MaxObjects &&
+                (animated || std::binary_search(m_moving.begin(), m_moving.end(), identity)))
+                number = ++m_objectCount;
+            m_current.push_back({ identity, uint32_t(m_current.size()), weight, number, position });
+            return number;
         }
 
         // Ends the frame's scene: the current frame becomes the previous one. True, with `reprojection` (this frame's clip
@@ -208,6 +221,7 @@ namespace upscale
             };
             std::sort(m_current.begin(), m_current.end(), order);
             m_pairs.clear();
+            std::array<bool, MaxObjects + 1> paired{};
             size_t p = 0, c = 0;
             while (p < m_previous.size() && c < m_current.size())
             {
@@ -219,8 +233,12 @@ namespace upscale
                 {
                     Matrix inverse;
                     if (Invert(m_current[c].position, inverse))
+                    {
                         m_pairs.push_back({ double(std::min(m_previous[p].weight, m_current[c].weight)),
-                            Multiply(m_previous[p].position, inverse) });
+                            m_current[c].identity, Multiply(m_previous[p].position, inverse) });
+                        if (const uint32_t object = m_current[c].object; object != 0)
+                            m_objects[object] = m_pairs.back().reprojection, paired[object] = true;
+                    }
                     p++;
                     c++;
                 }
@@ -263,8 +281,23 @@ namespace upscale
                         m_others[m_otherCount++] = m_pairs[i].reprojection;
                 }
             }
+            // The identities moving apart from the camera, for the next frame's objects; this frame's objects without
+            // a pair move with the camera.
+            m_moving.clear();
+            m_closedObjects = 0;
+            const uint32_t objects = m_objectCount;
+            m_objectCount = 0;
             if (winner == count || best <= quorum * total)
                 return false;
+            for (const Pair& pair : m_pairs)
+                if (Distance(m_pairs[winner].reprojection, pair.reprojection) >= Tolerance)
+                    m_moving.push_back(pair.identity);
+            std::sort(m_moving.begin(), m_moving.end());
+            m_moving.erase(std::unique(m_moving.begin(), m_moving.end()), m_moving.end());
+            for (uint32_t i = 1; i <= objects; i++)
+                if (!paired[i])
+                    m_objects[i] = m_pairs[winner].reprojection;
+            m_closedObjects = objects;
             reprojection = m_pairs[winner].reprojection;
             return true;
         }
@@ -278,10 +311,20 @@ namespace upscale
             return m_otherCount;
         }
 
+        // After a Close that found the camera: how many objects the closed frame numbered, and each one's
+        // reprojection (motions[1] to motions[count]); 0 otherwise.
+        uint32_t Objects(const Matrix*& motions) const
+        {
+            motions = m_objects.data();
+            return m_closedObjects;
+        }
+
         // A frame without a scene: nothing to pair the next one with.
         void Forget()
         {
             m_otherCount = 0;
+            m_objectCount = m_closedObjects = 0;
+            m_moving.clear();
             m_previous.clear();
             m_current.clear();
         }
@@ -290,17 +333,21 @@ namespace upscale
         struct Draw
         {
             uint64_t identity;
-            uint32_t sequence, weight;
+            uint32_t sequence, weight, object;
             Matrix position;
         };
         struct Pair
         {
             double weight;
+            uint64_t identity;
             Matrix reprojection;
         };
         std::vector<Draw> m_current, m_previous;
         std::vector<Pair> m_pairs;
         std::array<Matrix, 2> m_others{};
         uint32_t m_otherCount = 0;
+        std::vector<uint64_t> m_moving; // sorted
+        std::array<Matrix, MaxObjects + 1> m_objects{};
+        uint32_t m_objectCount = 0, m_closedObjects = 0;
     };
 }

@@ -2,6 +2,13 @@
 
 > **Purpose:** which disc Giants needs, where the port stands, where to start, and the dated news of the port · **Status:** current (2026-10-28) · **Tags:** [Giants] [Alchemy]
 
+## At a glance
+
+- **Played on:** macOS (the test suite, the owner); Windows (a 0.9.6 tester, 2026-11-12); Linux with a real portal (issue #20).
+- **Known limits:** A few challenge levels crash (#54).
+
+(The source of the README's game table: `python3 -I tools/game_status.py` writes it from this section and `game.txt`.)
+
 ## Disc
 | | |
 |---|---|

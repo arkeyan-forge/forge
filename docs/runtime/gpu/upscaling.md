@@ -1,6 +1,6 @@
 # Upscaling: AMD FSR 3.1 in every game
 
-> **Purpose:** how does the runtime upscale the 3D scene with AMD FSR 3.1 on Metal, D3D12 and Vulkan, what each engine gives it, how a player switches it, and how to check it? · **Status:** current (2026-11-08, 0.9.4) · **Tags:** [Xbox] [Lux] [Alchemy] [V] [?]
+> **Purpose:** how does the runtime upscale the 3D scene with AMD FSR 3.1 on Metal, D3D12 and Vulkan, what each engine gives it, how a player switches it, and how to check it? · **Status:** current (2026-11-12, 0.9.6) · **Tags:** [Xbox] [Lux] [Alchemy] [V] [?]
 
 The owner's decision (office/decisions.md, 2026-11-03): **AMD FSR 3.1 in every game**, a setting in the launcher and in
 the F3 menu, off by default. AMD's FidelityFX SDK (MIT) is used as a library, unmodified, under `thirdparty/`
@@ -50,7 +50,10 @@ frame's EDRAM content is lost, as after a mode change). FSR's context is made ag
 scene draws (jittered, depth-tested, scene-sized targets)
    -> composite draw found (d3d/ultrawide.h's composite constants): upscale::Composite
       -> gpu::Upscale (queued like a draw) -> gpu/fsr/fsr.cpp on the GPU thread:
-         1. our inputs pass (fsr_inputs.hlsl / .metal): camera motion (RG16F, texture units) and depth (R32F, 0 near)
+         0. the object mask: this frame's moving and skinned draws drawn again over the scene's depth, each writing its
+            number (R8; gpu/draw.cpp ReplayObjects): "Per-object motion" below
+         1. our inputs pass (fsr_inputs.hlsl / .metal): camera motion, or each object's own (RG16F, texture units),
+            depth (R32F, 0 near), and the reactive mask where an object left (R8)
          2. FFX's FSR 3.1 dispatch: 9 compute passes (prepare inputs, luma pyramid, shading change pyramid, shading
             change, prepare reactivity, luma instability, accumulate + RCAS) through our backend over plume
       -> the composite samples FSR's output; HUD and text are drawn after it, at the frame's scale (never jittered)
@@ -64,8 +67,66 @@ scene draws (jittered, depth-tested, scene-sized targets)
 | Camera planes, field of view | fitted from the heaviest scene draw's matrix (`upscale::CameraOf`: clip z = c x view z + e), for FSR's depth tests | [V] Giants, [?] SSA (no fit: defaults) |
 | Texture LOD | -log2(frame / scene scale) in every implicit-LOD fetch of the translated pixel shaders (`g_MipBias`, shared constant +316, `patches/xenosrecomp.patch`: Metal ignores a sampler's bias); 0 while off | [V] Metal |
 | Sharpening | FSR's RCAS at 0.5; the game's own FXAA pass (edge smoothing) draws the plain copy in a level while FSR is on: FSR anti-aliases, and its picture has no luma in alpha for FXAA 3.11 (Trap Team's composite is its tone map and FXAA: smeared otherwise) | [V] |
-| Reactive mask | none (the default mask) | [?] |
-| Per-object motion | none: characters get the camera's motion; FSR's own disocclusion and luma tests limit ghosting | [?] |
+| Per-object motion | the moving and skinned draws' own reprojection, per pixel through the object mask (below) | [V] Giants (Metal), [?] the other games' gain |
+| Reactive mask | 0.9 where an object was the frame before and none is now (the trail it leaves); 0 elsewhere | [V] Giants (Metal) |
+
+### Per-object motion (0.9.6, issue #56)
+
+With the camera's motion alone, a character running past the camera left a light trail for a frame or two: FSR took
+its history from where the camera's motion pointed, where the character had been. Now each moving object gets its own:
+
+1. **Which draws** (`upscale::CameraVote`, `d3d/upscale_math.h`; unit-tested in `ArkeyanUpscaleTest`): a scene draw
+   that writes the depth and whose identity moved apart from the camera in the frame before (its own previous x
+   inverse(current) not the camera's), or that is skinned (its vertices carry blend indices: the translated shaders'
+   input 9), gets a number, 1 to 127 (`upscale::SceneDraw`, `gpu::DrawDesc::object`). An object that starts to move is
+   found one frame late. At the composite each number gets its draw's own reprojection (the camera's when the draw has
+   no pair in the frame before); a still skinned character gets the camera's.
+2. **The object mask** (`gpu::detail::ReplayObjects`, `gpu/draw.cpp`): at the upscale, before the inputs pass, every
+   numbered draw is drawn again with its own vertex shader, vertices and constants (the frame's uploads, jitter
+   included), our pixel shader (`ObjectMaskPS`: the blend writes the blend factor, number / 255) into an R8 mask, the
+   scene's depth tested "or equal" and not written: the mask holds the visible object at each pixel. One render pass,
+   in FSR's own command list. A replay's pipeline is built on a thread of its own the first time; until then that draw
+   is left out (the camera's motion, as before), never waited for.
+3. **The inputs pass** (`InputsCS`, `InputsLayersCS`): a pixel of object n reprojects its depth with object n's matrix
+   (a constant buffer of 128 matrices) instead of the camera's; Swap Force's motion layers keep their choice
+   elsewhere. FSR's own disocclusion test then drops the history where the object was.
+4. **The reactive mask** (FSR's `reactive` input): 0.9 at a pixel where an object was in the frame before, all around
+   the place its motion takes it to, and none is now, nor beside it (one pixel's margin for the jitter): the trail of
+   what an object's own matrix does not describe (a skinned character's limbs; SSA, whose draws carry the camera alone).
+   The two masks swap each frame.
+
+Lux (SSA) skins in world space: its draws' c0-c3 is the camera's alone, so no SSA object moves by its matrix; about a
+tenth of its draws are skinned (~110 objects a frame, under the 127). Giants: 20-80 objects a frame (the hero, enemies,
+props, birds, leaves, the windmill). The log says every 900 frames `[fsr] last 900 frames: N moving objects a frame,
+N drawn into the object mask`.
+
+**Measured** (Giants, Chapter 1, M1 Pro, Metal, 2560x1440, FSR quality, frame generation on, fps limit 30; the
+scripted run below, the stick held 3.5 s in each direction with A, 90 s; `SKY_FSR_TRAIL=3`: every third frame, the mean
+absolute difference, 0-255, between FSR's output and its input at each input pixel where an object was the frame before
+and no longer is, "trail", on the objects, and elsewhere; the second half of the run, the play; two runs each) [V]:
+
+| | trail | on the objects | elsewhere |
+|---|---|---|---|
+| the camera's motion (`SKY_FSR_OBJECTS=camera`: the same mask, every object given the camera's motion) | 10.0, 10.2 | 11.9, 11.9 | 2.42 |
+| own motion, no reactive mask (`SKY_FSR_REACTIVE=0`) | 8.2, 8.5 | 10.5, 10.5 | 2.42 |
+| own motion and the reactive mask (the default) | 7.8, 6.3 | 10.4, 10.2 | 2.42 |
+
+Looked at (crops of the output, the same moments of the two runs): the intro's windmill blades and birds no longer
+ghost into the sky; the hero behind the fence keeps a clean face and body while it moves; flying debris stays solid
+(was an orange smear). A fast attack's effects still smear (particles write no depth: not objects). SSA (level_027,
+the same measure): no measurable change (its trail region is ~100 pixels a frame) [?].
+
+**Cost** (`SKY_FSR_TIMING=1`: the mask's pass and the inputs pass each sent and waited for alone, an empty wait taken
+off; Giants at 1440p, 32-77 objects a frame): the mask's pass 0.41 ms against 0.36-0.39 ms with no object
+(`SKY_FSR_OBJECTS=0`), so its draws cost about 0.05 ms; the inputs pass the same with or without (0.33-0.39 ms, most of
+it the wait's own cost in that mode). In the frame both are recorded in FSR's list: no extra command list. The CPU adds
+one replay record per object (a copy of the draw's bindings). FSR off: nothing changes (no number is given).
+
+Test aids: `SKY_FSR_OBJECTS=0` (no objects, the camera's motion alone, as before 0.9.6), `=camera` (the mask made,
+the camera's motion given: the measurement's "before"); `SKY_FSR_REACTIVE=<0-1>` (the reactive value, 0.9; 0 none);
+`SKY_FSR_TRAIL=<n>` (the measure above, logged as `[fsr] trail: ...` with the run's means; slow, it waits for the GPU)
+with `SKY_FSR_TRAIL_DUMP=<prefix>` and `SKY_FSR_TRAIL_DUMP_FROM=<n>` (8 measured frames as PPM: the input with the
+mask in red and the frame before's in blue, the output, the mask); `SKY_FSR_TIMING=1` (the cost above).
 
 **Shader caches:** the bias changes every translated pixel shader, so a game's cache must be translated again
 (`tools/shaders/build_cache.sh`; a player's install does it, Arkeyan-Builder's `shaders` step). With an older cache FSR
@@ -80,7 +141,7 @@ works without the bias (textures at the scene's mip levels).
 | `spirv_reflect.cpp` | reads each shader's names, kinds and bindings from its SPIR-V (`ArkeyanUpscaleTest` checks it) |
 | `msl_table.cmake` | reads the argument buffer the Metal shader expects from its MSL (plume binds set 0 at `[[buffer(0)]]`, binding n at `[[id(n)]]`) |
 | `fsr.cpp` | FSR's context (made again when the sizes change, after the GPU is idle), the inputs pass, the dispatch, and the three textures FSR 3.1 wants from the application (`ffxFsr3UpscalerGetSharedResourceDescriptions`: dilated depth, dilated motion, reconstructed previous depth; without them its passes write nowhere and the picture smears: the first runs' bug) |
-| `fsr_inputs.hlsl` / `.metal` | the inputs pass and the clears of FSR's textures (a uint target takes the value's bits) |
+| `fsr_inputs.hlsl` / `.metal` | the inputs pass and the clears of FSR's textures (a uint target takes the value's bits); `ObjectMaskPS`, the object mask's pixel shader (`ps_6_0`; Metal: a fragment function in the same library) |
 
 **Shaders per backend:** the SDK's HLSL (`sdk/src/backends/dx12/shaders/fsr3upscaler`) compiled by our dxc
 (`thirdparty/XenosRecomp/thirdparty/dxc-bin`): DXIL for D3D12, SPIR-V for Vulkan (`-fvk-*-shift`: b0, s8, t16, u48, one
@@ -116,7 +177,11 @@ as function constant 65535.
 
 ## How to verify
 
-- Unit: `ArkeyanUpscaleTest` (jitter, camera vote, camera fit, presets and scales, setting names, SPIR-V reflection).
+- Unit: `ArkeyanUpscaleTest` (jitter, camera vote and its objects, camera fit, presets and scales, setting names,
+  SPIR-V reflection).
+- Per-object motion: the measure of "Per-object motion" above (`SKY_FSR_TRAIL=3`, a run with `SKY_FSR_OBJECTS=camera`
+  against one without); the log's `[fsr] last 900 frames: N moving objects a frame, N drawn into the object mask`
+  (drawn below numbered: replay pipelines still being built, or objects drawn into another depth target).
 - GPU, no game: `ArkeyanRecompGpuTest` (with the isolation block of testing.md) runs FSR on the running backend: a still
   scene (mean channel error 1.15, max 5 on Metal) and a panned one with its camera motion (0.98) against the same pan
   without motion (6.45): a wrong binding, format or motion convention fails it. `ArkeyanRecompGpuTest --fsr-bench <w> <h>
@@ -136,7 +201,7 @@ Shots and scripts: `private/fsr-runs/` (`NUMBERS.md`, `bin/`), runs `private/run
 | Game | Where | FSR (quality, 1440p) | Camera vote (of 900 frames) | Camera fit (near, far, fov) | Picture |
 |---|---|---|---|---|---|
 | SSA [Lux] | level_008; Level_021 | 1120x704 -> 2240x1408, SDR | 900 | 0.5, 600, 34 deg | clean |
-| Giants | Chapter 1; level_203 (The Machine) | 1000x600 -> 2560x1440, SDR | 895-899 | 0.2, 610, 59 deg | clean; a fast-moving character trails a little (camera motion only) |
+| Giants | Chapter 1; level_203 (The Machine) | 1000x600 -> 2560x1440, SDR | 895-899 | 0.2, 610, 59 deg | clean; a fast-moving character trailed a little with the camera's motion alone: per-object motion since 0.9.6 |
 | Swap Force | the canyon (tutorial); Boulder Brush | 1040x620 -> 2560x1440, SDR | 898 | 32, 1e5, 39-56 deg | clean |
 | Trap Team | the tutorial (the opening, then play) | 1040x620 -> 2560x1440, SDR | 637-900 | 0.2, 250-760, 54-58 deg | clean since FSR has its own command list (above): 15 of 15 shots |
 | SuperChargers | the tunnel ride, the Academy (route test) | 1040x620 -> 2560x1440, SDR | 853-884 | 32, 3.6e4-1e5, 43-59 deg | clean; route checks pass |
@@ -355,12 +420,24 @@ runs in a frame (no copy after the composite, no extra present, `PresentNow` as 
 
 ## Open
 
-- Per-object motion: characters and moving props get the camera's motion; FSR's disocclusion and shading-change tests
-  limit the trail, a fast attack still leaves one (Giants). A reactive mask would need the game's draws to write one.
+- Per-object motion (0.9.6): a skinned character moves by its draw's matrix, not its bones (the limbs rely on the
+  reactive mask); SSA's draws carry the camera alone, so SSA gets the reactive mask only; particles and other draws
+  that write no depth keep the camera's motion; more than 127 objects in a frame: the rest keep it too. The 1440p
+  measure is Metal only. Vulkan (MoltenVK, SSA level_027 at 1440p): 54 objects a frame, 52 drawn into the mask, the
+  picture clean, no fault, no `[guard]` [V]; D3D12 not run (the mask's shader is built as DXIL `ps_6_0`) [?].
+  Other games (Metal, `fsr_all.sh`): Giants and Swap Force pass; Imaginators reached play with 21.9 objects a frame,
+  20.9 drawn, the camera found in 896 of 900 frames, no `[guard]` (its route was cut by the session's time limit);
+  Trap Team and SuperChargers not run (their routes waited for a game slot) [?].
+  `ArkeyanRecompGpuTest`'s FSR cases (which run the new inputs pass with an empty mask) pass on Metal with the same
+  numbers as before (still 1.15, pan 0.98, no motion 6.45, HDR 1.04, frame generation 0.49); beside a game's run it
+  stalled three times (once in the HDR case, twice before any FSR case), alone it passed 5 of 5 and in SSA's and
+  Giants' unit tests; on MoltenVK it faults at start in `SDL_Vulkan_GetInstanceExtensions` (no window offscreen),
+  before any case [?]. Frame generation interpolates
+  with the same motion; its own ghosts in a close fight (below) were not measured again.
 - Trap Team: the race FSR's own command list avoids is not understood (Metal; D3D12 not tried in Trap Team; on
   MoltenVK, with its own list, two runs and the one shot looked at clean); its camera fit jumps for a few frames to
   fov 130-140 deg (another perspective draw outweighs the scene's).
 - Frame generation: results per game and backend in "Frame generation" above.
-- Per-object motion for characters: a fight close to the camera (Swap Force's `fg1`) leaves ghosts in the generated
-  frames, the motion layers on or off; the vote pairs each draw with its previous matrix, a draw's own motion would need
-  the pixels it covers (a motion pass replaying the scene's draws).
+- Per-object motion for characters: a fight close to the camera (Swap Force's `fg1`) left ghosts in the generated
+  frames, the motion layers on or off; the object mask (0.9.6) now gives those pixels their draws' own motion; not
+  looked at again in `fg1` [?].

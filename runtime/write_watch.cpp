@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <cstdio>
 #include <cstring>
 #include "host/env.h"
 #include "platform/platform.h"
@@ -20,6 +21,7 @@ namespace
         // every value stored here comes from g_sequence, so a write after a stamp is always larger than it.
         std::atomic<uint64_t> written;
         std::atomic<uint8_t> state;
+        uint32_t hostWrites;     // HostWrite scopes holding it writable, under g_lock
         uint64_t protectedFrame; // under g_lock
         uint64_t coolUntil;      // under g_lock
     };
@@ -118,6 +120,14 @@ uint64_t writewatch::Watch(const void* data, size_t bytes)
         Page& page = g_pages[index];
         if (page.coolUntil > frame)
             return 0;
+        if (page.hostWrites != 0)
+        {
+            // Before 0.9.6 this protected the page under a file read, which then failed (issue #26).
+            static std::atomic<bool> logged{ false };
+            if (!logged.exchange(true))
+                fprintf(stderr, "[writewatch] a check met a file read on its pages: hashed instead\n");
+            return 0;
+        }
         uint8_t state = page.state.load(std::memory_order_relaxed);
         if ((state & (Protected | Watched)) == Watched && frame < page.protectedFrame + writewatch::HotFrames)
         {
@@ -165,22 +175,50 @@ bool writewatch::Unchanged(const void* data, size_t bytes, uint64_t stamp)
     return true;
 }
 
+namespace
+{
+    // WillWrite's work, under g_lock; `pin`: also counts a HostWrite on each page.
+    void Unprotect(uint64_t first, uint64_t last, bool pin)
+    {
+        // A page that is not protected already counts as written after every stamp of a range holding it.
+        for (uint64_t index = first; index <= last; index++)
+        {
+            Page& page = g_pages[index];
+            page.hostWrites += pin ? 1 : 0;
+            if ((page.state.load(std::memory_order_relaxed) & Protected) == 0)
+                continue;
+            page.written.store(g_sequence.fetch_add(1) + 1, std::memory_order_release);
+            page.state.store(Watched, std::memory_order_release);
+            PlatformProtectReadOnly(PageAddress(index), size_t(1) << g_pageShift, false);
+        }
+    }
+}
+
 void writewatch::WillWrite(void* data, size_t bytes)
 {
     uint64_t first, last;
     if (!Pages(data, bytes, first, last))
         return;
     SpinLock lock;
-    // A page that is not protected already counts as written after every stamp of a range holding it.
-    for (uint64_t index = first; index <= last; index++)
-    {
-        Page& page = g_pages[index];
-        if ((page.state.load(std::memory_order_relaxed) & Protected) == 0)
-            continue;
-        page.written.store(g_sequence.fetch_add(1) + 1, std::memory_order_release);
-        page.state.store(Watched, std::memory_order_release);
-        PlatformProtectReadOnly(PageAddress(index), size_t(1) << g_pageShift, false);
-    }
+    Unprotect(first, last, false);
+}
+
+writewatch::HostWrite::HostWrite(void* data, size_t bytes)
+{
+    if (!Pages(data, bytes, m_first, m_last))
+        return;
+    m_pinned = true;
+    SpinLock lock;
+    Unprotect(m_first, m_last, true);
+}
+
+writewatch::HostWrite::~HostWrite()
+{
+    if (!m_pinned)
+        return;
+    SpinLock lock;
+    for (uint64_t index = m_first; index <= m_last; index++)
+        g_pages[index].hostWrites--;
 }
 
 void writewatch::FrameDone() { g_frame.fetch_add(1, std::memory_order_relaxed); }

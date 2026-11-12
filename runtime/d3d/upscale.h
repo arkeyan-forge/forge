@@ -43,8 +43,11 @@ namespace upscale
 
     // A draw into the scene with the depth test on (`greaterTest`: it passes the farther window depth, reversed Z). `identity` (0: none) names the same draw across frames; `rows` are
     // the four constants of its position matrix in the row-vector convention (nullptr: unknown); `weight` its size.
-    void SceneDraw(uint64_t identity, const float* rows, uint32_t weight, gpu::Texture* depth, float minDepth,
-        float maxDepth, bool greaterTest = false);
+    // Returns the draw's number in the object mask (gpu::DrawDesc::object; 0: none): a draw that writes the depth
+    // (`writesDepth`) and moved apart from the camera in the frame before, or is `skinned`, gets its own motion.
+    // SKY_FSR_OBJECTS=0 (test aid): none, the camera's motion alone.
+    uint32_t SceneDraw(uint64_t identity, const float* rows, uint32_t weight, gpu::Texture* depth, float minDepth,
+        float maxDepth, bool greaterTest = false, bool writesDepth = false, bool skinned = false);
 
     // The composite reads `scene`: queues its upscale and returns the texture to read instead (nullptr: keep `scene`).
     gpu::Texture* Composite(gpu::Texture* scene);

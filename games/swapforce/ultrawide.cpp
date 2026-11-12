@@ -34,7 +34,7 @@ PPC_FUNC(GAME_HOOK(Ultrawide_ScenePass))
         g_memory.Write<uint32_t>(pass + 36, ultrawide::SceneHeight());
     }
     GAME_IMP(Ultrawide_ScenePass)(ctx, base);
-    if (fullResolution || !ultrawide::Active() || pass < 0x10000)
+    if (fullResolution || !ultrawide::SceneWide() || pass < 0x10000)
         return;
     if (g_memory.Read<uint32_t>(pass + 88) != ultrawide::SceneWidth16x9 ||
         g_memory.Read<uint32_t>(pass + 92) != ultrawide::SceneHeight16x9)

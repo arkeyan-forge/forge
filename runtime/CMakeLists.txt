@@ -341,6 +341,10 @@ if(WIN32)
     target_link_libraries(ArkeyanWriteWatchTest PRIVATE winmm) # platform_win32.cpp's timer resolution
 endif()
 
+# A file read that a passing failure does not cut short (read_fully.h, issue #26): ./ArkeyanReadFullyTest
+add_executable(ArkeyanReadFullyTest read_fully_test.cpp)
+target_include_directories(ArkeyanReadFullyTest PRIVATE .)
+
 # Which textures the bindless heaps bind through their own view (cube maps, arrays, swizzles): ./ArkeyanHeapViewTest
 add_executable(ArkeyanHeapViewTest gpu/heap_view_test.cpp)
 target_include_directories(ArkeyanHeapViewTest PRIVATE .)
@@ -612,6 +616,9 @@ endif()
 add_executable(ArkeyanPortalAsyncTest host/portal_async.cpp host/portal_async_test.cpp)
 target_include_directories(ArkeyanPortalAsyncTest PRIVATE .)
 target_link_libraries(ArkeyanPortalAsyncTest PRIVATE SDL3::SDL3-static)
+if(WIN32)
+    target_link_libraries(ArkeyanPortalAsyncTest PRIVATE winmm) # timeBeginPeriod
+endif()
 
 # Figure library test (no game data needed): ./ArkeyanFigureTest [--iso <disc image>] [<figure dump>...]
 add_executable(ArkeyanFigureTest host/figures/figure_test.cpp ${ARKEYAN_COLLECTION_SOURCES}

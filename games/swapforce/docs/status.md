@@ -2,6 +2,13 @@
 
 > **Purpose:** which disc Swap Force needs, where the port stands, where to start, and the dated news of the port · **Status:** current (2026-10-28) · **Tags:** [Xbox] [XDK] [Alchemy] [SwapForce]
 
+## At a glance
+
+- **Played on:** macOS (the test suite, the owner); Windows (issue #26); Linux on a Steam Deck (issue #23).
+- **Known limits:** A plain green picture at some events with Direct3D 12 at scale x4, fixed in 0.9.6, to confirm (#26); not every mode played.
+
+(The source of the README's game table: `python3 -I tools/game_status.py` writes it from this section and `game.txt`.)
+
 ## Disc
 | | |
 |---|---|
@@ -51,4 +58,4 @@ Mac's picture is right, so the lighting does not keep those values there, but wh
 in D3D12 and Vulkan: another GPU could read other bits [?]. `TargetFor` now clears newly created colour targets to
 zero before their first use ([EDRAM model](../../../docs/runtime/gpu/edram_resolve_tiling.md)); reused targets retain
 their contents. This removes the undefined initial read. It has not been compared in a game run and is not proof of
-the reported green-screen cause ([issue #26](https://github.com/mflr0/Arkeyan-Launcher/issues/26)).
+the reported green-screen cause ([issue #26](https://github.com/mflr0/Arkeyan-Launcher/issues/26)): that is a movie read that fails, retried since 2026-11-12 ([bink.md](../../../docs/engines/lux/bink.md#movie-data-that-stops-arriving-issue-26)).

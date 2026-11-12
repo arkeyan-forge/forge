@@ -633,9 +633,14 @@ is stamped after it; protecting and stamping share a spin lock with the handler 
   texture) would fault every frame, and a fault (~5 us, plus ~1.6 us to protect again) costs more than hashing the page
   (~0.6 us): a page written within 8 frames of being protected stays writable for 240 frames, and the ranges on it are
   hashed as before.
-- **System calls** cannot write a protected page (they fail with `EFAULT` instead of faulting): `NtReadFile` calls
-  `writewatch::WillWrite` on its buffer first, which unprotects and stamps it. It is the only path where the host's kernel
-  writes guest memory (the portal, zlib, XMA and every other host write is user code, and faults like the game's).
+- **System calls** cannot write a protected page (they fail with `EFAULT` instead of faulting): `NtReadFile` holds a
+  `writewatch::HostWrite` on its buffer for the whole read, which unprotects and stamps it and keeps it writable: a
+  `Watch` of a range on those pages returns 0 (hashed) until the read ends, logged once as `[writewatch] a check met a
+  file read on its pages`. Until 2026-11-12 it was `WillWrite` alone, and a texture's `Watch` on the render thread could
+  protect a page again while the read ran; the read then failed and the guest saw the end of its file (issue #26; the
+  failure reproduced in `ArkeyanWriteWatchTest` [V]; not seen in a Swap Force run on the Mac [?]). It is the only path
+  where the host's kernel writes guest memory (the portal, zlib, XMA and every other host write is user code, and
+  faults like the game's).
 - The physical windows (0xA/0xC/0xE) do not alias each other (`memory.h`): one view of each byte, so one protection.
 - Windows: a vectored exception handler (`platform_win32.cpp`, write faults only; a system call into a read-only page
   fails with `ERROR_NOACCESS`, the same `WillWrite` covers it). `ArkeyanWriteWatchTest` cross-built with llvm-mingw 20260922

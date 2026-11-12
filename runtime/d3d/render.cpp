@@ -204,6 +204,31 @@ namespace
             FrameScale());
     }
 
+    // The window settled on another shape (ultrawide::FrameEnd): the frame's targets (1280x720 guest pixels, as wide as
+    // the frame) are made again at the new width when next drawn into. The others keep their contents.
+    void DropFrameTargets()
+    {
+        const auto isFrame = [](uint64_t key) {
+            return ((key >> 20) & 0xFFFF) == ultrawide::FrameWidth16x9 && (key >> 36) == ultrawide::FrameHeight;
+        };
+        for (auto it = g_targets.begin(); it != g_targets.end();)
+            if (isFrame(it->first))
+            {
+                gpu::DestroyTexture(it->second);
+                it = g_targets.erase(it);
+            }
+            else
+                ++it;
+        for (auto it = g_ownTargets.begin(); it != g_ownTargets.end();)
+            if (isFrame(it->second.key))
+            {
+                gpu::DestroyTexture(it->second.texture);
+                it = g_ownTargets.erase(it);
+            }
+            else
+                ++it;
+    }
+
     gpu::Texture* TargetFor(uint32_t device, uint32_t surface, bool depth)
     {
         if (surface == 0)
@@ -658,6 +683,24 @@ namespace
 
         uint32_t levels = xenos::TextureLevelCount(fetch);
         uint32_t arraySize = xenos::TextureArraySize(fetch);
+        // Only the levels whose storage maps: a level left out of the upload would be sampled as whatever the GPU memory
+        // held (black on Apple GPUs, noise on AMD's: a tester's Giants scenery, 2026-11-12), so the texture stops there.
+        for (uint32_t level = 1; level < levels; level++)
+        {
+            xenos::TextureLevel layout = xenos::TextureLevelLayout(fetch, info, level);
+            bool mapped = true;
+            for (uint32_t slice = 0; slice < arraySize && mapped; slice++)
+                mapped = PhysicalToGuest(layout.address + slice * layout.sliceBytes) != 0;
+            if (!mapped)
+            {
+                static std::atomic<int> logged{ 0 };
+                if (logged.fetch_add(1) < 8)
+                    fprintf(stderr, "[render] texture at 0x%08X (%ux%u): level %u has no storage, %u level(s) kept\n",
+                        fetch.BaseAddress(), fetch.Width(), fetch.Height(), level, level);
+                levels = level;
+                break;
+            }
+        }
         uint32_t width = fetch.Width(), height = fetch.Height();
         gpu::Format hostFormat = info.host;
         NoteUpload(fetch);
@@ -1785,10 +1828,15 @@ namespace
                     rows[i] = std::bit_cast<float>(
                         ByteSwap(static_cast<const uint32_t*>(draw.guestConstants)[matrix * 4 + i]));
             const plume::RenderComparisonFunction test = draw.depthStencil.depthFunction;
-            upscale::SceneDraw(identity, matrix >= 0 ? rows : nullptr, draw.count, draw.depthTarget,
+            // Skinned: the vertices carry blend indices (the translated shaders' input location 9).
+            bool skinned = false;
+            for (uint32_t i = 0; i < draw.inputCount; i++)
+                skinned |= draw.inputs[i].location == 9;
+            draw.object = upscale::SceneDraw(identity, matrix >= 0 ? rows : nullptr, draw.count, draw.depthTarget,
                 draw.viewport.minDepth, draw.viewport.maxDepth,
                 test == plume::RenderComparisonFunction::GREATER ||
-                    test == plume::RenderComparisonFunction::GREATER_EQUAL);
+                    test == plume::RenderComparisonFunction::GREATER_EQUAL,
+                draw.depthStencil.depthWrite, skinned);
         }
         if (g_dump.active)
         {
@@ -2738,6 +2786,16 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
         g_frame++;
         if (upscale::FrameEnd())
             DropTargets();
+        if (ultrawide::FrameEnd())
+        {
+            // The camera's aspect where the games that keep it in one global read it (SSA, Giants); the others' hooks
+            // read ultrawide::Aspect() at each call.
+            if (game::UltrawideDisplayAspect != 0)
+                g_memory.Write<float>(game::UltrawideDisplayAspect, ultrawide::Aspect());
+            DropFrameTargets();
+            fprintf(stderr, "[ultrawide] frame %ux%u from frame %llu: camera aspect %.3f\n", ultrawide::FrameWidth(),
+                ultrawide::FrameHeight, (unsigned long long)g_frame, ultrawide::Aspect());
+        }
         AdvanceFrameDump();
     }
     uint32_t device = ctx.r3.u32;

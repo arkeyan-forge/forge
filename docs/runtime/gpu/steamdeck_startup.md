@@ -87,3 +87,13 @@ the existing fullscreen setting, then windowed if necessary. Repeat in Desktop M
 a fresh problem report containing `[display]` and `[gpu]` startup lines, including every retry/error and whether the
 window and movies became visible. If it still fails, those lines distinguish SDL video/window setup, GPU pipeline
 creation and Vulkan surface recovery without requesting any disc, shader, figure or memory data.
+
+## 0.9.6 test build 2: Game Mode, no video driver (2026-11-12) [?]
+A tester's log (Steam Deck, Game Mode, the launcher added to Steam): every SDL video start failed (auto, then Wayland,
+then X11) while the sound played, and Steam's environment was inherited (its overlay in `LD_PRELOAD`). The likely cause:
+Steam starts non-Steam games with its runtime libraries in `LD_LIBRARY_PATH`, and SDL's display drivers loaded those.
+The launcher now starts the game with the system's library path (`GameLibraryPath`, launcher docs/install.md). The log
+also hid SDL's own error (reading the driver's name first replaced it with "Video subsystem has not been initialized"):
+the error is now read first, and a failed start logs `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR` (set or not), the
+SDL drivers built in and whether `LD_LIBRARY_PATH` holds Steam's libraries, never a path.
+

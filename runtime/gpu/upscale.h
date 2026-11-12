@@ -42,7 +42,15 @@ namespace gpu
         float cutShift;
         uint32_t otherMotionCount;
         double otherMotions[2][16];
+        // Per-object motion (upscale::CameraVote's objects): the frame's draws numbered 1 to objectCount
+        // (DrawDesc::object) are drawn again into an object mask over `depth`, and a pixel of object n moves by
+        // objectMotions[n * 16] to [n * 16 + 15] (rows, as `reprojection`) instead of the camera's. Upscale copies them.
+        uint32_t objectCount;
+        const float* objectMotions;
     };
+
+    // The object mask's numbers: 1 to 127 (R8, 0 is the camera's).
+    constexpr uint32_t MaxUpscaleObjects = 127;
 
     // Queued like the draws: runs after what was recorded before and before what is recorded after.
     void Upscale(const UpscaleDesc& desc);

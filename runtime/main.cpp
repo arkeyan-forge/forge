@@ -235,6 +235,75 @@ static std::string GamepadGuid(SDL_JoystickID id)
     return text;
 }
 
+// The size of the display the window is on (ultrawide::SceneShape: the scene is made for it when the window is
+// narrower), 0x0 when SDL does not know it. SKY_DISPLAY_SIZE=<width>x<height> replaces it (offscreen test runs, whose
+// display is 1024x768).
+static ultrawide::Shape WindowDisplay(SDL_Window* window)
+{
+    if (const char* size = skyenv::Get("SKY_DISPLAY_SIZE"))
+    {
+        if (int w = 0, h = 0; sscanf(size, "%dx%d", &w, &h) == 2 && w > 0 && h > 0)
+            return { uint32_t(w), uint32_t(h) };
+        return {};
+    }
+    SDL_Rect bounds;
+    if (const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+        display != 0 && SDL_GetDisplayBounds(display, &bounds) && bounds.w > 0 && bounds.h > 0)
+        return { uint32_t(bounds.w), uint32_t(bounds.h) };
+    return {};
+}
+
+// The window's shape for ultrawide (d3d/ultrawide.h), each pass of the main loop: a resize, a fullscreen toggle or a
+// minimised window (ignored). SKY_WINDOW_SCRIPT="<seconds>:<width>x<height>,..." resizes the window at those times, and
+// "<seconds>:min" / "<seconds>:restore" minimise and restore it (test runs, offscreen included: the offscreen output
+// follows the window).
+static void FollowWindowShape(SDL_Window* window)
+{
+    struct Step
+    {
+        double at;
+        int width, height; // 0x0: minimise, -1x-1: restore
+    };
+    static std::vector<Step> steps;
+    static size_t next = 0;
+    static bool loaded = false;
+    if (!loaded)
+    {
+        loaded = true;
+        if (const char* script = skyenv::Get("SKY_WINDOW_SCRIPT"))
+            for (std::string text = script; !text.empty();)
+            {
+                const size_t comma = std::min(text.find(','), text.size());
+                const std::string item = text.substr(0, comma);
+                Step step{};
+                if (sscanf(item.c_str(), "%lf:%dx%d", &step.at, &step.width, &step.height) == 3 && step.width > 0 &&
+                    step.height > 0)
+                    steps.push_back(step);
+                else if (sscanf(item.c_str(), "%lf:", &step.at) == 1 && item.ends_with(":min"))
+                    steps.push_back({ step.at, 0, 0 });
+                else if (sscanf(item.c_str(), "%lf:", &step.at) == 1 && item.ends_with(":restore"))
+                    steps.push_back({ step.at, -1, -1 });
+                text.erase(0, std::min(comma + 1, text.size()));
+            }
+    }
+    if (next < steps.size() && SDL_GetTicksNS() / 1e9 >= steps[next].at)
+    {
+        const Step& step = steps[next++];
+        fprintf(stderr, "[ultrawide] test: window %s %dx%d\n",
+            step.width > 0 ? "resized to" : (step.width == 0 ? "minimised" : "restored"), step.width, step.height);
+        if (step.width > 0)
+            SDL_SetWindowSize(window, step.width, step.height);
+        else if (step.width == 0)
+            SDL_MinimizeWindow(window);
+        else
+            SDL_RestoreWindow(window);
+    }
+    int width = 0, height = 0;
+    if (SDL_GetWindowSizeInPixels(window, &width, &height))
+        ultrawide::WindowSize(uint32_t(std::max(width, 0)), uint32_t(std::max(height, 0)),
+            (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0, SDL_GetTicks());
+}
+
 // --list-gamepads: gamepads can take a moment to show up after SDL starts.
 static void ListGamepads()
 {
@@ -429,7 +498,11 @@ int main(int argc, char** argv)
             SDL_SyncWindow(window);
             SDL_GetWindowSizeInPixels(window, &windowWidth, &windowHeight);
             if (::game::Current().ultrawide) // else the game keeps its 16:9 (game.h)
-                ultrawide::Configure(settings.aspectAuto, uint32_t(windowWidth), uint32_t(windowHeight));
+            {
+                const ultrawide::Shape display = WindowDisplay(window);
+                ultrawide::Configure(
+                    settings.aspectAuto, uint32_t(windowWidth), uint32_t(windowHeight), display.width, display.height);
+            }
             upscale::Configure(uint32_t(windowHeight), settings.upscaler, settings.fsrQuality, fullScene);
             const ::framegen::Hold hold = ::framegen::HeldBack(gpu::framegen::Preview(),
                 ::game::Current().frameGeneration, skyenv::Get("SKY_FSR_FRAME_GENERATION_ANY_GAME") != nullptr);
@@ -503,6 +576,8 @@ int main(int argc, char** argv)
         }
 
         glyphs::RunTestScript();
+        if (window != nullptr)
+            FollowWindowShape(window);
         HostAudioCheckOutput(nullptr);
         SDL_Event event;
         while (SDL_PollEvent(&event))

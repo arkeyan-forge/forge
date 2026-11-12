@@ -2,6 +2,13 @@
 
 > **Purpose:** which disc SuperChargers needs, where the port stands, and where to start · **Status:** current (2026-11-04) · **Tags:** [Xbox] [XDK] [Alchemy] [SuperChargers] [V] [?]
 
+## At a glance
+
+- **Played on:** macOS (the test suite, the owner); Windows (issue #19); Linux on a Steam Deck in Desktop Mode (issue #22).
+- **Known limits:** The figure owner fix of 0.9.6 to confirm with a real portal (#28).
+
+(The source of the README's game table: `python3 -I tools/game_status.py` writes it from this section and `game.txt`.)
+
 ## Disc
 | | |
 |---|---|

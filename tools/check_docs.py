@@ -236,6 +236,12 @@ def main():
             print(f"note: code cites a missing page: {line}")
         print(f"note: {len(resolved)} doc path(s) in code comments are old paths (resolved by the old-path table), "
               f"{len(missing)} missing")
+        # The README's game table is written from the games' status pages (tools/game_status.py): one source of truth.
+        status = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "tools", "game_status.py"), "--check"],
+            capture_output=True, text=True)
+        if status.returncode != 0:
+            print(status.stdout.strip() or status.stderr.strip())
+            bad += 1
     print(f"{len(files)} file(s) checked, {bad} broken")
     return 1 if bad else 0
 

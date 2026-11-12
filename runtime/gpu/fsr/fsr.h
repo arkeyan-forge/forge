@@ -3,7 +3,7 @@
 // FSR 3.1 upscaling on every backend (docs/runtime/gpu/upscaling.md): the game's picture, depth and camera motion in,
 // an upscaled, anti-aliased picture out. gpu/upscale.cpp calls it on the GPU thread.
 #include "gpu/upscale.h"
-
+#include <memory>
 namespace gpu::fsr
 {
     // The running backend has FSR's shaders (after gpu::Init).
@@ -15,4 +15,7 @@ namespace gpu::fsr
 
     // Before the device goes away.
     void Shutdown();
+
+    // The object mask's pixel shader (gpu::detail::ReplayObjects): it writes the blend factor. nullptr: not built in.
+    std::unique_ptr<plume::RenderShader> CreateObjectMaskShader();
 }

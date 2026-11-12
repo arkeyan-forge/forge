@@ -9,6 +9,7 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "env.h"
 
@@ -35,6 +36,28 @@ namespace
         return driver != nullptr ? driver : "none";
 #endif
     }
+
+#if defined(__linux__)
+    // What a failed video start had to work with (issue #22: Steam's Game Mode): which display servers the game was given,
+    // the drivers this SDL has, and whether Steam's own libraries come first. Names only, never a path.
+    void LogLinuxVideoEnvironment()
+    {
+        auto set = [](const char* name) {
+            const char* value = SDL_getenv(name);
+            return value == nullptr ? "unset" : *value == 0 ? "empty" : "set";
+        };
+        std::string drivers;
+        for (int i = 0; i < SDL_GetNumVideoDrivers(); i++)
+            drivers += std::string(i ? " " : "") + SDL_GetVideoDriver(i);
+        const char* libraryPath = SDL_getenv("LD_LIBRARY_PATH");
+        const bool steamLibraries =
+            libraryPath != nullptr && std::string_view(libraryPath).find("steam") != std::string_view::npos;
+        fprintf(stderr,
+            "[display] DISPLAY %s, WAYLAND_DISPLAY %s, XDG_RUNTIME_DIR %s; SDL drivers: %s; LD_LIBRARY_PATH %s%s\n",
+            set("DISPLAY"), set("WAYLAND_DISPLAY"), set("XDG_RUNTIME_DIR"), drivers.c_str(), set("LD_LIBRARY_PATH"),
+            steamLibraries ? " (Steam's libraries)" : "");
+    }
+#endif
 }
 
 static void WritePpm(const std::string& path, const std::vector<uint32_t>& rgba, int width, int height)
@@ -164,9 +187,14 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
         SDL_ClearError();
         if (SDL_WasInit(SDL_INIT_VIDEO) == 0 && !SDL_InitSubSystem(SDL_INIT_VIDEO))
         {
-            fprintf(stderr, "[display] SDL video init failed (requested %s, selected %s): %s\n",
-                driver != nullptr ? driver : (requested.empty() ? "auto" : requested.c_str()), VideoDriver(),
-                SDL_GetError());
+            // The error first: asking SDL for its driver replaces it with "Video subsystem has not been initialized".
+            const std::string error = SDL_GetError();
+            fprintf(stderr, "[display] SDL video init failed (requested %s): %s\n",
+                driver != nullptr ? driver : (requested.empty() ? "auto" : requested.c_str()), error.c_str());
+#if defined(__linux__)
+            if (driver == nullptr)
+                LogLinuxVideoEnvironment();
+#endif
             return false;
         }
         fprintf(stderr, "[display] SDL video driver: %s (requested %s)\n", VideoDriver(),
@@ -176,8 +204,8 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
         SDL_DisplayID* displays = SDL_GetDisplays(&count);
         const std::string displayError = SDL_GetError();
         SDL_free(displays);
-        fprintf(stderr, "[display] SDL displays: %d%s%s\n", count,
-            displayError.empty() ? "" : ": ", displayError.c_str());
+        fprintf(
+            stderr, "[display] SDL displays: %d%s%s\n", count, displayError.empty() ? "" : ": ", displayError.c_str());
         if (!videodriver::Usable(linuxDesktop, requested, VideoDriver(), count))
         {
             fprintf(stderr, "[display] no usable native display with SDL video driver %s\n", VideoDriver());
@@ -192,8 +220,11 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
         window = SDL_CreateWindow(title, width, height, flags | gpu::WindowFlags());
         if (window != nullptr)
             return true;
-        fprintf(stderr, "[display] window creation failed (SDL video %s, flags 0x%llX): %s\n", VideoDriver(),
-            static_cast<unsigned long long>(flags | gpu::WindowFlags()), SDL_GetError());
+        {
+            const std::string error = SDL_GetError();
+            fprintf(stderr, "[display] window creation failed (SDL video %s, flags 0x%llX): %s\n", VideoDriver(),
+                static_cast<unsigned long long>(flags | gpu::WindowFlags()), error.c_str());
+        }
         // A native Linux Vulkan window must keep SDL_WINDOW_VULKAN; removing it silently renders offscreen.
         if (linuxDesktop && !videodriver::Offscreen(VideoDriver()))
             return false;
@@ -207,8 +238,11 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
         SDL_SetBooleanProperty(properties, SDL_PROP_WINDOW_CREATE_EXTERNAL_GRAPHICS_CONTEXT_BOOLEAN, true);
         window = SDL_CreateWindowWithProperties(properties);
         if (window == nullptr)
-            fprintf(stderr, "[display] external graphics window failed (SDL video %s): %s\n",
-                VideoDriver(), SDL_GetError());
+        {
+            const std::string error = SDL_GetError();
+            fprintf(
+                stderr, "[display] external graphics window failed (SDL video %s): %s\n", VideoDriver(), error.c_str());
+        }
         SDL_DestroyProperties(properties);
         return window != nullptr;
     };

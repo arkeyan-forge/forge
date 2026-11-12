@@ -6,6 +6,16 @@
 #include <cstdio>
 #include <mutex>
 #include <vector>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <timeapi.h>
+#endif
 
 namespace
 {
@@ -184,6 +194,9 @@ namespace
 
 int main()
 {
+#ifdef _WIN32
+    timeBeginPeriod(1); // as PlatformInit does: Windows' default 15.6 ms waits stretch the 1 ms polls
+#endif
     TestFailingWrites();
     TestBackoff();
     TestSlowWrites();

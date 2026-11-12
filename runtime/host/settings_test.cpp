@@ -58,10 +58,313 @@ namespace
                 return i;
         return 0;
     }
+
+    struct SettingCase
+    {
+        std::string section;
+        std::string key;
+        std::string first;
+        std::string second;
+        std::string invalid;
+        std::string expected;
+        std::string option{};
+        std::string environment{};
+        bool perGame = true;
+        std::string argumentPrefix{};
+    };
+
+    template <typename Read, typename Value>
+    void CheckSetting(const SettingCase& test, Read read, Value firstValue, Value secondValue)
+    {
+        const auto defaults = Parse({}, {}, {}).settings;
+        auto check = [&](const Run& run, const auto& value, const std::vector<std::string>& warnings) {
+            CHECK(run.ok && run.error.empty());
+            CHECK(read(run.settings) == value);
+            CHECK(run.warnings == warnings);
+        };
+        auto warning = [&](const std::string& source, const std::string& key) {
+            return std::vector<std::string>{ source + ": " + key + "=" + test.invalid + " is not " + test.expected +
+                                             "; ignored" };
+        };
+        LauncherConfig config{ { test.section, { { test.key, test.first } } } };
+        check(Parse(config, {}, {}), firstValue, {});
+        config[test.section][test.key] = test.second;
+        check(Parse(config, {}, {}), secondValue, {});
+        if (!test.expected.empty())
+        {
+            config[test.section][test.key] = test.invalid;
+            check(Parse(config, {}, {}), read(defaults), warning("launcher.ini", test.key));
+        }
+        config[test.section][test.key] = test.first;
+        if (test.perGame)
+        {
+            config["ssa." + test.section][test.key] = test.second;
+            config["giants." + test.section][test.key] = test.first;
+            check(Parse(config, {}, {}), secondValue, {});
+            if (!test.expected.empty())
+            {
+                config["ssa." + test.section][test.key] = test.invalid;
+                check(Parse(config, {}, {}), firstValue, warning("launcher.ini", test.key));
+            }
+            config.erase("ssa." + test.section);
+            config.erase("giants." + test.section);
+        }
+        std::map<std::string, std::string> env;
+        if (!test.environment.empty())
+        {
+            const std::string old = "SSA_" + test.environment.substr(4);
+            for (const auto& name : { old, test.environment })
+            {
+                check(Parse(config, { { name, test.second } }, {}), secondValue, {});
+                if (!test.expected.empty())
+                {
+                    const bool usesVariableKey =
+                        test.key == "texture_dump" || test.key == "texture_packs" || test.key == "hd_textures";
+                    check(Parse(config, { { name, test.invalid } }, {}), firstValue,
+                        warning(test.environment, usesVariableKey ? test.environment : test.key));
+                }
+            }
+            env = { { old, test.second }, { test.environment, test.first } };
+            check(Parse(config, env, {}), firstValue, {});
+        }
+        if (!test.option.empty())
+        {
+            check(Parse(config, env, { test.option, test.argumentPrefix + test.second }), secondValue, {});
+            check(Parse(config, env, { test.option + "=" + test.argumentPrefix + test.second }), secondValue, {});
+            check(
+                Parse(config, env,
+                    { test.option, test.argumentPrefix + test.first, test.option, test.argumentPrefix + test.second }),
+                secondValue, {});
+            if (!test.expected.empty())
+                check(Parse(config, env, { test.option, test.argumentPrefix + test.invalid }), firstValue,
+                    warning("command line", test.key));
+            const auto missing = Parse(config, env, { test.option });
+            CHECK(!missing.ok && missing.error == test.option + " needs a value (see --help)");
+            CHECK(missing.warnings.empty() && read(missing.settings) == firstValue);
+        }
+    }
+
+    template <typename Value>
+    void CheckMember(const SettingCase& test, Value RuntimeSettings::* member, Value firstValue, Value secondValue)
+    {
+        CheckSetting(
+            test, [member](const RuntimeSettings& settings) { return settings.*member; }, firstValue, secondValue);
+    }
+
+    void CheckScalarSettings()
+    {
+        CheckMember({ "video", "resolution_scale", "2", "4", "11", "auto or 1 to 10", "--scale" },
+            &RuntimeSettings::resolutionScale, 2u, 4u);
+        CheckMember({ "video", "aspect", "auto", "16:9", "wide", "auto or 16:9", "--aspect" },
+            &RuntimeSettings::aspectAuto, true, false);
+        CheckMember({ "video", "anisotropy", "2", "16", "3", "1, 2, 4, 8 or 16", "--anisotropy" },
+            &RuntimeSettings::anisotropy, 2u, 16u);
+        CheckMember({ "video", "fps_limit", "60", "30", "bad", "30 or 60", "--fps-limit" }, &RuntimeSettings::fpsLimit,
+            60u, 30u);
+        CheckMember({ "video", "debug_screen", "1", "2", "3", "0 (off), 1 (compact) or 2 (full)" },
+            &RuntimeSettings::debugScreen, 1u, 2u);
+        CheckMember({ "video", "edge_smoothing", "game", "off", "bad", "auto, game, light or off", "--edge-smoothing" },
+            &RuntimeSettings::edgeSmoothing, edgesmoothing::Game, edgesmoothing::Off);
+        CheckMember({ "video", "upscaler", "off", "fsr3", "bad", "off or fsr3", "", "SKY_UPSCALER" },
+            &RuntimeSettings::upscaler, upscalemode::Upscaler::Off, upscalemode::Upscaler::Fsr3);
+        CheckMember({ "video", "fsr_quality", "native", "balanced", "bad",
+                        "native, quality, balanced, performance or ultra_performance", "", "SKY_FSR_QUALITY" },
+            &RuntimeSettings::fsrQuality, upscalemode::Quality::Native, upscalemode::Quality::Balanced);
+        CheckMember(
+            { "video", "fsr_frame_generation", "off", "on", "bad", "off or on", "", "SKY_FSR_FRAME_GENERATION" },
+            &RuntimeSettings::fsrFrameGeneration, false, true);
+        CheckMember({ "video", "gpu_backend", "d3d12", "vulkan", "bad", "d3d12 or vulkan" },
+            &RuntimeSettings::gpuBackend, gpubackend::Backend::D3D12, gpubackend::Backend::Vulkan);
+        CheckMember(
+            { "audio", "volume", "25", "75", "101", "a number from 0 to 100" }, &RuntimeSettings::volume, 25u, 75u);
+        CheckMember({ "audio", "speakers", "stereo", "5.1", "bad", "auto, stereo or 5.1", "", "SKY_SPEAKERS" },
+            &RuntimeSettings::speakers, speakers::Stereo, speakers::Surround);
+        CheckMember(
+            { "input", "device", "keyboard", "gamepad", "mouse", "auto, keyboard or gamepad", "--input", "", false },
+            &RuntimeSettings::inputDevice, std::string("keyboard"), std::string("gamepad"));
+        CheckMember({ "input", "glyphs", "xbox360", "keyboard", "bad",
+                        "auto, xbox, xbox360, xboxone, playstation, nintendo or keyboard", "--glyphs", "", false },
+            &RuntimeSettings::glyphs, std::string("xbox360"), std::string("keyboard"));
+        // These strings are deliberately unrestricted, including empty and unrecognised values.
+        CheckMember({ "input", "gamepad", "not-a-guid", "", "", "", "--gamepad", "", false }, &RuntimeSettings::gamepad,
+            std::string("not-a-guid"), std::string());
+        CheckMember({ "ssa", "language", "not-a-code", "", "", "", "--language", "SKY_LANGUAGE", false },
+            &RuntimeSettings::language, std::string("not-a-code"), std::string());
+        CheckMember(
+            { "ssa", "voice_language", "not-a-code", "", "", "", "--voice-language", "SKY_VOICE_LANGUAGE", false },
+            &RuntimeSettings::voiceLanguage, std::string("not-a-code"), std::string());
+    }
+
+    void CheckBooleanSettings()
+    {
+        struct BooleanCase
+        {
+            const char* section;
+            const char* key;
+            bool RuntimeSettings::* member;
+            const char* option = "";
+            const char* environment = "";
+            bool perGame = true;
+        };
+        const BooleanCase cases[] = {
+            { "video", "vsync", &RuntimeSettings::vsync, "--vsync" },
+            { "video", "fullscreen", &RuntimeSettings::fullscreen },
+            { "video", "fps_auto_fallback", &RuntimeSettings::fpsAutoFallback },
+            { "video", "skip_intro_movies", &RuntimeSettings::skipIntroMovies },
+            { "video", "show_fps", &RuntimeSettings::showFps },
+            { "video", "reduce_motion", &RuntimeSettings::reduceMotion },
+            { "video", "texture_dump", &RuntimeSettings::textureDump, "--texture-dump", "SKY_TEXTURE_DUMP" },
+            { "video", "texture_packs", &RuntimeSettings::texturePacks, "--texture-packs", "SKY_TEXTURE_PACKS" },
+            { "video", "original_resolution", &RuntimeSettings::originalResolution, "--original-resolution" },
+            { "audio", "portal_sound", &RuntimeSettings::portalSound },
+            { "ssa", "nightmare_from_start", &RuntimeSettings::nightmareFromStart, "--nightmare-from-start",
+                "SKY_NIGHTMARE_FROM_START", false },
+            { "ssa", "hd_textures", &RuntimeSettings::hdTextures, "", "SKY_HD_TEXTURES", false },
+            { "portal", "toybox_auto_open", &RuntimeSettings::toyboxAutoOpen, "", "SKY_TOYBOX_AUTO_OPEN", false },
+        };
+        for (const auto& test : cases)
+            CheckMember(
+                { test.section, test.key, "0", "1", "yes", "0 or 1", test.option, test.environment, test.perGame },
+                test.member, false, true);
+    }
+
+    void CheckBindings()
+    {
+        for (size_t i = 0; i < std::size(g_keyActions); i++)
+        {
+            const std::string action = g_keyActions[i].name;
+            CheckSetting(
+                { "input", "key_" + action, "G", "H", "NotAKey", "an SDL key name", "--key", "", true, action + "=" },
+                [i](const RuntimeSettings& settings) { return settings.keys[i]; }, std::string("G"), std::string("H"));
+            CheckSetting(
+                { "ssa.input", "mouse_" + action, "Mouse Left", "none", "Mouse 9",
+                    "a mouse button (Mouse Left, Wheel Up...) or none", "", "", false },
+                [i](const RuntimeSettings& settings) { return settings.mouse.stored[i]; }, mouse::Left, mouse::None);
+            const auto run = Parse({ { "ssa.input", { { "mouse_" + action, "none" } } } }, {}, {});
+            CHECK(run.settings.mouse.set[i]);
+        }
+        for (int i = 0; i < PadButtonCount; i++)
+        {
+            const std::string button = g_padButtons[i];
+            CheckSetting(
+                { "input", "pad_" + button, "b", "none", "bad", "a pad button or none", "--pad", "", true,
+                    button + "=" },
+                [i](const RuntimeSettings& settings) { return settings.padMap.target[i]; }, int8_t(PadButtonIndex("b")),
+                int8_t(-1));
+        }
+        const char* const toyboxKeys[] = { "key_toybox", "key_toybox_add", "key_toybox_clear" };
+        for (size_t i = 0; i < std::size(toyboxKeys); i++)
+            CheckSetting(
+                { "input", toyboxKeys[i], "G", "H", "NotAKey", "an SDL key name", "", "", false },
+                [i](const RuntimeSettings& settings) { return settings.toyboxKeys[i]; }, std::string("G"),
+                std::string("H"));
+        for (int i = 0; i < 2; i++)
+            CheckSetting(
+                { "input", i == 0 ? "rumble_p1" : "rumble_p2", "low", "strong", "bad", "off, low, normal or strong" },
+                [i](const RuntimeSettings& settings) { return settings.rumble[i]; }, std::string("low"),
+                std::string("strong"));
+        CheckSetting(
+            { "ssa.input", "mouse", "0", "1", "yes", "0 or 1", "", "", false },
+            [](const RuntimeSettings& settings) { return settings.mouse.enabled; }, false, true);
+    }
+
+    void CheckIgnoredKeysAndErrors()
+    {
+        LauncherConfig config;
+        for (const char* section :
+            { "video", "ssa.video", "audio", "ssa.audio", "input", "ssa.input", "portal", "ssa" })
+            config[section]["unknown_key"] = "invalid";
+        // Shared sections are the older layout. Unsupported section names and keys stay ignored.
+        config["graphics"] = { { "resolution_scale", "4" } };
+        config["sound"] = { { "volume", "25" } };
+        config["controls"] = { { "device", "keyboard" } };
+        config["input"] = { { "mouse", "1" }, { "mouse_a", "Mouse Left" }, { "key_toybox_extra", "NotAKey" } };
+        config["ssa.input"] = { { "device", "keyboard" }, { "gamepad", "ignored" }, { "glyphs", "keyboard" } };
+        const auto run = Parse(config, { { "SSA_SCALE", "4" }, { "SKY_GPU_BACKEND", "vulkan" } }, {});
+        CHECK(run.ok && run.warnings.empty() && run.error.empty());
+        CHECK(run.settings.resolutionScale == 0 && run.settings.volume == 100 && run.settings.inputDevice == "auto");
+        CHECK(!run.settings.mouse.enabled && !run.settings.mouse.set[KeyIndex("a")]);
+        CHECK(run.settings.gamepad.empty() && run.settings.glyphs == "auto");
+        CHECK(run.settings.gpuBackend == gpubackend::RuntimeDefault && run.settings.toyboxTab);
+        const auto unknown = Parse({ { "input", { { "key_missing", "Space" }, { "pad_missing", "a" } } },
+                                       { "ssa.input", { { "key_toybox", "O" }, { "mouse_missing", "Mouse Left" } } } },
+            {}, {});
+        CHECK(unknown.ok &&
+              unknown.warnings == (std::vector<std::string>{ "launcher.ini: no keyboard action \"missing\"; ignored",
+                                      "launcher.ini: no pad button \"missing\"; ignored",
+                                      "launcher.ini: no keyboard action \"toybox\"; ignored",
+                                      "launcher.ini: no action \"missing\" for the mouse; ignored" }));
+        CHECK(unknown.settings.toyboxTab && unknown.settings.toyboxKeys[0] == "F6");
+        for (const char* option : { "--key", "--pad" })
+        {
+            const auto malformed = Parse({}, {}, { option, "missing" });
+            const std::string expected = std::string(option) == "--key"
+                                             ? "--key takes <action>=<key>, e.g. --key a=Space"
+                                             : "--pad takes <button>=<button>, e.g. --pad rb=b";
+            CHECK(!malformed.ok && malformed.error == expected && malformed.warnings.empty());
+        }
+        const auto badOption = Parse({}, {}, { "--unknown=value", "--help" });
+        CHECK(!badOption.ok && badOption.error == "unknown option --unknown (see --help)" && !badOption.settings.help);
+        const auto flags = Parse({}, {},
+            { "--portal-probe=ignored", "--help=ignored", "--version", "--list-gamepads", "--fullscreen=0",
+                "--windowed=1", "--select-iso=1", "--launcher=2", "-x", "a=b" });
+        CHECK(flags.ok && flags.warnings.empty() && flags.settings.portalProbe && flags.settings.help &&
+              flags.settings.version && flags.settings.listGamepads && !flags.settings.fullscreen);
+        CHECK(flags.settings.arguments == (std::vector<std::string>{ "--select-iso=1", "--launcher=2", "-x", "a=b" }));
+        const auto rumble = Parse({}, {}, { "--rumble=bad" });
+        CHECK(rumble.ok && rumble.settings.rumble[0] == "normal" && rumble.settings.rumble[1] == "normal");
+        CHECK(rumble.warnings ==
+              (std::vector<std::string>{ "command line: rumble_p1=bad is not off, low, normal or strong; ignored",
+                  "command line: rumble_p2=bad is not off, low, normal or strong; ignored" }));
+        const auto missingRumble = Parse({}, {}, { "--rumble" });
+        CHECK(!missingRumble.ok && missingRumble.error == "--rumble needs a value (see --help)");
+    }
+
+    void CheckPublicationAndAliases()
+    {
+        CHECK(Parse({ { "video", { { "skip_intro_movies", "1" }, { "fps_auto_fallback", "0" } } } }, {}, {}).ok);
+        CHECK(SkipIntroMovies() && !FpsAutoFallback());
+        const auto failed = Parse({}, {}, { "--scale" });
+        CHECK(!failed.ok && !failed.settings.skipIntroMovies && failed.settings.fpsAutoFallback);
+        CHECK(SkipIntroMovies() && !FpsAutoFallback());
+        CHECK(Parse({}, {}, {}).ok && !SkipIntroMovies() && FpsAutoFallback());
+        const auto invalidFallback = Parse(
+            { { "video", { { "fps_auto_fallback", "0" } } }, { "ssa.video", { { "fps_auto_fallback", "bad" } } } }, {},
+            {});
+        CHECK(invalidFallback.ok && invalidFallback.settings.fpsAutoFallbackSet && !FpsAutoFallback());
+        for (const char* prefix : { "SSA_", "SKY_" })
+        {
+            const auto internal = Parse({}, { { std::string(prefix) + "UPSCALER", "metalfx" } }, {});
+            CHECK(internal.ok && internal.warnings.empty() &&
+                  internal.settings.upscaler == upscalemode::Upscaler::MetalFx);
+        }
+        const auto fileInternal = Parse({ { "video", { { "upscaler", "metalfx" } } } }, {}, {});
+        CHECK(fileInternal.ok && fileInternal.settings.upscaler == upscalemode::Upscaler::Off);
+        CHECK(fileInternal.warnings ==
+              (std::vector<std::string>{ "launcher.ini: upscaler=metalfx is not off or fsr3; ignored" }));
+        const auto emptyCurrent = Parse({}, { { "SSA_SPEAKERS", "5.1" }, { "SKY_SPEAKERS", "" } }, {});
+        CHECK(emptyCurrent.ok && emptyCurrent.settings.speakers == speakers::Auto);
+        CHECK(emptyCurrent.warnings ==
+              (std::vector<std::string>{ "SKY_SPEAKERS: speakers= is not auto, stereo or 5.1; ignored" }));
+        for (const char* value : { "0", "1" })
+        {
+            const auto generation =
+                Parse({ { "video", { { "fsr_frame_generation", value }, { "upscaler", "0" } } } }, {}, {});
+            CHECK(generation.ok && generation.warnings.empty() &&
+                  generation.settings.fsrFrameGeneration == (value[0] == '1'));
+            CHECK(generation.settings.upscaler == upscalemode::Upscaler::Off);
+        }
+    }
 }
 
 int main()
 {
+    CheckScalarSettings();
+    CheckBooleanSettings();
+    CheckBindings();
+    CheckIgnoredKeysAndErrors();
+    CheckPublicationAndAliases();
+
     // The helper on the real environment: the current name, then SSA_*, and for the launcher SKYLAUNCHER_*.
     {
         auto put = [](const char* name, const char* value) {

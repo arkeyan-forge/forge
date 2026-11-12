@@ -168,6 +168,90 @@ namespace
         frame(vpAfter, 0.0);
         CHECK(!vote.Close(reprojection));
     }
+
+    // Per-object motion: a draw that moved apart from the camera in the frame before gets a number, and Close gives
+    // that number the draw's own reprojection (previous x inverse(current)).
+    void TestObjects()
+    {
+        const Matrix projection = Perspective(16.0 / 9.0, 0.6, 0.5, 4000.0);
+        auto view = [](int f) { return Transform(0.1 + 0.03 * f, 0.4 * f, -3.0, 20.0 - 0.5 * f); };
+        auto hero = [](int f) { return Transform(0.2 * f, 2.0 + 0.6 * f, 0.0, 5.0); };
+        upscale::CameraVote vote;
+        uint32_t numbers[4];
+        // Twelve static objects, the hero (two parts: one mesh drawn twice), and a moving decal that writes no depth.
+        auto frame = [&](int f) {
+            const Matrix vp = upscale::Multiply(projection, view(f));
+            for (uint64_t id = 1; id <= 12; id++)
+                CHECK(vote.Add(id, upscale::Multiply(vp, Transform(0.2 * id, id * 3.0, 0.0, id * -2.0)), 1000, true) == 0);
+            numbers[0] = vote.Add(50, upscale::Multiply(vp, hero(f)), 800, true);
+            numbers[1] = vote.Add(50, upscale::Multiply(vp, upscale::Multiply(hero(f), Transform(0.0, 0.0, 1.0, 0.0))), 800, true);
+            numbers[2] = vote.Add(60, upscale::Multiply(vp, hero(f)), 100, false);
+        };
+        Matrix reprojection;
+        const Matrix* motions = nullptr;
+        frame(0);
+        CHECK(!vote.Close(reprojection) && vote.Objects(motions) == 0);
+        frame(1); // the hero moves: known from the next frame on
+        CHECK(numbers[0] == 0 && numbers[1] == 0);
+        CHECK(vote.Close(reprojection) && vote.Objects(motions) == 0);
+        frame(2);
+        CHECK(numbers[0] == 1 && numbers[1] == 2 && numbers[2] == 0); // the decal: no depth, no number
+        CHECK(vote.Close(reprojection));
+        CHECK(vote.Objects(motions) == 2);
+        Matrix inverse;
+        const Matrix vp1 = upscale::Multiply(projection, view(1)), vp2 = upscale::Multiply(projection, view(2));
+        CHECK(upscale::Invert(upscale::Multiply(vp2, hero(2)), inverse));
+        CHECK(upscale::Distance(motions[1], upscale::Multiply(upscale::Multiply(vp1, hero(1)), inverse)) < 1e-6);
+        const Matrix part = Transform(0.0, 0.0, 1.0, 0.0);
+        CHECK(upscale::Invert(upscale::Multiply(vp2, upscale::Multiply(hero(2), part)), inverse));
+        CHECK(upscale::Distance(motions[2], upscale::Multiply(upscale::Multiply(vp1, upscale::Multiply(hero(1), part)), inverse)) < 1e-6);
+        CHECK(upscale::Distance(motions[1], reprojection) > 1e-3); // not the camera's
+
+        // An object drawn once more than in the frame before has no pair: the camera's motion.
+        frame(3);
+        CHECK(vote.Add(50, upscale::Multiply(upscale::Multiply(projection, view(3)), hero(3)), 800, true) == 3);
+        CHECK(vote.Close(reprojection) && vote.Objects(motions) == 3);
+        CHECK(upscale::Distance(motions[3], reprojection) < 1e-12);
+
+        // The hero stops: its draws agree with the camera again, and the frame after numbers none.
+        auto still = [&](int f) {
+            const Matrix vp = upscale::Multiply(projection, view(f));
+            for (uint64_t id = 1; id <= 12; id++)
+                vote.Add(id, upscale::Multiply(vp, Transform(0.2 * id, id * 3.0, 0.0, id * -2.0)), 1000, true);
+            numbers[0] = vote.Add(50, upscale::Multiply(vp, hero(3)), 800, true);
+            numbers[1] = vote.Add(50, upscale::Multiply(vp, upscale::Multiply(hero(3), part)), 800, true);
+        };
+        still(4);
+        CHECK(numbers[0] == 1 && numbers[1] == 2); // still numbered: it moved in the frame before
+        CHECK(vote.Close(reprojection) && vote.Objects(motions) == 2);
+        CHECK(upscale::Distance(motions[1], reprojection) < 1e-6);
+        still(5);
+        CHECK(numbers[0] == 0 && numbers[1] == 0);
+        CHECK(vote.Close(reprojection) && vote.Objects(motions) == 0);
+
+        // A frame without a scene forgets which draws moved.
+        frame(6);
+        vote.Close(reprojection);
+        vote.Forget();
+        frame(7);
+        CHECK(numbers[0] == 0 && !vote.Close(reprojection) && vote.Objects(motions) == 0);
+
+        // An animated (skinned) draw is an object from its first frame, still or not; without a pair, the camera's
+        // motion; one that writes no depth is none.
+        upscale::CameraVote skinned;
+        for (int f = 0; f < 3; f++)
+        {
+            const Matrix vp = upscale::Multiply(projection, view(f));
+            for (uint64_t id = 1; id <= 12; id++)
+                skinned.Add(id, upscale::Multiply(vp, Transform(0.2 * id, id * 3.0, 0.0, id * -2.0)), 1000, true);
+            CHECK(skinned.Add(70, upscale::Multiply(vp, hero(0)), 500, true, true) == 1);
+            CHECK(skinned.Add(71, upscale::Multiply(vp, hero(0)), 500, false, true) == 0);
+            CHECK(skinned.Close(reprojection) == (f > 0));
+            CHECK(skinned.Objects(motions) == (f > 0 ? 1u : 0u));
+            if (f > 0)
+                CHECK(upscale::Distance(motions[1], reprojection) < 1e-6); // standing still: the camera's
+        }
+    }
 }
 
 namespace
@@ -408,6 +492,7 @@ int main()
     TestJitter();
     TestMatrices();
     TestCameraVote();
+    TestObjects();
     TestModes();
     TestSpirvReflect();
     TestSpirvFormats();

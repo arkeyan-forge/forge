@@ -115,6 +115,9 @@ namespace gpu
         // The vertex input the vertex shader fetches at a computed index, as `pulledCount` float4s (0: none).
         const float* pulledVertices;
         uint32_t pulledCount;
+        // Upscaling: the draw's number in the object mask (upscale::CameraVote::Add; 0: none). The upscaler replays it
+        // into the mask over the scene's depth (gpu::UpscaleDesc::objectMotions).
+        uint32_t object = 0;
     };
 
     void Draw(const DrawDesc& draw);

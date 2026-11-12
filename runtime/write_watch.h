@@ -40,6 +40,23 @@ namespace writewatch
     // writable and count as written. Does nothing outside guest memory.
     void WillWrite(void* data, size_t bytes);
 
+    // WillWrite for a write that takes time (a file read into guest memory): the pages also stay writable until the
+    // scope ends, Watch leaving them alone (0: the callers hash). Before 0.9.6 a texture's Watch could protect a page
+    // again while the read ran, and the read failed (EFAULT, ERROR_NOACCESS): the guest saw the end of its file
+    // (Swap Force's movie data: a plain green picture and the game waiting, issue #26).
+    class HostWrite
+    {
+    public:
+        HostWrite(void* data, size_t bytes);
+        ~HostWrite();
+        HostWrite(const HostWrite&) = delete;
+        HostWrite& operator=(const HostWrite&) = delete;
+
+    private:
+        uint64_t m_first = 0, m_last = 0;
+        bool m_pinned = false;
+    };
+
     // Once a producer frame (the frame count HotFrames and CoolFrames are in).
     void FrameDone();
 

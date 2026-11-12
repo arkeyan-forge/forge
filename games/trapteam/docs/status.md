@@ -2,6 +2,13 @@
 
 > **Purpose:** which disc Trap Team needs, where the port stands, and where to start · **Status:** current (2026-11-10) · **Tags:** [Xbox] [XDK] [Alchemy] [TrapTeam] [V]
 
+## At a glance
+
+- **Played on:** macOS (the test suite, the owner); Windows on NVIDIA and AMD (the owner, issue #27).
+- **Known limits:** Linux not tried yet; Spy Rise dark on macOS (#50); separate voice language and LB fixed in 0.9.6, to confirm (#51).
+
+(The source of the README's game table: `python3 -I tools/game_status.py` writes it from this section and `game.txt`.)
+
 ## Disc
 | | |
 |---|---|

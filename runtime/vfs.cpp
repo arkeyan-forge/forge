@@ -1,6 +1,11 @@
 #include "vfs.h"
 #include "host/collection/portable_pack.h"
+#include "host/env.h"
+#include "read_fully.h"
 #include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 
@@ -236,23 +241,79 @@ std::vector<std::pair<std::string, const DiscFileSystem::Entry*>> DiscFileSystem
     return files;
 }
 
+namespace
+{
+    // Test aid (SKY_TEST_READ_FAIL=<name>:<n>[:<attempts>]): the n-th read (from 1) of the files whose disc name holds
+    // <name> (any case) fails its first <attempts> attempts (default 1), as a host read failing for a moment would.
+    // Returns how many attempts of this read fail.
+    uint32_t TestReadFailures(const std::string& name)
+    {
+        struct Aid
+        {
+            std::string name;
+            uint32_t nth = 0, attempts = 1;
+        };
+        static const Aid aid = [] {
+            Aid parsed;
+            const char* value = skyenv::Get("SKY_TEST_READ_FAIL");
+            const char* colon = value != nullptr ? strchr(value, ':') : nullptr;
+            if (colon == nullptr)
+                return parsed;
+            char* end = nullptr;
+            parsed.nth = uint32_t(strtoul(colon + 1, &end, 10));
+            if (*end == ':')
+                parsed.attempts = uint32_t(strtoul(end + 1, nullptr, 10));
+            for (const char* c = value; c != colon; c++)
+                parsed.name += char(std::tolower(uint8_t(*c)));
+            fprintf(stderr, "[file] test: read %u of *%s* fails %u time(s)\n", parsed.nth, parsed.name.c_str(),
+                parsed.attempts);
+            return parsed;
+        }();
+        static std::atomic<uint32_t> reads{ 0 };
+        if (aid.nth == 0)
+            return 0;
+        std::string lower;
+        for (char c : name)
+            lower += char(std::tolower(uint8_t(c)));
+        if (lower.find(aid.name) == std::string::npos || reads.fetch_add(1) + 1 != aid.nth)
+            return 0;
+        return aid.attempts;
+    }
+}
+
 uint32_t DiscFileSystem::Read(const Entry& entry, uint64_t position, void* buffer, uint32_t size) const
 {
     if (position >= entry.size)
         return 0;
 
     size = uint32_t(std::min<uint64_t>(size, entry.size - position));
+    PlatformFile file = m_folder ? PlatformOpenFile(entry.host.c_str()) : m_file;
+    if (file == InvalidPlatformFile)
+        return 0;
+    const uint64_t start = m_folder ? 0 : entry.offset;
+    uint32_t testFailures = TestReadFailures(entry.name);
+    bool testFailed = false;
+    const readfully::Result result = readfully::Read(
+        static_cast<uint8_t*>(buffer), size, position,
+        [&](uint8_t* into, uint32_t bytes, uint64_t at) -> int64_t {
+            testFailed = testFailures != 0;
+            if (testFailed)
+            {
+                testFailures--;
+                return -1;
+            }
+            return PlatformReadFile(file, into, bytes, start + at);
+        },
+        [&] { return testFailed ? -1 : PlatformLastError(); });
     if (m_folder)
-    {
-        PlatformFile file = PlatformOpenFile(entry.host.c_str());
-        if (file == InvalidPlatformFile)
-            return 0;
-        int64_t got = PlatformReadFile(file, buffer, size, position);
         PlatformCloseFile(file);
-        return got > 0 ? uint32_t(got) : 0;
-    }
-    int64_t read = PlatformReadFile(m_file, buffer, size, entry.offset + position);
-    return read > 0 ? uint32_t(read) : 0;
+    // A failed read is a problem of the host (memory, the drive), never the game's: the log says so.
+    static std::atomic<uint32_t> logged{ 0 };
+    if (result.failures != 0 && logged.fetch_add(1) < 50)
+        fprintf(stderr, "[file] read %s @%llu len %u: %u failed attempt(s), system error %d; %s\n", entry.name.c_str(),
+            (unsigned long long)position, size, result.failures, result.error,
+            result.bytes == size ? "read in full on a retry" : "the rest is missing (the game sees the end of the file)");
+    return result.bytes;
 }
 
 std::vector<uint8_t> DiscFileSystem::ReadAll(const std::string& path) const

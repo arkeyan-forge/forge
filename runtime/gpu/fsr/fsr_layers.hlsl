@@ -22,7 +22,31 @@ struct LayersConstants
 [[vk::push_constant]] ConstantBuffer<LayersConstants> g_layers : register(b0, space1);
 [[vk::binding(3, 0)]] Texture2D<float4> g_colour : register(t3, space0);
 [[vk::binding(4, 0)]] Texture2D<float4> g_previousColour : register(t4, space0);
+// The object mask, the frame before's and FSR's reactive mask, as in fsr_inputs.hlsl.
+[[vk::binding(5, 0)]] Texture2D<float> g_objectMask : register(t5, space0);
+struct ObjectMotions
+{
+    float4 rows[128 * 4];
+};
+[[vk::binding(6, 0)]] ConstantBuffer<ObjectMotions> g_objects : register(b6, space0);
+[[vk::binding(7, 0)]] Texture2D<float> g_previousMask : register(t7, space0);
+[[vk::binding(8, 0)]] [[vk::image_format("r8")]] RWTexture2D<float> g_reactive : register(u8, space0);
 
+float Reactive(uint2 id, float2 motion, float2 size)
+{
+    if (g_objects.rows[0].x < 0.5)
+        return 0.0;
+    const int2 last = int2(size) - 1;
+    const int2 previous = int2(floor(float2(id) + 0.5 + motion * size));
+    if (any(previous < 0) || any(previous > last))
+        return 0.0;
+    const int2 taps[5] = { int2(0, 0), int2(1, 0), int2(-1, 0), int2(0, 1), int2(0, -1) };
+    for (int i = 0; i < 5; i++)
+        if (g_previousMask.Load(int3(clamp(previous + taps[i], int2(0, 0), last), 0)) < 0.5 / 255.0 ||
+            g_objectMask.Load(int3(clamp(int2(id) + taps[i], int2(0, 0), last), 0)) > 0.5 / 255.0)
+            return 0.0;
+    return g_objects.rows[0].y;
+}
 float Luma(float4 c)
 {
     return dot(c.rgb, float3(0.299, 0.587, 0.114));
@@ -111,6 +135,7 @@ void InputsLayersCS(uint3 id : SV_DispatchThreadID, uint index : SV_GroupIndex)
     {
         g_motion[id.xy] = float2(0.0, 0.0);
         g_depth[id.xy] = 0.0;
+        g_reactive[id.xy] = 0.0;
         return;
     }
     // A pixel at a tile's edge that the camera's motion explains much better (the world beside a ship's mast) keeps it;
@@ -118,6 +143,15 @@ void InputsLayersCS(uint3 id : SV_DispatchThreadID, uint index : SV_GroupIndex)
     uint choice = sky ? 0 : g_tileChoice;
     if (choice != 0 && g_tileCost[index][0] < 0.8 * g_tileCost[index][choice])
         choice = 0;
-    g_motion[id.xy] = motions[choice] * float2(0.5, -0.5);
+    // An object's pixel has its own motion, whatever its tile's.
+    float2 motion = motions[choice];
+    const uint object = uint(g_objectMask.Load(int3(id.xy, 0)) * 255.0 + 0.5);
+    if (object != 0)
+        motion = LayerMotion(g_objects.rows[object * 4], g_objects.rows[object * 4 + 1], g_objects.rows[object * 4 + 2],
+                     g_objects.rows[object * 4 + 3], current, motion)
+                     ? clamp(motion, -2.0, 2.0)
+                     : float2(0.0, 0.0);
+    g_motion[id.xy] = motion * float2(0.5, -0.5);
+    g_reactive[id.xy] = Reactive(id.xy, motion * float2(0.5, -0.5), g_layers.size);
     g_depth[id.xy] = g_layers.invertDepth > 0.5 ? 1.0 - z : z;
 }

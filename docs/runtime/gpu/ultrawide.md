@@ -1,15 +1,82 @@
 # Ultrawide: a Hor+ camera, a scene and a frame as wide as the window, the HUD where it belongs
 
-> **Purpose:** how does `aspect=auto` widen the scene, the frame and the HUD? · **Status:** current (2026-10-26) · **Tags:** [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [SuperChargers] [Imaginators]
+> **Purpose:** how does `aspect=auto` widen the scene, the frame and the HUD? · **Status:** current (2026-11-12) · **Tags:** [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [SuperChargers] [Imaginators]
 
 `[video] aspect=auto` (default) or `16:9` (`--aspect`, [settings.md](../../getting-started/settings.md)). With `auto`, a window or display more than 1 %
 wider than 16:9 shows more of the world to the sides; a 16:9 window (or `16:9`) runs exactly as before. Code:
 `d3d/ultrawide.{h,cpp}` (the sizes), `engines/lux/ultrawide.cpp` and `engines/alchemy/ultrawide.cpp` (the games' sides),
 `games/<id>/adapter.cpp` (the camera), `d3d/render.cpp` (the wide frame). SSA **[Lux]**, Giants and Swap Force **[Alchemy]**
 have it; the per-game constants are in `games/<id>/addresses.h` (`Ultrawide*`). [Xbox] for the frame part.
-The shape is read once when the window is created (`SDL_GetWindowSizeInPixels`, offscreen runs: `SKY_WINDOW_SIZE=WxH`):
-the targets cannot change while the title runs, so resizing the window later only changes how the presenter scales
-the frame (it keeps the frame's shape, with bars if the window is no longer that shape).
+The scene's size is chosen once, when the window is created, for the widest shape the window can take there: the
+window's (`SDL_GetWindowSizeInPixels`, offscreen runs: `SKY_WINDOW_SIZE=WxH`) or its display's when that is wider
+(`SDL_GetDisplayForWindow`, `SDL_GetDisplayBounds`; offscreen runs: `SKY_DISPLAY_SIZE=WxH`); the camera and the frame then follow the window live
+(below, "Following the window").
+
+## Following the window (issue #14) [V] (2026-11-12)
+
+Resizing the window, maximising it or toggling fullscreen widens or narrows the view while the game runs, in every game
+that has the wider view. Code: `ultrawide::WindowSize` (the main loop gives it the window's size every pass, `main.cpp`
+`FollowWindowShape`), `ultrawide::Settle` (the debounce), `ultrawide::FrameEnd` (the swap, `d3d/render.cpp`).
+
+- **When.** A new size counts once it has held for 300 ms (`ultrawide::SettleMs`): a drag's many sizes do nothing, a
+  minimised window (or a 0x0 size) is ignored. The settled shape becomes the next layout (`ultrawide::LayoutFor`: active
+  above 16:9 + 1 %, aspect clamped to 4:1, frame `720 x aspect`), applied at the next swap. `aspect=16:9` never follows.
+- **What changes live.** The camera's aspect (SSA and Giants: the display aspect global is written at that swap; the
+  later games' hooks read `ultrawide::Aspect()` at each call) and the frame: the host's 1280x720 targets are made again
+  at the new width (`DropFrameTargets`; the others keep their contents), so the composite fills the new frame and the
+  HUD, menus and movies are centred at 16:9 as before. FSR's output and jitter phases follow the new frame (not run with FSR on [?]).
+- **The scene is made for the window's display (2026-11-12, second pass) [V].** The games make their scene targets once
+  (SSA and Giants before the title, every call of their texture and size hooks comes in the first second) and keep copies
+  of them the runtime cannot follow, so the scene's size is chosen at start for the widest shape the window can take:
+  `ultrawide::SceneShape` takes the shape of the display the window is on when it is wider than the window's (`main.cpp`
+  `WindowDisplay`; not the widest of all: a laptop with a 32:9 monitor attached would draw a 32:9 scene for its own screen). A game started in a 16:9 window on a 21:9 display has the 21:9 scene from the start (SSA 1664x704,
+  Swap Force and the later games 1696x720), the camera and the frame at 16:9: the composite fits the wide scene into the
+  16:9 frame (more pixels across than shown); maximised or widened later, the scene is exactly the one a start at that size
+  makes, as sharp. A window wider than its display at start (moved to a wider monitor, or dragged wider than the screen's
+  shape) still stretches the start's scene (Hor+ shapes, softer across) until the next start; a narrower one fits it.
+  - **Giants and `original_resolution=1`** (`game::UltrawideSceneKeepsArea`: the scene keeps its 16:9 pixel count, wider
+    means less tall) take the window's shape: made for a 21:9 display, a 16:9 window would show 496 lines instead of 600.
+    Widened, Giants' 1000x600 scene is stretched over the frame: fewer pixels across than a wide start (1000 against 1184),
+    more lines (600 against 496), about the same pixel count.
+  - **Cost**: with the display wider than a 16:9 window, the scene has the wide start's pixel count (SSA at scale 2: 3328x1408
+    instead of 2240x1408); 30 FPS held in every run below.
+  - **Why not rebuild the targets live** (tried in SSA, not kept): the Lux scene targets are 132-byte texture objects (the
+    D3D header at +20, the EDRAM surface the engine makes from it at +72), and rewriting their pitch, size and memory at the
+    swap (26 of them) gave the same objects as a wide start, yet the picture broke (the lit half black, the other half
+    garbage): the game keeps copies made at start, fetch constants in its state blocks and command buffers (up to 930 per
+    target, most in old command buffers) and the scene depth's address in the light tile job's globals (`0x82BC0820`, with
+    the object). Each game would need its own hunt for these copies; the display's shape gives the same result for all six.
+- **A scene of the frame's own size** (the full-resolution 1280x720 scene of Swap Force, Trap Team, SuperChargers and
+  Imaginators, started at 16:9 with no wider display): the renderer tells the frame by its guest size and cannot tell the
+  two apart, so that run does not widen live (`ultrawide::Follows`; log `the scene is the frame's size this run (1280x720):
+  wider at the next start`; the picture stays 16:9 with bars), as FSR's own rule for these games. Started wide, on a wide
+  display (or with `original_resolution=1`), they follow both ways.
+- **Trap Team**: one of its two world-camera builders takes the scene target's shape; a call with that shape now gets the
+  window's aspect (16:9 included), so a wide start shown in a 16:9 window is not squeezed.
+- **Logs.** At start on a wider display: `[ultrawide] window 1280x720: aspect 1.778, scene 1664x704 (the display's
+  shape), frame 1280x720`. Then `[ultrawide] window 2560x1080 settled: aspect 2.370, frame 1707x720 (the scene stays
+  1664x704)`, and `[ultrawide] frame 1707x720 from frame 1096: camera aspect 2.370` at the swap that applies it.
+- **Tests.** `ArkeyanUltrawideTest` (the layout, the debounce through a drag and a minimised window, the follow both
+  ways, the frame-sized scene, `aspect=16:9`). Scripted runs (`SKY_WINDOW_SCRIPT="<s>:<W>x<H>,<s>:min,<s>:restore"`,
+  offscreen: the output follows the window), macOS, Metal, frames before and after in `private/shots/uw14/`:
+  SSA level_027 1280x720 -> a 20-step drag -> 2560x1080 -> minimised and restored -> 1920x1080 -> 3440x1440 ->
+  1280x720 (each settled shape applied once, the drag once at its end; frame intervals 33 ms around every apply, no
+  fault); Giants' tutorial 1280x720 -> 2560x1080 -> 3440x1440 -> 1280x720; Swap Force started 2560x1080 -> 1280x720 ->
+  3440x1440, with `original_resolution=1` 1280x720 -> 2560x1080 -> 1280x720, and at 1280x720 full resolution (stays
+  16:9, the log line); Trap Team (`level_314_tutorial_2`) started 2560x1080 -> 1280x720 -> 3440x1440 and with
+  `original_resolution=1` 1280x720 -> 2560x1080 -> 1280x720. In each, the wide frames show more world at the sides
+  with round things round, the HUD at its 16:9 place. SuperChargers and Imaginators were not run (their camera hook reads
+  the aspect at each call, as Swap Force's) [?]; Windows and Linux windows, a real drag and a real fullscreen toggle are
+  untested [?] (the offscreen output resizes, not a swap chain).
+  Second pass (2026-11-12, `SKY_DISPLAY_SIZE=2560x1080`, a 1280x720 window maximised to 2560x1080, against a 2560x1080
+  start, frames at the same moments in `private/shots/uw14b/`): every game makes the start's scene of a 2560x1080 window
+  (SSA 1664x704; Swap Force, Trap Team, SuperChargers, Imaginators 1696x720; Giants 1000x600, its window's), shapes right
+  in the 16:9 window and once widened. Mean horizontal luminance step of the picture's upper half (higher is sharper), SSA
+  2.83 widened against 2.81 started wide (2.56 with the start's 16:9 scene stretched, the first pass); Trap Team 3.29 and
+  3.29, Imaginators 3.34 and 3.36. SSA with FSR 3 (`SKY_UPSCALER=fsr3`): `FSR 3.1 upscaler 1664x704 -> 1664x704`,
+  a 20-step drag settled once, minimised and restored, 3440x1440, back to 1280x720, no fault. `aspect=16:9` with the wide
+  display: the console's scene (no texture widened). Unit test: `ArkeyanUltrawideTest` (`SceneShape`, a 16:9 start on a
+  wide display, the width bound, Giants' window shape).
 
 ## What changes
 
@@ -187,7 +254,11 @@ frame 2560x720, 118.4 degrees, plays on in the hub.
 
 ## Limits
 
-- The window's shape is read at start; a window resized afterwards keeps the old frame shape.
+- The scene's targets keep the start's size, made for the window's display: a window widened past that display's shape
+  (or moved to a wider monitor)
+  shows a stretched (softer) scene until the next start; Giants (and `original_resolution=1`) keep the window's shape; a
+  full-resolution scene started at 16:9 with no wider display does not widen live at all (above). A real display's shape
+  is untested (the runs set `SKY_DISPLAY_SIZE`) [?].
 - Menus (title, slots), the pause dimming and anything the game draws to fill the 16:9 frame stay 16:9: the sides are
   black (menus) or show the 3D scene undimmed (anything dimming over it). Movies keep 16:9 with bars.
 - The HUD is not anchored to the window's edges: the game lays it out for 1280x720 and the host centres that.

@@ -78,7 +78,23 @@ namespace
         gpu::Texture* previousColor = nullptr; // the colour's size and format
         bool previousValid = false;
         uint64_t logged = 0;
+        // Per-object motion (UpscaleDesc::objectMotions): the object mask (R8, render size; gpu::detail::ReplayObjects)
+        // and the frame before's (swapped each frame), the objects' reprojections, a constant buffer per frame in flight
+        // (128 matrices, rows; the first holds the reactive pass's values), and FSR's reactive mask (R8).
+        gpu::Texture* objectMask = nullptr;
+        gpu::Texture* previousMask = nullptr;
+        gpu::Texture* reactive = nullptr;
+        bool previousMaskValid = false;
+        std::unique_ptr<RenderBuffer> objectBuffers[3];
+        float* objectRows[3] = {};
+        // The log's tally: frames upscaled, objects numbered and drawn into the mask (every 900 frames).
+        uint32_t objectFrames = 0, objectsNumbered = 0, objectsDrawn = 0;
+        // SKY_FSR_TRAIL (MeasureTrail): its frame count, the run's sums.
+        uint64_t trailFrames = 0;
+        double trailSum[3] = {}, trailPixels[3] = {};
     } g_state;
+
+    constexpr uint32_t ObjectBufferSize = (gpu::MaxUpscaleObjects + 1) * 16 * sizeof(float);
 
     void Message(FfxMsgType type, const wchar_t* message)
     {
@@ -108,12 +124,14 @@ namespace
         if (format == RenderShaderFormat::DXIL)
             blob = strcmp(entry, "InputsCS") == 0         ? std::span<const uint8_t>(g_fsr_InputsCS_dxil)
                    : strcmp(entry, "InputsLayersCS") == 0 ? std::span<const uint8_t>(g_fsr_InputsLayersCS_dxil)
+                   : strcmp(entry, "ObjectMaskPS") == 0   ? std::span<const uint8_t>(g_fsr_ObjectMaskPS_dxil)
                                                           : std::span<const uint8_t>(g_fsr_SanitizeCS_dxil);
 #endif
 #if !defined(PLUME_D3D12_COREWINDOW)
         if (format == RenderShaderFormat::SPIRV)
             blob = strcmp(entry, "InputsCS") == 0         ? std::span<const uint8_t>(g_fsr_InputsCS_spirv)
                    : strcmp(entry, "InputsLayersCS") == 0 ? std::span<const uint8_t>(g_fsr_InputsLayersCS_spirv)
+                   : strcmp(entry, "ObjectMaskPS") == 0   ? std::span<const uint8_t>(g_fsr_ObjectMaskPS_spirv)
                                                           : std::span<const uint8_t>(g_fsr_SanitizeCS_spirv);
 #endif
         return blob.empty() ? nullptr : g_context->device->createShader(blob.data(), blob.size(), entry, format);
@@ -136,6 +154,10 @@ namespace
         s.layersSetBuilder.addReadWriteTexture(2);
         s.layersSetBuilder.addTexture(3);
         s.layersSetBuilder.addTexture(4);
+        s.layersSetBuilder.addTexture(5);
+        s.layersSetBuilder.addConstantBuffer(6);
+        s.layersSetBuilder.addTexture(7);
+        s.layersSetBuilder.addReadWriteTexture(8);
         s.layersSetBuilder.end();
         for (auto& set : s.layersSets)
             set = s.layersSetBuilder.create(g_context->device.get());
@@ -187,11 +209,16 @@ namespace
         s.inputsShader = CreateShader("InputsCS");
         if (s.inputsShader == nullptr)
             return false;
-        // Set 0 = { scene depth, motion, depth }, push constants (binding 0, set 1).
+        // Set 0 = { scene depth, motion, depth, object mask, object motions, previous mask, reactive }, push constants
+        // (binding 0, set 1).
         s.inputsSetBuilder.begin();
         s.inputsSetBuilder.addTexture(0);
         s.inputsSetBuilder.addReadWriteTexture(1);
         s.inputsSetBuilder.addReadWriteTexture(2);
+        s.inputsSetBuilder.addTexture(3);
+        s.inputsSetBuilder.addConstantBuffer(4);
+        s.inputsSetBuilder.addTexture(5);
+        s.inputsSetBuilder.addReadWriteTexture(6);
         s.inputsSetBuilder.end();
         for (auto& set : s.inputsSets)
             set = s.inputsSetBuilder.create(g_context->device.get());
@@ -203,6 +230,15 @@ namespace
         s.inputsLayout = layoutBuilder.create(g_context->device.get());
         s.inputsPipeline = g_context->device->createComputePipeline(
             RenderComputePipelineDesc(s.inputsLayout.get(), s.inputsShader.get(), 8, 8, 1));
+        for (uint32_t i = 0; i < 3; i++)
+        {
+            s.objectBuffers[i] = g_context->device->createBuffer(
+                RenderBufferDesc::UploadBuffer(ObjectBufferSize, RenderBufferFlag::CONSTANT));
+            s.objectRows[i] = s.objectBuffers[i] != nullptr ? static_cast<float*>(s.objectBuffers[i]->map()) : nullptr;
+            if (s.objectRows[i] == nullptr)
+                return false;
+            memset(s.objectRows[i], 0, ObjectBufferSize);
+        }
         return s.inputsPipeline != nullptr;
     }
 
@@ -226,7 +262,14 @@ namespace
             DeferDestroy(s.cleanColor);
         if (s.previousColor != nullptr)
             DeferDestroy(s.previousColor);
-        s.motion = s.depth = s.cleanColor = s.previousColor = nullptr;
+        if (s.objectMask != nullptr)
+            DeferDestroy(s.objectMask);
+        if (s.previousMask != nullptr)
+            DeferDestroy(s.previousMask);
+        if (s.reactive != nullptr)
+            DeferDestroy(s.reactive);
+        s.motion = s.depth = s.cleanColor = s.previousColor = s.objectMask = s.previousMask = s.reactive = nullptr;
+        s.previousMaskValid = false;
         s.previousValid = false;
     }
 
@@ -249,8 +292,18 @@ namespace
             .height = renderHeight,
             .format = RenderFormat::R32_FLOAT,
             .usage = gpu::TextureUsage::Storage });
-        if (s.motion == nullptr || s.depth == nullptr)
-            return Fail("no motion or depth texture");
+        for (gpu::Texture** mask : { &s.objectMask, &s.previousMask })
+            *mask = gpu::CreateTexture({ .width = renderWidth,
+                .height = renderHeight,
+                .format = RenderFormat::R8_UNORM,
+                .usage = gpu::TextureUsage::Sampled | gpu::TextureUsage::RenderTarget });
+        s.reactive = gpu::CreateTexture({ .width = renderWidth,
+            .height = renderHeight,
+            .format = RenderFormat::R8_UNORM,
+            .usage = gpu::TextureUsage::Storage });
+        if (s.motion == nullptr || s.depth == nullptr || s.objectMask == nullptr || s.previousMask == nullptr ||
+            s.reactive == nullptr)
+            return Fail("no motion, depth, object mask or reactive texture");
         if (hdr)
         {
             s.cleanColor = gpu::CreateTexture({ .width = renderWidth,
@@ -298,6 +351,126 @@ namespace
 
     void RecordSanitize(RenderCommandList& list, const gpu::UpscaleDesc& desc, const InputsConstants& constants);
 
+    // SKY_FSR_TRAIL=<n> (test aid; slow: it waits for the GPU): every n-th upscaled frame, how far FSR's output is from
+    // its input (mean absolute difference of the colour channels, 0-255, the output at each input pixel's centre) where a
+    // moving object was the frame before and no longer is (the trail), on the objects, and elsewhere; logged with the
+    // run's means.
+    void MeasureTrail(const gpu::UpscaleDesc& desc)
+    {
+        static const uint32_t every = [] {
+            const char* value = skyenv::Get("SKY_FSR_TRAIL");
+            return value != nullptr ? uint32_t(std::max(atoi(value), 0)) : 0u;
+        }();
+        State& s = g_state;
+        if (every != 0 && ++s.trailFrames % every == 0 && s.trailFrames > every)
+        {
+            std::vector<uint32_t> colour, output, mask, previous;
+            uint32_t w = 0, h = 0, ow = 0, oh = 0, mw = 0, mh = 0, pw = 0, ph = 0;
+            if (ReadbackNow(desc.color, colour, w, h) && ReadbackNow(desc.output, output, ow, oh) &&
+                ReadbackNow(s.objectMask, mask, mw, mh) && ReadbackNow(s.previousMask, previous, pw, ph) && mw == w &&
+                mh == h && pw == w && ph == h && ow != 0 && oh != 0)
+            {
+                double sum[3] = {}, pixels[3] = {};
+                for (uint32_t y = 0; y < h; y++)
+                    for (uint32_t x = 0; x < w; x++)
+                    {
+                        const uint32_t i = y * w + x;
+                        const bool now = (mask[i] & 0xFF) != 0, before = (previous[i] & 0xFF) != 0;
+                        const int region = now ? 1 : before ? 0 : 2;
+                        const uint32_t ox = std::min(uint32_t((x + 0.5) * ow / w), ow - 1);
+                        const uint32_t oy = std::min(uint32_t((y + 0.5) * oh / h), oh - 1);
+                        const uint32_t a = colour[i], b = output[oy * ow + ox];
+                        double difference = 0.0;
+                        for (uint32_t c = 0; c < 24; c += 8)
+                            difference += std::abs(int((a >> c) & 0xFF) - int((b >> c) & 0xFF));
+                        sum[region] += difference / 3.0;
+                        pixels[region]++;
+                    }
+                for (int k = 0; k < 3; k++)
+                    s.trailSum[k] += sum[k], s.trailPixels[k] += pixels[k];
+                // SKY_FSR_TRAIL_DUMP=<prefix>: 8 measured frames, from the SKY_FSR_TRAIL_DUMP_FROM-th, as
+                // <prefix>_<n>_{input,output,mask}.ppm, the input with the mask (red: the objects, blue: the trail).
+                static const char* dump = skyenv::Get("SKY_FSR_TRAIL_DUMP");
+                static const uint32_t from = skyenv::Get("SKY_FSR_TRAIL_DUMP_FROM") != nullptr
+                                                 ? uint32_t(std::max(atoi(skyenv::Get("SKY_FSR_TRAIL_DUMP_FROM")), 0))
+                                                 : 0u;
+                static uint32_t measured, dumped;
+                if (dump != nullptr && measured++ >= from && dumped < 8)
+                {
+                    auto write = [&](const char* what, const std::vector<uint32_t>& rgba, uint32_t width,
+                                     uint32_t height, bool overlay) {
+                        char path[512];
+                        snprintf(path, sizeof(path), "%s_%u_%s.ppm", dump, dumped, what);
+                        FILE* file = fopen(path, "wb");
+                        if (file == nullptr)
+                            return;
+                        fprintf(file, "P6\n%u %u\n255\n", width, height);
+                        std::vector<uint8_t> row(width * 3);
+                        for (uint32_t y = 0; y < height; y++)
+                        {
+                            for (uint32_t x = 0; x < width; x++)
+                            {
+                                const uint32_t i = y * width + x, p = rgba[i];
+                                uint8_t* out = &row[x * 3];
+                                out[0] = uint8_t(p), out[1] = uint8_t(p >> 8), out[2] = uint8_t(p >> 16);
+                                if (overlay && (mask[i] & 0xFF) != 0)
+                                    out[0] = uint8_t((out[0] + 255) / 2), out[1] /= 2, out[2] /= 2;
+                                else if (overlay && (previous[i] & 0xFF) != 0)
+                                    out[0] /= 2, out[1] /= 2, out[2] = uint8_t((out[2] + 255) / 2);
+                            }
+                            fwrite(row.data(), 1, row.size(), file);
+                        }
+                        fclose(file);
+                    };
+                    write("input", colour, w, h, true);
+                    write("output", output, ow, oh, false);
+                    write("mask", mask, w, h, false);
+                    dumped++;
+                }
+                auto mean = [](double total, double count) { return count > 0.0 ? total / count : 0.0; };
+                fprintf(stderr,
+                    "[fsr] trail: %.0f px, difference %.2f; objects %.0f px, %.2f; elsewhere %.2f | run: trail %.2f "
+                    "(%.0f px), objects %.2f, elsewhere %.2f\n",
+                    pixels[0], mean(sum[0], pixels[0]), pixels[1], mean(sum[1], pixels[1]), mean(sum[2], pixels[2]),
+                    mean(s.trailSum[0], s.trailPixels[0]), s.trailPixels[0], mean(s.trailSum[1], s.trailPixels[1]),
+                    mean(s.trailSum[2], s.trailPixels[2]));
+            }
+        }
+    }
+    // The object mask: this frame's numbered draws over the scene's depth (an empty mask without any), and their
+    // reprojections for the inputs pass.
+    void RecordObjects(const gpu::UpscaleDesc& desc)
+    {
+        State& s = g_state;
+        std::swap(s.objectMask, s.previousMask);
+        const uint32_t drawn = ReplayObjects(desc.depth, s.objectMask);
+        float* rows = s.objectRows[g_context->frames % 3];
+        // SKY_FSR_REACTIVE=<0-1> (test aid): the reactive value where an object left (default 0.9; 0: none).
+        static const float reactive = skyenv::Get("SKY_FSR_REACTIVE") != nullptr
+                                          ? std::clamp(float(atof(skyenv::Get("SKY_FSR_REACTIVE"))), 0.0f, 1.0f)
+                                          : 0.9f;
+        // SKY_FSR_OBJECTS=camera (test aid, the trail's "before"): the mask is made, every object keeps the camera's
+        // motion.
+        static const bool camera =
+            skyenv::Get("SKY_FSR_OBJECTS") != nullptr && strcmp(skyenv::Get("SKY_FSR_OBJECTS"), "camera") == 0;
+        if (desc.objectCount != 0)
+            memcpy(rows + 16, desc.objectMotions + 16, desc.objectCount * 16 * sizeof(float));
+        for (uint32_t n = 1; camera && n <= desc.objectCount; n++)
+            for (uint32_t i = 0; i < 16; i++)
+                rows[n * 16 + i] = float(desc.reprojection[i]);
+        rows[0] = s.previousMaskValid && !desc.reset && !camera ? 1.0f : 0.0f;
+        rows[1] = reactive;
+        s.previousMaskValid = true;
+        s.objectFrames++;
+        s.objectsNumbered += desc.objectCount;
+        s.objectsDrawn += drawn;
+        if (s.objectFrames == 900)
+        {
+            fprintf(stderr, "[fsr] last 900 frames: %.1f moving objects a frame, %.1f drawn into the object mask\n",
+                s.objectsNumbered / 900.0, s.objectsDrawn / 900.0);
+            s.objectFrames = s.objectsNumbered = s.objectsDrawn = 0;
+        }
+    }
     // InputsLayersCS (UpscaleDesc::motionLayers), then this frame's colour kept for the next. False: InputsCS instead.
     bool RecordLayers(RenderCommandList& list, const gpu::UpscaleDesc& desc, const InputsConstants& inputs)
     {
@@ -335,6 +508,10 @@ namespace
         set->setTexture(2, s.depth->texture.get(), RenderTextureLayout::GENERAL);
         set->setTexture(3, desc.color->texture.get(), RenderTextureLayout::SHADER_READ);
         set->setTexture(4, s.previousColor->texture.get(), RenderTextureLayout::SHADER_READ);
+        set->setTexture(5, s.objectMask->texture.get(), RenderTextureLayout::SHADER_READ);
+        set->setBuffer(6, s.objectBuffers[g_context->frames % 3].get(), ObjectBufferSize);
+        set->setTexture(7, s.previousMask->texture.get(), RenderTextureLayout::SHADER_READ);
+        set->setTexture(8, s.reactive->texture.get(), RenderTextureLayout::GENERAL);
         g_context->bound = {};
         list.setComputePipelineLayout(s.layersLayout.get());
         list.setPipeline(s.layersPipeline.get());
@@ -366,12 +543,19 @@ namespace
         Transition(list, *desc.depth, RenderTextureLayout::SHADER_READ, RenderBarrierStage::COMPUTE);
         Transition(list, *s.motion, RenderTextureLayout::GENERAL, RenderBarrierStage::COMPUTE);
         Transition(list, *s.depth, RenderTextureLayout::GENERAL, RenderBarrierStage::COMPUTE);
+        Transition(list, *s.objectMask, RenderTextureLayout::SHADER_READ, RenderBarrierStage::COMPUTE);
+        Transition(list, *s.previousMask, RenderTextureLayout::SHADER_READ, RenderBarrierStage::COMPUTE);
+        Transition(list, *s.reactive, RenderTextureLayout::GENERAL, RenderBarrierStage::COMPUTE);
         if (desc.motionLayers && RecordLayers(list, desc, constants))
             return RecordSanitize(list, desc, constants);
         RenderDescriptorSet* set = s.inputsSets[g_context->frames % 3].get();
         set->setTexture(0, desc.depth->texture.get(), RenderTextureLayout::SHADER_READ);
         set->setTexture(1, s.motion->texture.get(), RenderTextureLayout::GENERAL);
         set->setTexture(2, s.depth->texture.get(), RenderTextureLayout::GENERAL);
+        set->setTexture(3, s.objectMask->texture.get(), RenderTextureLayout::SHADER_READ);
+        set->setBuffer(4, s.objectBuffers[g_context->frames % 3].get(), ObjectBufferSize);
+        set->setTexture(5, s.previousMask->texture.get(), RenderTextureLayout::SHADER_READ);
+        set->setTexture(6, s.reactive->texture.get(), RenderTextureLayout::GENERAL);
         g_context->bound = {};
         list.setComputePipelineLayout(s.inputsLayout.get());
         list.setPipeline(s.inputsPipeline.get());
@@ -417,9 +601,34 @@ bool gpu::fsr::Upscale(const UpscaleDesc& desc)
     // FSR records into a command list of its own, which starts on the GPU after the frame's work so far (and the next
     // one after FSR's: below). After Prepare, which may have waited for the GPU (Submit).
     Flush();
+    // SKY_FSR_TIMING=1 (test aid; it waits for the GPU three times a frame): the object mask's pass and the inputs
+    // pass, each sent and waited for alone, an empty wait's time taken off; their means every 300 frames.
+    static const bool timing = skyenv::Get("SKY_FSR_TIMING") != nullptr;
+    static double timingMs[2];
+    static uint32_t timingFrames;
+    uint64_t times[4] = {};
+    if (timing)
+        WaitForGpu(), times[0] = SDL_GetTicksNS(), WaitForGpu(), times[1] = SDL_GetTicksNS();
+    RecordObjects(desc);
+    if (timing)
+        WaitForGpu(), times[2] = SDL_GetTicksNS();
+    RecordInputs(Record(), desc);
+    if (timing)
+    {
+        WaitForGpu();
+        times[3] = SDL_GetTicksNS();
+        const double empty = double(times[1] - times[0]) / 1e6;
+        timingMs[0] += std::max(double(times[2] - times[1]) / 1e6 - empty, 0.0);
+        timingMs[1] += std::max(double(times[3] - times[2]) / 1e6 - empty, 0.0);
+        if (++timingFrames == 300)
+        {
+            fprintf(stderr, "[fsr] timing, last 300 frames: object mask %.3f ms, inputs pass %.3f ms a frame\n",
+                timingMs[0] / 300.0, timingMs[1] / 300.0);
+            timingMs[0] = timingMs[1] = 0.0;
+            timingFrames = 0;
+        }
+    }
     RenderCommandList& recording = Record();
-
-    RecordInputs(recording, desc);
     if (debugInputs && s.logged >= 2 && s.logged < 4)
     {
         std::vector<uint32_t> raw;
@@ -440,6 +649,7 @@ bool gpu::fsr::Upscale(const UpscaleDesc& desc)
     dispatch.color = External(s.cleanColor != nullptr ? s.cleanColor : desc.color, false);
     dispatch.depth = External(s.depth, false);
     dispatch.motionVectors = External(s.motion, false);
+    dispatch.reactive = External(s.reactive, false);
     dispatch.output = External(desc.output, true);
     dispatch.dilatedDepth = External(s.dilatedDepth, true);
     dispatch.dilatedMotionVectors = External(s.dilatedMotion, true);
@@ -478,6 +688,7 @@ bool gpu::fsr::Upscale(const UpscaleDesc& desc)
     // Recorded in the same list as the frame's other work, FSR raced it in Trap Team on Metal although the barriers
     // order it (8x8 tiles of garbage kept by the history, whole frames in false colours; docs/runtime/gpu/upscaling.md).
     Flush();
+    MeasureTrail(desc);
     return true;
 }
 
@@ -501,4 +712,18 @@ void gpu::fsr::Shutdown()
     s.sanitizeShader.reset();
     s.inputsLayout.reset();
     s.inputsShader.reset();
+    for (uint32_t i = 0; i < 3; i++)
+    {
+        if (s.objectBuffers[i] != nullptr)
+            s.objectBuffers[i]->unmap();
+        s.objectBuffers[i].reset();
+        s.objectRows[i] = nullptr;
+    }
+}
+
+std::unique_ptr<RenderShader> gpu::fsr::CreateObjectMaskShader()
+{
+    if (g_context == nullptr || g_context->device == nullptr || !Available())
+        return nullptr;
+    return CreateShader("ObjectMaskPS");
 }

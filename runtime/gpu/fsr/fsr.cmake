@@ -140,10 +140,14 @@ if(ARKEYAN_METAL)
     list(APPEND FSR_SHADER_HEADERS ${SHADER_OUT}/fsr_inputs_metallib.h)
     string(APPEND FSR_SHADER_LIST "#include \"fsr_inputs_metallib.h\"\n")
 else()
-    foreach(entry InputsCS InputsLayersCS ClearFloatCS ClearUintCS SanitizeCS)
+    foreach(entry InputsCS InputsLayersCS ClearFloatCS ClearUintCS SanitizeCS ObjectMaskPS)
         set(source ${CMAKE_CURRENT_LIST_DIR}/fsr_inputs.hlsl)
         if(entry STREQUAL "InputsLayersCS")
             set(source ${CMAKE_CURRENT_LIST_DIR}/fsr_layers.hlsl)
+        endif()
+        set(profile cs_6_0)
+        if(entry STREQUAL "ObjectMaskPS") # the object mask's replays (gpu/draw.cpp ReplayObjects)
+            set(profile ps_6_0)
         endif()
         foreach(format ${fsr_formats})
             if(format STREQUAL "dxil")
@@ -156,7 +160,7 @@ else()
                 set(script embed.cmake)
             endif()
             add_custom_command(OUTPUT ${blob}
-                COMMAND ${DXC} -nologo -T cs_6_0 -E ${entry} ${flags} -Fo ${blob} ${source}
+                COMMAND ${DXC} -nologo -T ${profile} -E ${entry} ${flags} -Fo ${blob} ${source}
                 DEPENDS ${source} VERBATIM)
             add_custom_command(OUTPUT ${SHADER_OUT}/fsr_${entry}_${format}.h
                 COMMAND ${CMAKE_COMMAND} -DINPUT=${blob} -DOUTPUT=${SHADER_OUT}/fsr_${entry}_${format}.h

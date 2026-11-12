@@ -15,9 +15,20 @@
 #include <mutex>
 #include <vector>
 
+namespace gpu::detail
+{
+    // Every texture's bytes (gpu::CreateTexture's), for the log's video memory totals.
+    inline std::atomic<uint64_t> g_textureBytes{ 0 };
+    // A texture's size in memory, every slice and mip level (a full chain adds a third).
+    uint64_t TextureBytes(const TextureDesc& desc);
+}
+
 struct gpu::Texture
 {
+    ~Texture() { detail::g_textureBytes -= countedBytes; }
+
     TextureDesc desc;
+    uint64_t countedBytes = 0; // its part of g_textureBytes
     std::unique_ptr<plume::RenderTexture> texture{};
     mutable plume::RenderTextureLayout layout = plume::RenderTextureLayout::UNKNOWN;
     uint32_t heapIndex = 0; // slot in the bindless heap of its kind (sampled textures only; 0 = none)
@@ -227,6 +238,8 @@ namespace gpu::detail
     // setFramebuffer, and every pass loads and stores all of its attachments.
     void SetFramebuffer(plume::RenderCommandList& list, const plume::RenderFramebuffer* framebuffer);
     void Submit();
+    // Sends what is recorded and waits for the GPU to finish everything sent; the frame goes on (test aids' timings).
+    void WaitForGpu();
     void Transition(plume::RenderCommandList& list, const gpu::Texture& texture, plume::RenderTextureLayout layout,
         plume::RenderBarrierStages stages);
     // Upload memory for this frame, `alignment`-aligned; usable as vertex, index and constant data and by address.
@@ -331,6 +344,11 @@ namespace gpu::detail
     bool ReadbackNow(const gpu::Texture* texture, std::vector<uint32_t>& rgba, uint32_t& width, uint32_t& height,
         bool raw = false, uint32_t channel = 0);
     void DrawNow(const gpu::DrawDesc& draw);
+    // Upscaling's object mask: this frame's numbered draws (DrawDesc::object) into `depth`, drawn again with the depth
+    // test and without writing it, each writing its number / 255 into `mask` (R8_UNORM, cleared to 0 first), into the
+    // command list being recorded. The draws whose pipeline is not built yet are skipped (it is built on a thread).
+    // Returns how many were drawn.
+    uint32_t ReplayObjects(gpu::Texture* depth, gpu::Texture* mask);
     void ClearColorNow(gpu::Texture* target, const float rgba[4], const plume::RenderRect* rect);
     void ClearDepthStencilNow(
         gpu::Texture* target, bool depth, bool stencil, float z, uint8_t stencilValue, const plume::RenderRect* rect);

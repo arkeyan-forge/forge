@@ -1,5 +1,6 @@
 #include "platform/platform.h"
 #include <atomic>
+#include <cerrno>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -387,6 +388,8 @@ int64_t PlatformReadFile(PlatformFile file, void* buffer, uint32_t size, uint64_
 {
     return pread(int(file), buffer, size, off_t(offset));
 }
+
+int PlatformLastError() { return errno; }
 
 void PlatformCloseFile(PlatformFile file) { close(int(file)); }
 

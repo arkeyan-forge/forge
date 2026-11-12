@@ -1,6 +1,7 @@
 #include "gpu/upscale.h"
 #include "gpu/context.h"
 #include "gpu/fsr/fsr.h"
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <mutex>
@@ -237,9 +238,14 @@ bool gpu::UpscalerAvailable(Upscaler upscaler)
 }
 #endif
 
-void gpu::Upscale(const UpscaleDesc& desc)
+void gpu::Upscale(const UpscaleDesc& given)
 {
     ProducerLock producer;
+    UpscaleDesc desc = given;
+    desc.objectCount = std::min(desc.objectCount, MaxUpscaleObjects);
+    desc.objectMotions = desc.objectCount != 0 ? static_cast<const float*>(FrameCopy(given.objectMotions,
+                                                     (desc.objectCount + 1) * 16 * sizeof(float)))
+                                               : nullptr;
     Enqueue([=] {
 #if defined(ARKEYAN_METAL)
         if (desc.upscaler == Upscaler::MetalFx)

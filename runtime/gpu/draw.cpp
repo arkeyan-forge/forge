@@ -1,5 +1,6 @@
 #include "gpu/draw.h"
 #include "gpu/frame_stats.h"
+#include "gpu/fsr/fsr.h"
 #include "gpu/heap_view.h"
 #include "../platform/platform.h"
 #include "gpu/buffer_cache.h"
@@ -25,6 +26,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include "../host/env.h"
 
@@ -127,6 +129,8 @@ namespace
         uint32_t next = 1; // slot 0 holds a placeholder
         std::vector<uint32_t> free;
 
+        // 0 when the heap is full: the texture samples the black placeholder (logged once) rather than a slot past
+        // the heap's end.
         uint32_t Allocate()
         {
             if (!free.empty())
@@ -135,7 +139,13 @@ namespace
                 free.pop_back();
                 return slot;
             }
-            return next++;
+            if (next < TextureHeapSize)
+                return next++;
+            static bool logged = false;
+            if (!std::exchange(logged, true))
+                fprintf(stderr, "[gpu] a texture heap is full (%u textures): the next ones sample black\n",
+                    TextureHeapSize);
+            return 0;
         }
     };
 
@@ -173,6 +183,9 @@ namespace
         std::unordered_map<uint64_t, std::unique_ptr<RenderFramebuffer>> framebuffers;
         // Depth resolves: one descriptor set per source depth target (the GPU reads them when the frame runs).
         std::unordered_map<const gpu::Texture*, std::unique_ptr<RenderDescriptorSet>> depthSets;
+        // The object mask's pixel shader (ReplayObjects), made on first use.
+        std::mutex objectMaskMutex;
+        std::unique_ptr<RenderShader> objectMaskShader;
     };
 
     std::unique_ptr<DrawContext> g_draw;
@@ -208,8 +221,9 @@ namespace
             if (texture->heapIndex == 0)
             {
                 texture->heapIndex = g_draw->textureSlots[heap].Allocate();
-                g_draw->heaps[heap]->setTexture(
-                    texture->heapIndex, texture->texture.get(), RenderTextureLayout::SHADER_READ);
+                if (texture->heapIndex != 0)
+                    g_draw->heaps[heap]->setTexture(
+                        texture->heapIndex, texture->texture.get(), RenderTextureLayout::SHADER_READ);
             }
             return texture->heapIndex;
         }
@@ -218,6 +232,9 @@ namespace
             if (view.mapping == mapping)
                 return view.heapIndex;
 
+        const uint32_t slot = g_draw->textureSlots[heap].Allocate();
+        if (slot == 0)
+            return 0;
         RenderTextureViewDesc desc;
         desc.format = texture->desc.format;
         desc.dimension = heap == TextureCubeHeap ? RenderTextureViewDimension::TEXTURE_CUBE
@@ -226,8 +243,7 @@ namespace
         if (heap == Texture2DHeap)
             desc.arraySize = 1; // a stacked array: its first slice, as the shaders' Texture2D reads it
         desc.componentMapping = swizzle;
-        gpu::Texture::SwizzledView view{ mapping, texture->texture->createTextureView(desc),
-            g_draw->textureSlots[heap].Allocate() };
+        gpu::Texture::SwizzledView view{ mapping, texture->texture->createTextureView(desc), slot };
         g_draw->heaps[heap]->setTexture(
             view.heapIndex, texture->texture.get(), RenderTextureLayout::SHADER_READ, view.view.get());
         texture->swizzledViews.push_back(std::move(view));
@@ -591,19 +607,34 @@ namespace
         return key;
     }
 
+    // The object mask's replays (ReplayObjects): the pipeline key's pixel shader is ours, gpu/fsr's ObjectMaskPS.
+    constexpr uint64_t ObjectMaskShader = 0x4F626A6563744D6Bull;
+
+    RenderShader* ObjectMaskPixelShader()
+    {
+        std::lock_guard lock(g_draw->objectMaskMutex);
+        if (g_draw->objectMaskShader == nullptr)
+            g_draw->objectMaskShader = gpu::fsr::CreateObjectMaskShader();
+        return g_draw->objectMaskShader.get();
+    }
+
     // Called by the render thread and the precompile threads: takes no g_mutex.
     std::unique_ptr<RenderPipeline> CreatePipeline(const PipelineKey& key)
     {
+        const bool objectMask = key.pixelShader == ObjectMaskShader;
         const gpu::XenosShader* vertexShader = Shader(key.vertexShader);
-        const gpu::XenosShader* pixelShader = key.pixelShader != 0 ? Shader(key.pixelShader) : nullptr;
-        if (vertexShader == nullptr || (key.pixelShader != 0 && pixelShader == nullptr))
+        const gpu::XenosShader* pixelShader = key.pixelShader != 0 && !objectMask ? Shader(key.pixelShader) : nullptr;
+        if (vertexShader == nullptr || (key.pixelShader != 0 && !objectMask && pixelShader == nullptr))
             return nullptr;
 
         RenderGraphicsPipelineDesc desc;
         desc.pipelineLayout = g_draw->layout.get();
         desc.vertexShader = VariantOf(*vertexShader, key.specConstants);
-        desc.pixelShader =
-            pixelShader != nullptr ? VariantOf(*pixelShader, key.specConstants) : nullptr; // none: depth only
+        desc.pixelShader = objectMask              ? ObjectMaskPixelShader()
+                           : pixelShader != nullptr ? VariantOf(*pixelShader, key.specConstants)
+                                                    : nullptr; // none: depth only
+        if (objectMask && desc.pixelShader == nullptr)
+            return nullptr;
         desc.primitiveTopology = key.topology;
         desc.cullMode = key.raster.cullMode;
         desc.frontFace = key.raster.frontFace;
@@ -825,8 +856,54 @@ namespace
         g_pipelineList.file.flush();
     }
 
+    // The object mask's pipelines are built on a thread of their own: a draw whose replay pipeline is not built yet is
+    // left out of the mask (its camera's motion, as before) rather than held up.
+    struct ObjectBuilds
+    {
+        std::mutex mutex;
+        std::condition_variable wake;
+        std::vector<PipelineKey> queue;
+        std::thread thread;
+        bool stop = false;
+    } g_objectBuilds;
+
+    void BuildObjectPipelines()
+    {
+        for (;;)
+        {
+            PipelineKey key;
+            {
+                std::unique_lock lock(g_objectBuilds.mutex);
+                g_objectBuilds.wake.wait(lock, [] { return g_objectBuilds.stop || !g_objectBuilds.queue.empty(); });
+                if (g_objectBuilds.stop)
+                    return;
+                key = g_objectBuilds.queue.back();
+                g_objectBuilds.queue.pop_back();
+            }
+            std::unique_ptr<RenderPipeline> pipeline = CreatePipeline(key);
+            std::lock_guard lock(g_draw->pipelineMutex);
+            PipelineEntry& entry = g_draw->pipelines[XXH3_64bits(&key, sizeof(key))];
+            entry.pipeline = std::move(pipeline);
+            entry.ready = true;
+        }
+    }
+
+    void StopObjectBuilds()
+    {
+        {
+            std::lock_guard lock(g_objectBuilds.mutex);
+            g_objectBuilds.stop = true;
+            g_objectBuilds.queue.clear();
+        }
+        g_objectBuilds.wake.notify_all();
+        if (g_objectBuilds.thread.joinable())
+            g_objectBuilds.thread.join();
+        g_objectBuilds.stop = false;
+    }
+
     void StopPrecompiling()
     {
+        StopObjectBuilds();
         g_pipelineList.stop = true;
         for (std::thread& thread : g_pipelineList.threads)
             thread.join();
@@ -929,6 +1006,71 @@ namespace
         g_draw->pipelineReady.notify_all();
         return entry.pipeline.get();
     }
+
+    // The replay of a draw into the object mask (DrawDesc::object): the draw's own vertex shader, vertices and
+    // constants, our pixel shader writing the blend factor (the object's number / 255) into the R8 mask, the depth
+    // tested ("or equal": the same depth passes) and not written, no stencil.
+    PipelineKey ObjectKeyOf(const gpu::DrawDesc& draw)
+    {
+        PipelineKey key = KeyOf(draw);
+        key.pixelShader = ObjectMaskShader;
+        key.colorTargetCount = 1;
+        memset(key.colorFormats, 0, sizeof(key.colorFormats));
+        memset(key.blend, 0, sizeof(key.blend));
+        key.colorFormats[0] = RenderFormat::R8_UNORM;
+        key.blend[0].enabled = true;
+        key.blend[0].srcColor = key.blend[0].srcAlpha = RenderBlend::BLEND_FACTOR;
+        key.blend[0].dstColor = key.blend[0].dstAlpha = RenderBlend::ZERO;
+        key.blend[0].colorOp = key.blend[0].alphaOp = RenderBlendOperation::ADD;
+        key.blend[0].writeMask = uint8_t(RenderColorWriteEnable::RED);
+        const RenderComparisonFunction test = key.depthStencil.depthFunction;
+        memset(&key.depthStencil, 0, sizeof(key.depthStencil));
+        key.depthStencil.depthEnabled = true;
+        key.depthStencil.depthFunction = test == RenderComparisonFunction::LESS      ? RenderComparisonFunction::LESS_EQUAL
+                                         : test == RenderComparisonFunction::GREATER ? RenderComparisonFunction::GREATER_EQUAL
+                                                                                     : test;
+        return key;
+    }
+
+    // The replay pipeline when it is built; else asks for it (BuildObjectPipelines) and returns nullptr.
+    RenderPipeline* ObjectPipeline(const gpu::DrawDesc& draw)
+    {
+        const PipelineKey key = ObjectKeyOf(draw);
+        const uint64_t hash = XXH3_64bits(&key, sizeof(key));
+        {
+            std::lock_guard lock(g_draw->pipelineMutex);
+            auto [it, inserted] = g_draw->pipelines.try_emplace(hash);
+            if (!inserted)
+                return it->second.ready ? it->second.pipeline.get() : nullptr;
+        }
+        std::lock_guard lock(g_objectBuilds.mutex);
+        g_objectBuilds.queue.push_back(key);
+        if (!g_objectBuilds.thread.joinable())
+            g_objectBuilds.thread = std::thread(BuildObjectPipelines);
+        g_objectBuilds.wake.notify_one();
+        return nullptr;
+    }
+
+    struct ObjectReplay
+    {
+        gpu::Texture* depth;
+        uint32_t object;
+        RenderPipeline* pipeline;
+        PushConstants push;
+        RenderBufferReference roots[4];
+        RenderVertexBufferView views[gpu::MaxVertexStreams];
+        RenderInputSlot slots[gpu::MaxVertexStreams];
+        uint32_t streamCount;
+        bool indexed;
+        RenderIndexBufferView index;
+        uint32_t count, first;
+        int32_t baseVertex;
+        RenderViewport viewport;
+        RenderRect scissor;
+    };
+    // This frame's (GPU thread); ReplayObjects draws and clears them, DrawFrameDone clears what is left.
+    std::vector<ObjectReplay> g_objectReplays;
+    constexpr size_t MaxObjectReplays = 256;
 
     // Copies `size` bytes into this frame's upload memory and returns where they went.
     RenderBufferReference Upload(const void* data, uint64_t size, uint64_t alignment, uint64_t* address = nullptr)
@@ -1149,6 +1291,7 @@ bool gpu::detail::DrawHasPendingDestroys() { return !g_pendingDestroy.empty(); }
 
 void gpu::detail::DrawFrameDone()
 {
+    g_objectReplays.clear();
     g_frameConstants.clear();
     g_lastConstantsId = 0;
     // SKY_RENDER_STATS=1: the deferred resolve copies, every 600 frames.
@@ -1430,6 +1573,9 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
         slots[i] = InputSlot(draw, i);
     }
 
+    // Without pulled vertices the shaders read none: any valid address does.
+    const RenderBufferReference roots[4] = { vertexConstants, pixelConstants, sharedConstants,
+        draw.pulledCount != 0 ? pulledVertices : sharedConstants };
     SetFramebuffer(list, framebuffer);
     if (d.dxil)
     {
@@ -1459,9 +1605,6 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
         bound.viewport = draw.viewport;
         bound.scissor = draw.scissor;
         memcpy(bound.blendFactor, draw.blendFactor, sizeof(bound.blendFactor));
-        // Without pulled vertices the shaders read none: any valid address does.
-        const RenderBufferReference roots[4] = { vertexConstants, pixelConstants, sharedConstants,
-            draw.pulledCount != 0 ? pulledVertices : sharedConstants };
         for (uint32_t i = 0; i < 4; i++)
         {
             if (bound.roots[i].ref == roots[i].ref && bound.roots[i].offset == roots[i].offset)
@@ -1484,20 +1627,89 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     if (draw.streamCount != 0)
         list.setVertexBuffers(0, views, draw.streamCount, slots);
 
-    if (draw.indices != nullptr || draw.indicesConverted.buffer != nullptr)
+    const bool indexed = draw.indices != nullptr || draw.indicesConverted.buffer != nullptr;
+    RenderIndexBufferView index;
+    if (indexed)
     {
         RenderBufferReference buffer = draw.indicesConverted.buffer != nullptr
                                            ? draw.indicesConverted.buffer->at(draw.indicesConverted.offset)
                                            : Upload(draw.indices, draw.indexBytes, 16);
-        RenderIndexBufferView view(
+        index = RenderIndexBufferView(
             buffer, draw.indexBytes, draw.indices32 ? RenderFormat::R32_UINT : RenderFormat::R16_UINT);
-        list.setIndexBuffer(&view);
+        list.setIndexBuffer(&index);
         list.drawIndexedInstanced(draw.count, 1, draw.first, draw.baseVertex, 0);
     }
     else
     {
         list.drawInstanced(draw.count, 1, draw.first, 0);
     }
+
+    // Upscaling's object mask: kept to be drawn again at the upscale (ReplayObjects), with the same uploads.
+    if (draw.object != 0 && draw.depthTarget != nullptr && g_objectReplays.size() < MaxObjectReplays)
+        if (RenderPipeline* replay = ObjectPipeline(draw))
+        {
+            if (g_objectReplays.capacity() == 0)
+                g_objectReplays.reserve(MaxObjectReplays);
+            ObjectReplay& r = g_objectReplays.emplace_back();
+            r.depth = draw.depthTarget;
+            r.object = draw.object;
+            r.pipeline = replay;
+            r.push = push;
+            std::copy(std::begin(roots), std::end(roots), r.roots);
+            std::copy(views, views + draw.streamCount, r.views);
+            std::copy(slots, slots + draw.streamCount, r.slots);
+            r.streamCount = draw.streamCount;
+            r.indexed = indexed;
+            r.index = index;
+            r.count = draw.count, r.first = draw.first, r.baseVertex = draw.baseVertex;
+            r.viewport = draw.viewport;
+            r.scissor = draw.scissor;
+        }
+}
+
+uint32_t gpu::detail::ReplayObjects(Texture* depth, Texture* mask)
+{
+    DrawContext& d = Draws();
+    RenderCommandList& list = Record();
+    Transition(list, *mask, RenderTextureLayout::COLOR_WRITE, RenderBarrierStage::GRAPHICS);
+    Transition(list, *depth, RenderTextureLayout::DEPTH_WRITE, RenderBarrierStage::GRAPHICS);
+    SetFramebuffer(list, Framebuffer(&mask, 1, depth));
+    list.clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 0.0f));
+    uint32_t drawn = 0;
+    for (const ObjectReplay& r : g_objectReplays)
+    {
+        if (r.depth != depth)
+            continue;
+        if (drawn++ == 0)
+        {
+            list.setGraphicsPipelineLayout(d.layout.get());
+            for (uint32_t heap = 0; heap < 4; heap++)
+                list.setGraphicsDescriptorSet(d.heaps[heap].get(), heap);
+        }
+        list.setPipeline(r.pipeline);
+        list.setViewports(r.viewport);
+        list.setScissors(r.scissor);
+        const float number = float(r.object) / 255.0f;
+        const float factor[4] = { number, number, number, number };
+        list.setBlendFactor(factor);
+        if (d.dxil)
+            for (uint32_t i = 0; i < 4; i++)
+                list.setGraphicsRootDescriptor(r.roots[i], i);
+        else
+            list.setGraphicsPushConstants(0, &r.push);
+        if (r.streamCount != 0)
+            list.setVertexBuffers(0, r.views, r.streamCount, r.slots);
+        if (r.indexed)
+        {
+            list.setIndexBuffer(&r.index);
+            list.drawIndexedInstanced(r.count, 1, r.first, r.baseVertex, 0);
+        }
+        else
+            list.drawInstanced(r.count, 1, r.first, 0);
+    }
+    g_objectReplays.clear();
+    g_context->bound = {}; // D3D12: the next draw binds everything again
+    return drawn;
 }
 
 void gpu::ClearColor(Texture* target, const float rgba[4], const plume::RenderRect* rect)

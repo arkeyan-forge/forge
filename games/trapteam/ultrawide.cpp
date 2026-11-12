@@ -37,7 +37,7 @@ PPC_FUNC(GAME_HOOK(Ultrawide_ScenePass))
         g_memory.Write<uint32_t>(pass + 36, ultrawide::SceneHeight());
     }
     GAME_IMP(Ultrawide_ScenePass)(ctx, base);
-    if (fullResolution || !ultrawide::Active() || pass < 0x10000)
+    if (fullResolution || !ultrawide::SceneWide() || pass < 0x10000)
         return;
     if (g_memory.Read<uint32_t>(pass + 92) != ultrawide::SceneWidth16x9 ||
         g_memory.Read<uint32_t>(pass + 96) != ultrawide::SceneHeight16x9)
@@ -146,15 +146,24 @@ constexpr uint32_t WorldCameraCalls[] = { 0x8230F788, 0x8230F7F4 };
 PPC_FUNC(GAME_HOOK(Ultrawide_Projection))
 {
     constexpr double Wide = 16.0 / 9.0;
-    if (!ultrawide::Active() || ctx.f1.f64 <= 0)
+    if (!(ultrawide::Active() || ultrawide::SceneWide()) || ctx.f1.f64 <= 0)
     {
         GAME_IMP(Ultrawide_Projection)(ctx, base);
         return;
     }
     double aspect = ctx.f3.f64;
+    bool world = false;
     for (uint32_t call : WorldCameraCalls)
-        if (uint32_t(ctx.lr) == call && std::fabs(aspect - Wide) < 0.01)
-            aspect = ultrawide::Aspect();
+        world |= uint32_t(ctx.lr) == call && std::fabs(aspect - Wide) < 0.01;
+    // The builder that takes the scene target's shape: that shape is the start's window, the window may have changed
+    // since (d3d/ultrawide.h), so the camera takes the window's aspect (16:9 included).
+    const double scene = double(ultrawide::SceneWidth()) / double(ultrawide::SceneHeight());
+    world |= std::fabs(scene - Wide) >= 0.01 && std::fabs(aspect - scene) < 0.01;
+    if (world)
+    {
+        aspect = ultrawide::Aspect();
+        ctx.f3.f64 = double(float(aspect));
+    }
     if (aspect > Wide * 1.01 && aspect < 5.0)
     {
         const double original = ctx.f1.f64;
