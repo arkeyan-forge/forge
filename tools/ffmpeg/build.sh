@@ -25,7 +25,7 @@ URL="https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TARGET=${1:?usage: build.sh host|windows-x64|uwp-x64|linux-x64 [prefix]}
 PREFIX=${2:-$ROOT/private/ffmpeg/$TARGET}
-WORK=$ROOT/private/ffmpeg/work
+WORK=${FFMPEG_WORK:-$ROOT/private/ffmpeg/work} # make_kit.sh: $KIT_DEPS/ffmpeg/work
 JOBS=${JOBS:-4}
 
 mkdir -p "$WORK" "$PREFIX"

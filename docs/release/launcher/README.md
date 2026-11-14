@@ -110,6 +110,7 @@ what differs.
 | Page | Answers |
 |---|---|
 | [kit_contract.md](kit_contract.md) | The kit contract: `kit.txt`, `config/<id>/game.txt`, Arkeyan-Builder's CLI and events, the layout, licences. |
+| [kits_without_disc.md](kits_without_disc.md) | Issue #72 design: public-source kit builds, local disc layout, edition diagnostics, CI and ordered PRs. |
 | [install_flow.md](install_flow.md) | Arkeyan Launcher's INSTALL: the kit download, Arkeyan-Builder's progress card, resume, where things live, the fake kit. |
 | [updates_release.md](updates_release.md) | The updater, the kit download and update, the release flow, CI. |
 | [collection_toybox.md](collection_toybox.md) | Arkeyan Launcher's Collection page (the library and the in-game Toy Box are runtime pages). |

@@ -752,12 +752,15 @@ namespace
                 if (guest == 0)
                     return host.texture;
                 if (host.texture == nullptr)
+                {
                     host.texture = gpu::CreateTexture({ .width = fetch.Width(),
                         .height = fetch.Height(),
                         .mipLevels = levels,
                         .arraySize = arraySize,
                         .format = info.host,
                         .cube = fetch.Dimension() == 3 });
+                    gpu::ClearNewTexture(host.texture);
+                }
                 auto source = static_cast<const uint8_t*>(g_memory.Translate(guest));
                 auto storage = std::make_shared<std::vector<uint8_t>>(source, source + layout.sliceBytes);
                 gpu::UploadTextureAsync(host.texture, level, slice,

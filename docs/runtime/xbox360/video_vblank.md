@@ -110,7 +110,9 @@ its vsync stand-in is 60 Hz); that Swap Force really exceeds 60 (its swap wait i
 frames on a real display. The launcher's "Display refresh rate" stays at 60 until those pass.
 
 - **`FrameScale()`** (`kernel/video.h`) = 30 / `fps_limit`, at most 1 (0 counts as 240): the factor for a per-frame step tuned for
-  30 FPS. Users: Swap Force's stuck-falling threshold (`games/swapforce/fall_check.cpp`, [SwapForce]). Found nowhere else so far:
+  30 FPS. Users: Swap Force's stuck-falling threshold (`games/swapforce/fall_check.cpp`, [SwapForce]); Swap Force's
+  head-turn gains (`games/swapforce/look_at.cpp`, issue #79: by the measured time between calls, `FrameScale()` only to
+  skip the limit of 30). Found nowhere else so far:
   the engines step by measured time ([Lux] F, [Alchemy] the interval); a new fixed step found at a rate above 30 goes in this list.
   `SKY_CLOCK_STEP=<hex address>` (test aid) sums a float step in 60ths of a second per flip and logs `[clock]` every 5 s.
   `tools/regress/framerate.sh <game> <disc> <fps>` runs one game at one rate and prints the table row.

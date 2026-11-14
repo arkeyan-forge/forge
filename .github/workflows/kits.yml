@@ -1,0 +1,175 @@
+name: Player kits
+
+on:
+  workflow_dispatch:
+    inputs:
+      launcher_tag:
+        description: Existing launcher draft release tag (vX.Y.Z)
+        required: false
+        default: ''
+        type: string
+  push:
+    branches: [ci/kits]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kits-${{ inputs.launcher_tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  LAUNCHER_TAG: ${{ inputs.launcher_tag }}
+  # A variable, or a secret of that name (it is not one: "mflr0/Arkeyan-Launcher").
+  KITS_LAUNCHER_REPO: ${{ vars.KITS_LAUNCHER_REPO || secrets.KITS_LAUNCHER_REPO }}
+  KIT_LAYOUT_RECORD: '1'
+  # Keep this absolute path identical on all hosts and inside Docker (FFmpeg relink debug info).
+  KIT_DEPS: /tmp/kit-deps
+  FFMPEG_WORK: /tmp/kit-deps/ffmpeg/work
+  # The runner's user is called "runner", a word in the games' catalogue ("Sun Runner") and in FFmpeg: the scan looks
+  # for this repository's checkout path instead (tools/kit_scan.sh). Prebuilt upstream tools (llvm-mingw's runtime,
+  # itself built on GitHub's runners) carry the runner's work paths of their own repository: theirs, not ours.
+  KIT_SCAN_USER: runner/work/${{ github.event.repository.name }}/
+
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 240
+    env:
+      JOBS: '2'
+      # The kits made on a Mac so far run on macOS 26 and later (LSMinimumSystemVersion 26.0): the same minimum here.
+      MACOSX_DEPLOYMENT_TARGET: '26.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Check destination and Apple toolchain
+        run: |
+          if [ -n "$LAUNCHER_TAG" ]; then python3 -I tools/ci/kits.py destination; fi
+          test "$(uname -m)" = arm64
+          xcodebuild -version
+          xcrun --show-sdk-version
+          xcrun clang --version
+          xcrun --find metal
+      - name: Build dependencies
+        run: |
+          # molten-vk: MoltenVKShaderConverter turns FSR's SPIR-V into Metal (runtime/gpu/fsr/fsr.cmake).
+          for package in cmake ninja rsync nasm xz molten-vk; do
+            brew list --versions "$package" >/dev/null || brew install "$package"
+          done
+          # assemble retains this component license input for the Mac kit too.
+          toolchain=$(sh tools/ci/fetch_llvm_mingw.sh)
+          echo "LLVM_MINGW_ROOT=$toolchain" >> "$GITHUB_ENV"
+          tools/ffmpeg/build.sh host "$KIT_DEPS/ffmpeg/macos-arm64"
+      - name: Build macOS kit from public sources
+        run: tools/make_kit.sh macos
+      - name: Scan and verify extracted archive
+        run: sh tools/ci/check_kit.sh macos-arm64
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kit-macos-arm64
+          path: dist/skylanders-kit-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      JOBS: '4'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Check destination
+        run: |
+          if [ -n "$LAUNCHER_TAG" ]; then python3 -I tools/ci/kits.py destination; fi
+      - name: Build Linux toolchain image
+        run: docker build --platform linux/amd64 -t player-kit-linux -f tools/linux/kit.Dockerfile tools/linux
+      - name: Build Linux kit from public sources
+        run: |
+          mkdir -p "$KIT_DEPS"
+          docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/src" -v "$KIT_DEPS:$KIT_DEPS" \
+            -e JOBS -e KIT_LAYOUT_RECORD -e KIT_DEPS -e FFMPEG_WORK -e KIT_SCAN_USER \
+            player-kit-linux tools/make_kit.sh linux
+      - name: Scan and verify extracted archive
+        run: sh tools/ci/check_kit.sh linux-x64
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kit-linux-x64
+          path: dist/skylanders-kit-linux-x64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      JOBS: '4'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Check destination
+        run: |
+          if [ -n "$LAUNCHER_TAG" ]; then python3 -I tools/ci/kits.py destination; fi
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang cmake ninja-build python3 rsync zip unzip \
+            xz-utils binutils curl nasm
+          toolchain=$(sh tools/ci/fetch_llvm_mingw.sh)
+          echo "LLVM_MINGW_ROOT=$toolchain" >> "$GITHUB_ENV"
+      - name: Build Windows FFmpeg
+        run: tools/ffmpeg/build.sh windows-x64 "$KIT_DEPS/ffmpeg/windows-x64"
+      - name: Cross-build Windows kit from public sources
+        run: tools/make_kit.sh windows
+      - name: Scan and verify extracted archive
+        run: sh tools/ci/check_kit.sh windows-x64
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kit-windows-x64
+          path: dist/skylanders-kit-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  attach:
+    if: github.event_name == 'workflow_dispatch' && inputs.launcher_tag != ''
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    # Serialize all attachments in this forge, including different tags targeting the same launcher repository.
+    concurrency:
+      group: kits-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: kit-*
+          merge-multiple: true
+          path: candidate-kits
+      - name: Attach kits and merge launcher checksums
+        env:
+          GH_TOKEN: ${{ secrets.KITS_RELEASE_TOKEN }}
+        run: python3 -I tools/ci/kits.py publish candidate-kits

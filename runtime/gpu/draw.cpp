@@ -619,6 +619,25 @@ namespace
     }
 
     // Called by the render thread and the precompile threads: takes no g_mutex.
+    // An alpha blend factor D3D12 accepts, for the same result: D3D12 rejects the whole pipeline (E_INVALIDARG, and the
+    // draw then runs with the previous pipeline's state: issue #75's noise on an AMD card) when an alpha factor is a
+    // colour one or a destination is SRC_ALPHA_SAT, which the guest, Metal and Vulkan allow. The alpha part of a colour
+    // factor is the alpha factor; SRC_ALPHA_SAT's alpha part is 1.
+    RenderBlend AlphaFactor(RenderBlend factor)
+    {
+        switch (factor)
+        {
+        case RenderBlend::SRC_COLOR: return RenderBlend::SRC_ALPHA;
+        case RenderBlend::INV_SRC_COLOR: return RenderBlend::INV_SRC_ALPHA;
+        case RenderBlend::DEST_COLOR: return RenderBlend::DEST_ALPHA;
+        case RenderBlend::INV_DEST_COLOR: return RenderBlend::INV_DEST_ALPHA;
+        case RenderBlend::SRC1_COLOR: return RenderBlend::SRC1_ALPHA;
+        case RenderBlend::INV_SRC1_COLOR: return RenderBlend::INV_SRC1_ALPHA;
+        case RenderBlend::SRC_ALPHA_SAT: return RenderBlend::ONE;
+        default: return factor;
+        }
+    }
+
     std::unique_ptr<RenderPipeline> CreatePipeline(const PipelineKey& key)
     {
         const bool objectMask = key.pixelShader == ObjectMaskShader;
@@ -658,8 +677,8 @@ namespace
             desc.renderTargetBlend[i].srcBlend = blend.srcColor;
             desc.renderTargetBlend[i].dstBlend = blend.dstColor;
             desc.renderTargetBlend[i].blendOp = blend.colorOp;
-            desc.renderTargetBlend[i].srcBlendAlpha = blend.srcAlpha;
-            desc.renderTargetBlend[i].dstBlendAlpha = blend.dstAlpha;
+            desc.renderTargetBlend[i].srcBlendAlpha = AlphaFactor(blend.srcAlpha);
+            desc.renderTargetBlend[i].dstBlendAlpha = AlphaFactor(blend.dstAlpha);
             desc.renderTargetBlend[i].blendOpAlpha = blend.alphaOp;
             desc.renderTargetBlend[i].renderTargetWriteMask = blend.writeMask;
         }

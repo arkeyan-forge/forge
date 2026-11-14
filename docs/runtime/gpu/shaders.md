@@ -176,6 +176,14 @@ SPIR-V is stored as **smol-v** (`smolv::Encode`): decode before `createShader` (
   that the game computes from the guest sizes, which were already right at every scale: the "shadows smaller at scale
   2" another public port reports (`office/lessons_2026-10-27.md`, F1) comes from its translation, not ours [V].
   **One exception** (2026-10-30): FXAA is an edge filter, so at scale N it wants host pixels, not the frame's proportions: `game::HostKernelPixelShader` ([swapforce shaders.md](../../../games/swapforce/docs/shaders.md#the-lavas-posterized-gradients-2026-10-30-swapforce-ssa-xbox-v)).
+- **A co-issued scalar op reads its source before the vector write** (2026-11-13) [Xbox] [V] (Mac; the PC: [?]): one ALU
+  instruction holds a vector and a scalar operation that both read their sources before either writes. The translator
+  wrote the vector result first, so a scalar op reading a component the vector op writes saw the new value. It now
+  emits the scalar op first in that case (`ReadsComponents` in the patch; the vector op never reads `ps`). Giants'
+  waterfall lit by Dino-Rang's boomerang (pixel shader `0BAB3F2D`: `r5.w = r4.x; ps = r5.w; r5.x = ps`) took its alpha
+  from a position: gone on Windows (AMD and NVIDIA cards), speckled and bright on the Mac, for each boomerang's flight (~1.1 s). It changes
+  303 of Giants' 4442 dumped shaders (pixel shaders only). `ShaderTranslationTest` checks the order, the no-hazard
+  case and a different component. Every game's cache is translated again on its next build.
 - A shader the translator or the Metal compiler cannot handle is **reported and skipped** (`Skipped <hash> (<file>): reason`), not fatal; `N of M shaders translated`, `N of them without DXIL`.
 
 ### Binding model (`SharedConstants`, 352 bytes; `shader_common.h` offsets)

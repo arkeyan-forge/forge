@@ -302,7 +302,7 @@ shows a runtime `SKIP` instead of claiming game coverage. `--quick --only trapte
 missing and built with `--target all` plus every unit test by name (the `EXCLUDE_FROM_ALL` ones too, so a stale or
 non-linking test fails here). Then each test runs in a scratch folder with the isolation variables:
 `ArkeyanPortalTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanSettingsTest ArkeyanDatadirTest
-ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest ArkeyanTexturePackTest ArkeyanRecompGpuTest` in every build folder (the two achievements
+ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest ArkeyanGuestLayoutTest ArkeyanTexturePackTest ArkeyanRecompGpuTest` in every build folder (the two achievements
 tests read that section's own disc), and `ArkeyanRuntimeLauncherTest` in SSA's only (it checks SSA's disc and game entry; it needs `SSA_ISO`). What each test checks:
 [../porting/debugging.md](../porting/debugging.md#unit-tests).
 

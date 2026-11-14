@@ -192,6 +192,10 @@ one lost. The macOS IOKit reader had the same 64-byte `ReadPipe` (two reports jo
   "some third-party controllers require this message to finish initialization". The portal is such a device: the backend
   and the probe make the same request once after the claim (`StartXbox360`); a stall is only logged [?] (whether the
   portal needs it is unknown).
+- SDL's gamepad code does the same through libusb (its HIDAPI backend claims vendor `1430` interfaces of class
+  `FF/5D/01` and `FF/47/D0`): it held interface 0 (`usbfs` in the probe's driver list, "cannot claim interface
+  (LIBUSB_ERROR_BUSY)") and listed the portal as a second gamepad (#82). The runtime and the launcher set
+  `SDL_HIDAPI_IGNORE_DEVICES` and `SDL_JOYSTICK_BLACKLIST_DEVICES` to the Xbox portals' ids before SDL starts.
 - The second interface: none is documented; `FindInterface` takes the Xbox 360 vendor interface (`FF/5D`) whatever its
   number, and the log describes every interface and alternate setting, so a player's log shows any other.
 

@@ -71,6 +71,7 @@ add_executable(ArkeyanRuntime
     host/portable.cpp
     host/xex_title.cpp
     host/collection/achievements.cpp
+    host/collection/presence.cpp
     host/log.cpp
     host/gamemenu.cpp
     host/gamemenu_debug.cpp
@@ -218,6 +219,17 @@ target_link_libraries(ArkeyanRuntime PRIVATE ArkeyanRecompLib ArkeyanRecompGpu A
 # ppc_context.h and ppc_config.h are XenonRecomp's output: system headers here, so their warnings stay out of ours. System
 # directories come after every -I one, so XenonUtils (which has its own ppc_context.h) is one too, after the game's.
 target_include_directories(ArkeyanRuntime SYSTEM PRIVATE ${ARKEYAN_PPC_DIR} ${ARKEYAN_XENON_UTILS})
+# ARKEYAN_LAYOUT_RECORD: layout/ppc_config.h, before ppc/, gives runtime sources the four bounds from the active layout;
+# guest_layout_record.cpp builds the record from the generated constants.
+function(arkeyan_layout_record target)
+    if(ARKEYAN_LAYOUT_RECORD)
+        target_sources(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/guest_layout.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/guest_layout_record.cpp)
+        target_compile_definitions(${target} PRIVATE ARKEYAN_LAYOUT_RECORD)
+        target_include_directories(${target} SYSTEM BEFORE PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/layout)
+    endif()
+endfunction()
+arkeyan_layout_record(ArkeyanRuntime)
 # Linux's C library has its own byteswap.h, found before a SYSTEM directory.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_compile_options(ArkeyanRuntime PRIVATE "SHELL:-iquote ${ARKEYAN_XENON_UTILS}")
@@ -381,6 +393,12 @@ target_include_directories(ArkeyanBinkDisplayTest SYSTEM PRIVATE
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_compile_options(ArkeyanBinkDisplayTest PRIVATE "SHELL:-iquote ${ARKEYAN_XENON_UTILS}")
 endif()
+
+# The layout record (#72): parsed envelopes, the checks, table entries and ranges equal to the constant path, thunk slots
+# in gaps, the lookup cost both ways. Invented layouts, no game code: ./ArkeyanGuestLayoutTest
+add_executable(ArkeyanGuestLayoutTest guest_layout_test.cpp guest_layout.cpp)
+target_include_directories(ArkeyanGuestLayoutTest PRIVATE .)
+target_include_directories(ArkeyanGuestLayoutTest SYSTEM PRIVATE ${ARKEYAN_XENON_UTILS} ${ARKEYAN_XENON_THIRDPARTY}/simde)
 
 # Where host thunks go in the code's padding: ./ArkeyanThunkSlotTest
 add_executable(ArkeyanThunkSlotTest thunk_slot_test.cpp)
@@ -606,7 +624,8 @@ add_executable(ArkeyanSpeakersTest host/speakers_test.cpp)
 target_include_directories(ArkeyanSpeakersTest PRIVATE .)
 
 # The Toy Box link: its messages and the game's end on the loopback, with a fake window (no game data needed): ./ArkeyanToyboxLinkTest
-add_executable(ArkeyanToyboxLinkTest host/toybox_link_test.cpp host/toybox_link.cpp host/toybox_remote.cpp host/toybox_socket.cpp)
+add_executable(ArkeyanToyboxLinkTest host/toybox_link_test.cpp host/toybox_link.cpp host/toybox_remote.cpp host/toybox_socket.cpp
+    host/collection/presence.cpp host/collection/save_backup.cpp host/collection/datadir.cpp)
 target_include_directories(ArkeyanToyboxLinkTest PRIVATE .)
 if(WIN32)
     target_link_libraries(ArkeyanToyboxLinkTest PRIVATE ws2_32)
@@ -683,6 +702,15 @@ add_executable(ArkeyanPortablePackTest host/collection/portable_pack_test.cpp ho
 target_include_directories(ArkeyanPortablePackTest PRIVATE .)
 target_link_libraries(ArkeyanPortablePackTest PRIVATE SDL3::SDL3-static)
 
+# The launcher's presence snapshot and the worker with the link disabled (synthetic states only).
+add_executable(ArkeyanPresenceTest game.cpp host/collection/presence_test.cpp host/collection/presence.cpp
+    host/collection/save_backup.cpp host/collection/datadir.cpp host/toybox_remote.cpp host/toybox_socket.cpp
+    host/toybox_link.cpp)
+target_include_directories(ArkeyanPresenceTest PRIVATE .)
+if(WIN32)
+    target_link_libraries(ArkeyanPresenceTest PRIVATE ws2_32)
+endif()
+
 # Save backups, atomic writes, restoring and the running game's marker (no game data, scratch folders only): ./ArkeyanSavesTest
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_executable(ArkeyanSavesTest host/collection/save_backup_test.cpp host/collection/save_backup.cpp host/collection/datadir.cpp)
@@ -712,6 +740,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_include_directories(ArkeyanGuestThreadTest PRIVATE .)
     target_include_directories(ArkeyanGuestThreadTest SYSTEM PRIVATE ${ARKEYAN_PPC_DIR} ${ARKEYAN_XENON_UTILS}) # as ArkeyanRuntime's
     target_link_libraries(ArkeyanGuestThreadTest PRIVATE ArkeyanXenonUtils)
+    arkeyan_layout_record(ArkeyanGuestThreadTest)
 endif()
 
 # On Windows/packaged builds, copy third-party notices into the output directory.

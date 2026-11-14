@@ -90,6 +90,8 @@ namespace gpu
 
     // Textures may be created at any time; a destroyed one goes once the frames queued before have used it.
     Texture* CreateTexture(const TextureDesc& desc);
+    // A guest texture's levels and slices start as zeros with SKY_CLEAR_NEW_TEXTURES=1, a diagnostic; a producer's call.
+    void ClearNewTexture(Texture* texture);
     void DestroyTexture(Texture* texture);
     const TextureDesc& Desc(const Texture* texture);
 

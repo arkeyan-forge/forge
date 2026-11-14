@@ -1,0 +1,25 @@
+# The parity gate's install comparison (docs/release/launcher/kits_without_disc.md): one game installed from one disc
+# with a kit built as before and with a kit of the same commit built with KIT_LAYOUT_RECORD=1, at the same paths.
+#   python3 -I tools/tree_parity.py <old game folder> <new game folder> --rules tools/parity/install.rules
+# Every path not listed must be byte-identical: the translated sources and their objects and keys, the disc's files, the
+# shader inputs, the icons, the bundle's resources. Add a line here only with the step that makes the difference.
+# Step 3: the install's code layout record
+*/layout/guest_layout_record.cpp   added    the record the install writes (bounds checked, image SHA-256)
+*/layout/guest_layout.h            added    the kit's declaration, beside the record it compiles
+*/layout/stamp.txt                 added    when to write the record again
+*/obj/guest_layout_record.*        added    the record's object, its key and response file
+# Step 4: a KIT_LAYOUT_RECORD=1 kit has no config/<id>/fingerprints.txt, a file the translation stamp hashes with the
+# game's other config files: moving between the two kits runs XenonRecomp again (1 to 2 s), every file the same
+*/ppc/stamp.txt                    differs  its config= hash: the default kit's config/<id>/ also holds fingerprints.txt
+*.app/Contents/MacOS/*             differs  the game: other runtime objects, and the record
+*/link.key                         differs  the link names other runtime objects and the record
+*/link.rsp                         differs  the same link, written out
+# Not from the kit: the Metal compiler and the movie pass's run of the game
+*/shaders/cache/*                  differs  every AIR holds a random temporary name: tools/shaders/compare_cache.py
+*/ppc/shader_cache.cpp             differs  the same AIR; compare the two with tools/shaders/compare_cache.py
+*/obj/shader_cache.o               differs  compiled from it
+*/movies/dump/*                    ignore   what the movie pass's run dumped, by its timing (kept ones: shaders/input/runtime)
+*/movies/*.log                     ignore   that run's logs, with times
+*/movies/saves/*                   ignore   that run's play time
+*/movies/saves-backup/*            ignore   that run's lock file
+*/logs/*                           ignore   the install's logs, with times

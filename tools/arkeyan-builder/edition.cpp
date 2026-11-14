@@ -5,7 +5,9 @@
 #include "sha256.h"
 #include "vfs.h"
 #include <cstdio>
+#include <fstream>
 #include <image.h>
+#include <iterator>
 #include <utility>
 
 namespace skybuild
@@ -141,6 +143,18 @@ namespace skybuild
         return match;
     }
 
+    std::optional<std::vector<fingerprint::Found>> FindEditionAddresses(
+        const fingerprint::Code& code, const std::filesystem::path& references)
+    {
+        if (code.words.empty())
+            return {};
+        std::ifstream file(references);
+        auto prints = fingerprint::Read({ std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() });
+        if (prints.empty())
+            return {};
+        return fingerprint::Find(code, prints);
+    }
+
     std::string EditionReport(const DiscEdition& edition, const std::vector<Game>& games, const std::string& tools,
         const std::vector<fingerprint::Found>* found)
     {
@@ -183,8 +197,10 @@ namespace skybuild
                     " (only the disc header differs)\n";
         else
             text += "Result: not supported yet: the game code differs from every supported release\n";
-        if (found != nullptr && match.sameXex < 0 && match.sameImage < 0)
+        if (match.sameXex < 0 && match.sameImage < 0)
         {
+            if (found == nullptr || found->empty())
+                return text + "Address matching is unavailable for this report.\n";
             size_t count = 0;
             std::string missing;
             for (const fingerprint::Found& address : *found)

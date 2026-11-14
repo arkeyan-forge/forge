@@ -155,6 +155,9 @@ else()
     endif()
     add_subdirectory(thirdparty/SDL EXCLUDE_FROM_ALL)
 endif()
+# #72 step 2: the runtime reads the code layout from a record LoadXex checks (runtime/guest_layout.h), not from ppc/'s
+# constants. Translated code is unchanged. OFF builds the runtime exactly as before.
+option(ARKEYAN_LAYOUT_RECORD "Runtime: the code layout from a checked record instead of compiled-in bounds" OFF)
 # macOS test configuration: the Vulkan backend over MoltenVK instead of Metal, to run the Khronos validation layer
 # (docs/runtime/gpu/plume_backends.md). Not for players.
 option(ARKEYAN_MACOS_VULKAN "macOS: Vulkan (MoltenVK) instead of Metal, for the validation layers" OFF)
@@ -168,6 +171,7 @@ set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(thirdparty/XenosRecomp/thirdparty/zstd/build/cmake EXCLUDE_FROM_ALL)
 if(NOT ARKEYAN_UWP)
     add_subdirectory(tools/xexdump)
+    add_subdirectory(tools/abi)
     # The translated samples run on the build machine; their code needs clang's builtins.
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CROSSCOMPILING)
         add_subdirectory(tools/xenonrecomp)
@@ -203,9 +207,9 @@ endforeach()
 # The tests that build by default and need no argument (the others run from tools/test_all.sh with a disc or a scratch folder).
 sky_add_tests(ArkeyanSettingsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanDatadirTest
     ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanRangeHashTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
-    ArkeyanThunkSlotTest ArkeyanVertexPairsTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest
+    ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest
     ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanGlyphModelsTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanToyboxLinkTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest
-    ArkeyanBinkFrameTest ArkeyanBinkDisplayTest)
+    ArkeyanBinkFrameTest ArkeyanBinkDisplayTest ArkeyanPresenceTest)
 if(SKY_TESTS_ONLY)
     set_target_properties(ArkeyanRuntime ArkeyanRecompGpuTest PROPERTIES EXCLUDE_FROM_ALL ON)
     # Adapter tests use synthetic guest calls and do not require translated game code.

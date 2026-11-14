@@ -12,6 +12,9 @@
 #include <cstring>
 #include <string>
 #include <unistd.h>
+#ifdef ARKEYAN_LAYOUT_RECORD
+#include "guest_layout.h"
+#endif
 
 LoadedModule g_module;
 
@@ -101,6 +104,9 @@ namespace
 int main()
 {
     g_memory.Reserve();
+#ifdef ARKEYAN_LAYOUT_RECORD
+    CHECK(ActivateGuestLayout(g_guestLayoutRecord.layout)); // what LoadXex does once the executable matches
+#endif
     {
         bool found = false;
         auto keep = std::make_shared<LooksUpOnClose>();

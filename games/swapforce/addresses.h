@@ -73,6 +73,13 @@
 // recompiled code; the same address as the other Swap Force port's note, checked here.
 #define GAME_HOOK_FallCheck sub_82A4A828
 
+// Havok Behavior's look-at modifier, its modify step (games/swapforce/look_at.cpp): (modifier, context, output; f1 the
+// time step) -> void, called every frame for each character whose behaviour graph turns its head toward a target. It moves
+// the look-at weight (+192) toward 1 (on) or 0 (off) by a fixed share per call, the on gain (+132) or the off gain (+136),
+// whatever the time step. Found from the class's RTTI and reflection (newTargetGain +128, onGain +132, offGain +136,
+// lookAtWeight +192), its constructor sub_82EEE090 and the blend `w += (target - w) * gain` read in the recompiled code.
+#define GAME_HOOK_LookAtModify sub_82F0E3B8
+
 // Languages (games/swapforce/language.cpp, boot.md "Text and voice language"): Language_Get is the title's one reader of the
 // console language, XGetLanguage mapped to an IG_CORE_LANGUAGE value (6 English, 8 French), returned in r3; Language_SoundPak
 // opens one sound package of a sound set ("<set>_<abbreviation>.pak", the abbreviation from that same value); Movie_Open
@@ -165,6 +172,7 @@ namespace game
     // byte as its last store (sub_829CAA90 ...).
     constexpr uint32_t FallCheckScaleOffset =
         104; // the float multiplying the stuck-falling threshold in a jump component
+    constexpr uint32_t LookAtOnGainOffset = 132, LookAtOffGainOffset = 136; // hkbLookAtModifier's per-call gains
     constexpr uint32_t SaveTaskDone = 0x8320ABC1;
     constexpr uint32_t SaveTaskBusyOffset = 185, SaveTaskThreadOffset = 188, ThreadRunningOffset = 16;
     // The D3D device's swap counts (games/swapforce/swap_wait.cpp): issued (D3DDevice_Swap) and shown (the vertical

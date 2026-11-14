@@ -1,6 +1,7 @@
 // Function fingerprints for the edition finder (docs/tools/edition_finder.md): a disc whose game code differs from every
 // supported release may still hold the same functions at other addresses. Each address of games/<id>/addresses.h is
-// fingerprinted from our own disc at kit time (config/<id>/fingerprints.txt) and searched for in the player's loaded image.
+// described by optional supported-disc references (config/<id>/fingerprints.txt in older kits), searched for in the
+// player's loaded image. Identification and disc acceptance do not require these references.
 // A fingerprint is hashes only, never instruction bytes: FNV-1a over the function's instruction words with the fields a
 // link changes masked (b/bl targets, lis immediates and the low halves that pair with them), the hash of its first four
 // words with every D-form immediate masked (to find candidates fast), and the same for each function it calls (the call
@@ -59,7 +60,7 @@ namespace skybuild::fingerprint
     std::vector<std::pair<std::string, uint32_t>> ReadAddresses(
         const std::string& header, uint32_t base, uint32_t size);
 
-    // Kit time: the fingerprints of `addresses` in our image, with every function's start from XenonRecomp's
+    // Reference generation: the fingerprints of `addresses` in our image, with every function's start from XenonRecomp's
     // ppc_func_mapping.cpp (`starts`). A data address takes the first function that refers to it whose hash is unique.
     // `missing` receives the names that got none.
     std::vector<Print> Make(const Code& code, const std::vector<uint32_t>& starts,

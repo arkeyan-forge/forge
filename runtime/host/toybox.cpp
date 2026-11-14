@@ -2,6 +2,7 @@
 #include "gpu/gpu.h"
 #include "d3d/ultrawide.h"
 #include "host/art/game_art.h"
+#include "host/collection/presence.h"
 #include "host/gamemenu.h"
 #include "host/glyphs.h"
 #include "host/pad_map.h"
@@ -124,7 +125,8 @@ namespace
         g_portraitsLoaded = true;
         // This game's portraits (and Imaginators' part names) from the player's disc, cached in its data folder
         // (docs/runtime/host/game_art.md).
-        art::Extraction found = art::Extract(ARKEYAN_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits | art::PartNames);
+        art::Extraction found =
+            art::Extract(ARKEYAN_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits | art::PartNames);
         fprintf(stderr, "[toybox] %d portraits in %s%s\n", found.portraits,
             art::PortraitFolder(ARKEYAN_GAME_ID).string().c_str(), found.partNames ? ", the parts' names read" : "");
     }
@@ -1257,6 +1259,8 @@ void ToyboxUpdate()
     }
     ServeWindow(model, now);
     model.Tick(now);
+    presence::SetSecondPlayer(std::any_of(model.seats.begin(), model.seats.end(),
+        [](const toybox::SeatState& s) { return s.seat.id == "p2" && (s.physical || !s.path.empty()); }));
     Present();
 }
 

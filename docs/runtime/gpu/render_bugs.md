@@ -21,6 +21,7 @@ The pass list of a level frame is in [../lux/level_frame_lightprepass.md](../../
 
 | Symptom | Cause | Fix | Class |
 |---|---|---|---|
+| **Giants: the tutorial's waterfall gone (Windows, D3D12 and Vulkan, AMD and NVIDIA) or speckled (Mac) while Dino-Rang's boomerang flies** (2026-11-13) | the boomerang's point light switches the waterfall to a lit pixel shader whose co-issued scalar op read a register its vector op had just written: alpha from a world position | the scalar op runs first ([shaders.md](shaders.md), "A co-issued scalar op") | Xbox |
 | G-buffer, light pre-pass, shadow inputs black | **MRT draws dropped**: colour target *pointers* compared instead of sizes | compare sizes | Xbox |
 | DepthMap / shadow maps black | depth resolves skipped; no k_24_8 / k_24_8_FLOAT format | `ResolveDepthPS` into R32_FLOAT (X = depth) | Xbox |
 | **Dark level: "stencil EQUAL 2 never passes"** (3 work rounds) | NGL and D3D write render state straight into the ring; the shadows lied (the GPU ran RB_DEPTHCONTROL 0x766/0x762 = no stencil test) | ring mirror; **no EDRAM-aliasing emulation was needed** | Lux |

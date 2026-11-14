@@ -116,6 +116,8 @@ while i < len(args):
         result.append("${OBJECTS}")
     elif a.endswith("libArkeyanShaderCache.a"):
         pass  # shader_cache.o is one of ${OBJECTS}
+    elif a.endswith(("guest_layout_record.cpp.o", "guest_layout_record.cpp.obj")):
+        pass  # ARKEYAN_LAYOUT_RECORD: the install's own record is one of ${OBJECTS} (make_kit.sh does not build this one)
     elif not a.startswith("-") and a.endswith((".obj", ".o", ".res")):
         name = a.split("ArkeyanRuntime.dir/", 1)[-1].replace("/", "_")
         shutil.copyfile(os.path.join(build, a), os.path.join(kit, "lib", game, "runtime", name))

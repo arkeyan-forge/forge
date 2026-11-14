@@ -10,8 +10,9 @@
 
 namespace toyboxremote
 {
-    // Listens and writes `folder`/toybox.link. Once; nothing when SKY_TOYBOX_LINK=0 or the socket cannot be opened.
-    void Start(const std::string& folder, const std::string& game);
+    // Starts the worker (also flushes presence), once. Listens and writes `folder`/toybox.link unless
+    // link=false, SKY_TOYBOX_LINK=0 or the socket cannot be opened.
+    void Start(const std::string& folder, const std::string& game, bool link = true);
     // A window is connected and said hello (an atomic: cheap every frame).
     bool Connected();
     // Main thread: the next command of the window, if any.

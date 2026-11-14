@@ -22,6 +22,33 @@ Code: [`loader.{h,cpp}`](../../../runtime/loader.cpp), [`kernel/module.cpp`](../
 6. The XEX **XDBF/SPA resource** named after the title ID holds the title name (string 0x8000, "Skylanders") and icon (image 0x8000,
    a 64x64 PNG): the launcher reads them with `ReadTitleMetadata()` (XDBFWrapper trusts its input: only call it on a verified XEX).
 
+## The code layout record (`ARKEYAN_LAYOUT_RECORD`, opt-in, #72)
+
+With the CMake option `ARKEYAN_LAYOUT_RECORD=ON` (default OFF), the runtime no longer compiles in the four layout bounds
+(`PPC_IMAGE_BASE/SIZE`, `PPC_CODE_BASE/SIZE`); the translated code keeps them as constants. Code:
+[`guest_layout.{h,cpp}`](../../../runtime/guest_layout.h), `guest_layout_macros.h`, `layout/ppc_config.h`,
+`guest_layout_record.cpp`.
+
+- **The record**: `g_guestLayoutRecord` (version, the four bounds, the image's SHA-256 or empty). A normal build compiles
+  it from its own generated `ppc_config.h` (`guest_layout_record.cpp`, the one runtime source that sees the constants), so
+  a game runs with no new input; the kit builder will write its own at install (study, step 3).
+- **`LoadXex`** derives the parsed layout (code = the envelope of every code section, gaps included, as
+  `Recompiler::Recompile` writes it), then refuses ("default.xex is not the executable this build was recompiled from:
+  <why>") on another record version, another image hash (when recorded), another image or code bound, an empty or
+  misaligned code range, code outside the image, an image or function table outside `0x80000000`-`0xA0000000` (above
+  SystemAlloc, below the physical windows), an entry point or a translated function outside the code. Then it activates
+  the layout (once, read-only afterwards) before the table, imports, thunks or threads, and logs `[loader] code layout
+  from the build's record`.
+- **The consumers are unchanged**: `layout/ppc_config.h` comes before `ppc/` for runtime sources; it includes the
+  generated header (`#include_next`, its policy macros as they are) and redefines the four names to read the active layout
+  (`unsigned long long`, as generated). `PPC_LOOKUP_FUNC`, `TableBegin/End`, `SetEntryReadOnly`, `CreateHostThunk` (its
+  cursor starts at the first call, after `LoadXex`), `GuestCodeAddress`/`CallGuest` and the three memory queries of
+  `kernel/memory.cpp` compute the same values. With the option OFF the preprocessed sources are the old ones.
+- **Proof** (2026-11-12): `ArkeyanGuestLayoutTest` (invented layouts: envelopes with gaps, every refusal, table entries,
+  guard, image queries, read-only granules and thunk slots equal to the constant path; the lookup loop 1.6-1.8 ns compiled
+  in, 1.9-2.0 ns from the record, on the Mac); `ArkeyanGuestThreadTest` built ON. All six games reach a level ON (runs in
+  [kits_without_disc.md](../../release/launcher/kits_without_disc.md#step-2-done-2026-11-12)).
+
 ## XenonUtils XEX loader fix (patch)
 
 Compressed blocks can sum to **less than the declared image size**: the buffer is sized `max(sum, security->imageSize)` and the tail stays

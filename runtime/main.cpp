@@ -2,6 +2,7 @@
 #include "host/collection/collection.h"
 #include "host/collection/datadir.h"
 #include "host/collection/progress.h"
+#include "host/collection/presence.h"
 #include "host/collection/save_backup.h"
 #include "host/display.h"
 #include "host/env.h"
@@ -18,6 +19,7 @@
 #include "host/xex_title.h"
 #include "host/texture_pack.h"
 #include "host/toybox.h"
+#include "host/toybox_remote.h"
 #include "gpu/gpu.h"
 #include "gpu/first_frame.h"
 #include "d3d/ultrawide.h"
@@ -324,6 +326,10 @@ static void ListGamepads()
 
 int main(int argc, char** argv)
 {
+    // The Xbox portals are vendor-class USB devices that look like Xbox pads: SDL's gamepad code would claim them through
+    // libusb (the portal's own reads then fail, "cannot claim interface") and list them as a second gamepad (#82).
+    for (const char* hint : { SDL_HINT_HIDAPI_IGNORE_DEVICES, SDL_HINT_JOYSTICK_BLACKLIST_DEVICES })
+        SDL_SetHint(hint, "0x1430/0x1f17,0x1430/0x09aa,0x1430/0x09ab,0x24c6/0xfa00");
     datadir::MigrateOnce(); // the older folders into <data root> (datadir.h), before any path is used
     const GameInfo& game = *FindGame(ARKEYAN_GAME_ID); // the game this runtime was built for (-DARKEYAN_GAME)
     // A portable's figures and keys, before the settings are read.
@@ -533,6 +539,7 @@ int main(int argc, char** argv)
     SetFrameRateLimit(settings.fpsLimit);
     glyphs::Init(settings);
     texpack::ConfigureForGame(game.id, settings.textureDump, settings.texturePacks, settings.hdTextures);
+    presence::Begin(progress::Folder(game.id));
     PortalInit();
     gamemenu::Init(settings, window, ARKEYAN_GAME_VERSION);
     // fps_auto_fallback never set (0.9.5 and earlier: on for everyone): the GPU's default, written to the game's video
@@ -545,6 +552,8 @@ int main(int argc, char** argv)
         gamemenu::SetFpsAutoFallback(on);
     }
     ToyboxInit(window);
+    // If the Toy Box could not start, keep its worker for presence without advertising a link.
+    toyboxremote::Start(PortalSessionFolder(), game.id, false);
     ToyboxSetAutoOpen(settings.toyboxAutoOpen);
     // While the game runs, Skylauncher refuses to restore a backup over its saves (Settings > Game data,
     // save_backup.h). The marker holds this process id; a crash leaves it behind and the launcher sees it is gone.

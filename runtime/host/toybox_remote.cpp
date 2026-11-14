@@ -1,5 +1,6 @@
 // The game's end of the Toy Box link (toybox_remote.h).
 #include "host/toybox_remote.h"
+#include "host/collection/presence.h"
 #include "host/env.h"
 #include "host/toybox_socket.h"
 #include <atomic>
@@ -30,6 +31,7 @@ namespace toyboxremote
         std::string g_outgoing;
         toyboxsocket::Handle g_client = toyboxsocket::Invalid;
         std::string g_file, g_token, g_game;
+        std::thread g_worker;
 
         void Drop(toyboxsocket::Handle& client, const char* why)
         {
@@ -61,6 +63,12 @@ namespace toyboxremote
             char data[4096];
             while (!g_stop)
             {
+                presence::Flush();
+                if (listener == toyboxsocket::Invalid)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+                    continue;
+                }
                 toyboxsocket::Handle handles[2] = { listener, client };
                 unsigned ready = toyboxsocket::Wait(handles, 2, 25);
                 if (g_stop)
@@ -165,46 +173,55 @@ namespace toyboxremote
                 if (!out.empty() && client != toyboxsocket::Invalid && greeted && !toyboxsocket::Send(client, out))
                     Drop(client, "it stopped reading");
             }
+            presence::Flush();
             toyboxsocket::Close(listener);
         }
     }
 
-    void Start(const std::string& folder, const std::string& game)
+    void Start(const std::string& folder, const std::string& game, bool link)
     {
-        if (const char* off = skyenv::Get("SKY_TOYBOX_LINK"); off != nullptr && std::string(off) == "0")
+        if (g_started.exchange(true))
             return;
-        if (g_started.exchange(true) || !toyboxsocket::Startup())
-            return;
-        int port = 0;
-        toyboxsocket::Handle listener = toyboxsocket::Listen(port);
-        if (listener == toyboxsocket::Invalid)
-        {
-            fprintf(stderr, "[toybox-link] cannot listen: no Toy Box window for this game\n");
-            return;
-        }
-        g_token = toyboxlink::NewToken();
-        g_game = game;
-        std::filesystem::path file = std::filesystem::path(folder) / toyboxlink::FileName;
-        std::error_code error;
-        std::filesystem::create_directories(file.parent_path(), error);
-        {
-            std::ofstream out(file, std::ios::binary | std::ios::trunc);
-            out << toyboxlink::FormatEndpoint({ toyboxlink::Version, port, g_token, uint32_t(SKY_GETPID()) });
-            if (!out)
+        // Presence uses this worker even without a link, and does not depend on a window or fonts loading.
+        auto listen = [&]() -> toyboxsocket::Handle {
+            if (!link)
+                return toyboxsocket::Invalid;
+            if (const char* off = skyenv::Get("SKY_TOYBOX_LINK"); off != nullptr && std::string(off) == "0")
+                return toyboxsocket::Invalid;
+            if (!toyboxsocket::Startup())
+                return toyboxsocket::Invalid;
+            int port = 0;
+            toyboxsocket::Handle listener = toyboxsocket::Listen(port);
+            if (listener == toyboxsocket::Invalid)
             {
-                fprintf(
-                    stderr, "[toybox-link] cannot write %s: no Toy Box window for this game\n", file.string().c_str());
-                toyboxsocket::Close(listener);
-                return;
+                fprintf(stderr, "[toybox-link] cannot listen: no Toy Box window for this game\n");
+                return toyboxsocket::Invalid;
             }
-        }
-        // Only this user reads the token.
-        std::filesystem::permissions(file, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
-            std::filesystem::perm_options::replace, error);
-        g_file = file.string();
-        std::thread(Serve, listener).detach();
+            g_token = toyboxlink::NewToken();
+            g_game = game;
+            std::filesystem::path file = std::filesystem::path(folder) / toyboxlink::FileName;
+            std::error_code error;
+            std::filesystem::create_directories(file.parent_path(), error);
+            {
+                std::ofstream out(file, std::ios::binary | std::ios::trunc);
+                out << toyboxlink::FormatEndpoint({ toyboxlink::Version, port, g_token, uint32_t(SKY_GETPID()) });
+                if (!out)
+                {
+                    fprintf(stderr, "[toybox-link] cannot write %s: no Toy Box window for this game\n",
+                        file.string().c_str());
+                    toyboxsocket::Close(listener);
+                    return toyboxsocket::Invalid;
+                }
+            }
+            // Only this user reads the token.
+            std::filesystem::permissions(file, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+                std::filesystem::perm_options::replace, error);
+            g_file = file.string();
+            fprintf(stderr, "[toybox-link] listening on the loopback (link version %d)\n", toyboxlink::Version);
+            return listener;
+        };
+        g_worker = std::thread(Serve, listen());
         atexit(Stop);
-        fprintf(stderr, "[toybox-link] listening on the loopback (link version %d)\n", toyboxlink::Version);
     }
 
     bool Connected() { return g_connected.load(std::memory_order_relaxed); }
@@ -240,6 +257,8 @@ namespace toyboxremote
                 toyboxsocket::Send(g_client, g_outgoing + toyboxlink::Format({ "bye", {} }));
             g_outgoing.clear();
         }
+        if (g_worker.joinable())
+            g_worker.join();
         std::error_code error;
         if (!g_file.empty())
             std::filesystem::remove(g_file, error);

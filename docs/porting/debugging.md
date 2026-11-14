@@ -66,6 +66,7 @@ The isolation block every run starts from, the fast recipe and the harness: [../
 |---|---|
 | `SKY_GPU_BACKEND=vulkan\|d3d12` | force a backend on desktop Windows (default Vulkan then D3D12) |
 | `SKY_GPU_THREAD=0` | no GPU thread: the caller records and submits (bisect) |
+| `SKY_CLEAR_NEW_TEXTURES=1` | new sampled textures start cleared: every level and slice of a guest texture (`d3d/render.cpp`, right after its creation; never the host's own textures) starts as zeros before the game's data, so a level the game never fills reads black on every GPU instead of the video memory's leftovers. Off by default since 2026-11-13: issue #75's noise on an AMD card stayed with it on D3D12 (so it is not an unfilled level), and on Vulkan the clear and the upload to the same subresource, two copies that may run at once, left tiles of zeros in menus and scenes (test build 7). |
 | `SKY_CRASH_TEST=fault\|abort` | after the 400th flip the guest's render thread faults on a null pointer (or aborts), to check the `[crash]` lines ([gamemenu.md](../runtime/host/gamemenu.md)) |
 | `SKY_REPORT_DIR=<folder>` | the F3 menu's "Report a problem" writes its file there alone and opens no file manager (tests) |
 | `SKY_PERF_LOG=0` | turn the `[perf]` lines off |
@@ -162,6 +163,7 @@ both build folders (`ArkeyanRuntimeLauncherTest` in SSA's only).
 | `ArkeyanProgressTest [<disc>...]` | the XDBF achievements reader (synthetic data, damaged data, each given disc's counts and gamerscore), the launcher's cache, the unlocks' round trip, the play time (not built on Windows) | H |
 | `ArkeyanAchievementsKernelTest <disc>` | the achievement calls of a title on a fake guest context against a disc: unlock, notice, enumeration, a second process reading it back (not built on Windows) | H |
 | `ArkeyanGuestThreadTest` | the guest threads with the game's code range and no game code: host calls to an address outside the code refused and logged (thread start, APC), 2000 thread create/exit cycles on a 256 MB system heap, a re-initialised dispatcher header replacing its object (not built on Windows) | H |
+| `ArkeyanGuestLayoutTest` | the code layout record (#72, [loader_xex.md](../runtime/xbox360/loader_xex.md#the-code-layout-record-arkeyan_layout_record-opt-in-72)) on invented layouts: code envelopes with gaps, every refusal of `CheckGuestLayout`, table entries, code-range guard, image queries, read-only granules and thunk slots equal with the bounds compiled in and read from the active layout; prints the lookup cost both ways | H |
 | `ArkeyanTexturePackTest` | the DDS reader and writer, the content hash and the texture pack index (`EXCLUDE_FROM_ALL`) | H |
 | `ArkeyanRecompGpuTest [<dir>]` | draws test images through the present pass offscreen and compares them with a CPU reference (bilinear, clamped, letterboxed); writes `gpu_<case>_{actual,expected}.ppm` when given a folder | H |
 | `ArkeyanRuntimeLauncherTest <iso> <scratch dir> [<damaged copy>...]` | the runtime launcher's disc verification and settings file, without UI; needs SSA's disc (`EXCLUDE_FROM_ALL`) | H (SSA) |

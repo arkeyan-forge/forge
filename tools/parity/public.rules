@@ -1,0 +1,10 @@
+# The parity gate's public-source comparison (docs/release/launcher/kits_without_disc.md, step 4): a KIT_LAYOUT_RECORD=1
+# kit built from a fresh public checkout (no private/) against the one built from the same commit with
+# KIT_HEADERS_FROM_PRIVATE=1 (its runtimes compiled against private/<game>/ppc), same target.
+#   python3 -I tools/tree_parity.py <private-header kit> <public kit> --rules tools/parity/public.rules
+# Every path not listed must be byte-identical: the runtime objects and libraries, the tools, kit.txt and its ABI ids.
+# Add a line here only with the reason the two differ.
+# Linux: Arkeyan-Builder's relink objects keep their debug info, which names FFmpeg's include folder under KIT_DEPS
+# (./private/ffmpeg here, ./.scratch/deps/ffmpeg in the public checkout); the same code. Step 6: one fixed KIT_DEPS.
+relink/arkeyan-builder/*xma_decoder_ffmpeg.cpp.o   differs  FFmpeg's include folder, under KIT_DEPS, in its debug info
+files.sha256                                       differs  lists the file above

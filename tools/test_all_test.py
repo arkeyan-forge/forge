@@ -22,6 +22,11 @@ class Sections(unittest.TestCase):
         (self.root / "tools/regress/f3mouse_unit.py").write_text("print('')\n")
         (self.root / "tools/regress/pid_timer_test.sh").write_text("exit 0\n")
         (self.root / "tools/regress/movie_targets.py").write_text("print('')\n")
+        (self.root / "tools/editions").mkdir()
+        (self.root / "tools/editions/from_report.py").write_text("print('PASS')\n")
+        (self.root / "tools/abi").mkdir()
+        (self.root / "tools/abi/headers.py").write_text("print('PASS ssa')\n")
+        (self.root / "tools/tree_parity.py").write_text("print('tree_parity self-test: PASS')\n")
         bindir = self.root / "bin"
         bindir.mkdir()
         cmake = bindir / "cmake"
@@ -34,12 +39,13 @@ while [ "$1" != --target ]; do shift; done
 shift
 for target do
     case $target in
-        SSA*Test) printf '#!/bin/sh\\necho "1 checks, 0 failures"\\n' > "$dir/$target"; chmod +x "$dir/$target" ;;
+        Arkeyan*Test) printf '#!/bin/sh\\necho "1 checks, 0 failures"\\n' > "$dir/$target"; chmod +x "$dir/$target" ;;
     esac
 done
 ''')
         cmake.chmod(0o755)
         self.env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}")
+        self.env.pop("LAUNCHER", None)
 
     def run_cli(self, *args):
         return subprocess.run(["bash", "tools/test_all.sh", *args], cwd=self.root,
@@ -62,9 +68,20 @@ done
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("##### Trap Team", result.stdout)
         self.assertIn("unit ArkeyanProgressTest", result.stdout)
+        self.assertIn("unit public headers", result.stdout)
         self.assertIn("SKIP", result.stdout)
         self.assertIn("runtime", result.stdout)
         self.assertNotIn("##### SSA", result.stdout)
+
+    def test_quick_includes_public_header_failures(self):
+        disc = self.root / "invented.iso"
+        disc.write_bytes(b"not a game")
+        self.env["TRAPTEAM_ISO"] = str(disc)
+        (self.root / "tools/abi/headers.py").write_text("print('FAIL ssa')\nraise SystemExit(1)\n")
+        result = self.run_cli("--only", "trapteam", "--quick")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("unit public headers", result.stdout)
+        self.assertNotIn("ALL PASS", result.stdout)
 
     def test_trapteam_without_disc_is_a_visible_skip(self):
         self.env.pop("TRAPTEAM_ISO", None)

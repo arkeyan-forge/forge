@@ -12,6 +12,10 @@
 #include <image.h>
 #include <ppc_config.h>
 #include <ppc_context.h>
+#ifdef ARKEYAN_LAYOUT_RECORD
+#include "guest_layout.h"
+#include "host/launcher.h"
+#endif
 
 LoadedModule g_module;
 
@@ -213,11 +217,41 @@ namespace
 LoadedModule LoadXex(const std::vector<uint8_t>& xex)
 {
     const auto image = Image::ParseImage(xex.data(), xex.size());
+#ifdef ARKEYAN_LAYOUT_RECORD
+    if (image.data == nullptr)
+    {
+        fprintf(stderr, "default.xex is not the executable this build was recompiled from\n");
+        exit(1);
+    }
+    // The build's layout record, checked against this executable, drives every table and range test from here on.
+    std::vector<GuestSection> sections;
+    for (const Section& section : image.sections)
+        sections.push_back({ uint32_t(section.base), section.size, (section.flags & SectionFlags_Code) != 0 });
+    const GuestLayout parsed = ParsedGuestLayout(uint32_t(image.base), image.size, sections);
+    std::string imageSha256;
+    if (g_guestLayoutRecord.imageSha256[0] != '\0')
+        imageSha256 = Sha256Hex({ image.data.get(), size_t(image.size) });
+    std::string problem = CheckGuestLayout(g_guestLayoutRecord, parsed, imageSha256);
+    if (problem.empty() && !InGuestCode(parsed, image.entry_point))
+        problem = "entry point outside the code";
+    for (auto* mapping = PPCFuncMappings; problem.empty() && mapping->host != nullptr; mapping++)
+        if (!InGuestCode(parsed, mapping->guest))
+            problem = "a translated function outside the code";
+    if (problem.empty() && !ActivateGuestLayout(parsed))
+        problem = "another layout is already active";
+    if (!problem.empty())
+    {
+        fprintf(stderr, "default.xex is not the executable this build was recompiled from: %s\n", problem.c_str());
+        exit(1);
+    }
+    fprintf(stderr, "[loader] code layout from the build's record\n");
+#else
     if (image.data == nullptr || image.base != PPC_IMAGE_BASE || image.size != PPC_IMAGE_SIZE)
     {
         fprintf(stderr, "default.xex is not the executable this build was recompiled from\n");
         exit(1);
     }
+#endif
 
     memcpy(g_memory.Translate(image.base), image.data.get(), image.size);
 

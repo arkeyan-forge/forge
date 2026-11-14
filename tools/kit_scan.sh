@@ -18,6 +18,7 @@ kit=$1
 # (private/kit_scan_words.txt, git-ignored, one word per line; KIT_SCAN_WORDS points elsewhere).
 # KIT_SCAN_USER names the host's user when the kit is built in a container (make_kit.sh sets it): there `id -un` has
 # no name for the user's uid and prints the number, which matches ordinary text.
+# It is an extended regular expression: CI passes its runner's home paths, as the runner's name is an ordinary word.
 words=${KIT_SCAN_USER:-$(id -un 2>/dev/null)} || words=
 list=${KIT_SCAN_WORDS:-$(dirname "$0")/../private/kit_scan_words.txt}
 if [ -f "$list" ]; then

@@ -1150,8 +1150,9 @@ bool gpu::Init(SDL_Window* window, uint32_t width, uint32_t height)
 #if !defined(PLUME_D3D12_COREWINDOW)
         driver = SDL_GetCurrentVideoDriver();
 #endif
-        fprintf(stderr, "[gpu] no native render surface: %s (SDL video %s, flags 0x%llX, error: %s); "
-                        "using offscreen output\n",
+        fprintf(stderr,
+            "[gpu] no native render surface: %s (SDL video %s, flags 0x%llX, error: %s); "
+            "using offscreen output\n",
             window == nullptr ? "no window supplied" : "native window, graphics flag or view unavailable",
             driver != nullptr ? driver : "none",
             static_cast<unsigned long long>(window != nullptr ? SDL_GetWindowFlags(window) : 0), SDL_GetError());
@@ -1225,6 +1226,37 @@ uint64_t gpu::detail::TextureBytes(const TextureDesc& desc)
     uint64_t bytes = uint64_t(desc.width) * desc.height * desc.depth * desc.arraySize * RenderFormatSize(desc.format) /
                      (block * block);
     return desc.mipLevels > 1 ? bytes + bytes / 3 : bytes;
+}
+
+// SKY_CLEAR_NEW_TEXTURES=1 (a diagnostic, off by default): a guest texture starts as zeros, every level and slice,
+// before the game's data is uploaded over it. A placed resource holds whatever the video memory held: a level or slice
+// the game never fills is sampled as that (black on Apple GPUs, noise on AMD's). Issue #75 (noise on Giants' far
+// scenery on an AMD card) stayed with it on D3D12, so it is not that; on Vulkan the clear and the game's upload to the
+// same subresource, two copies that may run at once, left tiles of zeros in the picture: off unless asked for.
+void gpu::ClearNewTexture(Texture* texture)
+{
+    static const bool on = [] {
+        const char* value = skyenv::Get("SKY_CLEAR_NEW_TEXTURES");
+        const bool enabled = value != nullptr && std::string_view(value) == "1";
+        fprintf(stderr, "[gpu] new textures %s (SKY_CLEAR_NEW_TEXTURES)\n", enabled ? "start cleared" : "not cleared");
+        return enabled;
+    }();
+    const gpu::TextureDesc& desc = texture->desc;
+    if (!on || texture->texture == nullptr || desc.depth > 1 ||
+        (desc.usage & (gpu::TextureUsage::RenderTarget | gpu::TextureUsage::DepthStencil)))
+        return;
+    const uint32_t blockWidth = RenderFormatBlockWidth(desc.format), blockSize = RenderFormatSize(desc.format);
+    const uint32_t rowPitch = (desc.width + blockWidth - 1) / blockWidth * blockSize;
+    const uint32_t rows = (desc.height + blockWidth - 1) / blockWidth;
+    static std::mutex mutex;
+    static std::vector<uint8_t> zeros;
+    std::lock_guard lock(mutex);
+    if (zeros.size() < size_t(rowPitch) * rows)
+        zeros.resize(size_t(rowPitch) * rows);
+    const uint32_t slices = desc.arraySize; // a cube is made with arraySize 6
+    for (uint32_t level = 0; level < desc.mipLevels; level++)
+        for (uint32_t slice = 0; slice < slices; slice++)
+            gpu::UploadTexture(texture, zeros.data(), rowPitch, level, slice);
 }
 
 gpu::Texture* gpu::CreateTexture(const TextureDesc& desc)

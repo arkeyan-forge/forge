@@ -103,10 +103,11 @@ when one of these changed; **content decides, never a file time or the kit's fol
 | Step | Redone when |
 |---|---|
 | `disc` | the disc image's stamp (path, size, time) changed, or any extracted input differs from `disc/shaders.txt` (names and SHA-256). Older work folders without this inventory reread the disc once. A reread clears the old inputs and movie capture so another disc cannot reuse them. Trap Team's 1916 archives are decoded one per job at once and written in disc order (the same files and log as one by one) |
-| `recompile` | the disc, the SHA-256 of **XenonRecomp**, of every file of `config/<id>/` but `game.txt`, of `share/ppc_context.h`, or the kit's `ppc_config_sha256.<id>` / `ppc_context_sha256` changed. The translated files are written only where they differ, so unchanged functions keep their object. A runtime-only update keeps `ppc/` |
+| `recompile` | the disc, the SHA-256 of **XenonRecomp**, of every file of `config/<id>/` but `game.txt`, of `share/ppc_context.h`, or the kit's `ppc_config_sha256.<id>` / `ppc_context_sha256` changed (a `kit_format=2` kit: the SHA-256s of the translated `ppc_config.h` and `ppc_context.h` once they carry its `abi.policy.<id>` and `abi.context`, the same values, so only a change of `config/<id>/` translates again; a policy or context that differs stops the install). The translated files are written only where they differ, so unchanged functions keep their object. A runtime-only update keeps `ppc/` |
+| `recompile`: the layout record | only with a kit whose `kit.txt` has `layout_record=`, at the end of `recompile` (no `@step` of its own, so the launcher's checklist is unchanged; #72, [kits_without_disc.md](../release/launcher/kits_without_disc.md#step-3-done-2026-11-12)): `layout/stamp.txt` differs (the disc, the SHA-256 of `ppc/ppc_config.h` and of the kit's `share/guest_layout.h`, the record version). It parses `disc/default.xex`, refuses generated bounds that are not the executable's (code range: the envelope of its code sections) or that `CheckGuestLayout` rejects, and writes `layout/guest_layout_record.cpp` (version, bounds, the image's SHA-256) beside a copy of `guest_layout.h`, only where its text changed. Another `layout_record` version or no header: the install stops ("update the game tools") |
 | `shaders` | the disc, the run-time shader list (movie pass), the SHA-256 of **XenosRecomp** or of `share/shader_common.h`, or the streams asked for (`SKY_WINDOWS_SHADERS`) changed. XenosRecomp then translates every shader again (seconds) but **compiles only the ones whose translated HLSL is new**: `shaders/cache/` holds the compiled DXIL/SPIR-V/AIR keyed by the hash of the translated text (plus pixel/vertex, point size and specialisation mask), and is emptied only when the kit's DXC libraries (`bin/`, all but the two translators) change; the translated text starts with `shader_common.h`, so a new one is covered. An entry records its streams: one with all of them (every cache of an older kit) serves any request, one made for the AIR alone is compiled again when DXIL or SPIR-V are asked for |
-| `compile` | per object: it is missing, older than its `ppc/*.cpp`, or its `obj/<name>.key` differs. The key is the SHA-256 of the compile command with the kit's folder written `<kit>`, of the content of the kit's `include/` and of the `ppc/*.h`. A new kit with the same headers and flags keeps every object. `shader_cache` is compiled from `obj/shader_cache_literals.cpp`, a copy with its byte arrays as string literals (the same bytes; clang reads Giants' 200 MB of numbers in 30 s, the literals in 2 s; `shader_cache_literals.h`), deleted after the compile; `ppc/shader_cache.cpp` stays as XenosRecomp wrote it |
-| `link` | `link.key` differs (the link command with the kit's folder written `<kit>`, plus the content of every kit library and runtime object it names), or an object is newer than the game. A kit whose runtime libraries changed always relinks |
+| `compile` | per object: it is missing, older than its `ppc/*.cpp`, or its `obj/<name>.key` differs. The key is the SHA-256 of the compile command with the kit's folder written `<kit>`, of the content of the kit's `include/` and of the `ppc/*.h`. A new kit with the same headers and flags keeps every object. `shader_cache` is compiled from `obj/shader_cache_literals.cpp`, a copy with its byte arrays as string literals (the same bytes; clang reads Giants' 200 MB of numbers in 30 s, the literals in 2 s; `shader_cache_literals.h`), deleted after the compile; `ppc/shader_cache.cpp` stays as XenosRecomp wrote it. A layout-record kit adds `layout/guest_layout_record.cpp` with `compile.args`, as `obj/guest_layout_record.o`, its key also covering the copied `guest_layout.h`; the header is in the kit's `share/`, not `include/`, so the game objects' keys are the same with either kit |
+| `link` | `link.key` differs (the link command with the kit's folder written `<kit>`, plus the content of every kit library and runtime object it names), or an object is newer than the game. A kit whose runtime libraries changed always relinks. The link must name exactly one `guest_layout_record` object with a layout-record kit (the install's, from the object list) and none with another kit, or the install stops before linking; a failed or cancelled link leaves the previous game in place and removes `link.key` |
 | `movies` | `movies/done.txt` is missing/invalid or the complete containers in `shaders/input/runtime/` number fewer than `movie_shaders`. A rerun resumes a short capture; it retries a failed rebuild before committing the marker. Required run-time translations are checked even on cached installs |
 
 So an update whose only change is the runtime (the usual case) redoes `link` and nothing else (a minute or two); a fixed
@@ -181,6 +182,10 @@ miniz's inflate and CRC-32 with our own zip directory reader; 9053 files in 15 s
 drive paths), a symbolic link, an encrypted or Zip64 archive and a bad CRC-32 or size; the archive's SHA-256 is checked
 first, as before. [V] `ArkeyanToolchainFetchTest` (invented archives, every refusal; with `SKY_LLVM_ZIP=<the real zip>` also the
 real one). macOS and Linux are unchanged (Linux below).
+The extracted folder (and the finished download) is moved into place by `MoveIntoPlace`: an antivirus that is still
+scanning the new files makes Windows refuse the rename ("Access is denied", a tester's Trap Team install, 2026-11-12), so it
+tries again for about ten seconds, then copies and deletes; if that fails too, the install stops with "another program,
+often the antivirus, keeps its files open; press Retry in a minute" [?] (not reproduced on a Windows PC yet).
 
 ## Linux: the compiler
 
@@ -235,9 +240,18 @@ Arkeyan-Builder's output or XenonRecomp on `games/<id>/config/`; the runtime is 
 for every game), `games/<id>/game.txt` whose hashes `games/<id>/info.cpp` accepts, and for Windows llvm-mingw 20260922
 and the minimal FFmpeg. The kit's version is `version=` in `make_kit.sh`; `kit.txt`
 gets `platform`, `version`, `build`, `games`, `zig` (Linux) or `llvm_mingw` (Windows and macOS),
-`game_version.<id>` and `ppc_config_sha256.<id>` per game and one `ppc_context_sha256`. `linux` runs in Docker on any host: it builds the image `ssarecomp-kit-linux` from `tools/linux/kit.Dockerfile` (Ubuntu
+`game_version.<id>` and `ppc_config_sha256.<id>` per game and one `ppc_context_sha256`. `KIT_LAYOUT_RECORD=1` (#72, off by
+default) builds a format-2 kit from public sources only: the runtimes compiled with `ARKEYAN_LAYOUT_RECORD`, without a
+record object, against the headers `tools/abi/headers.py` emits (`build-kit-abi/<id>/`); no `private/<id>/ppc`, no
+disc variable, no `fingerprints.txt`; `share/guest_layout.h`, `kit_format=2`, `layout_record=1` and the ABI ids
+`abi.context`, `abi.policy.<id>` ([kit_contract.md](../release/launcher/kit_contract.md)). It runs from a checkout with no
+`private/`: `KIT_DEPS=<folder>` holds llvm-mingw (`toolchains/`), the FFmpeg prefixes and source (`ffmpeg/`); the Linux
+container mounts it, and `KIT_SCAN_WORDS`, when they are outside the checkout. `KIT_HEADERS_FROM_PRIVATE=1` builds the
+same kit against `private/<id>/ppc` (the parity gate only): `python3 -I tools/tree_parity.py <that kit> <public kit>
+--rules tools/parity/public.rules` must find every file identical. Compare a record kit with the default kit with
+`--rules tools/parity/kit.rules`, and two installs of one disc with `tools/parity/install.rules`. `linux` runs in Docker on any host: it builds the image `ssarecomp-kit-linux` from `tools/linux/kit.Dockerfile` (Ubuntu
 24.04, amd64, the -dev headers SDL's configure looks for, zig 0.17.0 checked by SHA-256) and runs the same script in it
-with the checkout mounted at `/src`; FFmpeg goes to `private/ffmpeg/linux-x64` (`tools/ffmpeg/build.sh linux-x64`).
+with the checkout mounted at `/src`; FFmpeg goes to `$KIT_DEPS/ffmpeg/linux-x64` (`tools/ffmpeg/build.sh linux-x64`).
 `tools/linux/kit_test.sh` runs a kit on a player's machine (`tools/linux/player.Dockerfile`: Ubuntu 22.04 or Arch with
 no compiler) from the disc to `@done`, then optionally the game offscreen. Every
 compile maps the checkout path to `.` (`-ffile-prefix-map`), binaries and libraries are stripped, and

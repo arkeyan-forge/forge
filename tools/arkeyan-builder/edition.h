@@ -4,6 +4,7 @@
 #include "fingerprint.h"
 #include "game_config.h"
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -48,8 +49,13 @@ namespace skybuild
     };
     EditionMatch MatchEdition(const DiscEdition& edition, const std::vector<Game>& games);
 
+    // Optional address diagnostics for other game code. No result without readable references or loaded code.
+    std::optional<std::vector<fingerprint::Found>> FindEditionAddresses(
+        const fingerprint::Code& code, const std::filesystem::path& references);
+
     // The text the player pastes (ends with a newline). `tools`: "Arkeyan-Builder 0.9.5". `found`: where the disc has
-    // the addresses of the game's addresses.h, when its code differs and the kit has their fingerprints.
+    // the addresses of the game's addresses.h, when its code differs and references are available. Null or empty:
+    // address matching is unavailable; identification and support decisions do not depend on these diagnostics.
     std::string EditionReport(const DiscEdition& edition, const std::vector<Game>& games, const std::string& tools,
         const std::vector<fingerprint::Found>* found = nullptr);
 }

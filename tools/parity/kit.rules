@@ -1,0 +1,16 @@
+# The parity gate's kit comparison (docs/release/launcher/kits_without_disc.md): a kit built the old way (headers and
+# fingerprints from the discs) against one built from public sources, same commit and target.
+#   python3 -I tools/tree_parity.py <old kit> <new kit> --rules tools/parity/kit.rules
+# Every path not listed must be byte-identical. Add a line here only with the step that makes the difference.
+config/*/fingerprints.txt   gone     the kit ships no edition fingerprints (step 5)
+# A KIT_LAYOUT_RECORD=1 kit: kit_format=2, the public ABI ids (abi.context, abi.policy.<id>) instead of the two header
+# hashes (step 4), and layout_record, the record version Arkeyan-Builder writes (step 3)
+kit.txt                     keys     ppc_config_sha256.*,ppc_context_sha256,kit_format,abi.*,layout_record
+# Step 3: the runtime reads the code layout from the install's record (ARKEYAN_LAYOUT_RECORD): its three consumers
+share/guest_layout.h                      added    the record's declaration, for the source the install writes
+lib/*/runtime/guest_layout.cpp.o          added    the record's checks and the active layout
+lib/*/runtime/loader.cpp.o                differs  LoadXex checks the record and activates the layout
+lib/*/runtime/kernel_memory.cpp.o         differs  image bounds from the active layout
+lib/*/runtime/indirect_call_guard.cpp.o   differs  code range and lookup from the active layout
+commands/*/link.args                      differs  names guest_layout.cpp.o; the record is one of ${OBJECTS}
+files.sha256                differs  lists the files above

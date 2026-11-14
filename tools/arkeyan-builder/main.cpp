@@ -8,7 +8,8 @@
 // Steps: the compiler (llvm-mingw on Windows, zig's clang on Linux: downloaded and checked; Xcode's clang on macOS),
 // the disc's files
 // (default.xex, its loaded image, the shader archives), the game code (XenonRecomp, a separate program of the kit), the
-// shaders (XenosRecomp, likewise), compiling and linking against the kit's prebuilt runtime, then a short headless run
+// shaders (XenosRecomp, likewise), the code layout record (a kit with layout_record=), compiling and linking against
+// the kit's prebuilt runtime, then a short headless run
 // of the new game that saves the shaders it builds at run time (Bink movies) and a rebuild of the shader cache with
 // them. Work files stay in <game dir>/arkeyan-work (or its existing ssabuild-work), so a rerun only redoes what changed.
 #include "host/collection/datadir.h"
@@ -18,6 +19,7 @@
 #include "game_icon.h"
 #include "game_config.h"
 #include "edition.h"
+#include "guest_layout.h"
 #include "install_guard.h"
 #include "host/art/game_art.h"
 #include "hd_textures.h"
@@ -35,6 +37,7 @@
 #include <image.h>
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -124,6 +127,31 @@ namespace
     };
 
     [[noreturn]] void Fail(const std::string& message) { throw Failure{ message }; }
+
+    // Moves a freshly written file or folder into place. On Windows an antivirus (Defender) opens new files to scan them,
+    // and a rename of a folder whose files are open fails with "Access is denied" until it lets go: try again for about
+    // ten seconds, then copy and delete instead (a tester's compiler extraction, 2026-11-12).
+    void MoveIntoPlace(const fs::path& from, const fs::path& to)
+    {
+        std::error_code error;
+        for (int attempt = 0; attempt < 40; attempt++)
+        {
+            fs::rename(from, to, error);
+            if (!error)
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        }
+        const std::string renameError = error.message();
+        fs::remove_all(to, error);
+        fs::copy(from, to, fs::copy_options::recursive, error);
+        if (error)
+        {
+            fs::remove_all(to, error);
+            Fail("could not move " + Slashes(from.filename()) + " into place (" + renameError +
+                 "): another program, often the antivirus, keeps its files open; press Retry in a minute");
+        }
+        fs::remove_all(from, error);
+    }
 
     std::string ReadText(const fs::path& path)
     {
@@ -347,7 +375,7 @@ namespace
                      "): check the internet connection" + (result == -1 ? " (no curl or wget found)" : ""));
             }
 #endif
-            fs::rename(part, archive);
+            MoveIntoPlace(part, archive);
         }
         Log("checking " + Slashes(archive.filename()));
         std::string sha = Sha256File(archive);
@@ -378,7 +406,7 @@ namespace
             Fail("could not extract " + Slashes(archive));
         }
 #endif
-        fs::rename(staging / Compiler.folder, root);
+        MoveIntoPlace(staging / Compiler.folder, root);
         fs::remove_all(staging);
         WriteText(ready, std::string(Compiler.sha256) + "\n");
         std::error_code error;
@@ -551,16 +579,11 @@ namespace
         if (!edition)
             Fail(error);
         std::string tools = "Arkeyan-Builder " + (build.kit.count("version") ? build.kit["version"] : std::string("?"));
-        // Other game code: where its functions are, by the fingerprints the kit has of the supported release's.
+        // Other game code: optional address diagnostics from supported-release references, when available.
         std::optional<std::vector<fingerprint::Found>> found;
         const EditionMatch match = MatchEdition(*edition, games);
         if (match.game != nullptr && match.sameXex < 0 && match.sameImage < 0 && !code.words.empty())
-        {
-            auto prints =
-                fingerprint::Read(ReadText(build.options.kit / "config" / match.game->id / "fingerprints.txt"));
-            if (!prints.empty())
-                found = fingerprint::Find(code, prints);
-        }
+            found = FindEditionAddresses(code, build.options.kit / "config" / match.game->id / "fingerprints.txt");
         fputs(EditionReport(*edition, games, tools, found ? &*found : nullptr).c_str(), stdout);
         fflush(stdout);
         return 0;
@@ -731,6 +754,103 @@ namespace
         WriteText(stamp, expected);
     }
 
+    // --- kit format ------------------------------------------------------------------------------------------------
+
+    // kit.txt's kit_format= (#72, docs/release/launcher/kit_contract.md). None: a kit whose runtimes were compiled
+    // against the headers XenonRecomp wrote for our own discs (ppc_config_sha256.<id>, ppc_context_sha256). 2: runtimes
+    // compiled from public sources (tools/abi): the ABI ids of those headers (abi.context, abi.policy.<id>) and a code
+    // layout record the install writes (layout_record=).
+    bool PublicAbiKit(const Build& build) { return build.kit.count("kit_format") != 0; }
+
+    // A kit.txt value, empty when the key is missing.
+    std::string KitValue(const Build& build, const std::string& key)
+    {
+        auto found = build.kit.find(key);
+        return found == build.kit.end() ? std::string() : found->second;
+    }
+
+    bool Sha256Like(const std::string& text)
+    {
+        return text.size() == 64 && text.find_first_not_of("0123456789abcdef") == std::string::npos;
+    }
+
+    // Refuses a kit this Arkeyan-Builder cannot check, before any step.
+    void CheckKitFormat(const Build& build)
+    {
+        if (!PublicAbiKit(build))
+        {
+            if (build.kit.count("layout_record"))
+                Fail("this kit has a code layout record but no kit_format=: update the game tools");
+            return;
+        }
+        if (KitValue(build, "kit_format") != "2")
+            Fail("this kit's format (" + KitValue(build, "kit_format") +
+                 ") is not one this Arkeyan-Builder knows: update the game tools");
+        if (!build.kit.count("layout_record"))
+            Fail("this kit (format 2) has no layout_record=: update the game tools");
+        std::vector<std::string> keys = { "abi.context" };
+        std::stringstream games(KitValue(build, "games"));
+        for (std::string id; std::getline(games, id, ',');)
+            if (!id.empty())
+                keys.push_back("abi.policy." + id);
+        for (const std::string& key : keys)
+            if (!Sha256Like(KitValue(build, key)))
+                Fail("this kit has no valid " + key + "=: update the game tools");
+    }
+
+    // The policy macros of a generated ppc_config.h, as tools/abi/headers.py compares them: every
+    // "#define PPC_CONFIG_<NAME>" line (up to its end of line), in order, each followed by a newline.
+    std::string PolicyLines(const std::string& config)
+    {
+        std::string lines;
+        std::stringstream text(config);
+        for (std::string line; std::getline(text, line);)
+        {
+            line = line.substr(0, line.find('\r'));
+            size_t at = line.find_first_not_of(" \t");
+            if (at == std::string::npos || line[at] != '#')
+                continue;
+            at = line.find_first_not_of(" \t", at + 1);
+            if (at == std::string::npos || line.compare(at, 6, "define") != 0)
+                continue;
+            size_t name = line.find_first_not_of(" \t", at + 6);
+            if (name == std::string::npos || name == at + 6 || line.compare(name, 11, "PPC_CONFIG_") != 0)
+                continue;
+            size_t end = line.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_", name + 11);
+            if (end == name + 11 ||
+                (end != std::string::npos && (isalnum((unsigned char)line[end]) || line[end] == '_')))
+                continue;
+            lines += line + "\n";
+        }
+        return lines;
+    }
+
+    // Which header of a translation (ppc/) does not carry a format-2 kit's ABI; empty if both do.
+    std::string AbiMismatch(const Build& build, const fs::path& ppc)
+    {
+        if (!fs::is_regular_file(ppc / "ppc_config.h") ||
+            Sha256Text(PolicyLines(ReadText(ppc / "ppc_config.h"))) != KitValue(build, "abi.policy." + build.game.id))
+            return "ppc_config.h";
+        if (!fs::is_regular_file(ppc / "ppc_context.h") ||
+            Sha256File(ppc / "ppc_context.h") != KitValue(build, "abi.context"))
+            return "ppc_context.h";
+        return {};
+    }
+
+    // The kit's part of the translation's stamp. A legacy kit: its two header hashes. A format-2 kit: the SHA-256s of
+    // the translated headers once they carry its ABI, the very values a legacy kit had checked them against, so moving
+    // an install to this format translates nothing again; "abi" (never stamped) while they do not.
+    std::string KitStamp(const Build& build, const fs::path& ppc)
+    {
+        if (!PublicAbiKit(build))
+            return "\nkit_config=" + KitValue(build, "ppc_config_sha256." + build.game.id) +
+                   "\nkit_context=" + KitValue(build, "ppc_context_sha256") + "\n";
+        if (!AbiMismatch(build, ppc).empty())
+            return "\nkit_config=abi\nkit_context=abi\n";
+        return "\nkit_config=" + Sha256File(ppc / "ppc_config.h") +
+               "\nkit_context=" + Sha256File(ppc / "ppc_context.h") + "\n";
+    }
+
     // --- game code -------------------------------------------------------------------------------------------------
 
     void TranslateCode(Build& build)
@@ -747,11 +867,10 @@ namespace
         std::string config;
         for (const auto& [name, sha] : files)
             config += name + "=" + sha + ",";
-        std::string expected = DiscStamp(build) + "config=" + Sha256Text(config) + "\ntranslator=" +
-                               Sha256File(build.options.kit / "bin" / (std::string("XenonRecomp") + Exe)) +
-                               "\ncontext=" + Sha256File(build.options.kit / "share" / "ppc_context.h") +
-                               "\nkit_config=" + build.kit["ppc_config_sha256." + build.game.id] +
-                               "\nkit_context=" + build.kit["ppc_context_sha256"] + "\n";
+        const std::string base = DiscStamp(build) + "config=" + Sha256Text(config) + "\ntranslator=" +
+                                 Sha256File(build.options.kit / "bin" / (std::string("XenonRecomp") + Exe)) +
+                                 "\ncontext=" + Sha256File(build.options.kit / "share" / "ppc_context.h");
+        const std::string expected = base + KitStamp(build, ppc);
         if (ReadText(stamp) == expected)
         {
             Log("up to date");
@@ -786,9 +905,16 @@ namespace
             Fail("XenonRecomp failed (exit code " + std::to_string(result) + ")");
         }
 
-        // The kit's runtime was compiled against these two headers: another disc version would not match it.
+        // The kit's runtime was compiled against these two headers (a format-2 kit: their public policy and context):
+        // another disc version would not match it.
+        std::string mismatch = PublicAbiKit(build) ? AbiMismatch(build, xenon / "ppc") : std::string();
+        if (!mismatch.empty())
+            Fail("this disc does not match the kit (" + mismatch + " differs): the kit's " + build.game.name +
+                 " runtime was built for another version of the game");
         for (const char* header : { "ppc_config.h", "ppc_context.h" })
         {
+            if (PublicAbiKit(build))
+                break;
             std::string key =
                 std::string(header) == "ppc_config.h" ? "ppc_config_sha256." + build.game.id : "ppc_context_sha256";
             if (Sha256File(xenon / "ppc" / header) != build.kit[key])
@@ -806,7 +932,116 @@ namespace
         }
         fs::remove_all(xenon);
         Log(std::to_string(count) + " files, " + std::to_string(changed) + " changed");
+        WriteText(stamp, base + KitStamp(build, ppc));
+    }
+
+    // --- code layout record ---------------------------------------------------------------------------------------
+
+    // A kit with layout_record= (#72, docs/release/launcher/kits_without_disc.md) has runtimes built with
+    // ARKEYAN_LAYOUT_RECORD and no record: the install writes one (runtime/guest_layout.h), which LoadXex checks.
+    bool LayoutRecordKit(const Build& build) { return build.kit.count("layout_record") != 0; }
+
+    const char* const LayoutRecordName = "guest_layout_record";
+
+    // The four bounds XenonRecomp writes to ppc_config.h ("#define PPC_IMAGE_BASE 0x82000000ull"); false if one is
+    // missing or malformed.
+    bool GeneratedLayout(const std::string& config, GuestLayout& layout)
+    {
+        const std::pair<const char*, uint32_t*> fields[] = { { "PPC_IMAGE_BASE", &layout.imageBase },
+            { "PPC_IMAGE_SIZE", &layout.imageSize }, { "PPC_CODE_BASE", &layout.codeBase },
+            { "PPC_CODE_SIZE", &layout.codeSize } };
+        for (const auto& [name, value] : fields)
+        {
+            const std::string prefix = std::string("\n#define ") + name + " 0x";
+            size_t at = config.find(prefix);
+            if (at == std::string::npos || config.find(prefix, at + 1) != std::string::npos)
+                return false;
+            const char* begin = config.data() + at + prefix.size();
+            const char* end = config.data() + config.size();
+            uint64_t parsed = 0;
+            auto result = std::from_chars(begin, end, parsed, 16);
+            if (result.ec != std::errc{} || parsed > UINT32_MAX ||
+                std::string_view(result.ptr, end - result.ptr).rfind("ull\n", 0) != 0)
+                return false;
+            *value = uint32_t(parsed);
+        }
+        return true;
+    }
+
+    // Checks the bounds of the generated ppc_config.h against the executable the code was translated from (`parsed`,
+    // its code range the envelope of its code sections, as XenonRecomp computes it) and writes layout/: the record's
+    // source, which includes only guest_layout.h, and a copy of the kit's guest_layout.h.
+    void WriteLayoutRecord(const Build& build, const GuestLayout& parsed, const std::string& imageSha256)
+    {
+        GuestLayout generated;
+        if (!GeneratedLayout(ReadText(build.work / "ppc" / "ppc_config.h"), generated))
+            Fail("the translated game code has no code layout (ppc_config.h): translate it again");
+        if (!(generated == parsed))
+            Fail("the translated game code does not match this disc's executable (code layout): translate it again");
+        GuestLayoutRecord record{ GuestLayoutVersion, generated, {} };
+        if (imageSha256.size() != 64 || imageSha256.find_first_not_of("0123456789abcdef") != std::string::npos)
+            Fail("no SHA-256 of the executable's image for the code layout record");
+        memcpy(record.imageSha256, imageSha256.data(), 64);
+        std::string problem = CheckGuestLayout(record, parsed, imageSha256);
+        if (!problem.empty())
+            Fail("this game's code layout cannot be used: " + problem);
+
+        fs::path dir = build.work / "layout";
+        fs::create_directories(dir);
+        CopyIfDifferent(build.options.kit / "share" / "guest_layout.h", dir / "guest_layout.h");
+        char text[512];
+        snprintf(text, sizeof(text),
+            "// Written by Arkeyan-Builder: the code layout of this install's translated code "
+            "(runtime/guest_layout.h).\n"
+            "#include \"guest_layout.h\"\n\n"
+            "const GuestLayoutRecord g_guestLayoutRecord = { %u, { 0x%08X, 0x%X, 0x%08X, 0x%X }, \"%s\" };\n",
+            record.version, generated.imageBase, generated.imageSize, generated.codeBase, generated.codeSize,
+            record.imageSha256);
+        fs::path source = dir / (std::string(LayoutRecordName) + ".cpp");
+        if (ReadText(source) != text)
+            WriteText(source, text);
+    }
+
+    // Writes the record after the translation, when the disc, the translation or the kit's header changed. Part of the
+    // recompile step for the launcher (no @step of its own: its checklist shows every step id as a row).
+    void LayoutRecord(Build& build)
+    {
+        if (!LayoutRecordKit(build))
+            return;
+        const std::string version = build.kit.at("layout_record");
+        if (version != std::to_string(GuestLayoutVersion))
+            Fail("this kit's code layout record (version " + version +
+                 ") is not the one this Arkeyan-Builder writes (" + std::to_string(GuestLayoutVersion) +
+                 "): update the game tools");
+        fs::path header = build.options.kit / "share" / "guest_layout.h";
+        if (!fs::is_regular_file(header))
+            Fail("the kit has no share/guest_layout.h: update the game tools");
+        fs::path dir = build.work / "layout";
+        fs::path stamp = dir / "stamp.txt";
+        fs::path source = dir / (std::string(LayoutRecordName) + ".cpp");
+        std::string expected = DiscStamp(build) + "config=" + Sha256File(build.work / "ppc" / "ppc_config.h") +
+                               "\nheader=" + Sha256File(header) + "\nrecord=" + version + "\n";
+        if (ReadText(stamp) == expected && fs::exists(source) && fs::exists(dir / "guest_layout.h"))
+        {
+            Log("code layout record: up to date");
+            return;
+        }
+        std::error_code error;
+        fs::remove(stamp, error);
+
+        std::string bytes = ReadText(build.work / "disc" / "default.xex");
+        std::vector<uint8_t> xex(bytes.begin(), bytes.end());
+        Image image = XexImageReadable(xex) ? Image::ParseImage(xex.data(), xex.size()) : Image{};
+        if (image.data == nullptr)
+            Fail("cannot read the disc's executable for the code layout record");
+        std::vector<GuestSection> sections;
+        for (const Section& section : image.sections)
+            sections.push_back({ uint32_t(section.base), section.size, (section.flags & SectionFlags_Code) != 0 });
+        WriteLayoutRecord(build, ParsedGuestLayout(uint32_t(image.base), image.size, sections),
+            Sha256Bytes(image.data.get(), image.size));
+        fs::create_directories(dir);
         WriteText(stamp, expected);
+        Log("code layout record: checked against the executable, written");
     }
 
     // --- shaders ---------------------------------------------------------------------------------------------------
@@ -980,6 +1215,8 @@ namespace
         for (const auto& entry : fs::directory_iterator(build.work / "ppc"))
             if (entry.path().extension() == ".cpp")
                 objects.push_back("obj/" + Slashes(entry.path().stem()) + ".o");
+        if (LayoutRecordKit(build))
+            objects.push_back("obj/" + std::string(LayoutRecordName) + ".o");
         std::sort(objects.begin(), objects.end());
         return objects;
     }
@@ -1007,6 +1244,14 @@ namespace
         std::string headers = "include=" + ContentDigest(build.options.kit / "include") + "\n";
         for (const auto& [name, sha] : headerFiles)
             headers += name + "=" + sha + "\n";
+        // The layout record (LayoutRecord): the game code's recipe, its own key with the header it includes.
+        fs::path record = build.work / "layout" / (std::string(LayoutRecordName) + ".cpp");
+        if (LayoutRecordKit(build))
+        {
+            if (!fs::is_regular_file(record))
+                Fail("no code layout record to compile: run the install again");
+            sources.push_back(record);
+        }
 
         struct Job
         {
@@ -1022,13 +1267,17 @@ namespace
             std::string name = Slashes(source.stem());
             bool cache = name == "shader_cache";
             // The shader cache is compiled from a copy with its bytes as string literals (shader_cache_literals.h).
-            build.vars["SRC"] = cache ? "obj/shader_cache_literals.cpp" : "ppc/" + Slashes(source.filename());
+            build.vars["SRC"] = cache ? "obj/shader_cache_literals.cpp"
+                                      : (source == record ? "layout/" : "ppc/") + Slashes(source.filename());
             build.vars["OBJ"] = "obj/" + name + ".o";
             std::vector<std::string> args = ExpandTemplate(build, cache ? "shader_cache.args" : "compile.args", {});
             fs::path rsp = obj / (name + ".rsp");
             fs::path keyFile = obj / (name + ".key");
             fs::path object = obj / (name + ".o");
-            std::string key = Sha256Text(CommandText(build, args) + headers);
+            std::string key = CommandText(build, args) + headers;
+            if (source == record)
+                key += "layout=" + Sha256File(record.parent_path() / "guest_layout.h") + "\n";
+            key = Sha256Text(key);
             args = WithResponseFile(args, rsp);
             bool fresh = ReadText(keyFile) == key && fs::exists(object) && TimeOf(object) >= TimeOf(source);
             if (!fresh)
@@ -1270,6 +1519,14 @@ namespace
             objects.push_back(ExecutableResources(build));
         // The link is fresh when its command (the kit's folder aside) and the content of the kit's libraries are the same.
         std::vector<std::string> command = ExpandTemplate(build, "link.args", objects);
+        // One code layout record in a layout-record kit's link (the install's), none in another: the runtime would not
+        // start with the wrong one, and the linker might not refuse a second one.
+        size_t records = std::count_if(command.begin(), command.end(), [](const std::string& arg) {
+            return fs::path(PathFromUtf8(arg.c_str())).filename().string().rfind(LayoutRecordName, 0) == 0;
+        });
+        if (records != (LayoutRecordKit(build) ? 1u : 0u))
+            Fail("the game's link has " + std::to_string(records) + " code layout records, not " +
+                 (LayoutRecordKit(build) ? "1" : "0") + ": update the game tools");
         std::string key = CommandText(build, command);
         const std::string kitPrefix = Slashes(build.options.kit);
         for (const std::string& arg : command)
@@ -1710,6 +1967,7 @@ int main(int argc, char** argv)
             return EditionReportCommand(build);
         if (build.kit.empty())
             Fail("no kit at " + Slashes(options.kit) + " (kit.txt is missing)");
+        CheckKitFormat(build);
         build.platform = build.kit["platform"];
         build.macos = build.platform.rfind("macos", 0) == 0;
 #if defined(_WIN32)
@@ -1778,6 +2036,7 @@ int main(int argc, char** argv)
         PrepareToolchain(build);
         ReadDisc(build);
         TranslateCode(build);
+        LayoutRecord(build);
         TranslateShaders(build);
         Compile(build);
         Link(build);

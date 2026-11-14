@@ -2,6 +2,7 @@
 /private/
 /build/
 /build-*/
+/.scratch/
 /dist/
 .DS_Store
 /.cache/

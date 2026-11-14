@@ -1,4 +1,5 @@
 #include "game.h"
+#include "host/collection/presence.h"
 #include "host/toybox.h"
 #include <algorithm>
 #include <atomic>
@@ -58,6 +59,7 @@ void game::LevelStarted(std::string_view name)
     g_level = name;
     const auto& menus = Current().menuLevels;
     g_inMenuLevel = std::find(menus.begin(), menus.end(), name) != menus.end();
+    presence::LevelStarted(name, g_inMenuLevel);
     fprintf(stderr, "[level] %.*s starts\n", int(name.size()), name.data());
     ToyboxLevelStarted();
 }

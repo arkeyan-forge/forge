@@ -9,14 +9,22 @@
 #
 #   tools/make_kit.sh [windows] [macos] [linux]        (default: windows and macos)
 #   KIT_GAMES="ssa" tools/make_kit.sh macos            (a kit of some games only; default: the six games)
+#   KIT_LAYOUT_RECORD=1 tools/make_kit.sh macos        (#72, opt-in: kit_format=2, built from public sources only)
 #
-# Needs a checkout with submodules, private/<game>/ppc/ppc_config.h and ppc_context.h of every game (SSA: tools/prepare_game.sh;
-# Giants, Swap Force, Trap Team: Arkeyan-Builder's output, docs/release/launcher/kit_contract.md; the runtime is
-# compiled against these two headers: the memory layout constants and XenonRecomp's context; no game code), and for
-# Windows llvm-mingw 20260922 (LLVM_MINGW_ROOT or private/toolchains, as tools/build_windows.sh) and the minimal LGPL
-# FFmpeg (FFMPEG_WINDOWS, else private/ffmpeg/windows-x64, built when missing). The Linux kit is built in Docker
-# (tools/linux/kit.Dockerfile, amd64: zig's clang for glibc 2.34, the compiler the player's Arkeyan-Builder downloads); its
-# FFmpeg goes to private/ffmpeg/linux-x64. JOBS (default 6) sets the parallelism.
+# The default kit needs private/<game>/ppc/ppc_config.h and ppc_context.h of every game (SSA: tools/prepare_game.sh;
+# the others: Arkeyan-Builder's output, docs/release/launcher/kit_contract.md; the runtime is compiled against these two
+# headers: the memory layout constants and XenonRecomp's context; no game code), and refreshes the edition fingerprints
+# from the discs (SSA_ISO...). A KIT_LAYOUT_RECORD=1 kit (docs/release/launcher/kits_without_disc.md, step 4) reads
+# neither: its runtimes are compiled against the headers tools/abi/headers.py emits from public sources, they read the
+# code layout from the record Arkeyan-Builder writes at install, and kit.txt carries the headers' ABI ids; no disc, no
+# private/<game>/, no fingerprints. KIT_HEADERS_FROM_PRIVATE=1 compiles such a kit against private/<game>/ppc instead,
+# for the parity gate only (tools/parity/public.rules).
+# Every kit needs submodules and, for Windows (and the licence of every kit but Linux's), llvm-mingw 20260922
+# (LLVM_MINGW_ROOT, else $KIT_DEPS/toolchains, as tools/build_windows.sh), the minimal LGPL FFmpeg per target
+# (FFMPEG_WINDOWS, FFMPEG_MACOS, FFMPEG_LINUX, else $KIT_DEPS/ffmpeg/<target>, built when missing) and its source
+# ($KIT_DEPS/ffmpeg/work, downloaded when missing). KIT_DEPS (default private/) holds only these public downloads and
+# builds. The Linux kit is built in Docker (tools/linux/kit.Dockerfile, amd64: zig's clang for glibc 2.34, the compiler
+# the player's Arkeyan-Builder downloads), KIT_DEPS mounted. JOBS (default 6) sets the parallelism.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -25,9 +33,33 @@ platforms=${*:-windows macos}
 cd "$root"
 
 games=${KIT_GAMES:-ssa giants swapforce trapteam superchargers imaginators}
+# The code layout record (#72, docs/release/launcher/kits_without_disc.md, steps 3 and 4): off by default, the kit as
+# before. On: the runtimes' headers from public sources (headers=public), unless KIT_HEADERS_FROM_PRIVATE=1.
+case ${KIT_LAYOUT_RECORD:-0} in
+    0) layout_record=OFF ;;
+    1) layout_record=ON ;;
+    *) echo "error: KIT_LAYOUT_RECORD is 0 or 1" >&2; exit 1 ;;
+esac
+case $layout_record/${KIT_HEADERS_FROM_PRIVATE:-0} in
+    OFF/0 | ON/1) headers=private ;;
+    ON/0) headers=public ;;
+    *) echo "error: KIT_HEADERS_FROM_PRIVATE=1 goes with KIT_LAYOUT_RECORD=1" >&2; exit 1 ;;
+esac
+# The public build dependencies (llvm-mingw, FFmpeg and its source); a folder outside the checkout too.
+deps=${KIT_DEPS:-$root/private}
+abi=$root/build-kit-abi
+# Where the runtime of game $1 finds its two headers.
+ppc_headers() { if [ $headers = private ]; then echo "private/$1/ppc"; else echo "$abi/$1"; fi; }
 for g in $games; do
+    if [ $headers = public ]; then
+        # The Linux kit image has no clang++: zig's builds the host emitter there.
+        [ -x /opt/zig/zig ] && [ "$(uname -s)" = Linux ] && emit_cxx="/opt/zig/zig c++" || emit_cxx=${CXX:-clang++}
+        rm -rf "${abi:?}/$g"
+        python3 -I tools/abi/headers.py emit "$g" "$abi/$g" --cxx "$emit_cxx" > /dev/null ||
+            { echo "error: tools/abi/headers.py could not emit the $g headers" >&2; exit 1; }
+    fi
     for header in ppc_config.h ppc_context.h; do
-        [ -f "private/$g/ppc/$header" ] || { echo "error: no private/$g/ppc/$header: translate the $g disc once (docs/release/launcher/kit_contract.md)" >&2; exit 1; }
+        [ -f "$(ppc_headers $g)/$header" ] || { echo "error: no $(ppc_headers $g)/$header: translate the $g disc once (docs/release/launcher/kit_contract.md)" >&2; exit 1; }
     done
     # The player's game folder gets this game's config, hashes and name from games/<g>/game.txt; its hashes must be the
     # ones the runtime's disc check (games/<g>/info.cpp) accepts.
@@ -45,8 +77,8 @@ done
 # One XenonRecomp context for the kit: the player's XenonRecomp writes the same ppc_context.h for every game.
 first=${games%% *}
 for g in $games; do
-    cmp -s "private/$g/ppc/ppc_context.h" "private/$first/ppc/ppc_context.h" ||
-        { echo "error: private/$g/ppc/ppc_context.h differs from $first's: translate the discs again with one XenonRecomp" >&2; exit 1; }
+    cmp -s "$(ppc_headers $g)/ppc_context.h" "$(ppc_headers $first)/ppc_context.h" ||
+        { echo "error: $(ppc_headers $g)/ppc_context.h differs from $first's: translate the discs again with one XenonRecomp" >&2; exit 1; }
 done
 # The kit has its own version: the one Skylauncher expects (docs/release/launcher/kit_contract.md).
 version=0.9.6
@@ -58,20 +90,21 @@ maps="-ffile-prefix-map=$root=. -fmacro-prefix-map=$root=. -fdebug-prefix-map=$r
 revision=$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- . || echo -dirty)
 
 # Configures <build>/runtime against a game-free ppc directory (the two headers, empty sources) and builds every
-# input of ArkeyanRuntime's link but the game code and shader cache libraries.
+# input of ArkeyanRuntime's link but the game code and shader cache libraries, and the code layout record (the
+# player's install writes its own).
 build_runtime() { # <build dir> <game> <cmake args...>: <build dir>/<game>/runtime and /stub-ppc
     rb=$1/$2
     game=$2
     shift 2
     mkdir -p "$rb/stub-ppc"
-    cp "private/$game/ppc/ppc_config.h" "private/$game/ppc/ppc_context.h" "$rb/stub-ppc/"
+    cp "$(ppc_headers $game)/ppc_config.h" "$(ppc_headers $game)/ppc_context.h" "$rb/stub-ppc/"
     : > "$rb/stub-ppc/ppc_func_mapping.cpp"
     : > "$rb/stub-ppc/shader_cache.cpp"
     cmake -S . -B "$rb/runtime" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG $maps" \
-        -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG $maps" -DARKEYAN_KIT_BUILD=ON -DARKEYAN_GAME="$game" -DARKEYAN_PPC_DIR="$root/$rb/stub-ppc" "$@" > "$rb/runtime-cmake.log" 2>&1 ||
+        -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG $maps" -DARKEYAN_KIT_BUILD=ON -DARKEYAN_GAME="$game" -DARKEYAN_PPC_DIR="$root/$rb/stub-ppc" -DARKEYAN_LAYOUT_RECORD=$layout_record "$@" > "$rb/runtime-cmake.log" 2>&1 ||
         { tail -20 "$rb/runtime-cmake.log"; exit 1; }
     ninja -C "$rb/runtime" -t commands ArkeyanRuntime | tail -1 | tr ' ' '\n' | grep -E '\.(obj|o|res|a)$' |
-        grep -v -E '^[-/]' | grep -v -E 'libArkeyanRecompLib|libArkeyanShaderCache' | sort -u |
+        grep -v -E '^[-/]' | grep -v -E 'libArkeyanRecompLib|libArkeyanShaderCache|guest_layout_record' | sort -u |
         (cd "$rb/runtime" && xargs nice ninja -j"$jobs") > "$rb/runtime-build.log" 2>&1 ||
         { tail -30 "$rb/runtime-build.log"; exit 1; }
 }
@@ -99,7 +132,7 @@ build_tools() { # <build dir> <extra C++ flags for XenosRecomp> <cmake args...>
         > "$b/tools-cmake.log" 2>&1 || { tail -20 "$b/tools-cmake.log"; exit 1; }
     nice ninja -C "$b/tools" -j"$jobs" Arkeyan-Builder XenonRecomp > "$b/tools-build.log" 2>&1 ||
         { tail -30 "$b/tools-build.log"; exit 1; }
-    cmake -S thirdparty/XenosRecomp -B "$b/xenos" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS_RELEASE=-O2 \
+    cmake -S thirdparty/XenosRecomp -B "$b/xenos" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS_RELEASE=-O2 -DCMAKE_SKIP_BUILD_RPATH=ON \
         -DCMAKE_C_FLAGS_RELEASE=-O2 -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS="$maps ${tool_flags:-}" -DCMAKE_CXX_FLAGS="$xenos_flags $maps ${tool_flags:-}" "$@" \
         ${xenos_link:+-DCMAKE_EXE_LINKER_FLAGS="$xenos_link"} > "$b/xenos-cmake.log" 2>&1 || { tail -20 "$b/xenos-cmake.log"; exit 1; }
     nice ninja -C "$b/xenos" -j"$jobs" XenosRecomp > "$b/xenos-build.log" 2>&1 || { tail -30 "$b/xenos-build.log"; exit 1; }
@@ -114,10 +147,14 @@ assemble() { # <build dir> <kit dir> <platform>
         mkdir -p "$kit/config/$g"
         cp games/$g/config/* "$kit/config/$g/"
         cp "games/$g/game.txt" "$kit/config/$g/game.txt"
-        [ ! -f "private/editions/$g.txt" ] || cp "private/editions/$g.txt" "$kit/config/$g/fingerprints.txt"
+        # A KIT_LAYOUT_RECORD=1 kit ships none (kits_without_disc.md, step 5).
+        [ $layout_record = ON ] || [ ! -f "private/editions/$g.txt" ] || cp "private/editions/$g.txt" "$kit/config/$g/fingerprints.txt"
     done
     cp thirdparty/XenonRecomp/XenonUtils/ppc_context.h thirdparty/XenosRecomp/XenosRecomp/shader_common.h "$kit/share/"
     cp ArkeyanRecompLib/indirect_call_guard.h runtime/gpu/shader_cache.h "$kit/include/"
+    # The record's declaration, for the source Arkeyan-Builder writes at install. In share/, not include/: include/'s
+    # content is part of every game object's freshness key, which this header does not concern.
+    [ $layout_record = OFF ] || cp runtime/guest_layout.h "$kit/share/"
     rsync -a --exclude .git thirdparty/XenonRecomp/thirdparty/simde/ "$kit/include/simde/"
     cp -R resources/launcher/fonts "$kit/res/fonts"
     cp THIRD_PARTY_NOTICES.md "$kit/res/"
@@ -135,8 +172,8 @@ assemble() { # <build dir> <kit dir> <platform>
     cp tools/ffmpeg/build.sh "$kit/licenses/ffmpeg-build.sh"
     # The FFmpeg source as released, but for tests/ (fate reference data: not part of the library, and it holds names
     # that have no place in a kit). The build script downloads and checks the original, by its SHA-256.
-    ffsrc=private/ffmpeg/work/ffmpeg-8.1.2.tar.xz
-    [ -f "$ffsrc" ] || curl -fL --retry 3 -o "$ffsrc" https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz
+    ffsrc=$deps/ffmpeg/work/ffmpeg-8.1.2.tar.xz
+    [ -f "$ffsrc" ] || { mkdir -p "$deps/ffmpeg/work" && curl -fL --retry 3 -o "$ffsrc" https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz; }
     if tar --version 2>/dev/null | grep -q GNU; then # the Linux kit image: GNU tar has no @archive input
         xz -dc "$ffsrc" | tar --delete --wildcards 'ffmpeg-8.1.2/tests' | xz > "$kit/licenses/ffmpeg-8.1.2-without-tests.tar.xz"
     else
@@ -196,7 +233,7 @@ LIST
         sed -n '/Copyright (C) 1995/,/This notice may not be removed/p' /usr/include/zlib.h > "$c/zlib-License.txt"
         grep -q 'This software is provided' "$c/zlib-License.txt" || { echo "error: no zlib licence in zlib.h" >&2; exit 1; }
     else
-        cp "${LLVM_MINGW_ROOT:-private/toolchains/llvm-mingw-20260922-ucrt-macos-universal}/LICENSE.TXT" "$c/llvm-mingw-LICENSE.TXT"
+        cp "${LLVM_MINGW_ROOT:-$deps/toolchains/llvm-mingw-20260922-ucrt-macos-universal}/LICENSE.TXT" "$c/llvm-mingw-LICENSE.TXT"
     fi
 
     {
@@ -204,12 +241,24 @@ LIST
         echo "version=$version"
         echo "build=$revision"
         echo "games=$(echo $games | tr ' ' ',')"
+        # Format 2: public headers, their ABI ids below, and the record version Arkeyan-Builder writes
+        # (runtime/guest_layout.h, GuestLayoutVersion).
+        [ $layout_record = OFF ] || echo "kit_format=2"
+        [ $layout_record = OFF ] || echo "layout_record=$(sed -n 's/.*GuestLayoutVersion = \([0-9]*\);/\1/p' runtime/guest_layout.h)"
         if [ "$3" = linux-x64 ]; then echo "zig=$zig_version"; else echo "llvm_mingw=20260922"; fi
         for g in $games; do
             echo "game_version.$g=$(sed -n 's/^version=//p' games/$g/game.txt)"
-            echo "ppc_config_sha256.$g=$(shasum -a 256 private/$g/ppc/ppc_config.h | cut -d' ' -f1)"
+            if [ $layout_record = OFF ]; then
+                echo "ppc_config_sha256.$g=$(shasum -a 256 private/$g/ppc/ppc_config.h | cut -d' ' -f1)"
+            else
+                echo "abi.policy.$g=$(python3 -I tools/abi/headers.py ids "$(ppc_headers $g)" | sed -n 's/^policy=//p')"
+            fi
         done
-        echo "ppc_context_sha256=$(shasum -a 256 private/$first/ppc/ppc_context.h | cut -d' ' -f1)"
+        if [ $layout_record = OFF ]; then
+            echo "ppc_context_sha256=$(shasum -a 256 private/$first/ppc/ppc_context.h | cut -d' ' -f1)"
+        else
+            echo "abi.context=$(python3 -I tools/abi/headers.py ids "$(ppc_headers $first)" | sed -n 's/^context=//p')"
+        fi
     } > "$kit/kit.txt"
     sed "s/@PLATFORM@/$3/" tools/arkeyan-builder/README.txt.in > "$kit/README.txt"
 }
@@ -267,7 +316,8 @@ finish() { # <kit dir> <windows|macos|linux>
 # report of a disc of another code then lists no address.
 # Only where the discs are (the Linux kit runs this script again in a container, with neither discs nor a host
 # compiler): there the fingerprints made before, in private/editions/, go in the kit as they are.
-if [ -n "${SSA_ISO:-}${GIANTS_ISO:-}${SWAPFORCE_ISO:-}${TRAPTEAM_ISO:-}${SUPERCHARGERS_ISO:-}${IMAGINATORS_ISO:-}" ]; then
+# A KIT_LAYOUT_RECORD=1 kit ships no fingerprints: the block is skipped, the variables never read.
+if [ $layout_record = OFF ] && [ -n "${SSA_ISO:-}${GIANTS_ISO:-}${SWAPFORCE_ISO:-}${TRAPTEAM_ISO:-}${SUPERCHARGERS_ISO:-}${IMAGINATORS_ISO:-}" ]; then
     # One build folder per system: the Linux kit runs this script again in a container, on the same private/.
     host=private/build-edition-host-$(uname -s)-$(uname -m)
     cmake -S . -B "$host" -G Ninja -DCMAKE_BUILD_TYPE=Release -DARKEYAN_TOOLS_ONLY=ON > "$host.log" 2>&1 &&
@@ -292,15 +342,18 @@ fi
 for platform in $platforms; do
     case "$platform" in
     windows)
-        LLVM_MINGW_ROOT=${LLVM_MINGW_ROOT:-$root/private/toolchains/llvm-mingw-20260922-ucrt-macos-universal}
+        LLVM_MINGW_ROOT=${LLVM_MINGW_ROOT:-$deps/toolchains/llvm-mingw-20260922-ucrt-macos-universal}
         [ -x "$LLVM_MINGW_ROOT/bin/x86_64-w64-mingw32-clang" ] ||
             { echo "error: no llvm-mingw at $LLVM_MINGW_ROOT (tools/build_windows.sh downloads it)" >&2; exit 1; }
-        ffmpeg=${FFMPEG_WINDOWS:-$root/private/ffmpeg/windows-x64}
-        [ -f "$ffmpeg/lib/libavcodec.a" ] || LLVM_MINGW_ROOT=$LLVM_MINGW_ROOT JOBS=$jobs tools/ffmpeg/build.sh windows-x64 "$ffmpeg"
+        ffmpeg=${FFMPEG_WINDOWS:-$deps/ffmpeg/windows-x64}
+        [ -f "$ffmpeg/lib/libavcodec.a" ] || LLVM_MINGW_ROOT=$LLVM_MINGW_ROOT JOBS=$jobs FFMPEG_WORK=$deps/ffmpeg/work tools/ffmpeg/build.sh windows-x64 "$ffmpeg"
         b=build-kit-windows
         kit=$root/dist/skylanders-kit-windows-x64
         mkdir -p "$b"
         cross="-DCMAKE_TOOLCHAIN_FILE=$root/cmake/toolchains/x86_64-w64-mingw32-clang.cmake -DLLVM_MINGW_ROOT=$LLVM_MINGW_ROOT"
+        # A case-sensitive host (Linux, the CI): sources include <Windows.h> and <Shlwapi.h>, mingw names them in lower case.
+        # The shim's headers forward to them (CPATH: clang searches it as -I). Never on the Mac, where the names are one file.
+        [ "$(uname -s)" = Linux ] && export CPATH="$root/cmake/toolchains/mingw-case${CPATH:+:$CPATH}"
         # shellcheck disable=SC2086 # cross is several arguments
         build_runtimes "$b" $cross -DARKEYAN_FFMPEG_ROOT="$ffmpeg"
         # XenosRecomp's own details and manifest, as Arkeyan-Builder's: a bare program is what antivirus heuristics distrust.
@@ -331,10 +384,14 @@ for platform in $platforms; do
         kit=$root/dist/skylanders-kit-macos-arm64
         mkdir -p "$b"
         # One FFmpeg for every game (built once, by tools/ffmpeg/build.sh).
-        ffmpeg=${FFMPEG_MACOS:-$root/private/ffmpeg/macos-arm64}
-        [ -f "$ffmpeg/lib/libavcodec.a" ] || JOBS=$jobs tools/ffmpeg/build.sh host "$ffmpeg"
+        ffmpeg=${FFMPEG_MACOS:-$deps/ffmpeg/macos-arm64}
+        [ -f "$ffmpeg/lib/libavcodec.a" ] || JOBS=$jobs FFMPEG_WORK=$deps/ffmpeg/work tools/ffmpeg/build.sh host "$ffmpeg"
         build_runtimes "$b" -DARKEYAN_FFMPEG_ROOT="$ffmpeg"
+        # XenosRecomp finds libdxcompiler.dylib next to itself; no build rpath (into the checkout): its length would
+        # move the program's code, and the kit would depend on where the checkout is.
+        xenos_link="-Wl,-rpath,@executable_path"
         build_tools "$b" "" -DARKEYAN_FFMPEG_ROOT="$ffmpeg"
+        unset xenos_link
         rm -rf "$kit"
         mkdir -p "$kit"
         assemble "$b" "$kit" macos-arm64
@@ -348,9 +405,7 @@ for platform in $platforms; do
         cp "$b/tools/tools/arkeyan-builder/Arkeyan-Builder" "$kit/"
         cp "$b/tools/thirdparty/XenonRecomp/XenonRecomp/XenonRecomp" "$b/xenos/XenosRecomp/XenosRecomp" \
             thirdparty/XenosRecomp/thirdparty/dxc-bin/lib/arm64/libdxcompiler.dylib "$kit/bin/"
-        # XenosRecomp finds libdxcompiler.dylib next to itself (its build rpath points into the checkout).
-        install_name_tool -add_rpath @executable_path "$kit/bin/XenosRecomp"
-        # ... and no rpath may stay that names the build machine: only @-relative ones.
+        # No rpath may stay that names the build machine: only @-relative ones.
         for f in "$kit/Arkeyan-Builder" "$kit/bin/XenonRecomp" "$kit/bin/XenosRecomp"; do
             otool -l "$f" | awk '/cmd LC_RPATH/ { r = 1; next } r && $1 == "path" { print $2; r = 0 }' | grep -v '^@' |
                 while IFS= read -r rpath; do install_name_tool -delete_rpath "$rpath" "$f"; done
@@ -362,16 +417,23 @@ for platform in $platforms; do
         if [ "$(uname -s)" != Linux ]; then
             # From the Mac (or anywhere): the same script in the kit image, the checkout mounted at /src, nothing of it
             # copied into the image.
+            # KIT_DEPS and KIT_SCAN_WORDS mounted when they are outside the checkout.
+            case $deps in
+                "$root"/*) inner_deps=/src/${deps#"$root"/}; set -- ;;
+                *) inner_deps=/deps; set -- -v "$deps:/deps" ;;
+            esac
+            if [ -n "${KIT_SCAN_WORDS:-}" ]; then set -- "$@" -v "$KIT_SCAN_WORDS:/kit_scan_words.txt:ro" -e KIT_SCAN_WORDS=/kit_scan_words.txt; fi
             docker build -q --platform linux/amd64 -t ssarecomp-kit-linux -f tools/linux/kit.Dockerfile tools/linux > /dev/null
-            docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -v "$root:/src" -e JOBS="$jobs" -e KIT_GAMES="$games" -e KIT_SCAN_USER="$(id -un)" \
-                ssarecomp-kit-linux tools/make_kit.sh linux
+            docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -v "$root:/src" "$@" -e JOBS="$jobs" -e KIT_GAMES="$games" \
+                -e KIT_LAYOUT_RECORD="${KIT_LAYOUT_RECORD:-0}" -e KIT_HEADERS_FROM_PRIVATE="${KIT_HEADERS_FROM_PRIVATE:-0}" \
+                -e KIT_DEPS="$inner_deps" -e KIT_SCAN_USER="$(id -un)" ssarecomp-kit-linux tools/make_kit.sh linux
             continue
         fi
         [ "$(uname -m)" = x86_64 ] && [ -x /opt/zig/zig ] ||
             { echo "error: the Linux kit is built in its image (tools/linux/kit.Dockerfile, amd64)" >&2; exit 1; }
         zig_version=$(/opt/zig/zig version)
-        ffmpeg=${FFMPEG_LINUX:-$root/private/ffmpeg/linux-x64}
-        [ -f "$ffmpeg/lib/libavcodec.a" ] || JOBS=$jobs tools/ffmpeg/build.sh linux-x64 "$ffmpeg"
+        ffmpeg=${FFMPEG_LINUX:-$deps/ffmpeg/linux-x64}
+        [ -f "$ffmpeg/lib/libavcodec.a" ] || JOBS=$jobs FFMPEG_WORK=$deps/ffmpeg/work tools/ffmpeg/build.sh linux-x64 "$ffmpeg"
         b=build-kit-linux
         kit=$root/dist/skylanders-kit-linux-x64
         mkdir -p "$b/zlib/include"
@@ -387,7 +449,11 @@ for platform in $platforms; do
         # player's game code through the compile templates (docs/release/launcher/kit_contract.md). zig's spelling:
         # -march=x86-64-v2 reads as the CPU "x86".
         march="-mcpu=x86_64_v2"
+        # CMAKE_LIBRARY_PATH: with zig as the compiler, find_library does not search the image's multiarch folder, so
+        # SDL's configure found no libX11 and built without its X11 driver: the Steam Deck's Game Mode (X11 only, under
+        # gamescope) then had sound and no picture (#22). SDL opens these libraries at run time; nothing links them.
         build_runtimes "$b" -DCMAKE_C_FLAGS="$march -idirafter /usr/include" -DCMAKE_CXX_FLAGS="$march -idirafter /usr/include" \
+            -DCMAKE_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu \
             -DARKEYAN_FFMPEG_ROOT="$ffmpeg" -DZLIB_INCLUDE_DIR="$root/$b/zlib/include" \
             -DZLIB_LIBRARY=/usr/lib/x86_64-linux-gnu/libz.a
         # XenosRecomp finds libdxcompiler.so next to itself (quoted: ninja runs the link through sh); its fmt needs <cstdlib> with zig's libc++ too.

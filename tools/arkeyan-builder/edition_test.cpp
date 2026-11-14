@@ -176,6 +176,113 @@ static void TestReport(const std::vector<Game>& games)
     CHECK(!XexImageReadable(fake)); // no file format info
 }
 
+// Optional reference files and reports use invented metadata and words only.
+static void TestReferenceReports(const fs::path& scratch)
+{
+    Game game;
+    game.id = "fixture";
+    game.name = "Invented Quest";
+    game.titleId = 0x10203040;
+    game.xexSha256 = { std::string(64, 'a') };
+    game.imageSha256 = { std::string(64, 'b') };
+    game.releases = { "Original" };
+    const std::vector<Game> games = { game };
+
+    DiscEdition edition;
+    edition.titleId = game.titleId;
+    edition.mediaId = 0x50607080;
+    edition.version = 0x10000203;
+    edition.region = 0x000000FF;
+    edition.textLanguages = { "en", "fr" };
+    edition.voiceLanguages = { "fr" };
+    edition.xexSize = 1234;
+    edition.xexSha256 = std::string(64, 'c');
+    edition.imageBase = 0x1000;
+    edition.imageSize = 16;
+    edition.imageSha256 = std::string(64, 'd');
+    const std::string identity = "Edition report (test)\nGame: Invented Quest (fixture)\n"
+                                 "Title ID: 10203040\nMedia ID: 50607080\nVersion: 1.0.2.3\n"
+                                 "Region: 000000FF (North America)\nLanguages: text en, fr; voices fr\n"
+                                 "default.xex: 1234 bytes, SHA-256 " +
+                                 edition.xexSha256 + "\nLoaded image: 16 bytes at 00001000, SHA-256 ";
+    const std::string unknown = identity + edition.imageSha256 +
+                                "\nSupported releases:\n- Original: different game code\n"
+                                "Result: not supported yet: the game code differs from every supported release\n";
+    const std::string unavailable = "Address matching is unavailable for this report.\n";
+    const std::string addresses = "Addresses on this disc: 1 of 2 found (the supported release's, then this disc's)\n"
+                                  "- GAME_HOOK_Invented 00002000 00001000 sure\n"
+                                  "Not found:\n- GAME_HOOK_Missing 00003000 not found\n";
+
+    fingerprint::Code code;
+    code.base = edition.imageBase;
+    code.words = { 0x11223344, 0x22334455, 0x33445566, 0x44556677 };
+    code.sections = { { code.base, code.base + uint32_t(code.words.size() * 4) } };
+    fingerprint::Print print;
+    print.name = "GAME_HOOK_Invented";
+    print.address = 0x2000;
+    print.words = 4;
+    print.hash = fingerprint::Hash(code, code.base, print.words);
+    print.head = fingerprint::Head(code, code.base);
+    fingerprint::Print missing = print;
+    missing.name = "GAME_HOOK_Missing";
+    missing.address = 0x3000;
+    missing.hash ^= 1;
+
+    const fs::path references = scratch / "references" / "config" / game.id / "fingerprints.txt";
+    fs::create_directories(references.parent_path());
+    for (const std::string& state : { "absent", "present", "empty", "comments" })
+    {
+        fs::remove(references);
+        if (state == "present")
+            std::ofstream(references) << fingerprint::Write({ print, missing });
+        else if (state != "absent")
+            std::ofstream(references) << (state == "comments" ? "# No reference entries\n" : "");
+        const auto found = FindEditionAddresses(code, references);
+        CHECK(found.has_value() == (state == "present"));
+        if (state == "present")
+            CHECK(!FindEditionAddresses({}, references));
+        const auto* diagnostics = found ? &*found : nullptr;
+
+        // References add diagnostics only; unknown code remains refused even with an exact function match.
+        const EditionMatch match = MatchEdition(edition, games);
+        CHECK(match.game == &games[0] && match.sameXex < 0 && match.sameImage < 0);
+        CHECK(FindGame(games, edition.xexSha256) == nullptr);
+        CHECK(FindGameByImage(games, edition.titleId, edition.imageSha256) == nullptr);
+        CHECK(EditionReport(edition, games, "test", diagnostics) ==
+              unknown + (state == "present" ? addresses : unavailable));
+        if (state == "absent")
+            CHECK(!fs::exists(references)); // reporting must not generate a reference file
+
+        DiscEdition sameImage = edition;
+        sameImage.imageSha256 = game.imageSha256[0];
+        CHECK(MatchEdition(sameImage, games).sameXex < 0 && MatchEdition(sameImage, games).sameImage == 0);
+        CHECK(FindGameByImage(games, sameImage.titleId, sameImage.imageSha256) == &games[0]);
+        CHECK(EditionReport(sameImage, games, "test", diagnostics) ==
+              identity + sameImage.imageSha256 +
+                  "\nSupported releases:\n- Original: same game code\n"
+                  "Result: supported, the same game code as Original "
+                  "(only the disc header differs)\n");
+
+        DiscEdition sameXex = edition;
+        sameXex.xexSha256 = game.xexSha256[0];
+        CHECK(MatchEdition(sameXex, games).sameXex == 0);
+        CHECK(FindGame(games, sameXex.xexSha256) == &games[0]);
+        const std::string known = EditionReport(sameXex, games, "test");
+        CHECK(known.ends_with("- Original: this very disc\nResult: supported (Original)\n"));
+        CHECK(known.find("Address") == std::string::npos);
+        CHECK(EditionReport(sameXex, games, "test", diagnostics) == known);
+    }
+
+    const std::vector<fingerprint::Found> empty;
+    CHECK(EditionReport(edition, games, "test", &empty) == unknown + unavailable);
+    edition.imageSha256.clear();
+    const std::string unreadable = EditionReport(edition, games, "test");
+    CHECK(unreadable.find("Loaded image: cannot be decrypted\n") != std::string::npos);
+    CHECK(unreadable.ends_with(unavailable));
+    edition.titleId = 0x12344321;
+    CHECK(EditionReport(edition, games, "test").ends_with("Result: not a game of this kit\n"));
+}
+
 // Reads `variable`'s disc: its default.xex, or empty (and a note) when the variable is unset.
 static std::vector<uint8_t> DiscXex(const char* variable)
 {
@@ -413,6 +520,7 @@ int main(int argc, char** argv)
     std::vector<Game> games = RepoGames(root);
     TestGameFiles(games, root);
     TestReport(games);
+    TestReferenceReports(scratch);
     TestDiscs(games, scratch);
     TestFingerprints(root, scratch);
     fs::remove_all(scratch);

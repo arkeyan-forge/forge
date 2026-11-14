@@ -17,8 +17,10 @@ set(SKYBUILD_HD_SOURCES hd_upscale.cpp hd_textures.cpp ${CMAKE_SOURCE_DIR}/runti
 add_library(ArkeyanBuilderMiniz STATIC ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz/miniz.c)
 target_compile_definitions(ArkeyanBuilderMiniz PRIVATE MINIZ_NO_STDIO MINIZ_NO_TIME MINIZ_NO_ARCHIVE_APIS MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
 target_include_directories(ArkeyanBuilderMiniz SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz)
+# runtime/guest_layout.cpp: the code layout record's checks, the runtime's own (#72).
 add_executable(Arkeyan-Builder main.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp
-    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${SKYBUILD_PLATFORM})
+    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
+    ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
 target_include_directories(Arkeyan-Builder PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(Arkeyan-Builder SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(Arkeyan-Builder SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb) # stb's own warnings are not ours
@@ -29,7 +31,7 @@ if(WIN32)
 endif()
 add_executable(ArkeyanVersionResourceTest version_resource_test.cpp accents_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp
     igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp
-    ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${SKYBUILD_PLATFORM})
+    ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
 target_include_directories(ArkeyanVersionResourceTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(ArkeyanVersionResourceTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(ArkeyanVersionResourceTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
@@ -75,7 +77,8 @@ arkeyan_setup_ffmpeg(ArkeyanBuilderMusicTest)
 
 # Real install steps with synthetic inputs and a fake child runner; never launches a game.
 add_executable(ArkeyanBuilderGuardTest install_guard_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp shader_cache_literals.cpp game_icon.cpp menu_music.cpp
-    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${SKYBUILD_PLATFORM})
+    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
+    ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
 target_include_directories(ArkeyanBuilderGuardTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(ArkeyanBuilderGuardTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(ArkeyanBuilderGuardTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
@@ -83,6 +86,13 @@ target_link_libraries(ArkeyanBuilderGuardTest PRIVATE ArkeyanArtReader ArkeyanXe
 if(WIN32)
     target_compile_definitions(ArkeyanBuilderGuardTest PRIVATE _WIN32_WINNT=0x0A00)
     target_link_libraries(ArkeyanBuilderGuardTest PRIVATE winmm winhttp)
+endif()
+# The layout record's case compiles and links the record it writes with this compiler (none in a cross build).
+target_compile_definitions(ArkeyanBuilderGuardTest PRIVATE SKY_RUNTIME_DIR="${CMAKE_SOURCE_DIR}/runtime")
+if(NOT WIN32 OR CMAKE_HOST_WIN32)
+    target_compile_definitions(ArkeyanBuilderGuardTest PRIVATE SKY_ACCENTS_COMPILER="${CMAKE_CXX_COMPILER}")
+else()
+    target_compile_definitions(ArkeyanBuilderGuardTest PRIVATE SKY_ACCENTS_COMPILER="")
 endif()
 sky_quality(ArkeyanBuilderGuardTest)
 add_test(NAME ArkeyanBuilderGuardTest COMMAND ArkeyanBuilderGuardTest ${CMAKE_CURRENT_BINARY_DIR}/install-guard-test)

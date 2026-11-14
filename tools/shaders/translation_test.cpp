@@ -435,6 +435,45 @@ static void Test(const std::string& common)
     source.insert(insertion, "\n" + direct.out);
     Compile(source);
 
+    // One instruction's vector and scalar operations read their sources before either writes: a scalar reading the
+    // register the vector one writes sees its old value (Giants' lit waterfall: r5.w = r4.x; ps = r5.w).
+    AluInstruction coissued{};
+    coissued.vectorOpcode = AluVectorOpcode::Max;
+    coissued.src1Select = coissued.src2Select = 1;
+    coissued.src1Register = coissued.src2Register = 4;
+    coissued.vectorDest = 5;
+    coissued.vectorWriteMask = 8; // r5.w
+    coissued.scalarOpcode = AluScalarOpcode::Maxs;
+    coissued.src3Select = 1;
+    coissued.src3Register = 5;
+    coissued.src3Swizzle = Swizzle("wwww");
+    coissued.scalarDest = 5;
+    coissued.scalarWriteMask = 1; // r5.x
+    direct = {};
+    direct.isPixelShader = true;
+    direct.recompile(coissued);
+    CHECK(direct.out.find("ps = max(r5.w, r5.w);") != std::string::npos);
+    CHECK(direct.out.find("ps = max(r5.w, r5.w);") < direct.out.find("r5.w = "));
+    CHECK(direct.out.find("r5.w = ") < direct.out.find("r5.x = ps;"));
+    // No hazard: the usual order, vector first.
+    coissued.src3Register = 6;
+    direct = {};
+    direct.isPixelShader = true;
+    direct.recompile(coissued);
+    CHECK(direct.out.find("r5.w = ") < direct.out.find("ps = max(r6.w, r6.w);"));
+    // r50 is not r5; r5.x is not the r5.w the vector operation writes.
+    coissued.src3Register = 50;
+    direct = {};
+    direct.isPixelShader = true;
+    direct.recompile(coissued);
+    CHECK(direct.out.find("r5.w = ") < direct.out.find("ps = max(r50.w, r50.w);"));
+    coissued.src3Register = 5;
+    coissued.src3Swizzle = Swizzle("xxxx");
+    direct = {};
+    direct.isPixelShader = true;
+    direct.recompile(coissued);
+    CHECK(direct.out.find("r5.w = ") < direct.out.find("ps = max(r5.x, r5.x);"));
+
     // No constant table: the synthetic g_C covers every register, but the shader's own literal (def c5) wins, as in
     // D3D9 (it read g_C(5), the buffer, before). c6 has no literal and still reads the buffer.
     AluInstruction max{};
