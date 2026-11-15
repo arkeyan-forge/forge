@@ -13,6 +13,7 @@
 #include "host/toybox/draw.h"
 #include "host/toybox/in_play.h"
 #include "host/toybox/model.h"
+#include "host/toybox/key_mask.h"
 #include "host/toybox/keys.h"
 #include "host/toybox_remote.h"
 #include "vfs.h"
@@ -78,7 +79,7 @@ namespace
     toybox::Keys g_keys;
     uint64_t g_tabDown;
     bool g_wheelByTab;
-    bool g_enterHeld;
+    bool g_acceptKeyHeld; // Enter or Space accepted: the hold buttons follow the key, not the pad's A
     bool g_pinKey;
     bool g_mouseHeld; // a hold button pressed with the mouse             // F2 held on the wheel: pin
 
@@ -234,9 +235,9 @@ namespace
                     OpenToybox();
                 g_wheelByTab = false;
             }
-            if (key.key == SDLK_RETURN || key.key == SDLK_KP_ENTER)
+            if (key.key == SDLK_RETURN || key.key == SDLK_KP_ENTER || key.key == SDLK_SPACE)
             {
-                g_enterHeld = false;
+                g_acceptKeyHeld = false;
                 model.Hold(false, now);
             }
             return;
@@ -325,11 +326,14 @@ namespace
         case SDLK_RETURN:
         case SDLK_KP_ENTER:
             command = model.screen == Screen::Name && model.dialogs.empty() ? Command::Start : Command::Accept;
-            g_enterHeld = true;
+            g_acceptKeyHeld = true;
             break;
         case SDLK_SPACE:
             if (model.search.empty() && model.screen != Screen::Name)
+            {
                 command = Command::Accept;
+                g_acceptKeyHeld = true;
+            }
             break;
         case SDLK_ESCAPE: command = Command::Back; break;
         case SDLK_BACKSPACE:
@@ -995,7 +999,7 @@ void ToyboxFilterGamepad(GamepadState& state)
         model.Run(Command::Start);
     if (model.open && (pressed & Button::B))
         model.Run(Command::Back);
-    if (!g_enterHeld && !g_mouseHeld)
+    if (!g_acceptKeyHeld && !g_mouseHeld)
         model.Hold((buttons & Button::A) != 0, now);
     if (!model.open)
         g_swallow = true;
@@ -1274,18 +1278,21 @@ const bool* ToyboxKeyboardState()
 {
     const bool* keys = SDL_GetKeyboardState(nullptr);
     bool f3 = g_f3Held.load(std::memory_order_relaxed);
-    if (g_keyHolds.empty() && !f3)
-        return keys;
-    static bool merged[SDL_SCANCODE_COUNT];
-    std::copy(keys, keys + SDL_SCANCODE_COUNT, merged);
-    uint64_t now = ScriptClock();
-    for (const KeyHold& hold : g_keyHolds)
-        if (now >= hold.from && now < hold.to)
-            merged[hold.scancode] = true;
-    if (f3) // the debug screen's keys (F3+G, T, C, R)
-        for (SDL_Scancode taken : { SDL_SCANCODE_G, SDL_SCANCODE_T, SDL_SCANCODE_C, SDL_SCANCODE_R })
-            merged[taken] = false;
-    return merged;
+    if (!g_keyHolds.empty() || f3)
+    {
+        static bool merged[SDL_SCANCODE_COUNT];
+        std::copy(keys, keys + SDL_SCANCODE_COUNT, merged);
+        uint64_t now = ScriptClock();
+        for (const KeyHold& hold : g_keyHolds)
+            if (now >= hold.from && now < hold.to)
+                merged[hold.scancode] = true;
+        if (f3) // the debug screen's keys (F3+G, T, C, R)
+            for (SDL_Scancode taken : { SDL_SCANCODE_G, SDL_SCANCODE_T, SDL_SCANCODE_C, SDL_SCANCODE_R })
+                merged[taken] = false;
+        keys = merged;
+    }
+    static toybox::KeyMask mask;
+    return mask.Apply(keys, ToyboxOverlayOpen());
 }
 
 bool ToyboxOverlayOpen() { return g_enabled && M().open; }

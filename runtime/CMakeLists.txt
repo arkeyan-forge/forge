@@ -327,6 +327,11 @@ target_include_directories(ArkeyanToyboxLookTest PRIVATE .)
 add_executable(ArkeyanToyboxInPlayTest host/toybox/in_play_test.cpp)
 target_include_directories(ArkeyanToyboxInPlayTest PRIVATE .)
 
+# The keys the game's bindings see around the Toy Box and the F3 menu (host/toybox/key_mask.h): ./ArkeyanToyboxKeyMaskTest
+add_executable(ArkeyanToyboxKeyMaskTest host/toybox/key_mask_test.cpp)
+target_include_directories(ArkeyanToyboxKeyMaskTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxKeyMaskTest PRIVATE SDL3::SDL3-static)
+
 # Atomic virtual figure and swapper replacements (no device or figure files): ./ArkeyanToyboxSwapTest
 add_executable(ArkeyanToyboxSwapTest host/toybox/swap_test.cpp host/portal_prompt.cpp)
 target_include_directories(ArkeyanToyboxSwapTest PRIVATE .)

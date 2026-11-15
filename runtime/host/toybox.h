@@ -42,7 +42,8 @@ void ToyboxSetKeys(const std::string (&keys)[3], bool tab);
 // The current wheel hold key, as printed on the player's keyboard (also used by the Toy Box's hints).
 std::string ToyboxWheelKeyName();
 
-// The keyboard as the game's input reads it: SDL_GetKeyboardState, plus the keys SKY_TOYBOX_SCRIPT holds ("hold=K").
+// The keyboard as the game's input reads it: SDL_GetKeyboardState, plus the keys SKY_TOYBOX_SCRIPT holds ("hold=K"),
+// without the keys pressed while the overlay is open (toybox::KeyMask: they are its keys until released).
 const bool* ToyboxKeyboardState();
 
 // [portal] toybox_auto_open (default on): when the game asks for a figure (its "place a Skylander on the portal" screen),
