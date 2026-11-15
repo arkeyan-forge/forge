@@ -1,6 +1,6 @@
 # Every rendering bug: cause, fix, class
 
-> **Purpose:** which rendering bugs did we hit, with which cause and fix? · **Status:** current (2026-11-11) · **Tags:** [Xbox] [Lux] [SSA] [SwapForce]
+> **Purpose:** which rendering bugs did we hit, with which cause and fix? · **Status:** current (2026-11-15) · **Tags:** [Xbox] [Lux] [SSA] [SwapForce]
 
 Chronological by theme. **Class**: [Xbox] carries over to every game; [Lux] expected in other Lux games; [SSA] this game. Swap Force's level frame (its pass list and what broke): [games/swapforce/docs/boot.md](../../../games/swapforce/docs/boot.md#what-broke-on-the-way-to-a-level). The fixes and their evidence are recorded below.
 The pass list of a level frame is in [../lux/level_frame_lightprepass.md](../../engines/lux/level_frame_lightprepass.md).
@@ -21,6 +21,7 @@ The pass list of a level frame is in [../lux/level_frame_lightprepass.md](../../
 
 | Symptom | Cause | Fix | Class |
 |---|---|---|---|
+| **Swap Force: the volcano's core in the tutorial's cage drawn as dark streaks** (2026-11-15, launcher issue #80, Windows AMD, D3D12 and Vulkan; the Mac too, HD textures off) | the core is one mesh of more than 65536 vertices with **32-bit indices** (the index buffer's Common word, bit 31); the renderer read every index buffer as 16-bit, so each 32-bit index became a 0 or 1 high half and a low half: triangles fanned to the first vertices | the index size comes from bit 31 (`Resource::IndexSize`, `d3d/device.h`), 32-bit indices are swapped 8-in-32 (`gpu/index_convert.h`, `ArkeyanIndexConvertTest`) and drawn as `R32_UINT`; the log says `[render] 32-bit indices first used` once | Xbox |
 | **Giants: the tutorial's waterfall gone (Windows, D3D12 and Vulkan, AMD and NVIDIA) or speckled (Mac) while Dino-Rang's boomerang flies** (2026-11-13) | the boomerang's point light switches the waterfall to a lit pixel shader whose co-issued scalar op read a register its vector op had just written: alpha from a world position | the scalar op runs first ([shaders.md](shaders.md), "A co-issued scalar op") | Xbox |
 | G-buffer, light pre-pass, shadow inputs black | **MRT draws dropped**: colour target *pointers* compared instead of sizes | compare sizes | Xbox |
 | DepthMap / shadow maps black | depth resolves skipped; no k_24_8 / k_24_8_FLOAT format | `ResolveDepthPS` into R32_FLOAT (X = depth) | Xbox |

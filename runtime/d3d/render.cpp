@@ -1761,21 +1761,30 @@ namespace
         uint64_t identity = 0; // upscaling: the same draw in the next frame has the same (indexed draws only)
         if (indexed)
         {
-            // Index buffer: +0x18 address; 16-bit indices (32-bit index buffers not seen yet).
+            // Index buffer: +0x18 address; 16-bit indices, or 32-bit (Common bit 31: a mesh of more than 65536
+            // vertices; read as 16-bit, its triangles fan out to its first vertices as streaks).
             uint32_t indices = Read32(device + Device::Indices);
             uint32_t guest = indices != 0 ? PhysicalToGuest(Read32(indices + Resource::IndexBufferAddress)) : 0;
             if (guest == 0)
                 return false;
+            const uint32_t indexSize = Resource::IndexSize(Read32(indices));
+            const uint32_t start = guest + first * indexSize;
+            static bool indices32Logged = false;
+            if (indexSize == 4 && !indices32Logged)
+            {
+                indices32Logged = true;
+                fprintf(stderr, "[render] 32-bit indices first used: frame %llu, pixel shader %016llX, %u indices\n",
+                    (unsigned long long)g_frame, (unsigned long long)g_drawPixelShader, count);
+            }
             if (upscale::Active())
                 identity = XXH3_64bits_withSeed(&g_drawPixelShader, sizeof(g_drawPixelShader),
-                    g_drawVertexShader ^ (uint64_t(guest + first * 2) << 32 | count) ^
-                        uint64_t(uint32_t(baseVertex)) << 20);
-            uint32_t bytes = count * 2;
+                    g_drawVertexShader ^ (uint64_t(start) << 32 | count) ^ uint64_t(uint32_t(baseVertex)) << 20);
+            uint32_t bytes = count * indexSize;
             if (!g_dump.active && g_promptFaceHash == 0)
             {
                 uint32_t minIndex, maxIndex;
-                draw.indicesConverted = gpu::CacheIndices(
-                    g_memory.Translate(guest + first * 2), guest + first * 2, bytes, minIndex, maxIndex);
+                draw.indicesConverted =
+                    gpu::CacheIndices(g_memory.Translate(start), start, bytes, minIndex, maxIndex, indexSize == 4);
                 if (draw.indicesConverted.buffer != nullptr && baseVertex >= 0)
                 {
                     vertexStart = uint32_t(baseVertex);
@@ -1785,10 +1794,11 @@ namespace
             else
             {
                 g_indexData.resize(bytes);
-                memcpy(g_indexData.data(), g_memory.Translate(guest + first * 2), bytes);
-                xenos::SwapEndian(g_indexData.data(), g_indexData.size(), 1);
+                memcpy(g_indexData.data(), g_memory.Translate(start), bytes);
+                xenos::SwapEndian(g_indexData.data(), g_indexData.size(), indexSize == 4 ? 2 : 1);
                 draw.indices = g_indexData.data();
             }
+            draw.indices32 = indexSize == 4;
             draw.indexBytes = bytes;
             draw.count = count;
             draw.baseVertex = baseVertex;
@@ -1943,6 +1953,18 @@ namespace
             for (uint32_t i = 0; i < draw.inputCount; i++)
                 fprintf(stderr, "[dump]   input loc %u stream %u off %u fmt %d\n", draw.inputs[i].location,
                     draw.inputs[i].stream, draw.inputs[i].offset, int(draw.inputs[i].format));
+            // The index buffer's Common word (bit 31: 32-bit indices) and its first indices.
+            if (const uint32_t ib = Read32(device + Device::Indices); draw.indices != nullptr && ib != 0)
+            {
+                uint32_t head[4] = {};
+                for (uint32_t i = 0; i < 4 && i < draw.count; i++)
+                    if (draw.indices32)
+                        memcpy(&head[i], static_cast<const uint8_t*>(draw.indices) + i * 4, 4);
+                    else
+                        head[i] = static_cast<const uint16_t*>(draw.indices)[i];
+                fprintf(stderr, "[dump]   ib common %08x, %u-bit, size %u: %u %u %u %u\n", Read32(ib),
+                    draw.indices32 ? 32 : 16, Read32(ib + 0x1C), head[0], head[1], head[2], head[3]);
+            }
             for (uint32_t i = 0; i < draw.streamCount; i++)
             {
                 const float* f = static_cast<const float*>(draw.streams[i].data);
@@ -1996,11 +2018,14 @@ namespace
         return true;
     }
 
-    // The guest's 16-bit indices of an indexed draw (as stored), or nullptr.
+    // The guest's 16-bit indices of an indexed draw (as stored), or nullptr; nullptr for 32-bit indices too, which no
+    // glyph model uses.
     const void* DrawIndices(uint32_t device, uint32_t first)
     {
         uint32_t indices = Read32(device + Device::Indices);
-        uint32_t guest = indices != 0 ? PhysicalToGuest(Read32(indices + Resource::IndexBufferAddress)) : 0;
+        if (indices == 0 || Resource::IndexSize(Read32(indices)) != 2)
+            return nullptr;
+        uint32_t guest = PhysicalToGuest(Read32(indices + Resource::IndexBufferAddress));
         return guest != 0 ? g_memory.Translate(guest + first * 2) : nullptr;
     }
 

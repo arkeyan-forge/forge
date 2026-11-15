@@ -27,9 +27,10 @@ namespace gpu
     // d3d::PairWords), swapped 8-in-16: 16-bit pairs that are not texture coordinates (d3d/vertex_pairs.h).
     BufferRange CacheVertices(
         const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t stride = 0, uint64_t pairWords = 0);
-    // 16-bit indices, swapped 8-in-16; also gives the smallest and largest index of the range.
-    BufferRange CacheIndices(
-        const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex, uint32_t& maxIndex);
+    // Indices, 16-bit (swapped 8-in-16) or 32-bit (8-in-32, gpu/index_convert.h); also gives the smallest and largest
+    // index of the range.
+    BufferRange CacheIndices(const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex,
+        uint32_t& maxIndex, bool indices32 = false);
 
     // Called by gpu::Present, under the producer lock like the two above, at the end of each producer frame (the frames
     // these calls belong to, worker.cpp): frees what the GPU no longer needs and evicts for space. The GPU has finished
