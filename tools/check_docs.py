@@ -28,17 +28,14 @@ TOP = ("runtime", "games", "engines", "tools", "docs", "resources", "cmake", "pa
 # Files that are not ours to rewrite.
 SKIP_FILES = ("THIRD_PARTY_NOTICES.md",)
 # Folders of pages written for another repository (their links resolve there).
-SKIP_DIRS = ("office/tools/forge_readmes/",)
+SKIP_DIRS = ()
 # Public documentation areas. Private archives are not required to check an exported checkout.
 DOC_AREAS = ("architecture", "engines", "getting-started", "porting", "release", "releases", "runtime", "status", "tools")
-PRIVATE_FILES = ("docs/MAP.md", "docs/porting/orchestration.md", "docs/porting/pitfalls.md")
 
 
 def public(file):
     if file.endswith(".md") and "/" not in file:
         return file in ("README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md")
-    if file in PRIVATE_FILES or file.startswith(("office/", "docs/guides/")):
-        return False
     if file.startswith(".") and not file.startswith(".github/"):
         return False
     parts = file.split("/")

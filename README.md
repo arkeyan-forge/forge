@@ -1,6 +1,6 @@
 # ArkeyanRuntime: native Skylanders on PC, Mac and Linux
 
-> **Purpose:** what this repository is, the status of each game, a quick start and the map of the tree · **Status:** current (2026-11-12) · **Tags:** none
+> **Purpose:** what this repository is, the status of each game, a quick start and the map of the tree · **Status:** current (2026-11-15) · **Tags:** none
 
 Native ports of the **Skylanders** games for the Xbox 360, made by **static recompilation**: the game's PowerPC code and
 Xenos shaders are translated into C++ and host shaders on the player's own machine, from the player's own disc, and a
@@ -56,24 +56,23 @@ from source use **Arkeyan Launcher**, which downloads the kit and builds the gam
 | `resources/`, `cmake/`, `ArkeyanRecompLib/` | non-code assets and licences; CMake helpers; the target that compiles a game's generated code |
 | `private/` | everything derived from a disc (git-ignored): `private/<game>/ppc/`, shader caches, dumps, toolchains |
 
-## The forge repositories
-This repository is the entry point of the **Arkeyan forge**; the rest are git submodules at their usual paths, so a
-recursive clone has the whole tree.
-
-| Repository | Mounted at | What |
-|---|---|---|
-| `runtime` | `runtime/` | the shared runtime that replaces the Xbox 360 |
-| `spyros-adventure`, `giants`, `swap-force` | `games/ssa/`, `games/giants/`, `games/swapforce/` | one game each |
-| `trap-team`, `superchargers`, `imaginators` | `games/trapteam/`, `games/superchargers/`, `games/imaginators/` | one game each |
-| `arkeyan-builder` | `tools/arkeyan-builder/` | the player kit's builder |
-| `xenonrecomp`, `xenosrecomp` | (kept in sync; the forge still uses the upstream submodules and `patches/`) | the code translators with our patches applied |
-
 ## Documentation at a glance
 [docs/README.md](docs/README.md) indexes the public documentation; [old paths](docs/old_paths.md) maps retired pages.
 Sections: [getting-started](docs/getting-started/README.md), [architecture](docs/architecture/README.md),
 [runtime](docs/runtime/README.md), [engines](docs/engines/README.md), [tools](docs/tools/README.md),
 [release](docs/release/README.md), [porting](docs/porting/README.md). Checked by
 `python3 -I tools/check_docs.py` (broken links and paths).
+
+## Contributing and AI tools
+
+AI tools are welcome in contributions, under one rule: whoever submits a change owns it. Every pull request must be
+understood by its author, who has tested it and can explain any part of it. If a contribution turns out to be a problem
+(a bug, malicious code, a license violation), its author is held solely responsible, never the tool. The project itself
+is developed with the help of AI tools, under the same rule: the reverse engineering, the architecture and every design
+decision are the author's own.
+
+How to send a change: [CONTRIBUTING.md](CONTRIBUTING.md). The full rules, and what happens when they are broken, are in
+the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Licence
 MIT ([LICENSE](LICENSE)); third-party components and their obligations: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),

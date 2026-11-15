@@ -281,7 +281,9 @@ The host-side checks that need no game data, run on a Mac with Docker; there is 
 `--base REF` for another, `--tidy-all` for the report over every file), `macos` (the `SKY_TESTS_ONLY` unit tests,
 natively), and in `tools/ci/checks.Dockerfile` (amd64, as the build runs the x86_64 dxc; an ordinary user): `linux`,
 `sanitizers` (AddressSanitizer) and `windows` (llvm-mingw, the tests under Wine). `--only job,job` runs some; `--quick` is `format,macos`, which the
-`pre-push` hook runs (`git config core.hooksPath tools/git-hooks`). Logs in `.scratch/checks/`; each job keeps its
+`pre-push` hook runs (`git config core.hooksPath tools/git-hooks`) after `tools/leak_scan.py` (no game data, no
+personal information in the tree; the names it looks for are in the git-ignored `private/kit_scan_words.txt`) and a
+check of the pushed commits' identity. Logs in `.scratch/checks/`; each job keeps its
 build in a Docker volume, so a second run is incremental. Under emulation a few tests are left out (`tools/ci/job.sh`
 names them and why); the `macos` job runs them natively. Before a merge: `tools/ci/run.sh` and `tools/test_all.sh --quick`, both
 PASS. The kits: `tools/ci/kits_local.sh` ([updates_release.md](../release/launcher/updates_release.md)).
@@ -400,7 +402,7 @@ the menus with two pads (`ssa_arena.sh`'s presses); Giants' Heroic Challenges ar
 that unlocks 39 of the 45 (`giants_unlock.py`, made once per work dir; an entry past her list is not reached); SuperChargers continues a save made once (a new
 game to the Academy) and renames the Academy's request (`SKY_LEVEL_FROM=academy/academy`: ~25 s to any zone instead of
 ~320 s); its race tracks go through the racing menus, Single Race, at fps_limit 30 (route `scrace`: the
-track's pack trophy, a vehicle of its type, the map's cursor moved by the stick; at 60 its races fault, office/STATE.md); the credits are SSA's two movies swapped in (`SKY_MOVIE_SWAP`) or the credits level until the next level loads.
+track's pack trophy, a vehicle of its type, the map's cursor moved by the stick; at 60 its races fault); the credits are SSA's two movies swapped in (`SKY_MOVIE_SWAP`) or the credits level until the next level loads.
 
 Verdicts (`<work dir>/<game>/coverage.tsv`: kind, name, verdict, lowest_fps, detail, area, seconds): `ok` (reached,
 played, no fault, `[guard]` line or hang), `crash` (a fault or `[guard]` line, or the game ended by itself), `hang`
@@ -438,7 +440,7 @@ Keep the marker to reuse a work directory; a reused directory's run files can be
 `tools/regress/status_report.py <coverage.tsv>... --platform "<name>" --build "<id>" --out docs/status/STATUS.md`
 writes a public page with one table per game (levels, figures, credits: checks, passed, not reached, crashed, lowest
 fps), the platform and build, and a table of the rows that did not pass; it draws `docs/status/status.png` with Pillow.
-`--subset` marks a partial run, and `--state-lines` prints one line per crash or `[guard]` for `office/STATE.md`.
+`--subset` marks a partial run, and `--state-lines` prints one line per crash or `[guard]`, for a status note.
 `tools/regress/status_report_test.py` checks the page, picture and state lines with an invented coverage file, so no
 disc is needed.
 

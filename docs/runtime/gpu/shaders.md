@@ -103,7 +103,7 @@ On hardware, rebuild each game's cache, then check Trap Team and Swap Force refl
 turning the camera (no wrong face, sparkle or overly sharp reflections), plus unchanged 2D passes, shadows, movies and
 Giants/SSA rendering at scales 1 and 2 on Metal, D3D12 and Vulkan. A setter inside a branch/loop must affect only
 fetches reached after that setter executes. Cache delivery and version changes are in
-the review and merge guide (in the private office) and each game's shader page.
+each game's shader page.
 
 ## The cache (`private/<id>/ppc/shader_cache.cpp`, generated, never committed)
 
@@ -174,7 +174,7 @@ SPIR-V is stored as **smol-v** (`smolv::Encode`): decode before `createShader` (
   non-zero instruction offset: **SSA 2** of 516 pixel shaders, **Swap Force 19** of 498 (FXAA 3.11's +-0.5 corner taps
   and 4-tap downsamples), **Giants 0**. The games' blur and shadow kernels step by constants in normalized coordinates
   that the game computes from the guest sizes, which were already right at every scale: the "shadows smaller at scale
-  2" another public port reports (`office/lessons_2026-10-27.md`, F1) comes from its translation, not ours [V].
+  2" another public port reports comes from its translation, not ours [V].
   **One exception** (2026-10-30): FXAA is an edge filter, so at scale N it wants host pixels, not the frame's proportions: `game::HostKernelPixelShader` ([swapforce shaders.md](../../../games/swapforce/docs/shaders.md#the-lavas-posterized-gradients-2026-10-30-swapforce-ssa-xbox-v)).
 - **A co-issued scalar op reads its source before the vector write** (2026-11-13) [Xbox] [V] (Mac; the PC: [?]): one ALU
   instruction holds a vector and a scalar operation that both read their sources before either writes. The translator

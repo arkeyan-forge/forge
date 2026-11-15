@@ -381,7 +381,7 @@ kit install with the icon in the Dock was not run [?].
 (`<saves>/00000001/<name>/<name>.xsg`), each rewrite keeping the previous one in `<saves>-backup/<time>/`.
 
 ### The scene at full resolution (2026-10-27) [Alchemy] [SwapForce] [V]
-The user's decision (`office/decisions.md`): the 3D at the frame's size by default, the console's 81 % scene as a setting
+The owner's decision: the 3D at the frame's size by default, the console's 81 % scene as a setting
 (`--original-resolution`, `[swapforce.video] original_resolution=1`, [settings.md](../../../docs/getting-started/settings.md)).
 Code: `games/swapforce/ultrawide.cpp`, `game::Adapter::fullScene` (`games/swapforce/adapter.cpp`),
 `ultrawide::SetScene16x9` (`runtime/d3d/ultrawide.h`, called by `runtime/main.cpp` before `Configure`). Three hooks, all
@@ -421,8 +421,7 @@ GPU timer in the runtime). A 2560x1080 window: scene 1696x720, 30 fps, 46 resolv
 
 **Save loads, a zone change, the pause menu at exactly 1280x720** [V] (2026-10-27): another port reports that a scene
 of exactly the screen's size crashes about half of Swap Force's save loads (a pooled surface record with a null
-resource in `sub_82513358`, and a heap block header overrun) and uses 1264x704 instead (`office/lessons_2026-10-27.md`,
-1.9). Ours, at 1280x720 (scale 2, `private/sfblur/saveload.sh`, untracked): a save made in the tutorial, then **9 runs
+resource in `sub_82513358`, and a heap block header overrun) and uses 1264x704 instead. Ours, at 1280x720 (scale 2, `private/sfblur/saveload.sh`, untracked): a save made in the tutorial, then **9 runs
 that load it** from the title (the slot opened for reading, `tutorial_a` loaded, the save written again), each with a
 pause-menu round trip (open, the Skylander page and its stats, back), and one 230 s run through the Greeble ships to
 the next zone (`tutorial_b`, drawn right): **0 crashes, 0 faults, 46 resolves a frame throughout**. Not tested: the

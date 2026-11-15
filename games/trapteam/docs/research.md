@@ -6,7 +6,7 @@ Sections 1-5 were written with no Trap Team disc: **every finding in them is [?]
 mechanisms, written here in our own words. The public facts (release, toys, sources list) stay in
 [public background](#public-background-2026-10-25); this page extends it. Read on 2026-10-30:
 tsapZ repositories (docs, STATUS, issues and commit messages only, never `src/`), Dolphin and Cemu portal emulation (mechanism only),
-rexglue-sdk (a shallow read-only clone, `c94f5eb`, 2026-08-21), the Xenia trackers, and our `office/lessons_cemu_2026-10-28.md`.
+rexglue-sdk (a shallow read-only clone, `c94f5eb`, 2026-08-21) and the Xenia trackers.
 
 | Question | Verdict |
 |---|---|

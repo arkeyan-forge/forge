@@ -2,7 +2,7 @@
 
 > **Purpose:** how two players, each on his own computer with his own portal and Skylanders, play one game together online, and what the runtime must change to make that possible? · **Status:** design (not built yet; agreed by the owner 2026-11-08, step 0 started) · **Tags:** [Xbox] [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [TrapTeam] [SuperChargers] [Imaginators]
 
-The 2026-11-04 entry of `office/decisions.md` (free exploration) stays the long-term goal; 0.10.0 is its first step, with
+The owner's decision of 2026-11-04 (free exploration) stays the long-term goal; 0.10.0 is its first step, with
 the game's shared camera.
 
 ## 1. What the owner asked (2026-11-08)

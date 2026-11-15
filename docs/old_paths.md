@@ -93,7 +93,7 @@ Code comments may still cite a retired path. Current documentation uses the dest
 | SDecomp `knowledge/prior_art.md` | `docs/porting/prior_art.md` |
 | SDecomp `knowledge/release.md` | `docs/release/release.md` |
 | SDecomp `knowledge/subsystems.md` | `docs/architecture/subsystems.md` |
-| SDecomp `knowledge/testing.md` | folded into `docs/getting-started/testing.md` (section "office notes") |
+| SDecomp `knowledge/testing.md` | folded into `docs/getting-started/testing.md` |
 | SDecomp `knowledge/toolchain.md` | `docs/tools/README.md` |
 | SDecomp `knowledge/toolchain/README.md` | `docs/tools/toolchain/README.md` |
 | SDecomp `knowledge/toolchain/analysis_tools.md` | `docs/tools/toolchain/analysis_tools.md` |

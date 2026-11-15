@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Install once per clone: git config core.hooksPath tools/git-hooks
-# Checks only the staged files: format, identity, no game data, no sign-off lines, no home paths.
+# Checks only the staged files: format, identity, no game data, no home paths.
 fail() { echo "pre-commit: $1" >&2; exit 1; }
 
 name=$(git config user.name); mail=$(git config user.email)
-# The owner, or a contributor's own identity (CLAUDE.md, "Identity").
+# The owner, or a contributor's own identity.
 [ "$name <$mail>" = "mflr0 <mflr0@onionmail.org>" ] || [ "$name" = Suolumi ] ||
     fail "identity is '$name <$mail>', expected mflr0 or Suolumi"
 

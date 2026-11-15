@@ -2,7 +2,7 @@
 
 > **Purpose:** how does the runtime upscale the 3D scene with AMD FSR 3.1 on Metal, D3D12 and Vulkan, what each engine gives it, how a player switches it, and how to check it? · **Status:** current (2026-11-12, 0.9.6) · **Tags:** [Xbox] [Lux] [Alchemy] [V] [?]
 
-The owner's decision (office/decisions.md, 2026-11-03): **AMD FSR 3.1 in every game**, a setting in the launcher and in
+The owner's decision (2026-11-03): **AMD FSR 3.1 in every game**, a setting in the launcher and in
 the F3 menu, off by default. AMD's FidelityFX SDK (MIT) is used as a library, unmodified, under `thirdparty/`
 (THIRD_PARTY_NOTICES.md, the kit's `COMPONENTS.md`); the backend that runs it is ours. MetalFX stays as an internal
 comparison on macOS (`SKY_UPSCALER=metalfx`), never offered as "FSR".
