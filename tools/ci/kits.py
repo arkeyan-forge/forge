@@ -24,7 +24,8 @@ def require(condition, message):
 def destination(repository, tag):
     require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repository),
             "invalid launcher repository")
-    require(re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag), "launcher tag must be vX.Y.Z")
+    require(re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(b[0-9]+|-[0-9A-Za-z.]+)?", tag),
+            "launcher tag must be vX.Y.Z or a test build such as vX.Y.Zb1")
 
 
 def sums(text):
@@ -123,7 +124,11 @@ def publish(repository, tag, folder):
     require({path.name for path in folder.iterdir()} == set(NAMES), "expected exactly the three kit ZIPs")
     versions = [inventory(folder / name) for name in NAMES]
     require(all(version == versions[0] for version in versions), "kits disagree on game versions")
-    release = json.loads(gh("api", f"repos/{repository}/releases/tags/{tag}"))
+    # releases/tags/<tag> answers 404 for a draft: find the draft in the list of recent releases instead.
+    found = [item for item in json.loads(gh("api", f"repos/{repository}/releases?per_page=100"))
+             if item.get("tag_name") == tag]
+    require(len(found) == 1, "target release must already exist and be a draft")
+    release = found[0]
     require(release["draft"] and release["tag_name"] == tag, "target release must already exist and be a draft")
     assets = {asset["name"] for asset in release["assets"]}
     require("SHA256SUMS" in assets, "launcher assets and SHA256SUMS must be attached first")

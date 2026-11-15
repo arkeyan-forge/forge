@@ -15,7 +15,7 @@ background, layout) is **the designer's design**. It is not the runtime's own `-
 | Visibility | **public** source, MIT; no game data | **public**, MIT |
 | Holds | the runtime, the engines, the games' addresses, the tools, the docs | the launcher UI, the updater, the install flow, its own `README.md` and `docs/` |
 | Never holds | game data | game code, game art, the kit's binaries |
-| Releases | no tags; `tools/make_kit.sh` makes the **kits** | tags `vX.Y.Z`; CI attaches the launchers and `SHA256SUMS`; `tools/release_kit.sh` attaches the kits |
+| Releases | no tags; `tools/make_kit.sh` makes the **kits** | tags `vX.Y.Z`; `tools/release_local.sh` builds the launchers and `SHA256SUMS` and makes the draft; this repo's `tools/ci/kits_local.sh` (or `tools/release_kit.sh`) attaches the kits |
 
 Version 0.9.5 is released; the 0.9.6 kits are prepared with all six games. See the
 [0.9.5 notes](../../releases/v0.9.5.md), [0.9.6 notes](../../releases/v0.9.6.md) and
@@ -110,9 +110,9 @@ what differs.
 | Page | Answers |
 |---|---|
 | [kit_contract.md](kit_contract.md) | The kit contract: `kit.txt`, `config/<id>/game.txt`, Arkeyan-Builder's CLI and events, the layout, licences. |
-| [kits_without_disc.md](kits_without_disc.md) | Issue #72 design: public-source kit builds, local disc layout, edition diagnostics, CI and ordered PRs. |
+| [kits_without_disc.md](kits_without_disc.md) | Issue #72 design: public-source kit builds, local disc layout, edition diagnostics, candidate kit builds and ordered PRs. |
 | [install_flow.md](install_flow.md) | Arkeyan Launcher's INSTALL: the kit download, Arkeyan-Builder's progress card, resume, where things live, the fake kit. |
-| [updates_release.md](updates_release.md) | The updater, the kit download and update, the release flow, CI. |
+| [updates_release.md](updates_release.md) | The updater, the kit download and update, the release flow, the local builds. |
 | [collection_toybox.md](collection_toybox.md) | Arkeyan Launcher's Collection page (the library and the in-game Toy Box are runtime pages). |
 | [support_portal_probe.md](support_portal_probe.md) | Logs, the crash dialog, the portal card. |
 | Arkeyan Launcher's own `docs/` | `install.md`, `updates.md`, `collection_ui.md`, `launcher_ui.md`, `settings.md`, `support.md`, `figures_overlap.md` (in its repo). |

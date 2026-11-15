@@ -84,6 +84,7 @@ namespace toybox
         // any other figure. (Appended last: SwapPlayers fills a seat by position.)
         std::string path2;
         int slot2 = -1;
+        int retakes = 0; // put on again since the last change, the game not reading it (host/toybox/retake.h)
     };
 
     // One cell of the list: a figure, the "+ Add" card of a section, or the folded "Not for this game" line.
@@ -284,7 +285,9 @@ namespace toybox
         std::string HatName(uint16_t hat) const;
         const collection::Game* gameInfo = nullptr;
         bool realPortal = false; // read-only seats from the traffic
-        bool mixed = false; // a real portal with virtual seats: its toys' seats read-only, the others as on the emulated one
+        bool arriving = false; // the game brings a figure in (game::FigureArriving), set every frame
+        // A real portal with virtual seats: its toys' seats read-only, the others as on the emulated one.
+        bool mixed = false;
         std::vector<collection::Figure> figures; // every dump but the untouched starters
         std::vector<SeatState> seats;
         std::string search;
@@ -593,6 +596,20 @@ namespace toybox
         int FreeSlot(int seatIndex, int half, uint32_t available, uint32_t planned) const;
         // Prepares all cards, then replaces their slots together. Failure keeps every seat and figure intact.
         bool ReplaceCards(const std::vector<std::pair<int, std::string>>& cards);
+        // Lifts the seat's unread figure and places it again (host/toybox/retake.h).
+        void Retake(int seatIndex, uint64_t now);
+        // A swap held while the game brings a figure in (host/toybox/arrival.h): one per seat, the last pick.
+        struct Held
+        {
+            int seat;
+            std::string path;
+            bool fromWheel;
+            uint64_t since;
+        };
+        std::vector<Held> m_held;
+        bool m_releasing = false; // PutOn from ReleaseHeld: not held again
+        uint64_t Unsettled(uint64_t now) const; // since the newest figure the game has not taken, UINT64_MAX: none
+        void ReleaseHeld(uint64_t now);
         void RemoveFromPortal(int seatIndex); // the seat's figures off the portal (not the seat's other state)
 
         // Figures.

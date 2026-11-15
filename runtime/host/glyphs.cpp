@@ -6,6 +6,8 @@
 #include "host/input.h"
 #include "host/settings.h"
 #include "memory.h"
+#include "vfs.h"
+#include "host/art/alchemy_archive.h"
 #include <SDL3/SDL.h>
 #include <stb_truetype.h>
 #include <stb_image_write.h>
@@ -60,6 +62,44 @@ namespace glyphs
 
         stbtt_fontinfo g_font; // Bungee, built into the executable
         bool g_fontLoaded = false;
+        std::vector<Prompt> g_prompts;
+
+        void LoadPrompts()
+        {
+            const auto sources = game::Current().glyphPrompts;
+            g_prompts.assign(sources.begin(), sources.end());
+            std::string_view archiveName;
+            std::optional<art::alchemy::IgaArchive> archive;
+            for (Prompt& prompt : g_prompts)
+            {
+                if (prompt.archive == nullptr || prompt.asset == nullptr)
+                    continue;
+                if (archiveName != prompt.archive)
+                {
+                    archiveName = prompt.archive;
+                    archive.reset();
+                    if (const auto* entry = g_disc.Find(prompt.archive); entry != nullptr && !entry->directory)
+                        archive = art::alchemy::IgaArchive::Open(
+                            [entry](uint64_t offset, size_t size, uint8_t* out) {
+                                return offset <= entry->size && size <= entry->size - offset &&
+                                       g_disc.Read(*entry, offset, out, uint32_t(size)) == size;
+                            },
+                            entry->size);
+                }
+                bool resolved = false;
+                if (archive)
+                    for (size_t i = 0; i < archive->Count(); i++)
+                    {
+                        if (!PromptAssetMatches(archive->Name(i), prompt.asset))
+                            continue;
+                        const auto model = art::alchemy::IgzFile::Parse(archive->Read(i));
+                        resolved = model && ResolvePrompt(prompt, *model);
+                        break;
+                    }
+                fprintf(stderr, "[glyphs] %s: %s\n", prompt.asset,
+                    resolved ? "world prompt meshes registered" : "meshes not resolved; original prompt retained");
+            }
+        }
 
         // --- Drawing: signed distances in pixels, coverage-blended into a premultiplied float canvas. --------------------
 
@@ -1005,6 +1045,7 @@ namespace glyphs
 
     void Init(const RuntimeSettings& settings)
     {
+        LoadPrompts();
         g_fontLoaded = stbtt_InitFont(&g_font, g_embeddedBungee, stbtt_GetFontOffsetForIndex(g_embeddedBungee, 0)) != 0;
         if (!g_fontLoaded)
             fprintf(stderr, "[glyphs] the embedded Bungee font does not load: the Xbox 360 glyphs stay\n");
@@ -1270,15 +1311,13 @@ namespace glyphs
 
     PromptPart PromptPartOf(uint32_t count, const void* indices, uint64_t& hash)
     {
-        return g_fontLoaded ? PromptPartOf(game::Current().glyphPrompts, Current(), count, indices, hash)
-                            : PromptPart::None;
+        return g_fontLoaded ? PromptPartOf(g_prompts, Current(), count, indices, hash) : PromptPart::None;
     }
 
     const Prompt* PromptOf(uint32_t faceCount, uint64_t faceHash, uint32_t lettersCount, uint64_t lettersHash)
     {
-        return Current() == Style::Xbox360
-                   ? nullptr
-                   : PromptOf(game::Current().glyphPrompts, faceCount, faceHash, lettersCount, lettersHash);
+        return Current() == Style::Xbox360 ? nullptr
+                                           : PromptOf(g_prompts, faceCount, faceHash, lettersCount, lettersHash);
     }
 
     int UvMatrix(uint64_t vertexShader, std::span<const uint64_t> glyphHashes)

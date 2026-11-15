@@ -79,7 +79,7 @@ namespace
         {
             uint8_t report[PortalReportSize];
             size_t size = portal.Read(report, sizeof(report));
-            if (size > 0 && report[0] == answer)
+            if (size > 0 && report[0] == uint8_t(answer))
                 return std::vector<uint8_t>(report, report + size);
         }
         return {};
@@ -506,6 +506,22 @@ int main()
         CHECK(ClassifySwapForce(5, ~0u) == Prompt{}); // nobody asked
         CHECK(ClassifySwapForce(7, 0) == Prompt{}); // IdleOutro: a figure came
         CHECK(ClassifySwapForce(16, ~0u).kind == Kind::TooMany); // Error: a "too many" screen
+
+        // A figure arriving (the Toy Box holds the next swap): the CMagicMoment's bring-in states, never the prompt.
+        for (uint32_t state : { 1u, 2u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 21u })
+            CHECK(SwapForceArriving(state));
+        for (uint32_t state : { 0u, 3u, 4u, 5u, 13u, 14u, 15u, 16u })
+            CHECK(!SwapForceArriving(state));
+        for (uint32_t state : { 1u, 2u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u })
+            CHECK(SuperChargersArriving(state));
+        for (uint32_t state : { 0u, 3u, 4u, 5u, 14u, 17u, 18u })
+            CHECK(!SuperChargersArriving(state));
+        CHECK(GiantsArriving("Portal Control - Magic Moment - 1 - Waiting To Init Object Loading P1"));
+        CHECK(GiantsArriving("Portal Control - Magic Moment - 4 - Show Minion P1"));
+        CHECK(!GiantsArriving("Portal Control - Magic Moment - Z - Canceled P1"));
+        CHECK(!GiantsArriving("Portal Control - In Game - 0 - Idle"));
+        CHECK(!GiantsArriving("Portal Control - Portal - 0 - Idle P1 Only"));
+        CHECK(SsaArriving(4) && !SsaArriving(2) && !SsaArriving(0));
 
         // SuperChargers: the state, the reason (13: a vehicle is required) and the player index, as run mmC saw them.
         CHECK(ClassifySuperChargers(0, 0, ~0u) == Prompt{}); // Inactive: in play

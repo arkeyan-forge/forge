@@ -143,6 +143,12 @@ the render manager's size chain 1000, 600, 500, 300, 250, 150, 125, 75. Recipe: 
 - **Composite.** One non-indexed quad in pixels (vertex constant c0 = 2/1280) reading the scene from slot 0: given the
   whole wide viewport it fills the frame as it is (no `VposParams` rewrite, unlike SSA). Only slot 0 counts: the HUD's
   quads keep stale scene-sized textures in other slots (`game::UltrawideCompositeSlot`).
+- **Menu blur (2026-11-14, launcher #78).** The menus blur the finished frame and draw it back: a quad of the
+  composite's shape reads the frame (slot 0, frame-sized) into the guest's whole viewport, once to copy it, once to mix
+  it with its blurred 1000x600 copy. Centred like the HUD, that pass squeezed the wide frame into the middle 16:9 between
+  black sides on every frame it ran, and the menu jumped between the two pictures (a 2560x1367 window, frame 1348x720).
+  It fills the frame as the composite does (`ultrawide::FillsFrame`: the composite's shape, reading the scene, or reading
+  the frame over the whole guest frame); during a movie it stays centred.
 - **Tiled frame.** The frame's two resolves (0-864, 864-1280) become 0 to the centred 864 and the centred 864 to the right
   edge, each copied to the same place of the wide front buffer.
 - **Movies.** `BinkOpen` / `BinkClose` (`sub_82155B08`) count the open movies (`ultrawide::MoviePlaying`); during one the
@@ -198,6 +204,11 @@ shape when wide (2560x1080: 1696x720; with `original_resolution` 1232x512, the 1
 | Scene size | `sub_8243F650` (a pass object: explicit size +32/+36, computed +92/+96) |
 | No predicated tiling, the console's EDRAM plan | `sub_823EBCD0` (a 1280x720 G-buffer splits into 2 tiles; kept in one) and `sub_823EF930` (the plan, called from `sub_82443DF8`, counts the original size's tiles) |
 | Camera | the projection builder `sub_823B1AF0`: the game gives a horizontal field of view (84.3 degrees) and derives the vertical one from the aspect, so the hook widens the horizontal one with the aspect (100.7 degrees at 2.37). Two callers feed the world camera: `sub_8243C700` (the target's shape) and `sub_8230F3D8` (a 16:9 global; its two calls get the window's aspect in the hook) |
+
+The menus' vignette (2026-11-14, launcher issue 104) is four 200x320 corner pieces of the HUD's shader `3C49092050CA673F`
+(a 171x171 gradient, quarter-turned): centred, they ended at the 16:9 edge with a step (8 grey levels at 2560x1080 above the
+autosave notice); `game::UltrawideHudVertexShader` sends them to the window's corners (the step 0.9, the save slot menu and
+the notice's other 34 draws unmoved, `SKY_DUMP_FRAME` viewports).
 
 The 16:9 aspect global (`0x82826308`) is left alone: the camera rig reads it, and a wide value pulls the camera back from the character. Details and the limits:
 [games/trapteam/docs/status.md](../../../games/trapteam/docs/status.md) ("The picture", "The constant blur").
@@ -261,6 +272,10 @@ frame 2560x720, 118.4 degrees, plays on in the hub.
   is untested (the runs set `SKY_DISPLAY_SIZE`) [?].
 - Menus (title, slots), the pause dimming and anything the game draws to fill the 16:9 frame stay 16:9: the sides are
   black (menus) or show the 3D scene undimmed (anything dimming over it). Movies keep 16:9 with bars.
+  A HUD piece in a corner of the 16:9 frame goes to that corner of the window instead (`d3d/frame_anchor.h`): the draws
+  of `game::UltrawideHudVertexShader` (Trap Team's; `0` in the other games, not looked for) are placed from their
+  vertices and the position matrix in c0-c3; a piece that reaches one side's corner moves to that side, the rest (a
+  full-width draw included) stays centred.
 - The HUD is not anchored to the window's edges: the game lays it out for 1280x720 and the host centres that.
   Anchoring to the edges would mean giving the UI a wider screen (`0x82BB45DC`), which brings parked off-screen notices
   into view.

@@ -10,4 +10,9 @@ namespace portalprompt
             return { Kind::Player, int(player) + 1, state == SwapForceStateDead };
         return {};
     }
+
+    bool SwapForceArriving(uint32_t state)
+    {
+        return state == 1 || state == 2 || (state >= 6 && state <= 12) || state == 21;
+    }
 }

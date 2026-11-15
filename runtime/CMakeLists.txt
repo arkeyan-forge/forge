@@ -59,6 +59,7 @@ add_executable(ArkeyanRuntime
     host/dds.cpp
     host/glyphs.cpp
     host/glyph_models.cpp
+    host/glyph_assets.cpp
     host/texture_pack.cpp
     ${ARKEYAN_COLLECTION_SOURCES}
     ${ARKEYAN_ART_SOURCES}
@@ -194,8 +195,8 @@ arkeyan_setup_ffmpeg(ArkeyanRuntime)
 file(GLOB ARKEYAN_ENGINE_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_ENGINE_DIR}/*.cpp)
 file(GLOB ARKEYAN_GAME_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_GAME_DIR}/*.cpp)
 target_sources(ArkeyanRuntime PRIVATE ${ARKEYAN_ENGINE_SOURCES} ${ARKEYAN_GAME_SOURCES})
-target_include_directories(ArkeyanRuntime PRIVATE . ${ARKEYAN_GAME_DIR} ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash
-    ${CMAKE_SOURCE_DIR}/thirdparty/stb)
+target_include_directories(ArkeyanRuntime PRIVATE . ${ARKEYAN_GAME_DIR} ${ARKEYAN_ENGINE_DIR}
+    ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash ${CMAKE_SOURCE_DIR}/thirdparty/stb)
 # A disc edition of other code (docs/tools/edition_finder.md): its own addresses.h, made from its edition report by
 # tools/editions/from_report.py, found before the game's.
 set(ARKEYAN_EDITION "" CACHE STRING "Media ID of a disc edition whose games/<id>/editions/<ID>/addresses.h to build with")
@@ -219,6 +220,14 @@ target_link_libraries(ArkeyanRuntime PRIVATE ArkeyanRecompLib ArkeyanRecompGpu A
 # ppc_context.h and ppc_config.h are XenonRecomp's output: system headers here, so their warnings stay out of ours. System
 # directories come after every -I one, so XenonUtils (which has its own ppc_context.h) is one too, after the game's.
 target_include_directories(ArkeyanRuntime SYSTEM PRIVATE ${ARKEYAN_PPC_DIR} ${ARKEYAN_XENON_UTILS})
+# The checks (SKY_TESTS_ONLY, no game data): the runtime and the tests that use the guest's context are not built, but
+# clang-tidy parses their sources from the compile database; tidy/ppc_config.h stands in for the generated one.
+function(arkeyan_tidy_standin target)
+    if(SKY_TESTS_ONLY AND NOT EXISTS ${ARKEYAN_PPC_DIR}/ppc_config.h)
+        target_include_directories(${target} SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tidy)
+    endif()
+endfunction()
+arkeyan_tidy_standin(ArkeyanRuntime)
 # ARKEYAN_LAYOUT_RECORD: layout/ppc_config.h, before ppc/, gives runtime sources the four bounds from the active layout;
 # guest_layout_record.cpp builds the record from the generated constants.
 function(arkeyan_layout_record target)
@@ -361,6 +370,10 @@ target_include_directories(ArkeyanReadFullyTest PRIVATE .)
 add_executable(ArkeyanHeapViewTest gpu/heap_view_test.cpp)
 target_include_directories(ArkeyanHeapViewTest PRIVATE .)
 
+# The perf log's clock counts nanoseconds: ./ArkeyanClockTest
+add_executable(ArkeyanClockTest platform/clock_test.cpp)
+target_include_directories(ArkeyanClockTest PRIVATE .)
+
 # The buffer cache's range hash (chunks shared by overlapping ranges): ./ArkeyanRangeHashTest
 add_executable(ArkeyanRangeHashTest gpu/range_hash_test.cpp)
 target_include_directories(ArkeyanRangeHashTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
@@ -368,6 +381,10 @@ target_include_directories(ArkeyanRangeHashTest PRIVATE . ${CMAKE_SOURCE_DIR}/th
 # 16-bit vertex component pairs back in order after the 32-bit swap: ./ArkeyanVertexPairsTest
 add_executable(ArkeyanVertexPairsTest d3d/vertex_pairs_test.cpp)
 target_include_directories(ArkeyanVertexPairsTest PRIVATE .)
+
+# Where a HUD draw goes in the wide frame (a corner piece to the window's corner): ./ArkeyanFrameAnchorTest
+add_executable(ArkeyanFrameAnchorTest d3d/frame_anchor_test.cpp)
+target_include_directories(ArkeyanFrameAnchorTest PRIVATE .)
 
 # Render target slots of one draw that share an EDRAM key but not a surface: ./ArkeyanMrtAliasTest
 add_executable(ArkeyanMrtAliasTest d3d/mrt_alias_test.cpp)
@@ -434,8 +451,10 @@ add_executable(ArkeyanLiveBlocksTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/l
 target_include_directories(ArkeyanLiveBlocksTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
 
 # The models that show a button over a glyph texture (host/glyphs.h, Model: the letters skipped, the texture matrix): ./ArkeyanGlyphModelsTest
-add_executable(ArkeyanGlyphModelsTest host/glyph_models_test.cpp host/glyph_models.cpp)
+add_executable(ArkeyanGlyphModelsTest host/glyph_models_test.cpp host/glyph_models.cpp host/glyph_assets.cpp
+    host/art/alchemy_archive.cpp host/art/lux_images.cpp host/art/xenos_texture.cpp)
 target_include_directories(ArkeyanGlyphModelsTest PRIVATE .)
+target_include_directories(ArkeyanGlyphModelsTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
 target_include_directories(ArkeyanGlyphModelsTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 
 # The players' profiles (host/profiles.h): the environment, the names the fonts draw, the gamer picture tile (a PNG made
@@ -571,6 +590,10 @@ target_include_directories(ArkeyanVideoDriverTest PRIVATE .)
 # The pacer of per-frame simulation steps, with a fake clock: ./ArkeyanStepPacerTest
 add_executable(ArkeyanStepPacerTest d3d/step_pacer_test.cpp)
 target_include_directories(ArkeyanStepPacerTest PRIVATE .)
+
+# The ring scan's register file: a run of writes as the same writes one at a time: ./ArkeyanRingRegistersTest
+add_executable(ArkeyanRingRegistersTest d3d/ring_registers_test.cpp)
+target_include_directories(ArkeyanRingRegistersTest PRIVATE .)
 
 # Where the PM4 ring scan reads from across command buffer detours (issue #39): ./ArkeyanRingCursorTest
 add_executable(ArkeyanRingCursorTest d3d/ring_cursor_test.cpp)
@@ -731,6 +754,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
         host/collection/datadir.cpp host/collection/portable_pack.cpp host/collection/json.cpp vfs.cpp ${ARKEYAN_PLATFORM_SOURCES})
     target_include_directories(ArkeyanAchievementsKernelTest PRIVATE .)
     target_include_directories(ArkeyanAchievementsKernelTest SYSTEM PRIVATE ${ARKEYAN_PPC_DIR} ${ARKEYAN_XENON_UTILS}) # as ArkeyanRuntime's
+    arkeyan_tidy_standin(ArkeyanAchievementsKernelTest)
     target_link_libraries(ArkeyanAchievementsKernelTest PRIVATE ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
 
     # Host calls into the guest, thread memory over 2000 create/exit cycles, the dispatcher table; the game's code range,
@@ -739,6 +763,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
         memory.cpp ${ARKEYAN_PLATFORM_SOURCES})
     target_include_directories(ArkeyanGuestThreadTest PRIVATE .)
     target_include_directories(ArkeyanGuestThreadTest SYSTEM PRIVATE ${ARKEYAN_PPC_DIR} ${ARKEYAN_XENON_UTILS}) # as ArkeyanRuntime's
+    arkeyan_tidy_standin(ArkeyanGuestThreadTest)
     target_link_libraries(ArkeyanGuestThreadTest PRIVATE ArkeyanXenonUtils)
     arkeyan_layout_record(ArkeyanGuestThreadTest)
 endif()

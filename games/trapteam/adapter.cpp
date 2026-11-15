@@ -127,3 +127,6 @@ const game::Adapter& game::Current() { return g_adapter; }
 
 // Skylauncher's glow for this game (its StyleOf).
 uint32_t game::Accent() { return 0xDE0018; }
+
+// Trap Team's portal state is not read yet: the Toy Box holds a swap only while its last figure is not taken.
+bool game::FigureArriving() { return false; }

@@ -82,6 +82,7 @@ struct PortalSlotSeen
     bool present = false;
     uint64_t arrived = 0;   // SDL_GetTicksNS() of the status report that showed it (0: unknown)
     uint64_t lastRead = 0;  // of the last block read from it, 0 if none yet
+    uint64_t headRead = 0;  // of the last read of block 0, where the title starts reading a toy; 0 if none yet
     uint64_t blocks = 0;    // bit n: block n of `data` is known
     FigureData data{};
 };

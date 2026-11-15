@@ -9,6 +9,7 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gpu
@@ -18,6 +19,10 @@ namespace gpu
 struct RuntimeSettings;
 struct SDL_Gamepad;
 union SDL_Event;
+namespace art::alchemy
+{
+    class IgzFile;
+}
 
 namespace glyphs
 {
@@ -106,7 +111,14 @@ namespace glyphs
         uint8_t uAxis, vAxis;   // the position components (0 x, 1 y, 2 z) that run left to right and top to bottom
         bool flipU, flipV;
         float uScale; // the game's shader stretches u about 1/2 by this much (a pill's aspect): written divided
+        const char* archive = nullptr;
+        const char* asset = nullptr; // optional model name: its mesh signatures are read at startup, never shipped
     };
+
+    // Startup only: identify a named model and resolve its two dense triangle lists from the installed asset.
+    // An unsupported or ambiguous model leaves the prompt unchanged.
+    bool PromptAssetMatches(std::string_view name, std::string_view asset);
+    bool ResolvePrompt(Prompt& prompt, const art::alchemy::IgzFile& file);
 
     // A picture of buttons the game's CPU text renderer copies into its strings (Swap Force: the fonts' "button" images,
     // 32-bit ARGB, tiled, big-endian), so that no texture of the GPU holds it. It sits in guest memory, found by the XXH3

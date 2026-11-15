@@ -1,11 +1,11 @@
-diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
-index 2b702c7..3aa24a2 100644
 --- a/plume_d3d12.cpp
 +++ b/plume_d3d12.cpp
-@@ -1570,6 +1570,30 @@ namespace plume {
-         return 0;
-     }
+@@ -1568,6 +1568,30 @@
  
+     uint32_t D3D12SwapChain::getRefreshRate() const {
+         return 0;
++    }
++
 +    bool D3D12SwapChain::setPresentLatest(bool latest) {
 +#ifdef PLUME_D3D12_COREWINDOW
 +        (void)latest;
@@ -28,16 +28,12 @@ index 2b702c7..3aa24a2 100644
 +        stats.refreshes = statistics.PresentRefreshCount;
 +        stats.timeNs = 0;
 +        return true;
-+    }
-+
+     }
+ 
      // D3D12Framebuffer
-     
-     D3D12Framebuffer::D3D12Framebuffer(D3D12Device *device, const RenderFramebufferDesc &desc) {
-diff --git a/plume_d3d12.h b/plume_d3d12.h
-index b7ef209..8c40747 100644
 --- a/plume_d3d12.h
 +++ b/plume_d3d12.h
-@@ -121,6 +121,8 @@ namespace plume {
+@@ -121,6 +121,8 @@
          bool needsResize() const override;
          void setVsyncEnabled(bool vsyncEnabled) override;
          bool isVsyncEnabled() const override;
@@ -46,14 +42,14 @@ index b7ef209..8c40747 100644
          uint32_t getWidth() const override;
          uint32_t getHeight() const override;
          RenderTexture *getTexture(uint32_t textureIndex) override;
-diff --git a/plume_metal.cpp b/plume_metal.cpp
-index 332dc0f..f393cbc 100644
 --- a/plume_metal.cpp
 +++ b/plume_metal.cpp
-@@ -1958,6 +1958,15 @@ namespace plume {
+@@ -1958,8 +1958,21 @@
          // According to Apple, presenting via scheduled handler is more performant than using the presentDrawable method.
          // We grab the underlying drawable because we might've acquired a new one by now and the old one would have been released.
          CA::MetalDrawable *drawableMtl = drawable.mtl->retain();
+-        presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
+-            drawableMtl->present();
 +        // SSA: the time each frame reached the display (0: it was not shown).
 +        drawableMtl->addPresentedHandler([shared = displayStats](MTL::Drawable *shown) {
 +            const double seconds = shown->presentedTime();
@@ -63,13 +59,24 @@ index 332dc0f..f393cbc 100644
 +                shared->stats.timeNs = uint64_t(seconds * 1e9);
 +            }
 +        });
-         presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
-             drawableMtl->present();
++        presentBuffer->addScheduledHandler([drawableMtl, minimum = minimumPresentDuration](MTL::CommandBuffer* cmdBuffer) {
++            if (minimum > 0.0) {
++                drawableMtl->presentAfterMinimumDuration(minimum);
++            } else {
++                drawableMtl->present();
++            }
          });
-@@ -2024,6 +2033,12 @@ namespace plume {
+ 
+         presentBuffer->addCompletedHandler([drawableMtl, presentId, this](MTL::CommandBuffer* cmdBuffer) {
+@@ -2024,6 +2037,17 @@
          layer->setDisplaySyncEnabled(vsyncEnabled);
      }
  
++    bool MetalSwapChain::setMinimumPresentDuration(double seconds) {
++        minimumPresentDuration = seconds > 0.0 ? seconds : 0.0;
++        return true;
++    }
++
 +    bool MetalSwapChain::getDisplayStats(RenderDisplayStats &stats) const {
 +        std::lock_guard lock(displayStats->mutex);
 +        stats = displayStats->stats;
@@ -79,37 +86,35 @@ index 332dc0f..f393cbc 100644
      bool MetalSwapChain::isVsyncEnabled() const {
          MetalAutoreleasePool releasePool;
          return layer->displaySyncEnabled();
-diff --git a/plume_metal.h b/plume_metal.h
-index 0acd9fd..b501058 100644
 --- a/plume_metal.h
 +++ b/plume_metal.h
-@@ -247,6 +247,13 @@ namespace plume {
+@@ -246,6 +246,13 @@
+         uint64_t lastPresentedId = 0;
          std::mutex lastPresentedIdMutex;
          std::condition_variable lastPresentedIdCondVar;
- 
++
 +        // SSA: the frames shown (presented handlers), shared with the handlers, which may outlive the swap chain.
 +        struct DisplayStats {
 +            std::mutex mutex;
 +            RenderDisplayStats stats;
 +        };
 +        std::shared_ptr<DisplayStats> displayStats = std::make_shared<DisplayStats>();
-+
+ 
          MetalSwapChain(MetalCommandQueue *commandQueue, const RenderSwapChainDesc &desc);
          ~MetalSwapChain() override;
-         bool present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) override;
-@@ -255,6 +262,7 @@ namespace plume {
+@@ -255,6 +262,9 @@
          bool needsResize() const override;
          void setVsyncEnabled(bool vsyncEnabled) override;
          bool isVsyncEnabled() const override;
 +        bool getDisplayStats(RenderDisplayStats &stats) const override;
++        bool setMinimumPresentDuration(double seconds) override;
++        double minimumPresentDuration = 0.0;
          uint32_t getWidth() const override;
          uint32_t getHeight() const override;
          RenderTexture *getTexture(uint32_t textureIndex) override;
-diff --git a/plume_render_interface.h b/plume_render_interface.h
-index d5ae9e3..4106275 100644
 --- a/plume_render_interface.h
 +++ b/plume_render_interface.h
-@@ -85,6 +85,13 @@ namespace plume {
+@@ -85,6 +85,13 @@
          virtual void setAccelerationStructure(uint32_t descriptorIndex, const RenderAccelerationStructure *accelerationStructure) = 0;
      };
  
@@ -123,7 +128,7 @@ index d5ae9e3..4106275 100644
      struct RenderSwapChain {
          virtual ~RenderSwapChain() { }
          virtual bool present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) = 0;
-@@ -105,6 +112,13 @@ namespace plume {
+@@ -105,6 +112,16 @@
  
          // Only valid if displayTiming is enabled in capabilities.
          virtual uint32_t getRefreshRate() const = 0;
@@ -134,14 +139,15 @@ index d5ae9e3..4106275 100644
 +        // SSA: the frames the display has shown, where the backend tells (D3D12: frame statistics; Metal: presented
 +        // handlers); false elsewhere.
 +        virtual bool getDisplayStats(RenderDisplayStats &stats) const { (void)stats; return false; }
++        // SSA: with vsync on, each frame stays on the display at least `seconds` (0: as soon as it is ready), so a 60 FPS
++        // game on a 120 Hz display shows every frame for two refreshes. Returns whether the backend does it (Metal).
++        virtual bool setMinimumPresentDuration(double seconds) { (void)seconds; return false; }
      };
  
      struct RenderFramebuffer {
-diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
-index eb3742a..7eaeed3 100644
 --- a/plume_vulkan.cpp
 +++ b/plume_vulkan.cpp
-@@ -2420,17 +2420,27 @@ namespace plume {
+@@ -2420,15 +2420,25 @@
      }
  
      void VulkanSwapChain::setVsyncEnabled(bool vsyncEnabled) {
@@ -158,22 +164,18 @@ index eb3742a..7eaeed3 100644
          else {
              requiredPresentMode = VK_PRESENT_MODE_FIFO_KHR;
          }
-     }
- 
++    }
++
 +    bool VulkanSwapChain::setPresentLatest(bool latest) {
 +        presentLatest = latest && mailboxPresentModeSupported;
 +        setVsyncEnabled(vsyncRequested);
 +        return presentLatest;
-+    }
-+
-     bool VulkanSwapChain::isVsyncEnabled() const {
-         return (createdPresentMode == VK_PRESENT_MODE_FIFO_KHR) || (createdPresentMode == VK_PRESENT_MODE_MAILBOX_KHR);
      }
-diff --git a/plume_vulkan.h b/plume_vulkan.h
-index 87356b8..3eddbb2 100644
+ 
+     bool VulkanSwapChain::isVsyncEnabled() const {
 --- a/plume_vulkan.h
 +++ b/plume_vulkan.h
-@@ -230,6 +230,8 @@ namespace plume {
+@@ -230,6 +230,8 @@
          std::unique_ptr<CocoaWindow> windowWrapper;
  #endif
          uint64_t presentCount = 0;
@@ -182,7 +184,7 @@ index 87356b8..3eddbb2 100644
          uint32_t width = 0;
          uint32_t height = 0;
          VkSwapchainCreateInfoKHR createInfo = {};
-@@ -251,6 +253,7 @@ namespace plume {
+@@ -251,6 +253,7 @@
          bool needsResize() const override;
          void setVsyncEnabled(bool vsyncEnabled) override;
          bool isVsyncEnabled() const override;

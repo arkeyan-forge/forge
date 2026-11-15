@@ -35,3 +35,4 @@ private/launcher-home/
 pipelines.bin
 portal.txt
 launcher.ini
+/build-ci-*/

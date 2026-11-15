@@ -241,6 +241,19 @@ Everything the game, the launcher and Arkeyan-Builder keep for the player is und
 | `SSA/presence.txt` | the running game's Discord presence for Arkeyan Launcher: `level=<id>` (the exact `game::LevelStarted` id, empty before the first level), `menu=1` for the title/front end or `0` otherwise (`game::InMenuLevel`), and `players=1` or `2` while the Toy Box's `p2` character seat is occupied (virtual or physical). Each key has its own line. This is seat occupancy, not a controller connection or the game's join/drop-out state; it follows the existing seat mapping rather than counting portal tags, items or vehicles. Written at startup and on changes, atomically through a temporary sibling and rename; seat changes are flushed by the Toy Box link worker even when the link is disabled. Lives beside achievements and play time in the per-game player profile folder (`datadir::PlayerGame`), or `SKY_SAVE_DIR` when set. The launcher should read it only for a running game; it can remain after exit. |
 | `SSA/launcher-cache/achievements/` | Arkeyan Launcher's cache of the game's achievements (`list.tsv` and one PNG each), read from the player's disc at its disc check |
 
+Presence also carries P1's character from the Toy Box's `p1` seat, for real, virtual and mixed portals:
+`toy=<type>` and `variant=<id>` are the collection's raw tag identity, both unsigned decimal integers (zero is valid).
+They identify the catalogue toy and tag variant, not a dump path, serial, nickname or collection edition override.
+`toylevel=<n>` is added only when progress is readable, capped to the running game's level cap. Blank, damaged or
+incomplete progress omits the level; an empty or unidentified P1 seat omits all three character keys, clearing the
+previous character. Other player, item and vehicle seats do not supply P1's identity.
+The existing seat scan observes character and level changes about every 250 ms; it only posts the latest state.
+The Toy Box link worker coalesces those observations and atomically replaces the file only when the snapshot changes,
+including with `SKY_TOYBOX_LINK=0`; level-start writes retain the latest character. Startup clears any previous toy.
+[V] `ArkeyanPresenceTest` checks synthetic identities, optional levels, clearing, session reset, atomic replacement,
+unchanged snapshots and the disabled-link worker. [?] Live real-portal swaps and the launcher's catalogue display
+still need a player check; neither the game nor the launcher is needed for these unit tests.
+
 The environment variables that name one file or folder keep winning over the root: `SKY_SETTINGS` and
 `SKY_LAUNCHER_INI` (the settings file), `SKY_SAVE_DIR` (saves, `pipelines.bin`, `portal.txt`), `SKY_COLLECTION`,
 `SKY_PORTRAITS`, `SKY_LOG`, `SKY_LAUNCHER_DATA` (the launcher's kits, see its `docs/install.md`). The player's profile

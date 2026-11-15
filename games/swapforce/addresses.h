@@ -142,6 +142,7 @@ namespace game
     constexpr uint32_t UltrawideCompositeVertices = 6;
     constexpr int UltrawideCompositeSlot = 0;
     constexpr bool UltrawideCompositeVpos = false;
+    constexpr uint64_t UltrawideHudVertexShader = 0; // not looked for (d3d/frame_anchor.h)
     // Upscaling (d3d/upscale.h): the vertex constant where the position matrix starts: c0-c3, row vectors (Alchemy, as
     // Giants'; the camera vote's "[upscale] last 900 frames" line checks it).
     constexpr int32_t UpscalePositionMatrix = 0;

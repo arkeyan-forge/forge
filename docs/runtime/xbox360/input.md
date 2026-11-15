@@ -183,6 +183,16 @@ log line. The Xbox 360 style changes nothing. Unit test: `ArkeyanGlyphModelsTest
 ([art.md](../../../games/superchargers/docs/art.md), "World prompts"), Imaginators
 ([art.md](../../../games/imaginators/docs/art.md), "World prompts").
 
+**Named mash models** (issue #94): `engines/alchemy/mash_prompts.h` supplies A/B/X/Y picture mappings for both later
+Alchemy games. A `Prompt` can name an `archive` and `asset` instead of embedding mesh fingerprints.
+At startup, `host/glyph_assets.cpp` resolves the installed model's two triangle lists from its IGZ memory handles;
+`host/glyphs.cpp` retains only their counts and hashes for the existing draw pairing. Matching accepts archive path
+separators and encoded asset names, with a filename boundary. Unsupported or ambiguous models retain the original
+prompt and produce a startup diagnostic. This does no asset discovery or allocation during draws.
+[V] Synthetic coverage in `ArkeyanGlyphModelsTest`: all four picture mappings, exact stored-byte matching, shared
+faces, Xbox 360 bypass, malformed models and UV projection. [?] The actual mash assets and their orientation/stretch
+still require a player check; see the Imaginators scene and capture instructions below its world-prompt table.
+
 **SSA [Lux]**: every glyph is a whole texture (128x128 DXT5, the stick 256x256 DXT1) loaded from the `.str` packages
 (`APKF` images) and drawn as a quad next to the text: `5CFC101A45FC493F` a_mark, `955A4B4B799FF8E9` b_mark,
 `37ACF5999A3F9F99`/`16DB4319FA0899CB` x/y, `6B77FA0C8847038E`/`43493F9409303C0A` hud a/b (pause menu), `629C5B2704B8047E`

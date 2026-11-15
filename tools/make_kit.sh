@@ -81,7 +81,7 @@ for g in $games; do
         { echo "error: $(ppc_headers $g)/ppc_context.h differs from $first's: translate the discs again with one XenonRecomp" >&2; exit 1; }
 done
 # The kit has its own version: the one Skylauncher expects (docs/release/launcher/kit_contract.md).
-version=0.9.6
+version=0.9.8
 # Static libraries are byte-identical between the games' builds only if archives carry no timestamps (Apple's ar).
 export ZERO_AR_DATE=1
 # Nothing of this machine in a kit: every compile maps the checkout's path to ".", so neither __FILE__ nor debug
@@ -351,7 +351,7 @@ for platform in $platforms; do
         kit=$root/dist/skylanders-kit-windows-x64
         mkdir -p "$b"
         cross="-DCMAKE_TOOLCHAIN_FILE=$root/cmake/toolchains/x86_64-w64-mingw32-clang.cmake -DLLVM_MINGW_ROOT=$LLVM_MINGW_ROOT"
-        # A case-sensitive host (Linux, the CI): sources include <Windows.h> and <Shlwapi.h>, mingw names them in lower case.
+        # A case-sensitive host (Linux): sources include <Windows.h> and <Shlwapi.h>, mingw names them in lower case.
         # The shim's headers forward to them (CPATH: clang searches it as -I). Never on the Mac, where the names are one file.
         [ "$(uname -s)" = Linux ] && export CPATH="$root/cmake/toolchains/mingw-case${CPATH:+:$CPATH}"
         # shellcheck disable=SC2086 # cross is several arguments
@@ -417,10 +417,11 @@ for platform in $platforms; do
         if [ "$(uname -s)" != Linux ]; then
             # From the Mac (or anywhere): the same script in the kit image, the checkout mounted at /src, nothing of it
             # copied into the image.
-            # KIT_DEPS and KIT_SCAN_WORDS mounted when they are outside the checkout.
+            # KIT_DEPS and KIT_SCAN_WORDS mounted when they are outside the checkout, KIT_DEPS at its own path (the
+            # FFmpeg relink objects keep it: docs/release/launcher/kits_without_disc.md, step 6).
             case $deps in
                 "$root"/*) inner_deps=/src/${deps#"$root"/}; set -- ;;
-                *) inner_deps=/deps; set -- -v "$deps:/deps" ;;
+                *) inner_deps=$deps; set -- -v "$deps:$deps" ;;
             esac
             if [ -n "${KIT_SCAN_WORDS:-}" ]; then set -- "$@" -v "$KIT_SCAN_WORDS:/kit_scan_words.txt:ro" -e KIT_SCAN_WORDS=/kit_scan_words.txt; fi
             docker build -q --platform linux/amd64 -t ssarecomp-kit-linux -f tools/linux/kit.Dockerfile tools/linux > /dev/null

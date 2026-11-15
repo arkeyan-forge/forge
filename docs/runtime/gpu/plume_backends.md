@@ -131,6 +131,15 @@ refresh 0%, 2: 60%, 3: 40%, 4 or more: 0%` (Vulkan reports nothing). Offscreen r
 the choice and the count only in `ArkeyanPresentModeTest`; the PC check is [test_096_pacing.md](../../release/test_096_pacing.md).
 Applied after the six above.
 
+**Each frame held for its refreshes** [?] (2026-11-14, 0.9.7): the owner's MacBook Pro (120 Hz ProMotion), Spyro's
+Adventure at a steady 60 FPS, logged `for 1 refresh 5-17%, 2: 66-98%, 3: 1-17%`: Metal presents a frame as soon as it is
+ready, on the game's own 60 Hz clock, which drifts against the display's; the frames that fell a little early or late
+took 1 or 3 refreshes, a visible stutter at 60 FPS. The same patch adds `setMinimumPresentDuration` (Metal:
+`presentAfterMinimumDuration`; elsewhere it does nothing): on FIFO with a refresh at least twice the frame rate,
+`gpu::presentmode::MinimumPresentSeconds` asks for one frame time less half a millisecond (16.17 ms at 60), so no frame
+leaves after one refresh. The log line ends with `, each frame held for its refreshes`. Not measured on a real display
+yet (offscreen has no swap chain); the `[perf] display` line on the owner's Mac is the check.
+
 ## When D3D12 shows nothing: Vulkan instead [?] (2026-11-11, issue #27)
 A Windows player's Trap Team played its sound on a black screen in D3D12 (the 0.9.5 default) and worked in Vulkan (GPU and
 log not known yet). Whatever the cause, `gpu/first_frame.h` now guards D3D12's first frames, on desktop Windows only, when

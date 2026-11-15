@@ -109,6 +109,13 @@ namespace ultrawide
     // The frame's width (its height stays 720): 1280 unless Active(), else 720 x aspect.
     uint32_t FrameWidth();
 
+    // Whether a draw into the wide frame fills it, rather than being centred like the HUD. `compositeShape`: the
+    // game's composite primitive (game::UltrawideCompositeVertices, in its slot). The composite (it reads the scene)
+    // fills the frame; so does a pass of that shape that reads the wide frame back over the guest's whole frame (Giants'
+    // menus blur the frame and draw it back): centred, it squeezed the picture into the middle 16:9 between black sides
+    // on every frame it ran, and the menu jumped between the two pictures.
+    bool FillsFrame(bool compositeShape, bool readsScene, bool readsFrame, bool coversFrame);
+
     // Movies keep 16:9 with black bars: while one is open (the Bink hooks count them, d3d/bink_display.cpp), the scene
     // the game may still draw behind it stays 16:9 too and the sides are cleared to black.
     void MovieOpened();

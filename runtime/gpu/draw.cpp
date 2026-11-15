@@ -24,6 +24,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <bit>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -201,7 +202,21 @@ namespace
     template <typename T>
     uint64_t HashValue(const T& value, uint64_t hash)
     {
-        return HashBytes(&value, sizeof(value), hash);
+        if constexpr (std::is_pointer_v<T>)
+            return HashValue(reinterpret_cast<uintptr_t>(value), hash);
+        else
+            return HashBytes(static_cast<const void*>(&value), sizeof(T), hash);
+    }
+
+    // Bit for bit, as memcmp compares: a NaN equals itself, -0 differs from +0.
+    bool SameBits(float a, float b) { return std::bit_cast<uint32_t>(a) == std::bit_cast<uint32_t>(b); }
+
+    bool SameSampler(const gpu::SamplerState& a, const gpu::SamplerState& b)
+    {
+        return a.minFilter == b.minFilter && a.magFilter == b.magFilter && a.mipFilter == b.mipFilter &&
+               a.addressU == b.addressU && a.addressV == b.addressV && a.addressW == b.addressW &&
+               a.borderColor == b.borderColor && a.maxAnisotropy == b.maxAnisotropy &&
+               SameBits(a.mipLodBias, b.mipLodBias) && SameBits(a.minLod, b.minLod) && SameBits(a.maxLod, b.maxLod);
     }
 
     uint32_t HeapOf(const gpu::Texture& texture)
@@ -254,7 +269,7 @@ namespace
     {
         uint64_t key = XXH3_64bits(&state, sizeof(state));
         auto it = g_draw->samplerSlots.find(key);
-        if (it != g_draw->samplerSlots.end() && memcmp(&g_draw->samplerStates[it->second], &state, sizeof(state)) == 0)
+        if (it != g_draw->samplerSlots.end() && SameSampler(g_draw->samplerStates[it->second], state))
             return it->second;
 
         RenderSamplerDesc desc;
@@ -292,7 +307,7 @@ namespace
     uint32_t SamplerSlotOf(uint32_t index, const gpu::SamplerState& state)
     {
         uint32_t& last = g_draw->lastSamplerSlots[index];
-        if (last < g_draw->samplerStates.size() && memcmp(&g_draw->samplerStates[last], &state, sizeof(state)) == 0)
+        if (last < g_draw->samplerStates.size() && SameSampler(g_draw->samplerStates[last], state))
             return last;
         return last = SamplerSlot(state);
     }
@@ -427,9 +442,13 @@ namespace
     {
         // Keyed by the storage, not the gpu::Texture: a deferred resolve copy can move storage between textures.
         const RenderTexture* attachments[gpu::MaxRenderTargets];
+        uintptr_t addresses[gpu::MaxRenderTargets];
         for (uint32_t i = 0; i < colorCount; i++)
+        {
             attachments[i] = colors[i]->texture.get();
-        uint64_t key = HashBytes(attachments, sizeof(*attachments) * colorCount,
+            addresses[i] = reinterpret_cast<uintptr_t>(attachments[i]);
+        }
+        uint64_t key = HashBytes(addresses, sizeof(uintptr_t) * colorCount,
             HashValue(depth != nullptr ? depth->texture.get() : nullptr, colorCount));
         auto& framebuffer = g_draw->framebuffers[key];
         if (framebuffer == nullptr)
@@ -649,7 +668,7 @@ namespace
         RenderGraphicsPipelineDesc desc;
         desc.pipelineLayout = g_draw->layout.get();
         desc.vertexShader = VariantOf(*vertexShader, key.specConstants);
-        desc.pixelShader = objectMask              ? ObjectMaskPixelShader()
+        desc.pixelShader = objectMask               ? ObjectMaskPixelShader()
                            : pixelShader != nullptr ? VariantOf(*pixelShader, key.specConstants)
                                                     : nullptr; // none: depth only
         if (objectMask && desc.pixelShader == nullptr)
@@ -1045,9 +1064,10 @@ namespace
         const RenderComparisonFunction test = key.depthStencil.depthFunction;
         memset(&key.depthStencil, 0, sizeof(key.depthStencil));
         key.depthStencil.depthEnabled = true;
-        key.depthStencil.depthFunction = test == RenderComparisonFunction::LESS      ? RenderComparisonFunction::LESS_EQUAL
-                                         : test == RenderComparisonFunction::GREATER ? RenderComparisonFunction::GREATER_EQUAL
-                                                                                     : test;
+        key.depthStencil.depthFunction = test == RenderComparisonFunction::LESS ? RenderComparisonFunction::LESS_EQUAL
+                                         : test == RenderComparisonFunction::GREATER
+                                             ? RenderComparisonFunction::GREATER_EQUAL
+                                             : test;
         return key;
     }
 
@@ -1156,7 +1176,7 @@ namespace
             g_lastConstantsId = 0;
             return buffer->at(offset);
         }
-        auto* destination = static_cast<uint32_t*>(static_cast<void*>(mapped + offset));
+        auto* destination = reinterpret_cast<uint32_t*>(mapped + offset);
         auto* source = static_cast<const uint32_t*>(guest);
         for (uint32_t i = 0; i < 2 * gpu::FloatConstantCount * 4; i++)
             destination[i] = SwapConstant(source[i]);
@@ -1439,10 +1459,13 @@ void gpu::Draw(const DrawDesc& draw)
         constexpr uint32_t Groups = 2 * FloatConstantCount / 4, GroupWords = 16;
         uint8_t changed[Groups];
         uint32_t count = 0;
-        for (uint32_t group = 0; group < Groups; group++)
-            if (draw.guestConstantGroups == nullptr || !versionsSent ||
-                sentVersions[group] != draw.guestConstantGroups[group])
-                changed[count++] = uint8_t(group);
+        const bool all = draw.guestConstantGroups == nullptr || !versionsSent;
+        // A few groups change a draw: blocks of 4 versions compared at once skip the rest.
+        for (uint32_t block = 0; block < Groups; block += 4)
+            if (all || memcmp(&sentVersions[block], &draw.guestConstantGroups[block], 16) != 0)
+                for (uint32_t group = block; group < block + 4; group++)
+                    if (all || sentVersions[group] != draw.guestConstantGroups[group])
+                        changed[count++] = uint8_t(group);
         if (count != 0)
         {
             auto source = static_cast<const uint32_t*>(draw.guestConstants);
@@ -1614,11 +1637,18 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
             list.setPipeline(pipeline);
             bound.pipeline = pipeline;
         }
-        if (!bound.hasViewport || memcmp(&bound.viewport, &draw.viewport, sizeof(draw.viewport)) != 0)
+        const plume::RenderViewport &boundViewport = bound.viewport, &viewport = draw.viewport;
+        if (!bound.hasViewport || !SameBits(boundViewport.x, viewport.x) || !SameBits(boundViewport.y, viewport.y) ||
+            !SameBits(boundViewport.width, viewport.width) || !SameBits(boundViewport.height, viewport.height) ||
+            !SameBits(boundViewport.minDepth, viewport.minDepth) ||
+            !SameBits(boundViewport.maxDepth, viewport.maxDepth))
             list.setViewports(draw.viewport);
         if (!bound.hasViewport || memcmp(&bound.scissor, &draw.scissor, sizeof(draw.scissor)) != 0)
             list.setScissors(draw.scissor);
-        if (!bound.hasViewport || memcmp(bound.blendFactor, draw.blendFactor, sizeof(draw.blendFactor)) != 0)
+        if (!bound.hasViewport || !SameBits(bound.blendFactor[0], draw.blendFactor[0]) ||
+            !SameBits(bound.blendFactor[1], draw.blendFactor[1]) ||
+            !SameBits(bound.blendFactor[2], draw.blendFactor[2]) ||
+            !SameBits(bound.blendFactor[3], draw.blendFactor[3]))
             list.setBlendFactor(draw.blendFactor);
         bound.hasViewport = true;
         bound.viewport = draw.viewport;

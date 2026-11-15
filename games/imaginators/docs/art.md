@@ -79,7 +79,33 @@ prompt, once Eruptor has walked to the fountain (`lup:5`, the bust's lines skipp
 | `xbox360` | the game's white pill with "RB", unchanged |
 
 Run: `private/runs/p3d-imgF-{playstation,keyboard,xbox360}`, a continue on the lobby test's save of `tools/regress/imaginators_hub.sh` (Start to the licence, Y, A).
+
+**Repeated button press at a chest (issue #94).** The screenshot shows a floating X button during the chest-opening
+animation. This is consistent with the `Mash_X` world model, rather than a font cell: only RB was registered for
+world-prompt replacement, so changing the font pictures could not replace a mash model. The adapters now register
+`Mash_A/B/X/Y` through the shared `engines/alchemy/mash_prompts.h`; X selects `Glyph::X`, hence the player's `key_x`
+binding in keyboard mode, square on PlayStation, Y on Nintendo and X on Xbox One. Xbox 360 retains the original.
+The mesh fingerprints are resolved from the installed model at startup, not recorded in source. The resolver requires
+a model with two index-buffer objects and exactly two dense triangle-list memory handles; it treats the smaller list
+as the backing disc. [?] This asset-layout assumption and the X/Y projection with flipped V and no U stretch have not
+been checked on the actual mash assets or in a game run. Unresolved models keep their original appearance.
+
+[V] `ArkeyanGlyphModelsTest` checks synthetic IGZ models, the four actual mapping rows, shared-face disambiguation,
+all replacement styles, Xbox 360 bypass, rejected models and projection. [?] Player check: use the wooden chest with
+three padlocks on the stone path between the round pillar and circular ruin arch in issue #94's screenshot. Enter its
+repeated-X opening phase, before the reward appears; set the game's `key_x` to G and use keyboard glyphs, then repeat
+with PlayStation, Nintendo and Xbox 360 glyphs. Check G, square, Y and the original X respectively throughout the
+button's bounce/tilt, with no old X lettering overlaid; also check an ordinary text prompt and the hub's existing RB
+prompt. No level name is established by the screenshot. For SuperChargers, check the same repeated-button phase at
+a chest using the corresponding key binding.
+
+If the chest still shows X or the replacement is rotated, clipped or stretched, capture the closed-chest transition
+and several frames during repeated pressing, the selected glyph setting and per-game binding, and the `[glyphs]`
+keycap, model-registration and world-prompt lines. If registration succeeds without a draw replacement, a local GPU
+draw capture of that prompt's face/letter order and vertex layout is needed to distinguish a different model from
+unsupported draw pairing. No game or launcher was run for this change.
+
 **Left:** RT (333 and 1362
 indices; B's meshes differ from SuperChargers': 441 and 1059), A, B, X, Y, LT, the Mash and B_Hold prompts were not seen in a run (the hub's plaza as far as the
-fountain's stairs and the first level's first path), so no row is listed ([SuperChargers' page](../../superchargers/docs/art.md#world-prompts-2026-11-05)
+fountain's stairs and the first level's first path); except for the named mash rows above, no row is listed ([SuperChargers' page](../../superchargers/docs/art.md#world-prompts-2026-11-05)
 says how a row is made; A and Y, B and the Mash prompts share a face and are told by their letters).

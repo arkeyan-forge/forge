@@ -126,3 +126,13 @@ const game::Adapter& game::Current() { return g_adapter; }
 
 // Skylauncher's glow for this game (its StyleOf).
 uint32_t game::Accent() { return 0xBFE04A; }
+
+bool game::FigureArriving()
+{
+    using namespace portalprompt;
+    if (g_memory.base == nullptr)
+        return false;
+    const uint32_t instance = g_memory.Read<uint32_t>(SwapForceMagicMomentInstance);
+    return instance >= 0x10000 && uint64_t(instance) + SwapForcePlayerOffset + 4 <= 0xE0000000ull &&
+           SwapForceArriving(g_memory.Read<uint32_t>(instance + SwapForceStateOffset));
+}

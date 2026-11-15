@@ -275,6 +275,17 @@ second session on that save and those dumps must log the same id, write no owner
 `private/runs/<name>-continue/shot_collection.png` shows the game's collection (Portal Master > Collection > Skylanders: Undead 1)
 ([figures.md](../runtime/host/figures.md) "Owner").
 
+## Checks (`tools/ci/run.sh`)
+The host-side checks that need no game data, run on a Mac with Docker; there is no hosted CI (2026-11-15). Jobs:
+`format` and `tidy` (clang-format 23.1.3 and clang-tidy on the files changed since the merge base with `origin/main`;
+`--base REF` for another, `--tidy-all` for the report over every file), `macos` (the `SKY_TESTS_ONLY` unit tests,
+natively), and in `tools/ci/checks.Dockerfile` (amd64, as the build runs the x86_64 dxc; an ordinary user): `linux`,
+`sanitizers` (AddressSanitizer) and `windows` (llvm-mingw, the tests under Wine). `--only job,job` runs some; `--quick` is `format,macos`, which the
+`pre-push` hook runs (`git config core.hooksPath tools/git-hooks`). Logs in `.scratch/checks/`; each job keeps its
+build in a Docker volume, so a second run is incremental. Under emulation a few tests are left out (`tools/ci/job.sh`
+names them and why); the `macos` job runs them natively. Before a merge: `tools/ci/run.sh` and `tools/test_all.sh --quick`, both
+PASS. The kits: `tools/ci/kits_local.sh` ([updates_release.md](../release/launcher/updates_release.md)).
+
 ## The regression harness (`tools/test_all.sh`)
 
 One command says whether a change broke SSA, Giants or Swap Force. **Run it before every merge.**

@@ -7,14 +7,17 @@ Where their warnings reach our targets, their include directory is `SYSTEM` (`ta
 directory is searched after every `-I` one, so when two directories hold the same header (`ppc_context.h`: the game's
 ppc folder and XenonUtils), both are `SYSTEM`, the one to use first (`runtime/CMakeLists.txt`).
 
-Format: **clang-format 23.1.3**, the one version for every machine and CI (`pip3 install --user clang-format==23.1.3`;
+Format: **clang-format 23.1.3**, the one version for every machine and the checks (`pip3 install --user clang-format==23.1.3`;
 the pre-commit hook finds it on `PATH` or in pip's user folder and refuses any other version). Another version can
 format the same file differently.
 
-Bug finders: `.clang-tidy` (bug checks only, no style). CI's `tidy` job runs it on the `.cpp` files a pull request
-changes, and a finding fails it. Started by hand (`workflow_dispatch`), it checks every file and lists the findings by
-check without failing: older code still has some (2026-11-12: `getenv` in `runtime/host/env.h`, unchecked `optional`
+Bug finders: `.clang-tidy` (bug checks only, no style). The `tidy` job of `tools/ci/run.sh` runs it on the `.cpp` files
+a branch changes, and a finding fails it. With `--tidy-all` it checks every file and lists the findings by check
+without failing: older code still has some (2026-11-12: `getenv` in `runtime/host/env.h`, unchecked `optional`
 access in `runtime/host/portal_slots.h`).
+The checks have no translated code: the sources that include `ppc_config.h` (the runtime's, `ArkeyanAchievementsKernelTest`'s,
+`ArkeyanGuestThreadTest`'s) parse with `runtime/tidy/ppc_config.h` instead, which sets no policy and reads the four layout
+bounds from the active layout. A new target whose sources include it calls `arkeyan_tidy_standin(<target>)`.
 
 ## Naming
 

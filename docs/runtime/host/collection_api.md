@@ -5,6 +5,12 @@
 The engine behind "My Skylanders": everything a UI needs to show and manage the player's figures, with no UI in it.
 Formats, folders and rules: [collection.md](collection.md). The headers are the reference; this page is the map.
 
+`Game::rejects` is an optional list of toy types excluded before either acceptance list is considered. `Accepts`,
+`Accepted` and `Read` all respect it. Later-game accessory seats and platform exclusions are catalogue data;
+see [the compatibility rule](collection.md#later-game-accessories-issue-101). For the launcher's current
+`src/shared/collection/` copy, synchronize `catalogue.h` and `catalogue.cpp` together with
+`resources/collection/catalogue.json`; `collection_test.cpp` carries the regression coverage in this repository.
+
 ## Files
 
 | Path (ArkeyanRuntime) | What |

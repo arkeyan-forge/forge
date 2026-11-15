@@ -3,6 +3,7 @@
 #include "host/portal_async.h"
 #include "host/portal_stall.h"
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <mutex>
 #include <vector>
@@ -190,6 +191,77 @@ namespace
         CHECK(answered == 20);
         CHECK(portal.Read(report, sizeof(report)) == 7 && report[0] == 'S' && report[1] == 1);
     }
+
+    // A Traptanium portal's speaker: the title streams a sound block every 4 ms, and this portal takes one every 8 ms.
+    class SlowSpeakerPortal final : public PortalBackend
+    {
+    public:
+        const char* Name() const override { return "speaker"; }
+        bool IsConnected() override { return true; }
+        bool TakesSound() override { return true; }
+        bool WriteSound(const uint8_t*, size_t) override
+        {
+            std::this_thread::sleep_for(milliseconds(8));
+            return true;
+        }
+        bool Write(const uint8_t* command, size_t size) override
+        {
+            std::lock_guard lock(m_mutex);
+            m_answers.emplace_back(command, command + size);
+            return true;
+        }
+        size_t Read(uint8_t* report, size_t capacity) override
+        {
+            std::lock_guard lock(m_mutex);
+            if (m_answers.empty())
+                return 0;
+            const size_t size = std::min(m_answers.front().size(), capacity);
+            std::copy(m_answers.front().begin(), m_answers.front().begin() + long(size), report);
+            m_answers.erase(m_answers.begin());
+            return size;
+        }
+
+    private:
+        std::mutex m_mutex;
+        std::vector<std::vector<uint8_t>> m_answers;
+    };
+
+    // The title's queries keep their answers while the speaker streams faster than the portal takes it (a Wii Traptanium
+    // portal froze and stopped answering when the sound filled the queue the commands shared).
+    void TestSoundNeverDropsCommands()
+    {
+        AsyncPortal portal(
+            std::make_unique<SlowSpeakerPortal>(), true, { milliseconds(20), milliseconds(100), milliseconds(1) });
+        std::atomic<bool> streaming{ true };
+        std::thread speaker([&] {
+            const uint8_t block[32] = {};
+            while (streaming)
+            {
+                portal.WriteSound(block, sizeof(block));
+                std::this_thread::sleep_for(milliseconds(4));
+            }
+        });
+        std::this_thread::sleep_for(milliseconds(500)); // the sound queue is full long before this
+        int answered = 0;
+        uint8_t report[32];
+        for (uint8_t block = 1; block <= 20; block++)
+        {
+            const uint8_t query[] = { 'Q', 0x10, block };
+            portal.Write(query, sizeof(query));
+            for (Clock::time_point end = Clock::now() + milliseconds(50); Clock::now() < end;)
+            {
+                if (portal.Read(report, sizeof(report)) == 3 && report[0] == 'Q' && report[2] == block)
+                {
+                    answered++;
+                    break;
+                }
+                std::this_thread::sleep_for(milliseconds(1));
+            }
+        }
+        streaming = false;
+        speaker.join();
+        CHECK(answered == 20);
+    }
 }
 
 int main()
@@ -202,6 +274,7 @@ int main()
     TestSlowWrites();
     TestDisconnected();
     TestAnswersFirst();
+    TestSoundNeverDropsCommands();
     fprintf(stderr, "%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

@@ -213,7 +213,9 @@ the collection folder adds toys or replaces them by toy type, and games by id. F
   `StandardVariant`, `VersionCount`; `CreateSwapper` does it for both halves when no version is given).
   `same_tag`: a physical edition with no id of its own.
 - A game accepts the toys of `accepts` (in that order: SSA's menus follow it) and every toy whose first game is in
-  `accepts_games`. SSA keeps its exact set: types 0-32, the legendaries 404/416/419/430, the sidekicks
+  `accepts_games`, except toy types in its optional `rejects` list. Exclusions override both acceptance lists and
+  apply to `Accepts`, `Accepted` and `Read`, hence to Works in, shelf grouping and placement too.
+  SSA keeps its exact set: types 0-32, the legendaries 404/416/419/430, the sidekicks
   505/514/519/526, items 200-207 and packs 300-304 (`docs/runtime/host/figures.md`, from the title's portal code). The later games
   accept every older toy [? true for the characters; not every older magic item or adventure pack works in later
   games; to be refined when those games run]. `names` are the title's internal names (its portrait images),
@@ -232,6 +234,27 @@ the collection folder adds toys or replaces them by toy type, and games by id. F
   5 = 2016), low byte = decoration: 0x01/0x05 a new pose ("Series N", N = year + 1), 0x02 another paint job, 0x03
   Legendary, 0x06 LightCore, 0x10 Eon's Elite. `Catalogue::Describe` returns `known = false` then. [V] for Giants: bit 11
   = repose (Series 2), bit 10 = alternate deco (matched by the low byte), bit 9 = LightCore.
+
+### Later-game accessories (issue #101) [SuperChargers] [Imaginators]
+
+[V] The local `private/superchargers/toy_tables.json` and `private/imaginators/toy_tables.json` both list full
+characters, swap halves, traps, vehicles, magic items, battle pieces and expansion pieces; Imaginators also lists
+Senseis and creation crystals among its characters. The `toys` entries' `type` and `class` identify the families:
+every catalogue trap type is listed, as are ordinary and racing-villain vehicle types. Clown Cruiser and Barrel
+Blaster are absent from both Xbox tables; their existing catalogue types are now excluded through `rejects`.
+No private table payload is embedded or copied into the catalogue.
+
+[V] The generation rule already admitted traps to both games and vehicles to Imaginators. The missing part was
+`games[].seats`: SuperChargers now has a shared Trap seat; Imaginators has a shared Trap seat and Vehicle 1 and
+Vehicle 2. A trap goes only on Trap, a supported vehicle only on a vehicle seat. The runtime intersects the seat's
+categories with `Catalogue::Accepts` for its shelf and placement; the launcher uses the same catalogue and grouping.
+Supported accessories stay on the normal shelf, while excluded vehicles remain in Not for this game.
+
+[?] Neither table has a seat or hardware-slot field, nor a reward rule. These seats are host choices, using the
+existing ordinary portal slots and unchanged tag reads; they do not imply a reserved trap index or Adventure-seat
+requirement. See [the portal model](toybox_ux.md#seats-per-game-catalogue-gamesseats) and each game's Toy Box page
+for the player checks. `ArkeyanCollectionTest::TestAccessorySeats` covers acceptance, exclusion precedence,
+enumeration, readings, seat categories and shelf grouping; older-game and later-character boundaries are checked too.
 
 **Sources and completeness.** The Spyro's Adventure, Giants and Swap Force toys and variants follow the games
 themselves: SSA's accepted toy types are its code ([figures.md](figures.md#toys-the-title-recognises)), and every toy and

@@ -7,13 +7,29 @@ The same screens and code as the other games (`runtime/host/toybox/`); `runtime/
 
 | Part | What [V] |
 |---|---|
-| Seats | Player 1, Player 2 (a Sensei, a creation crystal or any older figure), Magic item, Adventure (the catalogue's) |
+| Seats | Player 1, Player 2 (a Sensei, a creation crystal or any older figure), Magic item, Adventure, **Trap**, **Vehicle 1**, **Vehicle 2** (host tests; accessory rewards and racing remain to check) |
 | Creation crystals | 10 types (680-689, one per element), 31 shapes and 3 Legendary shapes as versions; a card shows the class and level ("Ninja · Level 14", French names too), a blank one "Ready to create"; the sheet the name, experience bar on the game's 80 levels, gold, play time, and in Details the parts (body, weapons, hat, powers by the game's names) |
 | Senseis | 31 (601-631), 18 decos (Dark, Legendary, holiday, chase) from the owner's dumps; characters with the older games' progress |
 | Other toys | the Mystery Chest (235: Bronze, Silver, Gold, two Blue chests), two adventure packs (310, 311) |
 | Pictures | the disc's 565 badges (172 px): 422 toys and variants mapped (every Sensei and its decos, each element's crystal and the three Legendary ones, the packs, every older toy); drawn icons left: Smash Hit, the UFO Hat, the Mystery Chest. `IMAGINATORS_ISO=<disc> ArkeyanArtTest` checks them |
 | Signature | a crystal made here has none; the port takes it as signed (the hook `GAME_HOOK_Portal_TagCheck`, `tag_signature.cpp`), the card says "Virtual · ..." and the sheet "Virtual: a real game would refuse this crystal" ([figures.md](../../../docs/runtime/host/figures.md#imaginators-creation-crystals-alchemy-imaginators), "Signature") |
 | Creation editor | Figure → Edit on a crystal: name (the keyboard; capitals as the game writes them), class (its primary and tertiary powers follow), element (a virtual crystal only: the same file, a new tag of the other type and its first shape), level (1-80 on the game's table), then the 74 parameters as the game stores them (parts, gear, powers, voices and phrases **by the game's own names**, in the game's text language or the disc's first: [figures.md](../../../docs/runtime/host/figures.md#the-parts-names-alchemy-imaginators-v); "none", sliders 0-8, palette colours 0-127); Left / Right, LB / RB or Shift by 10, the mouse wheel and arrows; Save writes it (`collection::WriteCrystal`; a blank crystal gets its first creation), lifting and placing it again when it is on the portal |
+
+## Vehicles and traps (issue #101)
+
+[V] The game's local toy table lists traps and vehicles alongside its characters and other accessories. It gives
+no seat or hardware-slot requirement. The generation compatibility rule already accepted them; the new shared
+Trap and per-player Vehicle seats make them available in the Toy Box and the launcher's seat picker. Existing
+Player, Magic item and Adventure seats keep their categories. Clown Cruiser and Barrel Blaster are absent from
+the Xbox tables and excluded. Placement uses the ordinary portal slots, preserving the toy's type, variant and
+stored tag data; see [the shared rule](../../../docs/runtime/host/collection.md#later-game-accessories-issue-101).
+
+[?] Player check, not run here: keep a Sensei or creation crystal on Player 1; choose a supported land, sea or sky
+vehicle on **Vehicle 1** and check that the matching racing vehicle becomes available in Racing. Repeat with
+Vehicle 2 when a second player joins. Put a trap on **Trap** and check the expected gold reward and the game's
+feedback, then lift and replace it to check repeat-use behavior. These accessories do not go on Adventure or
+replace the character. Check the seven-seat layout and the same choices through the separate Toy Box window.
+The tables prove recognition only; they do not describe rewards, racing progression or repeat-use conditions.
 
 **Internal names** (the badges' `collection_<name>_<deco>`): King Pen `bladepenguin`, Tri-Tip `macetriceratops`, Chopscotch
 `axegirl`, Boom Bloom `whipgirl`, Pit Boss `staffserpent`, Barbella `doublerearthgirl`, Air Strike `petfalconguy`, Ember

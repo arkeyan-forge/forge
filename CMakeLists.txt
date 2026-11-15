@@ -29,8 +29,8 @@ endforeach()
 
 # Warnings, sanitizers and ctest registration for our own targets (never ArkeyanRecompLib or thirdparty/).
 include(cmake/Quality.cmake)
-# CI: configure and build only the host libraries and unit tests, without private/<game>/ppc (no game data in CI).
-option(SKY_TESTS_ONLY "Skip the translated game code: only the host unit tests and tools (CI)" OFF)
+# The checks (tools/ci/run.sh): only the host libraries and unit tests, without private/<game>/ppc (no game data).
+option(SKY_TESTS_ONLY "Skip the translated game code: only the host unit tests and tools (tools/ci/run.sh)" OFF)
 if(SKY_TESTS_ONLY)
     set(ARKEYAN_FFMPEG OFF CACHE BOOL "" FORCE) # the unit tests decode no audio
 endif()
@@ -95,7 +95,9 @@ arkeyan_apply_patch(${CMAKE_SOURCE_DIR}/thirdparty/plume ${CMAKE_SOURCE_DIR}/pat
 arkeyan_apply_patch(${CMAKE_SOURCE_DIR}/thirdparty/plume ${CMAKE_SOURCE_DIR}/patches/plume_d3d12_blend.patch)
 # plume (on top of the six above): vsync that shows the newest frame at each refresh without waiting for the display
 # (Vulkan MAILBOX, D3D12 sync interval 0 without tearing), and the frames the display has shown (D3D12 frame
-# statistics, Metal presented handlers), for refresh rates that are not a multiple of the frame rate (gpu/present_mode.h).
+# statistics, Metal presented handlers), for refresh rates that are not a multiple of the frame rate (gpu/present_mode.h);
+# and, with vsync on, a minimum time each frame stays on the display (Metal presentAfterMinimumDuration), so a 60 FPS game
+# on a 120 Hz display shows every frame for two refreshes.
 arkeyan_apply_patch(${CMAKE_SOURCE_DIR}/thirdparty/plume ${CMAKE_SOURCE_DIR}/patches/plume_present_latest.patch)
 
 # XenonRecomp decodes with our own PowerPC decoder (tools/xenonrecomp/ppc_decoder.cpp); binutils' is not built.
@@ -148,7 +150,7 @@ else()
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     if(SKY_TESTS_ONLY)
-        # The unit tests open no window: SDL without X11 or Wayland, so CI needs none of their packages.
+        # The unit tests open no window: SDL without X11 or Wayland, so the checks need none of their packages.
         set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "" FORCE)
         set(SDL_X11 OFF CACHE BOOL "" FORCE)
         set(SDL_WAYLAND OFF CACHE BOOL "" FORCE)
@@ -206,8 +208,8 @@ foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi Ar
 endforeach()
 # The tests that build by default and need no argument (the others run from tools/test_all.sh with a disc or a scratch folder).
 sky_add_tests(ArkeyanSettingsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanDatadirTest
-    ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanRangeHashTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
-    ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest
+    ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanRangeHashTest ArkeyanClockTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
+    ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanFrameAnchorTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest
     ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanGlyphModelsTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanToyboxLinkTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest
     ArkeyanBinkFrameTest ArkeyanBinkDisplayTest ArkeyanPresenceTest)
 if(SKY_TESTS_ONLY)

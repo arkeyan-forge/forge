@@ -94,6 +94,7 @@ namespace
 
     // What the watcher last read, as one packed value: kind in the low byte, player above it.
     std::atomic<uint32_t> g_prompt{ 0 };
+    std::atomic<bool> g_arriving{ false };
 
     void Watch()
     {
@@ -131,15 +132,21 @@ namespace
                 lastState = state;
                 Prompt prompt = ClassifyGiants(error, state);
                 g_prompt.store(uint32_t(prompt.kind) | uint32_t(prompt.player) << 8);
+                g_arriving.store(GiantsArriving(state));
             }
             std::this_thread::sleep_for(milliseconds(30));
         }
     }
 
-    Prompt ReadPortalPrompt()
+    void StartWatch()
     {
         static std::once_flag started;
         std::call_once(started, [] { std::thread(Watch).detach(); });
+    }
+
+    Prompt ReadPortalPrompt()
+    {
+        StartWatch();
         uint32_t packed = g_prompt.load();
         return { Kind(packed & 0xFF), int(packed >> 8) };
     }
@@ -221,6 +228,12 @@ const game::Adapter& game::Current() { return g_adapter; }
 
 // Skylauncher's glow for this game (its StyleOf).
 uint32_t game::Accent() { return 0xFFB43A; }
+
+bool game::FigureArriving()
+{
+    StartWatch();
+    return g_arriving.load();
+}
 
 // Ultrawide, the camera: sub_8219B900 reads the video mode, keeps the UI's screen size (1280x720, floats at +180/+184 of
 // the display object) and stores the display's aspect (game::UltrawideDisplayAspect). Every camera reads it there when

@@ -22,7 +22,7 @@ else()
 endif()
 
 if(CMAKE_HOST_WIN32)
-    set(ARKEYAN_MINGW_EXE .exe) # a Windows-hosted llvm-mingw (CI)
+    set(ARKEYAN_MINGW_EXE .exe) # a Windows-hosted llvm-mingw
 endif()
 set(CMAKE_C_COMPILER "${ARKEYAN_MINGW_TOOL_PREFIX}-clang${ARKEYAN_MINGW_EXE}")
 set(CMAKE_CXX_COMPILER "${ARKEYAN_MINGW_TOOL_PREFIX}-clang++${ARKEYAN_MINGW_EXE}")

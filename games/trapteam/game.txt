@@ -3,7 +3,7 @@
 id=trapteam
 name=Skylanders Trap Team
 runtime=Skylanders Trap Team
-version=0.1.5
+version=0.1.7
 toml=TrapTeam.toml
 xex_sha256=f1d2373e4507e21cc371e6f22d02e909602a1b5bc4704896c3c099cc64002a35,95e273f479ad71198d7daaa6234e6ee6364861ce29b002ba782154a1fcf08d3c
 # The releases' loaded images (decrypted, decompressed; same order as xex_sha256), labels and title ID: a disc of

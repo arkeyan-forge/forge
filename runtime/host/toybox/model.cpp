@@ -1,7 +1,10 @@
 #include "host/toybox/model.h"
 #include "host/collection/json.h"
+#include "host/collection/presence.h"
 #include "host/gamemenu.h"
+#include "host/toybox/arrival.h"
 #include "host/toybox/look.h"
+#include "host/toybox/retake.h"
 #include "host/toybox/trap_villain.h"
 #include "host/portal.h"
 #include "host/portal_backend.h"
@@ -51,7 +54,7 @@ namespace toybox
 
         std::string FileName(const std::string& path) { return path.substr(path.find_last_of("/\\") + 1); }
 
-        bool PlayerSeat(const SeatState& s) { return s.seat.player > 0 && s.seat.id.rfind("p", 0) == 0; }
+        bool PlayerSeat(const SeatState& s) { return s.seat.player > 0 && s.seat.id.starts_with('p'); }
 
         bool KeepsProgress(const Figure& f)
         {
@@ -344,7 +347,7 @@ namespace toybox
     {
         const Seat& s = seats[index].seat;
         char text[64];
-        if (s.id.rfind("p", 0) == 0)
+        if (s.id.starts_with('p'))
             snprintf(text, sizeof(text), L("Player %d", "Joueur %d"), s.player);
         else if (s.id.rfind("vehicle", 0) == 0)
             snprintf(text, sizeof(text), L("Vehicle %d", "Véhicule %d"), s.player);
@@ -367,7 +370,7 @@ namespace toybox
     std::string Model::SeatTag(int index) const
     {
         const Seat& s = seats[index].seat;
-        if (s.id.rfind("p", 0) == 0)
+        if (s.id.starts_with('p'))
             return (French() ? "J" : "P") + std::to_string(s.player);
         if (s.id.rfind("vehicle", 0) == 0)
             return "V" + std::to_string(s.player);
@@ -518,8 +521,8 @@ namespace toybox
                 if (mixed && known && m_realLogged[slot] != uint32_t(type) + 1)
                 {
                     m_realLogged[slot] = uint32_t(type) + 1;
-                    fprintf(stderr, "[toybox] %s: the game read the real portal's %s (slot %d)\n", SeatTag(int(i)).c_str(),
-                        toy != nullptr ? toy->name.c_str() : "toy", slot);
+                    fprintf(stderr, "[toybox] %s: the game read the real portal's %s (slot %d)\n",
+                        SeatTag(int(i)).c_str(), toy != nullptr ? toy->name.c_str() : "toy", slot);
                 }
                 break;
             }
@@ -621,6 +624,7 @@ namespace toybox
         if (mixed)
             SeatRealToys();
         // Did the title read the new figures?
+        std::vector<int> retakes;
         for (size_t i = 0; i < seats.size(); i++)
         {
             SeatState& s = seats[i];
@@ -628,17 +632,20 @@ namespace toybox
                 continue;
             PortalSlotSeen seen = PortalSeen(s.slot);
             if (s.slot2 >= 0) // a swapper is taken when the title read both tags
-                seen.lastRead = std::min(seen.lastRead, PortalSeen(s.slot2).lastRead);
-            if (seen.lastRead >= s.placedAt)
+                seen.headRead = std::min(seen.headRead, PortalSeen(s.slot2).headRead);
+            if (retake::Taken(seen.headRead, s.placedAt))
             {
                 s.waiting = false;
                 s.late = false;
                 const Figure* f = SeatFigure(int(i));
                 fprintf(stderr, "[toybox] %s: the game took %s (slot %d, %.1f s after the change)\n",
                     SeatTag(int(i)).c_str(), f != nullptr ? FigureName(*f).c_str() : FileName(s.path).c_str(), s.slot,
-                    double(seen.lastRead - s.placedAt) / 1e9);
+                    double(seen.headRead - s.placedAt) / 1e9);
                 m_dirty = true;
             }
+            else if (!s.physical && !s.path.empty() && retake::Due(s.retakes, now - s.placedAt) &&
+                     (!arriving || now - s.placedAt > arrival::MaxWaitNs))
+                retakes.push_back(int(i));
             else if (!s.late && now - s.placedAt > LateAfter)
             {
                 s.late = true;
@@ -651,6 +658,54 @@ namespace toybox
                     s.slot);
             }
         }
+        for (int seatIndex : retakes)
+            Retake(seatIndex, now);
+        ReleaseHeld(now);
+    }
+
+    uint64_t Model::Unsettled(uint64_t now) const
+    {
+        uint64_t newest = UINT64_MAX;
+        for (const SeatState& s : seats)
+        {
+            if (s.waiting && !s.physical && s.placedAt != 0)
+                newest = std::min(newest, now - s.placedAt);
+        }
+        return newest;
+    }
+
+    void Model::ReleaseHeld(uint64_t now)
+    {
+        if (m_held.empty())
+            return;
+        // One at a time: the figure put on now holds the others until the game took it.
+        const Held held = m_held.front();
+        if (!arrival::Release(arrival::Locked(arriving, Unsettled(now)), now - held.since))
+            return;
+        m_held.erase(m_held.begin());
+        fprintf(stderr, "[toybox] %s: held %.1f s, put on now%s\n", SeatTag(held.seat).c_str(),
+            double(now - held.since) / 1e9, arriving ? " (the game still brings a figure in)" : "");
+        m_releasing = true;
+        PutOn(held.seat, held.path, held.fromWheel);
+        m_releasing = false;
+    }
+
+    void Model::Retake(int seatIndex, uint64_t now)
+    {
+        const std::string path = seats[seatIndex].path;
+        const int tries = seats[seatIndex].retakes + 1;
+        const bool done = ReplaceCards({ { seatIndex, path } });
+        SeatState& s = seats[seatIndex];
+        // Counted even when refused, so a portal that keeps refusing is not asked every frame.
+        s.retakes = tries;
+        if (!done)
+            return;
+        s.placedAt = now;
+        s.waiting = true;
+        s.late = false;
+        const Figure* f = SeatFigure(seatIndex);
+        fprintf(stderr, "[toybox] %s: the game has not taken %s: put on again (%d of %d)\n", SeatTag(seatIndex).c_str(),
+            f != nullptr ? FigureName(*f).c_str() : FileName(path).c_str(), tries, retake::MaxTries);
     }
 
     int Model::FreeSlot(int seatIndex, int half, uint32_t available, uint32_t planned) const
@@ -822,11 +877,29 @@ namespace toybox
             }
         }
         int other = SeatOf(cardPath);
-        if (other == seatIndex)
+        // Put on its own seat again: lifted and placed once more. The way out when the game read a figure and dropped
+        // it (Giants after a quick swap: read in full, then "Loading" for good).
+        const bool again = other == seatIndex;
+        if (again)
+            other = -1;
+        // A held pick for this seat gives way to this one; putting the seat's own figure on again is never held.
+        std::erase_if(m_held, [&](const Held& h) { return h.seat == seatIndex; });
+        if (!again && !m_releasing)
         {
-            Toast(FigureName(f) + L(" is already there", " y est déjà"));
-            m_refusal = toyboxlink::refusal::Already;
-            return false;
+            const uint64_t now = SDL_GetTicksNS();
+            if (arrival::Locked(arriving, Unsettled(now)))
+            {
+                m_held.push_back({ seatIndex, cardPath, fromWheel, now });
+                Toast(SeatTag(seatIndex) + L(" next: ", " ensuite : ") + FigureName(f) +
+                      L(" (once the game is ready)", " (dès que le jeu est prêt)"));
+                toastKind = ToastKind::Figure;
+                toastFigure = f.path;
+                toastSeat = seatIndex;
+                fprintf(stderr, "[toybox] %s: %s held: %s\n", SeatTag(seatIndex).c_str(), FigureName(f).c_str(),
+                    arriving ? "the game brings a figure in" : "the last figure is not taken yet");
+                m_dirty = true;
+                return true;
+            }
         }
         if (other >= 0)
         {
@@ -861,14 +934,16 @@ namespace toybox
         if (other >= 0)
             seats[other].waiting = false;
         uint64_t now = SDL_GetTicksNS();
-        target.previous = before;
+        if (!again)
+            target.previous = before;
         target.placedAt = now;
+        target.retakes = 0;
         target.waiting = true;
         target.late = false;
 
         int was = FindFigure(before);
         std::string text =
-            SeatTag(seatIndex) + ": " + (was >= 0 ? FigureName(figures[was]) + " → " : "") + FigureName(f);
+            SeatTag(seatIndex) + ": " + (was >= 0 && !again ? FigureName(figures[was]) + " → " : "") + FigureName(f);
         Toast(text);
         toastKind = ToastKind::Figure; // its card: the figure's picture, its seat and level
         toastFigure = f.path;
@@ -920,7 +995,8 @@ namespace toybox
             return false;
         if (seats[a].physical || seats[b].physical)
         {
-            Toast(L("A real figure plays: change it on the portal", "Une vraie figurine joue : changez-la sur le portail"));
+            Toast(L(
+                "A real figure plays: change it on the portal", "Une vraie figurine joue : changez-la sur le portail"));
             m_refusal = toyboxlink::refusal::Real;
             return false;
         }
@@ -937,6 +1013,7 @@ namespace toybox
         for (int seatIndex : { a, b })
         {
             seats[seatIndex].placedAt = now;
+            seats[seatIndex].retakes = 0;
             seats[seatIndex].waiting = !seats[seatIndex].path.empty();
             seats[seatIndex].late = false;
         }
@@ -1115,6 +1192,7 @@ namespace toybox
                      break;
                  case 5: SaveCopy(seatIndex); break;
                  case 6: OpenManage(); break;
+                 default: break;
                  }
              } });
     }
@@ -1160,9 +1238,29 @@ namespace toybox
         {
             m_lastScan = now;
             std::vector<std::string> before;
+            before.reserve(seats.size());
             for (const SeatState& s : seats)
                 before.push_back(s.path + (s.waiting ? "*" : "") + (s.physical ? std::to_string(s.physicalType) : ""));
             RefreshSeats(now);
+            std::optional<presence::Toy> playerOne;
+            for (size_t i = 0; i < seats.size(); i++)
+            {
+                const SeatState& s = seats[i];
+                if (s.seat.id != "p1")
+                    continue;
+                if (s.physical)
+                {
+                    if (s.physicalKnown)
+                        playerOne = presence::Toy{ s.physicalType, s.physicalVariant, s.physicalLevel };
+                }
+                else if (const Figure* f = SeatFigure(int(i)); f != nullptr)
+                {
+                    const int level = f->state == figures::AreaState::Valid ? std::min(f->level, LevelCap()) : 0;
+                    playerOne = presence::Toy{ f->type, f->variant, level };
+                }
+                break;
+            }
+            presence::SetPlayerOne(playerOne);
             for (size_t i = 0; i < seats.size(); i++)
             {
                 if (before[i] != seats[i].path + (seats[i].waiting ? "*" : "") +
@@ -1314,6 +1412,7 @@ namespace toybox
         for (const Section& section : sections)
         {
             std::vector<int> items;
+            items.reserve(section.items.size());
             for (size_t i : section.items)
                 items.push_back(map[i]);
             ListSection header{ section.kind, section.value, section.game };
@@ -2812,6 +2911,7 @@ namespace toybox
                 for (const auto& [seatIndex, path] : cards)
                 {
                     seats[seatIndex].placedAt = now;
+                    seats[seatIndex].retakes = 0;
                     seats[seatIndex].waiting = !seats[seatIndex].path.empty();
                     seats[seatIndex].late = false;
                 }
@@ -3699,16 +3799,8 @@ namespace toybox
                 }
                 keys.push_back(line);
             }
-            keys.push_back({ "\x01"
-                             "shift",
-                "\x01"
-                "symbols",
-                "\x01"
-                "space",
-                "\x01"
-                "delete",
-                "\x01"
-                "done" });
+            // Octal escapes: "\x01de..." would read the 'd' and 'e' as hex digits.
+            keys.push_back({ "\001shift", "\001symbols", "\001space", "\001delete", "\001done" });
             return keys;
         };
         static const auto EnglishLower = make({ "qwertyuiop", "asdfghjkl'", "zxcvbnm-.!" }, false);
@@ -3995,8 +4087,15 @@ namespace toybox
         {
             time_t now = time(nullptr);
             char stamp[32];
-            strftime(stamp, sizeof(stamp), "%Y-%m-%d %H%M", localtime(&now));
+            tm local{};
+#ifdef _WIN32
+            localtime_s(&local, &now);
+#else
+            localtime_r(&now, &local);
+#endif
+            strftime(stamp, sizeof(stamp), "%Y-%m-%d %H%M", &local);
             std::vector<std::string> paths;
+            paths.reserve(figures.size());
             for (const Figure& f : figures)
                 paths.push_back(f.path);
             std::string folder = manage.exportFolder + "/" + stamp;
@@ -4063,6 +4162,7 @@ namespace toybox
             BuildList();
             break;
         }
+        default: break;
         }
     }
 

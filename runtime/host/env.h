@@ -43,6 +43,7 @@ namespace skyenv
 
     inline const char* Get(const char* name)
     {
-        return Get(name, [](const char* variable) { return std::getenv(variable); });
+        // The variables are set only before the game's threads start (host/collection/datadir.cpp, gpu/selftest.cpp).
+        return Get(name, [](const char* variable) { return std::getenv(variable); }); // NOLINT(concurrency-mt-unsafe)
     }
 }

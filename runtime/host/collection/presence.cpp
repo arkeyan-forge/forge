@@ -9,10 +9,16 @@ namespace presence
     bool Writer::Write(const State& state)
     {
         if (m_folder.empty() || (m_hasWritten && m_written == state) || (state.players != 1 && state.players != 2) ||
-            state.level.find_first_of("\r\n") != std::string::npos)
+            state.level.find_first_of("\r\n") != std::string::npos || (state.toy && state.toy->level < 0))
             return false;
         std::string text = "level=" + state.level + "\nmenu=" + (state.menu ? "1" : "0") +
                            "\nplayers=" + std::to_string(state.players) + "\n";
+        if (state.toy)
+        {
+            text += "toy=" + std::to_string(state.toy->type) + "\nvariant=" + std::to_string(state.toy->variant) + "\n";
+            if (state.toy->level > 0)
+                text += "toylevel=" + std::to_string(state.toy->level) + "\n";
+        }
         std::error_code error;
         std::filesystem::create_directories(m_folder, error);
         if (error || !savebackup::WriteFileAtomic(m_folder / "presence.txt", text.data(), text.size()))
@@ -56,6 +62,15 @@ namespace presence
         int players = present ? 2 : 1;
         if (g_players.exchange(players) != players)
             g_pending = true;
+    }
+
+    void SetPlayerOne(std::optional<Toy> toy)
+    {
+        std::lock_guard lock(g_mutex);
+        if (g_state.toy == toy)
+            return;
+        g_state.toy = toy;
+        g_pending = true;
     }
 
     void Flush()

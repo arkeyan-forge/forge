@@ -27,6 +27,12 @@ A trap's voice uses the portal's speaker: `M 01` on, sound blocks, `M 00` off. *
   (`PortalBackend::TakesSound`) plays it; any other portal (the emulated one, a Spyro's Adventure, Giants or Swap Force portal, an id not
   known yet) leaves it to the computer; the switch off sends it nowhere. Logged on each change: `[portal] speaker: the portal plays the
   sound` / `the computer plays the sound` / `off (Portal sound)`.
+- **Commands first** (0.9.7): `AsyncPortal` keeps the speaker's blocks in their own queue (`m_sounds`, at most 32, the
+  oldest dropped) and sends one only when no command waits. In one shared queue of 64, a portal slower to take the sound
+  than the title sends it (133 blocks a second) saw the title's commands dropped behind the blocks: a Wii Traptanium
+  portal's lights froze and it stopped answering until the game restarted (a player's report, 2026-11-14).
+  `ArkeyanPortalAsyncTest` (`TestSoundNeverDropsCommands`: a speaker taking a block every 8 ms, one sent every 4 ms, 20
+  queries) fails without it.
 - **Each backend's format.** Xbox 360 USB: the console's own report, `0B 17` and the 30 bytes, on the OUT endpoint. HID (Wii, Wii U, PS):
   decoded by the backend and sent as 16-bit little-endian PCM, 32 samples (64 bytes) per `SDL_hid_write`, the format the HID Traptanium
   portal is said to take [?] (Dolphin and Cemu as leads); a portal that refuses a block (Windows' HID writes are the descriptor's 33 bytes)

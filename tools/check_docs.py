@@ -58,6 +58,8 @@ KNOWN_MISSING = {
     "docs/game/": "tsapZ/SwapForceRecomp's docs",
     "docs/audit/<angle>.md": "written per audit",
     "tools/release_kit.sh": "Arkeyan Launcher's tools",
+    "tools/release_local.sh": "Arkeyan Launcher's tools",
+    "tools/ci/check_pr.sh": "Arkeyan Launcher's tools",
     "tools/sync_collection.sh": "Arkeyan Launcher's tools",
     "resources/fonts/": "Arkeyan Launcher's resources",
     "resources/linux/skylauncher.desktop": "Arkeyan Launcher's resources",

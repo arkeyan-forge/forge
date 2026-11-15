@@ -718,6 +718,9 @@ namespace
         choice.wanted = WantedPresentMode(choice.refreshHz);
         using gpu::presentmode::Mode;
         const bool latest = c.swapChain->setPresentLatest(choice.wanted == Mode::Latest);
+        const double minimum =
+            gpu::presentmode::MinimumPresentSeconds(gpu::g_settings.vsync, choice.refreshHz, gpu::g_settings.fpsLimit);
+        const bool held = c.swapChain->setMinimumPresentDuration(minimum) && minimum > 0;
         choice.mode = choice.wanted == Mode::Latest && !latest ? Mode::Fifo : choice.wanted;
         static bool first = true;
         const PresentChoice before = std::exchange(g_present, choice);
@@ -725,10 +728,11 @@ namespace
         {
             static uint32_t logged = 0;
             if (logged++ < 10)
-                fprintf(stderr, "[gpu] vsync %s: display %.2f Hz, %u FPS%s: %s%s\n",
+                fprintf(stderr, "[gpu] vsync %s: display %.2f Hz, %u FPS%s: %s%s%s\n",
                     gpu::g_settings.vsync ? "on" : "off", choice.refreshHz, gpu::g_settings.fpsLimit,
                     choice.wanted == Mode::Latest ? ", not a multiple" : "", gpu::presentmode::Name(choice.mode),
-                    choice.wanted == Mode::Latest && !latest ? " (this backend has no other: FIFO)" : "");
+                    choice.wanted == Mode::Latest && !latest ? " (this backend has no other: FIFO)" : "",
+                    held ? ", each frame held for its refreshes" : "");
         }
         g_cadence = {};
     }
@@ -916,8 +920,8 @@ namespace
         float scale = std::min(float(outputWidth) / image.width, float(outputHeight) / image.height);
         uint32_t width = std::clamp(uint32_t(std::lround(image.width * scale)), 1u, outputWidth);
         uint32_t height = std::clamp(uint32_t(std::lround(image.height * scale)), 1u, outputHeight);
-        return RenderViewport(
-            float((outputWidth - width) / 2), float((outputHeight - height) / 2), float(width), float(height));
+        const uint32_t x = (outputWidth - width) / 2, y = (outputHeight - height) / 2; // rounded down
+        return RenderViewport(float(x), float(y), float(width), float(height));
     }
 }
 
@@ -1375,7 +1379,7 @@ namespace
 
     // Queues the copy into the texture, after `done` (a texture job) when given.
     void QueueUploadCopy(gpu::Texture* texture, uint32_t mipLevel, uint32_t arraySlice, const UploadPlace& place,
-        std::shared_ptr<std::atomic<bool>> done)
+        const std::shared_ptr<std::atomic<bool>>& done)
     {
         Enqueue([=] {
             if (done != nullptr)
@@ -1468,7 +1472,8 @@ namespace
         g_handoff.pending = false;
         lock.unlock();
         static uint32_t timeouts = 0;
-        if (++timeouts <= 5 || timeouts % 100 == 0)
+        timeouts++;
+        if (timeouts <= 5 || timeouts % 100 == 0)
             fprintf(stderr,
                 "[gpu] warning: the UI thread did not take the Present within 200 ms (%u times): presenting from this "
                 "thread\n",
@@ -1513,13 +1518,14 @@ namespace
         // to a display with another refresh.
         if (const uint32_t shown = g_cadence.Counted(); enabled && shown != 0)
         {
-            const auto& held = g_cadence.held;
-            auto share = [&](uint32_t n) { return 100.0 * double(held[n]) / double(shown); };
+            double share[5] = {};
+            for (uint32_t n = 1; n <= 4; n++)
+                share[n] = 100.0 * double(g_cadence.held[n]) / double(shown);
             fprintf(stderr,
                 "[perf] display %.0f Hz, vsync %s: %u frames shown, for 1 refresh %.0f%%, 2: %.0f%%, 3: %.0f%%, 4 or "
                 "more: %.0f%%\n",
-                g_present.refreshHz, gpu::presentmode::Name(g_present.mode), shown, share(1), share(2), share(3),
-                share(4));
+                g_present.refreshHz, gpu::presentmode::Name(g_present.mode), shown, share[1], share[2], share[3],
+                share[4]);
         }
         g_cadence.Clear();
         if (c.swapChain != nullptr && !c.swapChainNoSurface)
@@ -1580,19 +1586,22 @@ namespace
             double vblank = ms(times[uint32_t(gpu::FrameTime::VblankWait)]);
             double presentPath = WorkerRunning() ? double(workers.producerWaitNs) / 1e6 / double(frames)
                                                  : ms(total.gpuWaitNs) + ms(total.presentNs);
+            // With the GPU thread, the draws are recorded there (gpu::detail::DrawNow), not in the renderer's time.
+            char draws[32] = "";
+            if (!WorkerRunning())
+                snprintf(draws, sizeof(draws), ", gpu::Draw %.1f", ms(total.drawNs));
             fprintf(stderr,
-                "[perf] render thread per frame: renderer %.1f ms (ring %.1f, textures %.1f, gpu::Draw %.1f), vblank "
-                "wait %.1f ms, "
+                "[perf] render thread per frame: renderer %.1f ms (ring %.1f, textures %.1f%s), vblank wait %.1f ms, "
                 "%s %.1f ms, guest code and other %.1f ms\n",
                 renderer, ms(times[uint32_t(gpu::FrameTime::Ring)]), ms(times[uint32_t(gpu::FrameTime::Textures)]),
-                ms(total.drawNs), vblank, WorkerRunning() ? "waiting for the GPU thread" : "GPU wait and present",
-                presentPath, std::max(meanMs - renderer - vblank - presentPath, 0.0));
+                draws, vblank, WorkerRunning() ? "waiting for the GPU thread" : "GPU wait and present", presentPath,
+                std::max(meanMs - renderer - vblank - presentPath, 0.0));
             if (WorkerRunning())
                 fprintf(stderr,
-                    "[perf] GPU thread busy %.0f%% (recording, submitting, GPU waits, present); the game's render "
-                    "thread "
-                    "waited %.1f ms per frame for it; %u texture threads busy %.1f%% (%u decodes)\n",
-                    100.0 * double(workers.busyNs) / double(now - windowStart),
+                    "[perf] GPU thread busy %.0f%% (recording the draws %.1f ms per frame, submitting, GPU waits, "
+                    "present); the game's render thread waited %.1f ms per frame for it; %u texture threads busy "
+                    "%.1f%% (%u decodes)\n",
+                    100.0 * double(workers.busyNs) / double(now - windowStart), ms(total.drawNs),
                     double(workers.producerWaitNs) / 1e6 / double(frames), workers.textureThreads,
                     100.0 * double(workers.textureBusyNs) / double(now - windowStart) /
                         std::max(workers.textureThreads, 1u),

@@ -25,4 +25,7 @@ namespace portalprompt
     // A figure is asked for (203 TagTypeNotOnPortal, 301 ToyMissing, 304 NeedsRemoval_Minion) by player 1, or by
     // player 2 in the states named "... P2 ..."; the other portal messages (too many toys, locations, data) are not requests.
     Prompt ClassifyGiants(std::string_view errorKey, std::string_view stateName);
+    // True while the game brings a figure in: the states "Portal Control - Magic Moment - 1" to "- 4 - Show Minion"; a
+    // swap made then is often dropped (docs/runtime/host/toybox_ux.md, "A quick swap the game missed"). Not "Z - Canceled".
+    bool GiantsArriving(std::string_view stateName);
 }

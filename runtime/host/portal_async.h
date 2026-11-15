@@ -60,6 +60,10 @@ private:
         bool sound = false; // a speaker block (WriteSound), not a command
     };
     static constexpr size_t QueueLimit = 64; // older reports and commands are dropped past this
+    // Speaker blocks wait in their own queue, sent only when no command waits: Trap Team streams ~250 a second, and in
+    // the shared queue a portal slower than that saw the title's commands dropped behind them (its lights froze and
+    // it stopped answering until the game restarted). Past this many (~128 ms of sound) the oldest block is dropped.
+    static constexpr size_t SoundQueueLimit = 32;
 
     std::unique_ptr<PortalBackend> m_device;
     const char* m_name;
@@ -67,8 +71,9 @@ private:
     std::atomic<bool> m_connected, m_stop{ false }, m_takesSound{ false };
     std::mutex m_mutex;
     std::condition_variable m_wake;
-    std::deque<Command> m_commands;           // under m_mutex
-    std::deque<Report> m_reports;             // under m_mutex: answers, in order, and one status report at most
-    std::chrono::milliseconds m_delay{ 0 };    // under m_mutex
+    std::deque<Command> m_commands; // under m_mutex
+    std::deque<Report> m_sounds; // under m_mutex: speaker blocks, sent after every command
+    std::deque<Report> m_reports; // under m_mutex: answers, in order, and one status report at most
+    std::chrono::milliseconds m_delay{ 0 }; // under m_mutex
     std::thread m_thread;
 };

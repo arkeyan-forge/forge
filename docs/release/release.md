@@ -2,7 +2,7 @@
 
 > **Purpose:** what may be published and how, which identity and hygiene rules apply, and what is checked before a release? · **Status:** current (2026-11-12) · **Tags:** none
 
-The release steps and the CI are in [launcher/updates_release.md](launcher/updates_release.md); the kit contract in
+The release steps and the local builds are in [launcher/updates_release.md](launcher/updates_release.md); the kit contract in
 [launcher/kit_contract.md](launcher/kit_contract.md); how a kit is made in [../tools/arkeyan-builder.md](../tools/arkeyan-builder.md);
 the licences in [licensing.md](licensing.md).
 

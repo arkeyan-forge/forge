@@ -1,6 +1,6 @@
 # The multithreaded renderer, caches and performance findings
 
-> **Purpose:** how is the host renderer threaded and cached, and what did the performance work find? · **Status:** current (2026-11-04) · **Tags:** [Xbox] [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [TrapTeam]
+> **Purpose:** how is the host renderer threaded and cached, and what did the performance work find? · **Status:** current (2026-11-14) · **Tags:** [Xbox] [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [TrapTeam]
 
 Code: [`gpu/worker.cpp`](../../../runtime/gpu/worker.cpp), [`gpu/gpu.cpp`](../../../runtime/gpu/gpu.cpp), [`gpu/draw.cpp`](../../../runtime/gpu/draw.cpp),
 [`gpu/buffer_cache.cpp`](../../../runtime/gpu/buffer_cache.cpp), [`d3d/render.cpp`](../../../runtime/d3d/render.cpp). Class **[Xbox]** (host renderer) with **[Lux]** cost drivers.
@@ -71,7 +71,7 @@ Where a level frame still spends time on the render thread (scale 2, limit 60; b
 **First level frame 150-290 ms** is the game's own main thread running its first update (the render thread idles ~170 ms in the job loop `sub_82635740`: `WaitForSingleObject(0x82BB4F28, 1 ms)`); it cannot move into the loading screen
 without changing the game. The first frame also decodes ~2857 textures (25.6 MB, ~35-50 ms for 390 on the render thread before the texture threads).
 Not done: hashing on workers (would show CPU-written textures a frame late), parallel command-list recording, a texture preload per level, display pacing check on a real window (Metal presents when the present command buffer is
-scheduled: the emulated vblank is not tied to the display's; next step `presentAfterMinimumDuration`).
+scheduled: the emulated vblank is not tied to the display's; since 0.9.7 each frame is held for its refreshes with `presentAfterMinimumDuration`, below).
 
 ## Optimizations per game (inventory, 2026-10-28) [Xbox] [Lux] [Alchemy] [SSA] [Giants] [SwapForce]
 
@@ -104,8 +104,9 @@ the Swap Zones and arenas with them); Swap Force at 60 fps (52-56 fps, its own w
 
 ## The perf log (`[perf]` lines every 10 s for the whole session; `SKY_PERF_LOG=0` turns off)
 
-`[perf] <fps> fps; frame median M ms, p95 P ms; per frame: N draws taking D ms, GPU wait G ms, present, command lists, rest (guest CPU, renderer outside Draw, waits)`; then `[perf] render thread per frame: renderer R ms (ring, textures,
-gpu::Draw), vblank wait, GPU wait and present, the rest = the guest's own code`; then `[perf] GPU thread busy X% ...; the game's render thread waited Y ms per frame for it; N texture threads busy Z%`. If Y is large and busy ~100% the
+`[perf] <fps> fps; frame median M ms, p95 P ms; per frame: N draws taking D ms, GPU wait G ms, present, command lists, rest (guest CPU, renderer outside Draw, waits)`; then `[perf] render thread per frame: renderer R ms (ring, textures;
+gpu::Draw only without the GPU thread), vblank wait, GPU wait and present, the rest = the guest's own code`; then `[perf] GPU thread busy X% (recording the draws D ms per frame, ...); the game's render thread waited Y ms per frame for it; N texture threads busy Z%`.
+With the GPU thread, D is that thread's time in `DrawNow`, not part of R (before 2026-11-14 the render-thread line showed it in R's brackets). If Y is large and busy ~100% the
 D3D12 recording is the limit; if GPU wait is large, the GPU. Per frame, with the GPU's own busy time, game-thread CPU, latency and hitch causes: the F3 debug
 screen at Full and its performance log (`gpu/frame_stats.h`, [gamemenu.md](../host/gamemenu.md), "Debug screen"); the
 renderer time's counters keep counting (the `[perf]` window is their difference). `SKY_FRAME_TIMES=<file>` writes `<ms since start> <work ms> <draws>` per swap (`tools/perf/frames.py` summarises: worst gaps in the first 5 s of the level and fps/median/p95/p99
@@ -759,3 +760,36 @@ targets kept as `R16G16B16A16_UNORM` (8 bytes a pixel, plume has no 10:10:10:2 f
 the console's precision back); the most expensive translated shaders (this template's shader-profiler table is empty:
 needs the "Metal GPU Counters"/shader timeline recording). What is left at scale 3 is the games' own fragment work
 (Swap Force's tutorial: 14 ms a frame).
+
+## SSA on the Steam Deck: the render thread's draws (2026-11-14) [SSA] [Lux] [Xbox] [V]
+
+A Steam Deck player's `level_027` (Vulkan, scale 1, 3300-3950 draws a frame) held 60 in the menus and dropped to 30 in
+the level: `[perf]` renderer 12-15 ms on the render thread (ring 2.2-2.9, textures 0.4-1.0) plus 7-9 ms of guest code,
+over the 16.7 ms a frame at 60. The `gpu::Draw 7-10 ms` that line printed in the renderer's brackets is the GPU
+thread's recording (`DrawNow` runs there), not render-thread time: the line now prints it on the GPU thread's line.
+
+**The perf timers were 41.7 times too long on an M5 Pro** (`platform/clock.h`, `ArkeyanClockTest`): `PlatformNowNs`
+reads `CNTVCT_EL0` and converted it with `mach_timebase_info` (125/3, 24 MHz ticks); there the counter runs at 1 GHz
+(`CNTFRQ_EL0`). It now converts with `CNTFRQ_EL0`. Only the `[perf]` split and the frame stats' renderer time used it
+(not the pacing); every renderer, ring and `gpu::Draw` time measured on such a Mac before was wrong.
+
+Measured on an M5 Pro, `level_027`'s opening view (2900 draws, 60 held, scale auto, window 25-55 s of a 60 s run,
+alternated pairs, load 2-3), render thread before: renderer 3.03 ms (ring 0.73), guest 3.5-3.8 ms. A `sample` of the
+render thread: the ring parse (`Parse`) 12 % of its busy samples, `IssueDraw` 39 % (`gpu::Draw`'s copy and queueing
+9 %, the register reads 7 %, the float constants 4 %, the texture slots 4 %), `SendInheritedShadows` and
+`ApplyRecordedWrites` 4 %.
+
+| Change | renderer (ring), ms a frame |
+|---|---|
+| before | 3.03 (0.73), 3.03 (0.73) |
+| each register's fields together (`d3d/ring_registers.h`, `ArkeyanRingRegistersTest`: a run of writes leaves what the same writes one at a time leave) and a packet's consecutive registers written as one run | 2.65 (0.40), 2.70 (0.40) |
+| + `SendInheritedShadows` visiting only the groups set in both masks, as runs (an in-game check against the old loop: 498 000 calls, 0 differences) | 2.60 (0.40), 2.67 (0.40) |
+| + `gpu::Draw` comparing the 128 constant group versions 4 at a time (about 10 change a draw) | 2.60 (0.40), 2.57 (0.40) |
+
+So the renderer is about 15 % cheaper (ring 45 %); on the Deck that should be about 2 ms of its 13 [?] (not measured
+there). It does not make the Deck hold 60 in that view: renderer and guest code are still ~19-20 ms there, and the GPU
+thread (71 % busy, recording 9 ms) comes next. Leads [?]: `DrawDesc` is 2768 bytes, cleared in `PrepareDraw` and copied
+again into the frame arena by `gpu::Draw` for every draw (~16 MB a frame at 3000 draws; building it in the arena saves
+the copy but races a present from another producer recycling the chunk); one ring lock for all of a draw's
+`GpuRegister` reads (~25 a draw, the lock ~2 % of the thread); the draw translation off the render thread (above).
+

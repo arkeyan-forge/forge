@@ -25,4 +25,6 @@ namespace portalprompt
     // player for a Skylander; with nobody named and a vehicle reason (13 or 12) they ask for a vehicle (player 1's: no
     // field naming the player was seen); Error is a "too many" screen, not a request.
     Prompt ClassifySuperChargers(uint32_t state, uint32_t reason, uint32_t player);
+    // Swap Force's arrival states (SwapForceArriving) in SuperChargers' numbers, with FirstVehicleSequence (7) between.
+    bool SuperChargersArriving(uint32_t state);
 }

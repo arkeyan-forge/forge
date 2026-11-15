@@ -23,4 +23,8 @@ namespace portalprompt
     // The prompt for a CMagicMoment state and player index (0, 1; anything else is nobody): Idle and Dead ask that
     // player for a Skylander; Error is a "too many" screen, not a request.
     Prompt ClassifySwapForce(uint32_t state, uint32_t player);
+    // True while the game brings a figure in or takes one out (the Toy Box holds a new swap meanwhile): Activating,
+    // SpawnOutLevel, ConfirmRegister, IdleOutro, Load, SpawnShapeshifter, PlayIntro, TransitionOut, SpawnInLevel, and
+    // Imaginators' TakeHudPortrait (21). Not the prompt (TransitionIn, Idle), a boss event, Dead or Error.
+    bool SwapForceArriving(uint32_t state);
 }

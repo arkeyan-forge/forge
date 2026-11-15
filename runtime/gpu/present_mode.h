@@ -32,6 +32,18 @@ namespace gpu::presentmode
         return std::abs(ratio - std::round(ratio)) <= 0.01 ? Mode::Fifo : Mode::Latest;
     }
 
+    // FIFO on a refresh that is a multiple of the frame rate (60 FPS on 120 Hz): how long each frame must stay on the
+    // display, in seconds, so that every frame takes the same number of refreshes (0: no minimum). The game's 60 Hz pace
+    // is its own clock, not the display's: presented as soon as it is ready, a frame took 1 or 3 refreshes of a 120 Hz
+    // ProMotion display about one time in ten (the owner's MacBook Pro, Spyro's Adventure at 60). Half a millisecond
+    // short of the frame time, so a duration that rounds up never costs a third refresh.
+    inline double MinimumPresentSeconds(bool vsync, double refreshHz, uint32_t fps)
+    {
+        if (Choose(vsync, refreshHz, fps) != Mode::Fifo || refreshHz <= 0 || fps == 0 || refreshHz < double(fps) * 1.99)
+            return 0.0;
+        return 1.0 / double(fps) - 0.0005;
+    }
+
     inline const char* Name(Mode mode)
     {
         return mode == Mode::Fifo ? "FIFO" : mode == Mode::Latest ? "the newest frame at each refresh" : "off";

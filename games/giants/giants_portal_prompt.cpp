@@ -18,4 +18,10 @@ namespace portalprompt
         }
         return {};
     }
+
+    bool GiantsArriving(std::string_view stateName)
+    {
+        return stateName.starts_with("Portal Control - Magic Moment - ") &&
+               stateName.find(" - Z - ") == std::string_view::npos;
+    }
 }

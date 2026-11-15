@@ -8,11 +8,26 @@ fields of the tag ([figures.md](../../../docs/runtime/host/figures.md#supercharg
 
 | Part | What [V] |
 |---|---|
-| Seats | Player 1, **Vehicle 1**, Player 2, **Vehicle 2**, Magic item / trophy (the catalogue's 5 seats); a vehicle seat takes a vehicle (category `vehicle`) and nothing else |
+| Seats | Player 1, **Vehicle 1**, Player 2, **Vehicle 2**, Magic item / trophy, **Trap**; a vehicle seat takes a supported vehicle only, Trap takes traps only (host tests; the trap's in-game reward remains to check) |
 | Vehicles | 20 types (3220-3241), 13 decos from the owner's dumps (Dark, Legendary, Power Blue, Nitro, Golden, E3, holiday, chase); a blank one made by the Toy Box or `new:<type>` is read and driven (`undeadcar.pak` opens when the game reads Crypt Crusher, 181 s into a new game) |
 | A vehicle's card and sheet | the card "Shield 2 · Weapon 1" (the garage's upgrades, [figures.md](../../../docs/runtime/host/figures.md#superchargers-vehicles-alchemy-superchargers)), the sheet "Gearbits: N · shield 2/5 · weapon 1/5 · driven <time>" once the game used it, "New: never driven" before; gearbits change through `collection::SetGearbits` (the launcher's Edit) |
 | Trophies | 3500 Sky, 3501 Land, 3502 Sea, 3503 Kaos (the dumps' tags; the public list had two swapped); the item seat |
 | Pictures | the disc's 469 round badges (88 px, `archives/toycollectionmaterials.pak`, [art.md](art.md)): 363 toys and variants mapped in the catalogue's `portraits` (SuperChargers' 44 and their decos, every older toy Swap Force and Trap Team name the same way). Drawn icons left: Smash Hit (no badge of its own on this disc) and the UFO Hat (only its variant's). `SUPERCHARGERS_ISO=<disc> ArkeyanArtTest` checks them |
+
+## Traps (issue #101)
+
+[V] The game's local toy table lists traps as well as vehicles. Its entries specify toy families and variants,
+without a seat or hardware-slot requirement. The shared catalogue already accepted Trap Team's traps; the missing
+Trap seat now exposes them in the Toy Box and the launcher's seat picker. Traps use ordinary emulated portal slots
+and their stored tag data, as in Trap Team. Clown Cruiser and Barrel Blaster are absent from the Xbox tables and
+excluded from this game's vehicle choices. See [the shared rule](../../../docs/runtime/host/collection.md#later-game-accessories-issue-101).
+
+[?] Player check, not run here: keep a Skylander on Player 1 and a supported vehicle on Vehicle 1, then choose a
+trap on **Trap**, not Adventure or Vehicle. Check that it is read and the expected elemental vehicle attack/ammo
+becomes available; with a captured villain, check the corresponding Skystones Overdrive reward where applicable.
+Lift and replace it, then switch element, checking the game's feedback and that the player and vehicle stay seated.
+The tables establish recognition, not those rewards or their repeat-use conditions. Also verify Vehicle 2 and the
+six-seat layout through the in-game Toy Box and the separate Toy Box window.
 
 **Internal names** (the badges' `collection_<name>_<deco>`): Fiesta `souljam`, High Volt `lightbulb`, Splat `inkwell`, Stormblade
 `peacock`, Spitfire `nitro`, Dive-Clops `airlock`, Astroblast `lightdriver`, Nightfall `darkdriver`, Thrillipede `lifebug`, the six

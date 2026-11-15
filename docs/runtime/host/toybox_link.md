@@ -34,7 +34,7 @@ a tab or a line break is never sent.
 | `hello <version> <token> <client>` (first) | `hello <version> <game id>`, or `refused version <its version>` / `refused token` / `refused busy`, then it closes |
 | `put <seat> <path>` | `seat <i> empty` · `seat <i> virtual <path> <bottom path> <taken 0/1>` · `seat <i> real <toy type> <variant> <known 0/1>` |
 | `off <seat>` · `swap` · `clear` | `sync <seat count>`: the seats sent since the last sync are the portal now |
-| | `done <verb> <seat> ok` or `done <verb> <seat> <refusal>`: `real`, `unknown`, `busy`, `cannot_read`, `already`, `full`, `no_portal` |
+| | `done <verb> <seat> ok` or `done <verb> <seat> <refusal>`: `real`, `unknown`, `busy`, `cannot_read`, `already` (runtimes before issue #17: putting the figure on its own seat now places it again), `full`, `no_portal` |
 | | `bye`: the game is closing |
 
 Seats are the catalogue's (`games[].seats`), the same index on both sides. The game sends every seat after a hello, after

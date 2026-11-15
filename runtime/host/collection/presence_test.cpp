@@ -110,7 +110,44 @@ namespace
         game::LevelStarted("test_menu");
         CHECK(fs::last_write_time(file) == stamp);
 
-        // A new session replaces a stale level and player count before its first level arrives.
+        // Real and virtual seats publish the same tag identity, including type and variant zero.
+        const presence::Toy real{ 0, 65535, 7 };
+        presence::SetPlayerOne(real);
+        CHECK(savebackup::ReadFile(file) == "level=test_menu\nmenu=1\nplayers=1\n");
+        presence::Flush();
+        CHECK(savebackup::ReadFile(file) == "level=test_menu\nmenu=1\nplayers=1\ntoy=0\nvariant=65535\ntoylevel=7\n");
+        const auto toyStamp = fs::last_write_time(file);
+        presence::SetPlayerOne(real);
+        presence::Flush();
+        CHECK(fs::last_write_time(file) == toyStamp);
+
+        // Level and player-count changes retain P1's toy; another seat must not replace it.
+        presence::SetSecondPlayer(true);
+        presence::LevelStarted("test_next", false);
+        CHECK(savebackup::ReadFile(file) == "level=test_next\nmenu=0\nplayers=2\ntoy=0\nvariant=65535\ntoylevel=7\n");
+        presence::Flush();
+        CHECK(savebackup::ReadFile(file) == "level=test_next\nmenu=0\nplayers=2\ntoy=0\nvariant=65535\ntoylevel=7\n");
+
+        // Incomplete, blank or damaged progress keeps the identity but cannot keep the previous toy's level.
+        const presence::Toy virtualToy{ 65535, 0, 0 };
+        presence::SetPlayerOne(virtualToy);
+        presence::Flush();
+        CHECK(savebackup::ReadFile(file) == "level=test_next\nmenu=0\nplayers=2\ntoy=65535\nvariant=0\n");
+        presence::SetPlayerOne({ { 65535, 0, 9 } });
+        presence::Flush();
+        CHECK(savebackup::ReadFile(file) == "level=test_next\nmenu=0\nplayers=2\ntoy=65535\nvariant=0\ntoylevel=9\n");
+
+        // Several observations between worker ticks write only the latest one.
+        const auto beforeBurst = fs::last_write_time(file);
+        presence::SetPlayerOne(real);
+        presence::SetPlayerOne(std::nullopt);
+        CHECK(fs::last_write_time(file) == beforeBurst);
+        presence::Flush();
+        CHECK(savebackup::ReadFile(file) == "level=test_next\nmenu=0\nplayers=2\n");
+        presence::SetPlayerOne(virtualToy);
+        presence::Flush();
+
+        // A new session replaces a stale level, player count and toy before its first level arrives.
         presence::Begin(folder);
         CHECK(savebackup::ReadFile(file) == "level=\nmenu=1\nplayers=1\n");
 #if defined(_WIN32)
@@ -120,15 +157,50 @@ namespace
 #endif
         toyboxremote::Start(folder.string(), "test");
         presence::SetSecondPlayer(true);
+        presence::SetPlayerOne(real);
+        const std::string workerSnapshot = "level=\nmenu=1\nplayers=2\ntoy=0\nvariant=65535\ntoylevel=7\n";
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-        while (
-            savebackup::ReadFile(file) != "level=\nmenu=1\nplayers=2\n" && std::chrono::steady_clock::now() < deadline)
+        while (savebackup::ReadFile(file) != workerSnapshot && std::chrono::steady_clock::now() < deadline)
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        CHECK(savebackup::ReadFile(file) == "level=\nmenu=1\nplayers=2\n");
+        CHECK(savebackup::ReadFile(file) == workerSnapshot);
         CHECK(!fs::exists(folder / toyboxlink::FileName));
         presence::SetSecondPlayer(false);
+        presence::SetPlayerOne(std::nullopt);
         toyboxremote::Stop();
         CHECK(savebackup::ReadFile(file) == "level=\nmenu=1\nplayers=1\n");
+    }
+
+    void ToyWriterChecks(const fs::path& folder)
+    {
+        presence::Writer writer(folder);
+        presence::State state{ "test", false, 1, presence::Toy{ 42, 0, 0 } };
+        const fs::path file = folder / "presence.txt";
+        CHECK(writer.Write(state));
+        CHECK(savebackup::ReadFile(file) == "level=test\nmenu=0\nplayers=1\ntoy=42\nvariant=0\n");
+        const fs::path previous = folder / "previous.txt";
+        fs::create_hard_link(file, previous);
+        state.toy->level = 1;
+        CHECK(writer.Write(state));
+        CHECK(savebackup::ReadFile(previous) == "level=test\nmenu=0\nplayers=1\ntoy=42\nvariant=0\n");
+        CHECK(savebackup::ReadFile(file) == "level=test\nmenu=0\nplayers=1\ntoy=42\nvariant=0\ntoylevel=1\n");
+        const auto stamp = fs::last_write_time(file);
+        CHECK(!writer.Write(state));
+        CHECK(fs::last_write_time(file) == stamp);
+
+        const fs::path temp = savebackup::TempPath(file);
+        fs::create_directory(temp);
+        std::ofstream(temp / "blocker") << "synthetic";
+        state.toy->variant = 65535;
+        CHECK(!writer.Write(state));
+        CHECK(savebackup::ReadFile(file) == "level=test\nmenu=0\nplayers=1\ntoy=42\nvariant=0\ntoylevel=1\n");
+        fs::remove_all(temp);
+        CHECK(writer.Write(state));
+        CHECK(savebackup::ReadFile(file) == "level=test\nmenu=0\nplayers=1\ntoy=42\nvariant=65535\ntoylevel=1\n");
+        state.toy->level = -1;
+        CHECK(!writer.Write(state));
+        state.toy.reset();
+        CHECK(writer.Write(state));
+        CHECK(savebackup::ReadFile(file) == "level=test\nmenu=0\nplayers=1\n");
     }
 }
 
@@ -151,6 +223,7 @@ int main()
 {
     const fs::path scratch = fs::current_path() / ("presence-test-" + toyboxlink::NewToken());
     WriterChecks(scratch / "writer");
+    ToyWriterChecks(scratch / "toy-writer");
     RuntimeChecks(scratch / "runtime");
     fs::remove_all(scratch);
     printf("Presence: %d checks, %d failures\n", g_checks, g_failures);

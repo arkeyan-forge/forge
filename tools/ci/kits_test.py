@@ -125,8 +125,11 @@ class Kits(unittest.TestCase):
         self.assertFalse(list((self.root / ".scratch/ci").iterdir()))
 
     def test_destination_and_checksum_validation(self):
-        kits.destination("release-owner/launcher", "v1.2.3")
-        for repository, tag in (("../bad", "v1.2.3"), ("release-owner/launcher", "v1.2.3; command")):
+        for tag in ("v1.2.3", "v1.2.3b1", "v1.2.3b10", "v1.2.3-beta.1"):
+            kits.destination("release-owner/launcher", tag)
+        for repository, tag in (("../bad", "v1.2.3"), ("release-owner/launcher", "v1.2.3; command"),
+                                ("release-owner/launcher", "v1.2.3b"), ("release-owner/launcher", "v1.2.3b1-x;y"),
+                                ("release-owner/launcher", "v1.2")):
             with self.assertRaises(ValueError):
                 kits.destination(repository, tag)
         line = "a" * 64 + "  Launcher.zip\n"
@@ -183,8 +186,13 @@ printf 'invented license\\n' > "$installation/LICENSE.TXT"
         def fake(*args):
             self.calls.append(args)
             if args[0] == "api":
-                return json.dumps({"id": 7, "tag_name": "v1.2.3", "draft": draft, "body": self.notes,
-                                   "assets": [{"name": name} for name in self.assets]})
+                # GitHub does not return a draft by tag; only the list and the id lookups exist here.
+                self.assertNotIn("/releases/tags/", args[1])
+                release = {"id": 7, "tag_name": "v1.2.3", "draft": draft, "body": self.notes,
+                           "assets": [{"name": name} for name in self.assets]}
+                if args[1].endswith("/releases?per_page=100"):
+                    return json.dumps([{"id": 6, "tag_name": "v1.2.2", "draft": False}, release])
+                return json.dumps(release)
             action = args[1]
             if action == "download":
                 name = args[args.index("--pattern") + 1]

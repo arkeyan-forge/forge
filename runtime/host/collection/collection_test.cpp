@@ -263,10 +263,12 @@ namespace
         for (const test::RequiredVariant& required : test::RequiredVariantIds)
         {
             const Toy* toy = catalogue.Find(required.type);
-            bool found = toy != nullptr && std::any_of(toy->variants.begin(), toy->variants.end(),
-                [&](const Variant& variant) { return !variant.sameTag && variant.id == required.id; });
+            bool found = toy != nullptr &&
+                         std::any_of(toy->variants.begin(), toy->variants.end(),
+                             [&](const Variant& variant) { return !variant.sameTag && variant.id == required.id; });
             if (!found)
-                fprintf(stderr, "missing catalogue variant: %u:0x%04X\n", unsigned(required.type), unsigned(required.id));
+                fprintf(
+                    stderr, "missing catalogue variant: %u:0x%04X\n", unsigned(required.type), unsigned(required.id));
             CHECK(found);
         }
         std::set<uint16_t> types;
@@ -1024,6 +1026,90 @@ namespace
         std::string path = std::string(sheetFolder) + "/collection_icons.png";
         CHECK(SavePng(sheet, path));
         printf("icons: %s\n", path.c_str());
+    }
+
+    void TestAccessorySeats()
+    {
+        using namespace collection;
+        const Catalogue& catalogue = Catalogue::Get();
+        Catalogue exclusions;
+        std::string error;
+        CHECK(exclusions.Load(R"({"format":1,"toys":[
+            {"type":1,"name":"Allowed","category":"vehicle","game":"test"},
+            {"type":2,"name":"Excluded","category":"vehicle","game":"test"}],
+            "games":[{"id":"test","accepts":[1,2],"accepts_games":["test"],"rejects":[2]}]})",
+            error));
+        CHECK(exclusions.Accepts("test", 1) && !exclusions.Accepts("test", 2));
+        CHECK(exclusions.Accepted("test").size() == 1);
+        CHECK(!exclusions.Read("test", exclusions.Find(2), 0).works);
+        for (const char* id : { "superchargers", "imaginators" })
+        {
+            const Game* game = catalogue.FindGame(id);
+            CHECK(game != nullptr);
+            if (game == nullptr)
+                continue;
+            const auto accepted = catalogue.Accepted(id);
+            std::vector<Figure> accessories;
+            std::vector<Figure> excluded;
+            for (const Toy& toy : catalogue.Toys())
+            {
+                if (toy.category != Category::Trap && toy.category != Category::Vehicle)
+                    continue;
+                if (toy.name == "Clown Cruiser" || toy.name == "Barrel Blaster")
+                {
+                    CHECK(!catalogue.Accepts(id, toy.type));
+                    CHECK(!catalogue.Read(id, &toy, StandardVariant(toy)).works);
+                    CHECK(std::find(accepted.begin(), accepted.end(), &toy) == accepted.end());
+                    Figure figure;
+                    figure.type = toy.type;
+                    figure.toy = &toy;
+                    excluded.push_back(figure);
+                    continue;
+                }
+                CHECK(catalogue.Accepts(id, toy.type));
+                CHECK(catalogue.Read(id, &toy, StandardVariant(toy)).works);
+                CHECK(std::count(accepted.begin(), accepted.end(), &toy) == 1);
+                std::vector<std::string> seats;
+                for (const Seat& seat : game->seats)
+                {
+                    if (std::find(seat.accepts.begin(), seat.accepts.end(), toy.category) == seat.accepts.end())
+                        continue;
+                    seats.push_back(seat.id);
+                    CHECK(seat.player == (seat.id == "vehicle1" ? 1 : seat.id == "vehicle2" ? 2 : 0));
+                }
+                if (toy.category == Category::Trap)
+                    CHECK(seats == std::vector<std::string>{ "trap" });
+                else
+                    CHECK((seats == std::vector<std::string>{ "vehicle1", "vehicle2" }));
+                Figure figure;
+                figure.type = toy.type;
+                figure.toy = &toy;
+                accessories.push_back(figure);
+            }
+            const auto shelf = Group(accessories, GroupBy::Smart, OrderBy::Name, id);
+            size_t shown = 0;
+            for (const Section& section : shelf)
+            {
+                CHECK(section.kind != Section::Kind::Foreign);
+                shown += section.items.size();
+            }
+            CHECK(!accessories.empty() && shown == accessories.size());
+            const auto foreign = Group(excluded, GroupBy::Smart, OrderBy::Name, id);
+            CHECK(foreign.size() == 1 && foreign.front().kind == Section::Kind::Foreign &&
+                  foreign.front().items.size() == excluded.size());
+        }
+        for (const Toy& toy : catalogue.Toys())
+        {
+            if (toy.category == Category::Trap)
+            {
+                CHECK(catalogue.Accepts("trapteam", toy.type));
+                CHECK(!catalogue.Accepts("swapforce", toy.type));
+            }
+            if (toy.category == Category::Vehicle)
+                CHECK(!catalogue.Accepts("trapteam", toy.type));
+            if (toy.category == Category::Sensei || toy.category == Category::CreationCrystal)
+                CHECK(!catalogue.Accepts("superchargers", toy.type));
+        }
     }
 
     // The Toy Box's additions (docs/runtime/host/toybox_ux.md section 9): seats, ownership and the tidy, recents, trash, duplicate,
@@ -1840,6 +1926,7 @@ int main(int argc, char** argv)
     TestMigration();
     TestIcons(sheetFolder);
     TestManagement();
+    TestAccessorySeats();
     TestSwappers();
     TestSwapperPicture();
     TestPictureRule();

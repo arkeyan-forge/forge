@@ -1,4 +1,4 @@
-# Updates, kit download, the release flow, CI
+# Updates, kit download, the release flow
 
 > **Purpose:** how does Arkeyan Launcher update itself and the kit, and how is a release published? (the one page of the release steps) · **Status:** current (2026-11-13) · **Tags:** none
 
@@ -7,7 +7,7 @@ Detail in Arkeyan Launcher's own `docs/updates.md`; the checks before a tag: [..
 ## The updater (`src/launcher/updater.{h,cpp}`, window side `ui/update_page.cpp`)
 No telemetry: the only request is `GET https://api.github.com/repos/<repo>/releases/latest`, then the asset. HTTPS goes through **`curl`** (`curl.exe` ships with Windows 10/11; macOS and most Linux have it): `--proto =https --tlsv1.2`, 15 s connect timeout, no redirect to plain http.
 1. **Check** at **every** start (`[update] last_check` keeps the time), unless `[update] auto_check=0` or `SKY_LAUNCHER_NO_UPDATE_CHECK`; and on demand in Settings > About > Check for updates. Offline: silent.
-2. The tag (`vX.Y.Z`) is compared as semver with the built version (`SKYLAUNCHER_VERSION`, the CMake cache variable the CI sets from the tag). Pre-releases and tags that are not versions are never offered.
+2. The tag (`vX.Y.Z`) is compared as semver with the built version (`SKYLAUNCHER_VERSION`, the CMake cache variable the release build sets from the tag). Pre-releases and tags that are not versions are never offered.
 3. A **banner** pushes the page down 56 px: "Update available: vX.Y.Z", **Update now**, **What's new** (the release's notes), **Later**.
 4. **Update now**: the asset for this OS is downloaded next to the running program (`.skylauncher-update/`), its SHA-256 checked against the release's **`SHA256SUMS`** asset, then swapped in. **A release without `SHA256SUMS`, or a wrong hash, is refused and deleted.**
 5. Then **Restart now**.
@@ -24,10 +24,13 @@ If the second move fails the first is undone (`ReplaceInPlace`); a copy that is 
 
 ## Releasing
 1. Bump `SKYLAUNCHER_VERSION` in `CMakeLists.txt`, commit.
-2. Tag `vX.Y.Z` and **push the tag**: **only a pushed tag matching the version publishes**; branches and pull requests only build.
-3. Wait for the CI: it attaches `ArkeyanLauncher.exe`, `ArkeyanLauncher-x86_64.AppImage`, `ArkeyanLauncher-macOS.dmg`, `ArkeyanLauncher-macOS.zip` and **`SHA256SUMS`** (`sha256sum` format, one line per asset, written by the job).
-4. Build and attach the kits. For the opt-in public format-2 candidates, use this forge's **Player kits** workflow
-   as described below, with an existing launcher draft release. The manual path remains: build in this repo
+2. Tag `vX.Y.Z`, **push the tag** and check it out: **only a pushed tag matching the version publishes**.
+3. In the launcher, on a Mac with Docker: `tools/release_local.sh vX.Y.Z --kits <this checkout>`. It runs every check
+   of the launcher's `tools/ci/run.sh` with that version, builds `ArkeyanLauncher.exe`, `ArkeyanLauncher-x86_64.AppImage`,
+   `ArkeyanLauncher-macOS.dmg`, `ArkeyanLauncher-macOS.zip` and **`SHA256SUMS`** (`sha256sum` format, one line per
+   asset), refuses a file holding the home folder's path, and makes the **draft**. `--kits` then runs this repo's
+   `tools/ci/kits_local.sh --attach vX.Y.Z` (below).
+4. Kits built some other way: build in this repo
    (`tools/make_kit.sh windows macos linux`, [../../tools/arkeyan-builder.md](../../tools/arkeyan-builder.md)), then
    in Arkeyan Launcher run `tools/release_kit.sh vX.Y.Z skylanders-kit-windows-x64.zip skylanders-kit-macos-arm64.zip skylanders-kit-linux-x64.zip`
    (needs `gh`). The launcher helper uploads only the canonical names, merges kit checksums into `SHA256SUMS`,
@@ -44,33 +47,24 @@ Arkeyan Launcher plays Swap Force (`Skylanders Swap Force`) since the launcher t
 2. `SKY_LAUNCHER_TEST_GIANTS_ISO=<giants iso> SKY_LAUNCHER_TEST_SWAPFORCE_ISO=<swap force iso> ArkeyanLauncherTest <spyro iso> <scratch>` passes (each disc accepted by its own game, refused by the others, pictures and portraits read into `SwapForce/`).
 3. `tools/test_all.sh` passes with `SWAPFORCE_ISO` set; then `tools/release_kit.sh` as above, with the kit of the same tag.
 
-## CI (`.github/workflows/build.yml`)
-Triggers: push to `main` and `feat/**`, tags `v*`, pull requests, manual. Jobs: **windows** (`windows-latest`, `ilammy/msvc-dev-cmd`, clang-cl, Ninja, Release, `-DSKYLAUNCHER_VERSION` from the tag), **linux** (`ubuntu-22.04`, glibc 2.35, Clang, a long apt list of X11/Wayland/udev/dbus headers + `librsvg2-bin`, `libfuse2`, AppImage via `linuxdeploy` with `resources/linux/skylauncher.desktop` and an icon rendered from `resources/icons/skylauncher.svg`), **macos** (`macos-latest`, dmg + zip), then the release job. `concurrency` cancels superseded runs.
+## Local builds (no hosted CI since 2026-11-15)
+**Checks** (`tools/ci/run.sh`, here and in the launcher, [testing.md](../../getting-started/testing.md#checks-toolscirunsh)): the
+format, the tests on macOS natively, and in Docker on Linux, with sanitizers and on Windows under Wine (the launcher
+runs its Linux checks on the host's architecture; the workshop's need amd64 for the x86_64 dxc). The
+launcher's Windows build uses clang-cl and lld-link with the CRT and SDK fetched by `xwin`, in an image built locally and
+never pushed (Microsoft's licence covers building, not redistributing them).
 
-## This forge's kit CI (`.github/workflows/kits.yml`)
-
-**Player kits** is separate from the launcher CI above. A push to `ci/kits`, or a manual run with no
-`launcher_tag`, builds and checks Windows x64, macOS arm64 and Linux x64, then uploads their canonical ZIPs as
-artifacts for seven days. The `attach` job is skipped; no release settings or credential are needed. There is no
-tag or pull-request trigger. All builds use `KIT_LAYOUT_RECORD=1`, step 4's public headers, fixed
-`KIT_DEPS=/tmp/kit-deps` and FFmpeg from `tools/ffmpeg/build.sh`. Windows is cross-built on Linux with the pinned
-Linux-hosted llvm-mingw; Linux builds inside the kit image; Mac uses the existing recipe with Xcode 16.4.
-
-To attach candidates, set repository variable `KITS_LAUNCHER_REPO=owner/repository` and secret `KITS_RELEASE_TOKEN`
-with write access to that repository's releases. Prepare its launcher draft with launcher assets and `SHA256SUMS`
-first, then manually dispatch this workflow at the intended forge revision with `launcher_tag=vX.Y.Z`. After all
-three jobs pass, `tools/ci/kits.py publish` validates the archives and matching game versions, uploads the three
-canonical kits, preserves launcher checksums while merging the kit entries, and replaces the hidden games line.
-It downloads and verifies the uploaded kits and sums. The draft stays unpublished for review. A different existing
-kit or published release is refused; matching kit assets permit a retry. Leave the draft unchanged during the job.
-
-Each build runs `tools/ci/check_kit.sh` before artifact upload: scan with `tools/kit_scan.sh`, validate the ZIP's
-inventory and format-2 ABI metadata, re-extract, verify `files.sha256`, scan again and check executable modes and
-Mac signatures/rpaths. Only ZIPs are uploaded; build jobs receive no release token. Timeouts are 240 minutes for
-Mac and Windows, 360 for Linux, 30 for attachment. The first hosted run must prove three clean builds and artifacts
-with attachment skipped; a subsequent tagged run must prove the merged sums, games line and unchanged draft state.
-Hosted execution is pending; [step 6](kits_without_disc.md#step-6-candidate-workflow-implemented-hosted-run-pending)
-records the remaining parity and native compatibility checks.
+**Player kits** (`tools/ci/kits_local.sh [--attach vX.Y.Z] [macos] [linux] [windows]`, an Apple Silicon Mac): the
+three kits with `KIT_LAYOUT_RECORD=1` (public headers, no disc), `KIT_DEPS=/tmp/kit-deps` (the same path in Docker),
+macOS natively, Windows cross-built with the Mac-hosted llvm-mingw, Linux in its image (100 to 166 minutes). Each kit
+passes `tools/ci/check_kit.sh`: scan with `tools/kit_scan.sh`, the ZIP's inventory and format-2 ABI metadata,
+re-extract, verify `files.sha256`, scan again, executable modes, Mac signatures and rpaths. `--attach` then runs
+`tools/ci/kits.py publish` with the local `gh` login: it needs an existing draft holding the launcher's files and
+`SHA256SUMS`, checks the three ZIPs and their matching game versions, uploads them, merges the kit lines into
+`SHA256SUMS`, replaces the hidden games line, downloads and verifies what it uploaded, and leaves the draft
+unpublished. A different existing kit or a published release is refused; matching kit assets permit a retry. Format-2
+candidates still need the [parity gate](kits_without_disc.md#parity-gate-the-owners-requirement-2026-11-12)
+([step 6](kits_without_disc.md#step-6-candidate-kit-builds)).
 
 ## Releases so far
 0.1.x (CI only); **v0.2.0** (2026-10-24, the first tag release; re-released after the history rewrites of that day:

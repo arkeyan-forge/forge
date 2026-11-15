@@ -6,7 +6,7 @@
 #     sky_quality(ArkeyanRuntime)                      # each game executable and each runtime library
 #     sky_add_tests(ArkeyanSettingsTest ArkeyanPortalTest ...)   # tests that build by default and run without arguments
 #
-# Options: -DSKY_WERROR=ON (CI), -DSKY_SANITIZE=address|thread|undefined (debug runs, never in a kit).
+# Options: -DSKY_WERROR=ON (tools/ci/run.sh), -DSKY_SANITIZE=address|thread|undefined (debug runs, never in a kit).
 
 option(SKY_WERROR "Treat warnings as errors in our targets" OFF)
 set(SKY_SANITIZE "" CACHE STRING "Sanitizer for our targets: address, thread, undefined or empty")

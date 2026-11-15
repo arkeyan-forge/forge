@@ -2,7 +2,7 @@
 #include "d3d/command_buffers.h"
 #include "d3d/device.h"
 #include "d3d/ring_cursor.h"
-#include "game_hooks.h"
+#include "d3d/ring_registers.h"
 #include "memory.h"
 #include "gpu/gpu.h"
 #include "platform/clock.h"
@@ -13,15 +13,13 @@
 #if defined(__APPLE__)
 #include <os/lock.h>
 #endif
-#include <ppc_config.h>
-#include <ppc_context.h>
 
 namespace
 {
-    constexpr uint32_t FirstRegister = 0x2000;
-    constexpr uint32_t RegisterCount = 0x4928 - FirstRegister;
-    constexpr uint32_t AluConstants = 0x4000;  // vertex shader c0.x .. then pixel shader from 0x4400
-    constexpr uint32_t FetchConstants = 0x4800;
+    constexpr uint32_t FirstRegister = d3d::RingRegisters::First;
+    constexpr uint32_t RegisterCount = d3d::RingRegisters::Count;
+    constexpr uint32_t AluConstants = d3d::RingRegisters::AluConstants;
+    constexpr uint32_t FetchConstants = d3d::RingRegisters::FetchConstants;
     constexpr uint32_t BoolConstants = 0x4900; // then loop constants from 0x4908
 
     constexpr uint32_t WriteCursor = 0x30;       // device: the last word written
@@ -44,20 +42,8 @@ namespace
     RingMutex g_mutex;
     RingCursor g_cursor;
     uint32_t g_jumps;
-    std::array<uint32_t, RegisterCount> g_values;
-    std::array<bool, RegisterCount> g_written;
-    std::array<uint32_t, RegisterCount> g_epochOf; // g_epoch when written
-    uint32_t g_epoch = 1;                          // advanced after each draw (DrawConsumed)
-    // Written from an indirect buffer (a shader's own packet) or loaded from memory (LOAD_ALU_CONSTANT): a shader's
-    // literal constants, in effect while the shader is used even if the device's shadow of that group is pending.
-    std::array<bool, RegisterCount> g_shaderOwned;
-    std::vector<d3d::RegisterWrite> g_recorded; // writes into the command buffer being recorded
+    d3d::RingRegisters g_registers;
     std::array<uint32_t, 2 * 256 * 4> g_constants; // GpuFloatConstants, big-endian
-    // Per group of 16 float constant registers: g_constants holds the stream's values of a clean group whose registers
-    // were all written (it then depends on nothing else), and no write came since.
-    // As the device's dirty masks: group g is bit 63 - g % 64 of word g / 64. GpuFloatConstants visits only the groups
-    // dirty or not cached (~10 a draw of 128).
-    uint64_t g_constantsCached[2];
     uint32_t g_constantsDevice;
     uint64_t g_constantsVersion = 1; // changes with g_constants' content
     std::array<uint32_t, 2 * 256 * 4 / 16> g_groupVersions; // the same per group of 16 registers
@@ -66,22 +52,7 @@ namespace
 
     void Write(uint32_t reg, uint32_t value, bool recording, uint32_t depth = 0)
     {
-        if (reg < FirstRegister || reg >= FirstRegister + RegisterCount)
-            return;
-        if (recording)
-        {
-            g_recorded.push_back({ reg, value });
-            return;
-        }
-        g_values[reg - FirstRegister] = value;
-        g_written[reg - FirstRegister] = true;
-        g_epochOf[reg - FirstRegister] = g_epoch;
-        g_shaderOwned[reg - FirstRegister] = depth != 0;
-        if (reg >= AluConstants && reg < FetchConstants)
-        {
-            const uint32_t group = (reg - AluConstants) / 16;
-            g_constantsCached[group / 64] &= ~(1ull << (63 - group % 64));
-        }
+        g_registers.Write(reg, value, recording, depth);
     }
 
     // Constant packets address their first register by type and offset (as Xenia's command processor reads them).
@@ -112,8 +83,13 @@ namespace
             case 0:
             {
                 uint32_t reg = header & 0x7FFF;
-                for (uint32_t i = 0; i < count && at + 4 + i * 4 <= to; i++)
-                    Write((header & 0x8000) ? reg : reg + i, Read32(at + 4 + i * 4), recording, depth);
+                const uint32_t values = at + 4 <= to ? std::min(count, (to - at - 4) / 4 + 1) : 0;
+                if (header & 0x8000)
+                    for (uint32_t i = 0; i < values; i++)
+                        Write(reg, Read32(at + 4 + i * 4), recording, depth);
+                else
+                    g_registers.WriteRun(
+                        reg, values, [&](uint32_t i) { return Read32(at + 4 + i * 4); }, recording, depth);
                 at += 4 + count * 4;
                 break;
             }
@@ -128,15 +104,16 @@ namespace
                     uint32_t offsetType = Read32(at + 4);
                     uint32_t base = ConstantBase(offsetType);
                     if (base != 0)
-                        for (uint32_t i = 0; i + 1 < count; i++)
-                            Write(base + (offsetType & 0x7FF) + i, Read32(at + 8 + i * 4), recording, depth);
+                        g_registers.WriteRun(
+                            base + (offsetType & 0x7FF), count - 1, [&](uint32_t i) { return Read32(at + 8 + i * 4); },
+                            recording, depth);
                 }
                 else if (opcode == 0x55 && count >= 2 && at + 4 * count <= to)
                 {
                     // SET_CONSTANT2: register index, then the values.
                     uint32_t reg = Read32(at + 4) & 0xFFFF;
-                    for (uint32_t i = 0; i + 1 < count; i++)
-                        Write(reg + i, Read32(at + 8 + i * 4), recording, depth);
+                    g_registers.WriteRun(
+                        reg, count - 1, [&](uint32_t i) { return Read32(at + 8 + i * 4); }, recording, depth);
                 }
                 else if ((opcode == 0x3F || opcode == 0x37) && count >= 2 && at + 8 <= to && depth < 2)
                 {
@@ -155,9 +132,10 @@ namespace
                     uint32_t size = Read32(at + 12) & 0xFFF;
                     uint32_t base = ConstantBase(offsetType);
                     if (source != 0 && base != 0)
-                        for (uint32_t i = 0; i < size; i++)
-                            Write(base + (offsetType & 0x7FF) + i, Read32(source + i * 4), recording,
-                                depth + 1); // a shader's literals
+                        g_registers.WriteRun(
+                            base + (offsetType & 0x7FF), size, [&](uint32_t i) { return Read32(source + i * 4); },
+                            recording,
+                            depth + 1); // a shader's literals
                 }
                 at += 4 + count * 4;
                 break;
@@ -221,11 +199,11 @@ namespace
     bool UseStream(uint32_t device, uint32_t reg)
     {
         uint32_t index = reg - FirstRegister;
-        if (!g_written[index])
+        if (!g_registers.registers[index].written)
             return false;
         bool constant = reg >= AluConstants && reg < BoolConstants;
-        return !constant || g_epochOf[index] == g_epoch || g_shaderOwned[index] || d3d::Replaying() ||
-               !ShadowDirty(device, reg);
+        return !constant || g_registers.registers[index].epoch == g_registers.epoch ||
+               g_registers.registers[index].shaderOwned || d3d::Replaying() || !ShadowDirty(device, reg);
     }
 
     // ShadowOffset and FromRing of every register, computed once (Value runs ~30 times per draw).
@@ -250,7 +228,7 @@ namespace
         }
         const RegisterInfo& info = g_registerInfo[reg - FirstRegister];
         if (info.fromRing && UseStream(device, reg))
-            return g_values[reg - FirstRegister];
+            return g_registers.registers[reg - FirstRegister].value;
         return info.shadowOffset != 0 ? Read32(device + info.shadowOffset) : 0;
     }
 }
@@ -300,8 +278,10 @@ void d3d::GpuRegisters(uint32_t device, uint32_t first, uint32_t count, uint32_t
     {
         uint32_t reg = first + i, index = reg - FirstRegister;
         bool dirty = (dirtyMask >> (31 - (reg - FetchConstants) / 6)) & 1;
-        bool stream = g_written[index] && (g_epochOf[index] == g_epoch || g_shaderOwned[index] || replaying || !dirty);
-        values[i] = stream ? g_values[index] : Read32(device + g_registerInfo[index].shadowOffset);
+        bool stream = g_registers.registers[index].written &&
+                      (g_registers.registers[index].epoch == g_registers.epoch ||
+                          g_registers.registers[index].shaderOwned || replaying || !dirty);
+        values[i] = stream ? g_registers.registers[index].value : Read32(device + g_registerInfo[index].shadowOffset);
     }
 }
 
@@ -315,7 +295,7 @@ const void* d3d::GpuFloatConstants(uint32_t device, uint64_t* version, const uin
     uint64_t masks[2] = { g_memory.Read<uint64_t>(device), g_memory.Read<uint64_t>(device + 8) };
     if (device != g_constantsDevice)
     {
-        g_constantsCached[0] = g_constantsCached[1] = 0;
+        g_registers.constantsCached[0] = g_registers.constantsCached[1] = 0;
         g_constantsDevice = device;
         g_constantsVersion++;
         for (uint32_t& groupVersion : g_groupVersions)
@@ -323,7 +303,7 @@ const void* d3d::GpuFloatConstants(uint32_t device, uint64_t* version, const uin
     }
     for (uint32_t word = 0; word < 2; word++)
     {
-        uint64_t visit = (replaying ? 0 : masks[word]) | ~g_constantsCached[word];
+        uint64_t visit = (replaying ? 0 : masks[word]) | ~g_registers.constantsCached[word];
         while (visit != 0)
         {
             const uint32_t bit = 63 - uint32_t(std::countl_zero(visit));
@@ -336,16 +316,18 @@ const void* d3d::GpuFloatConstants(uint32_t device, uint64_t* version, const uin
             for (uint32_t i = first; i < first + 16; i++)
             {
                 uint32_t index = AluConstants + i - FirstRegister;
-                bool stream = g_written[index] && (!dirty || g_epochOf[index] == g_epoch || g_shaderOwned[index]);
-                uint32_t value = stream ? ByteSwap(g_values[index]) : shadow[i];
+                bool stream = g_registers.registers[index].written &&
+                              (!dirty || g_registers.registers[index].epoch == g_registers.epoch ||
+                                  g_registers.registers[index].shaderOwned);
+                uint32_t value = stream ? ByteSwap(g_registers.registers[index].value) : shadow[i];
                 changed |= value ^ g_constants[i];
                 g_constants[i] = value;
                 all &= stream;
             }
             if (!dirty && all)
-                g_constantsCached[word] |= 1ull << bit;
+                g_registers.constantsCached[word] |= 1ull << bit;
             else
-                g_constantsCached[word] &= ~(1ull << bit);
+                g_registers.constantsCached[word] &= ~(1ull << bit);
             g_constantsVersion += changed != 0;
             g_groupVersions[group] += changed != 0;
         }
@@ -360,7 +342,7 @@ const void* d3d::GpuFloatConstants(uint32_t device, uint64_t* version, const uin
 std::vector<d3d::RegisterWrite> d3d::TakeRecordedWrites()
 {
     std::lock_guard lock(g_mutex);
-    return std::exchange(g_recorded, {});
+    return std::exchange(g_registers.recorded, {});
 }
 
 void d3d::ApplyRecordedWrites(uint32_t device, const std::vector<RegisterWrite>& writes)
@@ -376,25 +358,32 @@ void d3d::SendInheritedShadows(uint32_t device, uint32_t commandBuffer)
 {
     std::lock_guard lock(g_mutex);
     // The float and fetch constants the stream has right (FromRing), a dirty-bit group at a time: 16 float constant
-    // registers, or one 6-dword fetch slot.
+    // registers, or one 6-dword fetch slot. A group goes when it is dirty (GroupBit) and the buffer inherits it.
     bool recording = Read32(device + d3d::Device::RecordingBuffer) != 0;
-    auto send = [&](uint32_t first, uint32_t end, uint32_t step) {
-        for (uint32_t group = first; group < end; group += step)
-        {
-            if (!GroupBit(device, group) || !GroupBit(commandBuffer + 0x18, group))
-                continue;
-            for (uint32_t reg = group; reg < group + step; reg++)
-                Write(reg, Read32(device + ShadowOffset(reg)), recording);
-        }
+    auto masks = [&](uint32_t index) {
+        return g_memory.Read<uint64_t>(device + index * 8) & g_memory.Read<uint64_t>(commandBuffer + 0x18 + index * 8);
     };
-    send(AluConstants, FetchConstants, 16);
-    send(FetchConstants, FetchConstants + 26 * 6, 6);
+    auto send = [&](uint32_t first, uint32_t count, uint32_t shadow) {
+        g_registers.WriteRun(first, count, [&](uint32_t i) { return Read32(device + shadow + i * 4); }, recording);
+    };
+    for (uint32_t word = 0; word < 2; word++)
+        for (uint64_t bits = masks(word); bits != 0;)
+        {
+            const uint32_t bit = 63 - uint32_t(std::countl_zero(bits));
+            bits &= ~(1ull << bit);
+            const uint32_t group = word * 64 + (63 - bit);
+            send(AluConstants + group * 16, 16, ShadowOffset(AluConstants + group * 16));
+        }
+    const uint64_t slots = masks(3);
+    for (uint32_t slot = 0; slot < 26; slot++)
+        if ((slots >> (31 - slot)) & 1)
+            send(FetchConstants + slot * 6, 6, ShadowOffset(FetchConstants + slot * 6));
 }
 
 void d3d::DrawConsumed()
 {
     std::lock_guard lock(g_mutex);
-    g_epoch++;
+    g_registers.epoch++;
 }
 
 uint32_t d3d::TakeRingJumps()
@@ -402,6 +391,12 @@ uint32_t d3d::TakeRingJumps()
     std::lock_guard lock(g_mutex);
     return std::exchange(g_jumps, 0u);
 }
+
+// The translated code's headers exist in every game build; CI's clang-tidy parses this file without them.
+#if __has_include(<ppc_config.h>)
+#include "game_hooks.h"
+#include <ppc_config.h>
+#include <ppc_context.h>
 
 #ifdef GAME_HOOK_D3DDevice_NextRingSegment
 PPC_FUNC_IMPL(GAME_IMP(D3DDevice_NextRingSegment));
@@ -414,4 +409,5 @@ PPC_FUNC(GAME_HOOK(D3DDevice_NextRingSegment))
     GAME_IMP(D3DDevice_NextRingSegment)(ctx, base);
     d3d::ResyncRing(device);
 }
+#endif
 #endif

@@ -37,9 +37,9 @@ bool AsyncPortal::WriteSound(const uint8_t* block, size_t size)
         return false;
     {
         std::lock_guard lock(m_mutex);
-        m_commands.push_back({ Report(block, block + size), true });
-        if (m_commands.size() > QueueLimit)
-            m_commands.pop_front();
+        m_sounds.push_back(Report(block, block + size));
+        if (m_sounds.size() > SoundQueueLimit)
+            m_sounds.pop_front();
     }
     m_wake.notify_all();
     return true;
@@ -126,6 +126,7 @@ void AsyncPortal::Run()
             {
                 std::lock_guard lock(m_mutex);
                 m_commands.clear();
+                m_sounds.clear();
                 m_reports.clear();
                 m_delay = std::chrono::milliseconds(0);
                 m_takesSound = m_device->TakesSound();
@@ -150,6 +151,11 @@ void AsyncPortal::Run()
             {
                 command = std::move(m_commands.front());
                 m_commands.pop_front();
+            }
+            else if (!m_sounds.empty())
+            {
+                command = { std::move(m_sounds.front()), true };
+                m_sounds.pop_front();
             }
         }
         // A speaker block the device refuses only stops its sound (the backend says so); commands decide the connection.
@@ -187,6 +193,6 @@ void AsyncPortal::Run()
         }
 
         std::unique_lock lock(m_mutex);
-        m_wake.wait_for(lock, m_timing.poll, [&] { return m_stop || !m_commands.empty(); });
+        m_wake.wait_for(lock, m_timing.poll, [&] { return m_stop || !m_commands.empty() || !m_sounds.empty(); });
     }
 }

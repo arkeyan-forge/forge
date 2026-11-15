@@ -39,7 +39,7 @@ style yet [?]) come from two pictures named in the fonts, which
 | Info font's buttons, 256x168, 32-bit tiled ARGB | `fonts/ProximaNova-Info.igz` (`languagestartup.pak`), `igImage2` 1 | **Swap Force's own** (the same XXH3 of the first 4096 bytes, `7360B650D459A892`; components measured again: the same boxes): Swap Force's cells, with its added Start cell (202,7-244,49: "Press Start", below) [V] |
 | Body font's buttons, **128x209**, 32-bit tiled ARGB | `fonts/ProximaNova-Body.igz` (`essentialui.pak`), `igImage2` 1, `402F2F6915FA96F8` | new layout, two buttons a row: A 1,2-38,39 · B 44,1-80,39 · Y 85,1-123,39 · X 2,42-39,80 · LB 44,49-105,76 · LT 4,83-40,121 · RT 49,83-86,121 · RB 3,131-65,158 · LS 73,125-110,161 · RS 5,166-42,202; a D-pad at 47,164-88,202 has no glyph and stays [V] |
 | `Turbo_A`, `_X`, `_Y` (88x88 DXT5) | `permanent_xenon.pak`, `textures@!ui!ButtonPrompt!XENON!turbo!` | not listed: the renderer hashes a tiled level padded to 32x32 blocks (16 KB) and the file stores 11 KB, so the hash cannot be taken from the disc; no run reached a turbo prompt [?] |
-| World prompts `models/UI/ButtonPrompt/XENON/{A,B,X,Y,LT,RB,Mash_*,RS_*,...}` | `permanent_xenon.pak` | two meshes, a face and the letters, coloured by a flat 4x4 map and a tint: **RB replaced** (below, 2026-11-05) [V]; the others are listed, not replaced |
+| World prompts `models/UI/ButtonPrompt/XENON/{A,B,X,Y,LT,RB,Mash_*,RS_*,...}` | `permanent_xenon.pak` | two meshes, a face and the letters, coloured by a flat 4x4 map and a tint: **RB replaced** (below, 2026-11-05) [V]; mash models registered by name (issue #94, player check pending); other models not replaced |
 | Controller pictures (`ui!Controllers!Xbox_Controller`...) | | not replaced |
 
 How (about 1 h): the two archives extracted from the disc (`tools/shaders/xdvdfs.py`) into `private/superchargers/disc/`, their pictures
@@ -88,11 +88,19 @@ coordinates spread over its bounding box (`uAxis` 0, `vAxis` 1, v flipped). The 
 
 Run: `private/runs/p3d-scF-{playstation,keyboard,xbox360}`, the lobby test's save, `SKY_PRESS` A to the menus, `lup:165:9`, `SKY_GPU_SNAPSHOT_SECONDS=190`.
 
+**Mash prompts (issue #94).** The shared `engines/alchemy/mash_prompts.h` now registers the A/B/X/Y mash models
+for this adapter as well as Imaginators'. Their mesh fingerprints are derived from the installed assets at startup;
+the existing renderer pairs the backing disc and lettering, paints the selected glyph and suppresses the original
+lettering. [V] The picture mappings, synthetic asset resolution and draw matching are covered by
+`ArkeyanGlyphModelsTest`. [?] Actual asset resolution, face selection and orientation/stretch remain unverified;
+repeat the chest-opening test described in [Imaginators' world prompts](../../imaginators/docs/art.md#world-prompts-2026-11-05),
+including keyboard rebinding and the Xbox 360 style. A startup diagnostic identifies a model that could not be resolved.
+
 **Left.** A and Y share one face (87 indices), B, B_Hold and Mash_A/B/Y another (609): the renderer now tells them by their letters,
 which the game draws right after the face (it holds the face for one draw, [input.md](../../../docs/runtime/xbox360/input.md), "World prompts"; unit-tested,
 and run with RB). What is missing is a prompt to measure: A, B, X, Y, LT, the Mash and B_Hold prompts were **not met in a run** (the Academy's
 start platform, the walk to the tutorial's first fight, the tunnel ride), so their `uAxis`/`vAxis`/flips and `uScale` (2.55 for the pill: the
-shader's stretch of u, which a disc may not have) are not measured and no row is listed; the meshes' signatures come from the disc
+shader's stretch of u, which a disc may not have) are not measured; only the named mash rows above have been added since RB. The other meshes' signatures come from the disc
 (`permanent_xenon.pak`, the decompressed entries scanned for their index arrays, A: 87 and 633 indices, X: 609 and 624, LT: 114 and 2148,
 the same method as RB's) and a row is one line per prompt once one is seen. The effects (`vfx/UI/ButtonPrompt`: rings, sparks) and `Turbo_A/X/Y` (the
 vehicle's HUD) stay the 360's.

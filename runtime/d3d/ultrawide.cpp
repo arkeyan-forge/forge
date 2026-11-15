@@ -164,6 +164,11 @@ bool ultrawide::FrameEnd()
     return true;
 }
 
+bool ultrawide::FillsFrame(bool compositeShape, bool readsScene, bool readsFrame, bool coversFrame)
+{
+    return compositeShape && (readsScene || (readsFrame && coversFrame));
+}
+
 bool ultrawide::Active() { return g_active; }
 float ultrawide::Aspect() { return g_aspect; }
 bool ultrawide::SceneWide() { return g_sceneWide; }

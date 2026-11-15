@@ -17,4 +17,7 @@ namespace portalprompt
 
     // The prompt for what the title shows: its mode and the hash of the portal text.
     Prompt ClassifySsa(uint32_t mode, uint32_t textHash);
+    // True while a figure comes in (mode 4).
+    constexpr uint32_t SsaPromptArrivalMode = 4;
+    inline bool SsaArriving(uint32_t mode) { return mode == SsaPromptArrivalMode; }
 }

@@ -36,6 +36,16 @@ int main()
         Choose(true, 60, 120) == Mode::Fifo && Choose(true, 144, 0) == Mode::Fifo && Choose(true, 0, 60) == Mode::Fifo);
     CHECK(Choose(false, 144, 60) == Mode::Immediate && Choose(false, 60, 60) == Mode::Immediate);
 
+    // A minimum time on the display only where FIFO shows each frame for two or more refreshes.
+    {
+        using gpu::presentmode::MinimumPresentSeconds;
+        CHECK(MinimumPresentSeconds(true, 120, 60) > 0.016 && MinimumPresentSeconds(true, 120, 60) < 1.0 / 60);
+        CHECK(MinimumPresentSeconds(true, 119.88, 60) > 0.016 && MinimumPresentSeconds(true, 60, 30) > 0.032);
+        CHECK(MinimumPresentSeconds(true, 60, 60) == 0 && MinimumPresentSeconds(true, 144, 60) == 0);
+        CHECK(MinimumPresentSeconds(false, 120, 60) == 0 && MinimumPresentSeconds(true, 120, 0) == 0 &&
+              MinimumPresentSeconds(true, 0, 60) == 0);
+    }
+
     // D3D12 statistics: refresh counts. 60 on 144: 2, 2, 3, 2, 3 refreshes (12 in 5 frames); a skipped poll (two frames
     // in one step) is not counted, a repeated one changes nothing.
     {

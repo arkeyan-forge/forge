@@ -105,6 +105,8 @@ namespace
                 memcpy(g_seen[slot].data.data() + block * FigureBlockSize, report + 3, FigureBlockSize);
                 g_seen[slot].blocks |= uint64_t(1) << block;
                 g_seen[slot].lastRead = now;
+                if (block == 0)
+                    g_seen[slot].headRead = now;
             }
         }
     }
@@ -178,9 +180,14 @@ namespace
                 std::transform(
                     extension.begin(), extension.end(), extension.begin(), [](char c) { return char(tolower(c)); });
                 if (extension == ".sky" || extension == ".bin" || extension == ".dmp")
-                    figures.push_back(folder + "/" + name);
+                {
+                    std::string path = folder;
+                    path += '/';
+                    path += name;
+                    figures.push_back(std::move(path));
+                }
             }
-            SDL_free(names);
+            SDL_free(reinterpret_cast<void*>(names));
         }
         std::sort(figures.begin(), figures.end());
         return figures;

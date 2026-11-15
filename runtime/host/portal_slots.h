@@ -10,6 +10,8 @@
 
 // The virtual portal's slots. Status reports and block commands share this mutex with replacements, so a card's
 // halves and a player swap become visible together. Kept independent of the device and file APIs for unit tests.
+// A replacement on an occupied slot is shown as a real portal shows a hand swap: one status report without the old
+// toy, then the new one. Imaginators ignores a toy changed in place while the previous one's arrival still loads.
 class PortalSlots
 {
 public:
@@ -23,23 +25,27 @@ public:
     };
 
     // Exact slots, all or nothing. The caller has loaded and locked every new figure before replacing anything.
+    // If one of them is occupied, every new figure of the batch arrives together, after the removal's report.
     bool Replace(const std::vector<Replacement>& replacements)
     {
         std::lock_guard lock(m_mutex);
         uint32_t used = 0;
+        bool lift = false;
         for (const Replacement& replacement : replacements)
         {
             int slot = replacement.slot;
             if (slot < 0 || slot >= SlotCount || ((m_reserved | used) >> slot & 1) != 0)
                 return false;
             used |= uint32_t(1) << slot;
+            lift |= m_slots[slot].Held() != nullptr;
         }
         for (const Replacement& replacement : replacements)
         {
             Slot& slot = m_slots[replacement.slot];
-            slot.data = replacement.data;
+            slot.changed |= !lift || slot.data.has_value(); // an empty slot stays unchanged until the arrival
             slot.path = replacement.data ? replacement.path : std::string();
-            slot.changed = true;
+            slot.data = lift ? std::nullopt : replacement.data;
+            slot.pending = lift ? replacement.data : std::nullopt;
         }
         return true;
     }
@@ -64,9 +70,13 @@ public:
 protected:
     struct Slot
     {
-        std::optional<FigureData> data;
+        std::optional<FigureData> data;    // what the title sees
+        std::optional<FigureData> pending; // placed after the next report, which shows the slot empty
         std::string path;
         bool changed = false;
+
+        // The figure the host has on this slot, arrived or not.
+        const FigureData* Held() const { return data ? &*data : pending ? &*pending : nullptr; }
     };
 
     uint32_t StatusBits(); // under m_mutex: presence and change bits, clearing the change bits
@@ -80,7 +90,7 @@ inline int PortalSlots::Place(const FigureData& data, const std::string& path, i
     std::lock_guard lock(m_mutex);
 
     // Prefer a slot whose last change was already reported. Replacements use Replace rather than remove/place.
-    auto free = [this](int i) { return !m_slots[i].data && (m_reserved >> i & 1) == 0; };
+    auto free = [this](int i) { return m_slots[i].Held() == nullptr && (m_reserved >> i & 1) == 0; };
     int slot = wanted >= 0 && wanted < SlotCount && free(wanted) ? wanted : -1;
     for (int i = 0; i < SlotCount && slot < 0; i++)
     {
@@ -104,12 +114,13 @@ inline int PortalSlots::Place(const FigureData& data, const std::string& path, i
 inline void PortalSlots::Remove(int slot)
 {
     std::lock_guard lock(m_mutex);
-    if (slot < 0 || slot >= SlotCount || !m_slots[slot].data)
+    if (slot < 0 || slot >= SlotCount || m_slots[slot].Held() == nullptr)
         return;
 
+    m_slots[slot].changed |= m_slots[slot].data.has_value();
     m_slots[slot].data.reset();
+    m_slots[slot].pending.reset();
     m_slots[slot].path.clear();
-    m_slots[slot].changed = true;
 }
 
 inline void PortalSlots::Renumber()
@@ -120,8 +131,10 @@ inline void PortalSlots::Renumber()
     {
         Slot toy = std::move(m_slots[i]);
         m_slots[i] = {};
-        if (!toy.data)
+        if (toy.Held() == nullptr)
             continue;
+        if (toy.pending)
+            toy.data = std::exchange(toy.pending, std::nullopt);
         toy.changed = true;
         m_slots[next++] = std::move(toy);
     }
@@ -132,7 +145,8 @@ inline int PortalSlots::SlotOfSerial(const uint8_t* serial)
     std::lock_guard lock(m_mutex);
     for (int i = 0; i < SlotCount; i++)
     {
-        if (m_slots[i].data && memcmp(m_slots[i].data->data(), serial, 4) == 0)
+        const FigureData* held = m_slots[i].Held();
+        if (held != nullptr && memcmp(held->data(), serial, 4) == 0)
             return i;
     }
     return -1;
@@ -141,13 +155,13 @@ inline int PortalSlots::SlotOfSerial(const uint8_t* serial)
 inline std::string PortalSlots::SlotPath(int slot)
 {
     std::lock_guard lock(m_mutex);
-    return slot >= 0 && slot < SlotCount && m_slots[slot].data ? m_slots[slot].path : std::string();
+    return slot >= 0 && slot < SlotCount && m_slots[slot].Held() != nullptr ? m_slots[slot].path : std::string();
 }
 
 inline bool PortalSlots::Holds(int slot)
 {
     std::lock_guard lock(m_mutex);
-    return slot >= 0 && slot < SlotCount && m_slots[slot].data.has_value();
+    return slot >= 0 && slot < SlotCount && m_slots[slot].Held() != nullptr;
 }
 
 inline uint32_t PortalSlots::TakeStatus()
@@ -162,8 +176,14 @@ inline uint32_t PortalSlots::StatusBits()
     uint32_t status = 0;
     for (int i = 0; i < SlotCount; i++)
     {
-        uint32_t bits = (m_slots[i].data ? 1 : 0) | (m_slots[i].changed ? 2 : 0);
-        m_slots[i].changed = false;
+        Slot& slot = m_slots[i];
+        uint32_t bits = (slot.data ? 1 : 0) | (slot.changed ? 2 : 0);
+        slot.changed = false;
+        if (slot.pending)
+        {
+            slot.data = std::exchange(slot.pending, std::nullopt);
+            slot.changed = true;
+        }
         status |= bits << (i * 2);
     }
     return status;

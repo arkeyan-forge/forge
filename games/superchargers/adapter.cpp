@@ -4,6 +4,7 @@
 // (glyphs::MemoryImage), as Swap Force's. No input rows yet. The game asks for present
 // interval 2 and paces itself on it, as Swap Force (the same studio's engine): presentIntervalPacesGame.
 #include "game.h"
+#include "mash_prompts.h"
 #include "host/portal.h"
 #include "memory.h"
 #include "superchargers.h"
@@ -95,8 +96,16 @@ namespace
     constexpr uint64_t RbPicture = 0xB0770000000000A1ull; // the key of its picture's row, no guest texture has it
     constexpr glyphs::Texture GlyphTextures[] = {
         { RbPicture, "world prompt RB", Glyph::RightBumper, {}, false, false, nullptr, true },
+        alchemy::MashTextures[0],
+        alchemy::MashTextures[1],
+        alchemy::MashTextures[2],
+        alchemy::MashTextures[3],
     };
     constexpr glyphs::Prompt GlyphPrompts[] = {
+        alchemy::MashPrompts[0],
+        alchemy::MashPrompts[1],
+        alchemy::MashPrompts[2],
+        alchemy::MashPrompts[3],
         { 816, 0x21E1098D0C5EEC4Full, 2706, 0x7F26CABF048F8787ull, RbPicture, 320, 128, 0, 1, false, true, 2.55f },
     };
 
@@ -129,3 +138,13 @@ const game::Adapter& game::Current() { return g_adapter; }
 
 // Skylauncher's glow for this game (its StyleOf).
 uint32_t game::Accent() { return 0xF07008; }
+
+bool game::FigureArriving()
+{
+    using namespace portalprompt;
+    if (g_memory.base == nullptr)
+        return false;
+    const uint32_t instance = g_memory.Read<uint32_t>(SuperChargersMagicMomentInstance);
+    return instance >= 0x10000 && uint64_t(instance) + SuperChargersPlayerOffset + 4 <= 0xE0000000ull &&
+           SuperChargersArriving(g_memory.Read<uint32_t>(instance + SuperChargersStateOffset));
+}

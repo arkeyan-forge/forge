@@ -1,5 +1,5 @@
 // Checks the wide scene and frame sizes, the scene's width bound, the layout a window's shape gives, the settling of a
-// resize and the scene made for a wider display (d3d/ultrawide.h). usage: ArkeyanUltrawideTest
+// resize, the scene made for a wider display and the draws that fill the frame (d3d/ultrawide.h). usage: ArkeyanUltrawideTest
 #include "d3d/ultrawide.h"
 #include <cstdio>
 
@@ -175,6 +175,14 @@ int main()
         ultrawide::Configure(true, 1280, 720, 2560, 1080);
         CHECK(!ultrawide::SceneWide() && ultrawide::SceneWidth() == 1000 && ultrawide::SceneHeight() == 600);
     }
+
+    // Which draws fill the wide frame: the composite, and a full-frame pass that reads the frame back (Giants' menu
+    // blur); a HUD quad, a partial pass over the frame, or a quad of another shape stay centred.
+    CHECK(ultrawide::FillsFrame(true, true, false, true));
+    CHECK(ultrawide::FillsFrame(true, false, true, true));
+    CHECK(!ultrawide::FillsFrame(true, false, false, true));
+    CHECK(!ultrawide::FillsFrame(true, false, true, false));
+    CHECK(!ultrawide::FillsFrame(false, false, true, true));
 
     printf("ultrawide test: %s\n", g_failures == 0 ? "ok" : "FAILED");
     return g_failures == 0 ? 0 : 1;

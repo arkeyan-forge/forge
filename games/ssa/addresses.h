@@ -92,6 +92,7 @@ namespace game
     constexpr uint32_t UltrawideCompositeVertices = 3;
     constexpr int UltrawideCompositeSlot = -1;
     constexpr bool UltrawideCompositeVpos = true;
+    constexpr uint64_t UltrawideHudVertexShader = 0; // not looked for (d3d/frame_anchor.h)
     // Upscaling (d3d/upscale.h): the vertex constant where the position matrix starts: c0-c3, row vectors (Lux), checked
     // by the camera vote agreeing in 900 of 900 frames of level_008.
     constexpr int32_t UpscalePositionMatrix = 0;

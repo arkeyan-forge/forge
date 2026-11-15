@@ -91,6 +91,9 @@ namespace game
     constexpr uint32_t UltrawideCompositeVertices = 3; // one screen triangle, vertex constant c0 = 2/1280
     constexpr int UltrawideCompositeSlot = 0;
     constexpr bool UltrawideCompositeVpos = false;
+    // The HUD's vertex shader (a float3 position through c0-c3, row vectors): its pieces in a corner of the 16:9 frame,
+    // the menus' vignette, go to the window's corners (d3d/frame_anchor.h).
+    constexpr uint64_t UltrawideHudVertexShader = 0x3C49092050CA673Full;
     // Upscaling (d3d/upscale.h): the vertex constant where the position matrix starts: c0-c3, row vectors (Alchemy, as
     // Giants'; the camera vote's "[upscale] last 900 frames" line checks it).
     constexpr int32_t UpscalePositionMatrix = 0;

@@ -90,7 +90,7 @@ art and texture extraction must stay local as well.
 
 `private/toolchains/`, `private/ffmpeg/` and the optional scanner word-list filename are not disc-derived inputs.
 Their locations do not justify caching or mounting all of `private/`. Dependencies must be fetched from their
-pinned public releases; scanner rules for CI can use synthetic sentinel words without player logs.
+pinned public releases; scanner rules for the kit builds can use synthetic sentinel words without player logs.
 
 ## Changes by input, component and risk
 
@@ -162,7 +162,7 @@ public policy profiles, empty/omitted defaults and every LR/MSR combination. It 
 compiled layouts without private files, and verifies rejection of missing/changed headers and extra/changed policy
 definitions. CTest registers this as `ArkeyanPublicHeadersTest` on native Clang builds. Local validation passed all
 six private comparisons and host probes on macOS arm64. Invented-fixture outputs also matched the writer before
-extraction byte for byte. Windows x64 and Linux x64 layout validation remain target checks for later CI.
+extraction byte for byte. Windows x64 and Linux x64 layout validation remain target checks for the candidate builds (step 6).
 
 Step 2 must supply the four bound names (`PPC_IMAGE_BASE`, `PPC_IMAGE_SIZE`, `PPC_CODE_BASE`, `PPC_CODE_SIZE`) to
 runtime consumers through a validated layout contract. This policy-only config deliberately supplies no substitute
@@ -177,7 +177,7 @@ After translation, Arkeyan-Builder validates the generated four bounds against t
 It generates a small translation unit in its local work tree, using the generated headers to initialize an exported
 expected-layout record. The record includes the public ABI version and identity of the executable used for
 translation, so another allowed release with a coincidentally equal layout cannot be substituted. This object is
-created only at install, never packed or cached by CI.
+created only at install, never packed or cached by a kit build.
 
 `Compile` builds that source with a dedicated recipe or a proven compatible existing recipe; `ObjectList` and `Link`
 must include it exactly once. `tools/arkeyan-builder/kit_commands.py` needs to express any new recipe and public
@@ -274,73 +274,39 @@ Validation: the requested tests-only configure and `ArkeyanEditionTest` build pa
 99 checks with no failures. The report-import self-test passed all 8 checks, and the three edited documentation
 pages passed the link checker.
 
-## Step 6: candidate workflow (implemented; hosted run pending)
+## Step 6: candidate kit builds
 
-First hosted runs (2026-11-13): the macOS runner needed `molten-vk` (MoltenVKShaderConverter, for FSR's Metal shaders);
-the Windows kit cross-built on Linux met `#include <Windows.h>` (plume, XenonUtils) on a case-sensitive file system:
-`tools/make_kit.sh` puts `cmake/toolchains/mingw-case/` (headers forwarding to mingw's lower-case names) on `CPATH` on
-a Linux host only. A patch to plume instead broke the re-application of `plume.patch`, whose hunk shares those lines.
+`tools/ci/kits_local.sh` builds the three six-game kits on an Apple Silicon Mac using step 4's `KIT_LAYOUT_RECORD=1`
+path, checks each with `tools/ci/check_kit.sh`, and with `--attach vX.Y.Z` adds them to an existing launcher draft
+(`tools/ci/kits.py publish`). It adds no builder or `make_kit.sh` recipe changes. A hosted workflow did the same from
+2026-11-13 to 2026-11-15; it was removed with the rest of the hosted CI.
 
-`.github/workflows/kits.yml` builds the three six-game kits using step 4's `KIT_LAYOUT_RECORD=1` path. It adds no
-builder or `make_kit.sh` changes, and leaves the Mac build recipe unchanged. The workflow is separate from the
-existing public host tests in `.github/workflows/ci.yml`.
+The hosted runs found two things that stay: the Mac build needs `molten-vk` (MoltenVKShaderConverter, for FSR's Metal
+shaders), and a Windows kit cross-built on a case-sensitive file system meets `#include <Windows.h>` (plume,
+XenonUtils): `tools/make_kit.sh` puts `cmake/toolchains/mingw-case/` (headers forwarding to mingw's lower-case names) on
+`CPATH` on a Linux host only. A patch to plume instead broke the re-application of `plume.patch`, whose hunk shares
+those lines.
 
-Triggers:
-- `workflow_dispatch` with no `launcher_tag`: build, check and upload three ZIP artifacts only. No launcher
-  repository variable or release credential is needed.
-- `workflow_dispatch` with `launcher_tag=vX.Y.Z`: the same builds, then `attach` after all three jobs pass. Set the
-  repository variable `KITS_LAUNCHER_REPO=owner/repository` and secret `KITS_RELEASE_TOKEN` with write access to
-  that repository's releases. The specified launcher release must already be a draft with launcher assets and
-  `SHA256SUMS` attached.
-- Push to `ci/kits`: build and check the three kits and retain their ZIP artifacts; `attach` is skipped. No tag,
-  pull-request or other branch trigger publishes kits.
+`KIT_DEPS=/tmp/kit-deps` is the same path on the Mac and inside Docker (`make_kit.sh` mounts it at its own path);
+`FFMPEG_WORK` is its `ffmpeg/work` subfolder. This fixes the path-sensitive Linux relink object noted in step 4. No
+public build dependency is placed under `private/`. Both llvm-mingw host archives are pinned in
+`tools/ci/fetch_llvm_mingw.sh`; FFmpeg's source pin and minimal static LGPL recipe remain in `tools/ffmpeg/build.sh`.
 
-| Job / output | Runner and toolchain | Production command and prerequisites |
-|---|---|---|
-| Windows x64 kit | `ubuntu-24.04`, Linux-hosted llvm-mingw 20260922 | `tools/ci/fetch_llvm_mingw.sh` checks the pinned archive before extraction and supplies `LLVM_MINGW_ROOT`; build minimal Windows FFmpeg with `tools/ffmpeg/build.sh`, then `tools/make_kit.sh windows`. Four compile jobs, 240-minute timeout. |
-| macOS arm64 kit | `macos-15`, Xcode 16.4, deployment target 13.0 | Assert arm64 and selected Xcode/SDK/Metal tools; fetch the existing Mac-hosted llvm-mingw license input; build host FFmpeg, then `tools/make_kit.sh macos`. Two compile jobs, 240-minute timeout. |
-| Linux x64 kit | `ubuntu-24.04`, Docker amd64 with `tools/linux/kit.Dockerfile` | Explicitly run `tools/make_kit.sh linux` inside the image: step 4 emits public headers with zig and builds FFmpeg through `tools/ffmpeg/build.sh`. Keep the image's pinned compiler, glibc target and C++ library. Four compile jobs, 360-minute timeout. |
-| Attach candidates | `ubuntu-24.04`, only a tagged manual run after all kits pass | `tools/ci/kits.py publish` checks exactly the three canonical ZIPs, consistent game versions and an existing draft; merges checksums and updates the hidden games line, then downloads and verifies the uploaded kits and sums. 30-minute timeout. |
+`check_kit.sh` scans the completed directory with `tools/kit_scan.sh`, validates the ZIP inventory and every checksum
+with `tools/ci/kits.py inventory`, re-extracts into a fresh temporary folder, verifies `files.sha256` independently,
+then scans the extracted kit. Mac program signatures and relative rpaths are checked; Mac and Linux executable modes
+are checked without starting a kit program. The inventory requires format 2, `layout_record=1`, `abi.context`, all
+six `abi.policy.<id>` and game-version fields, and rejects legacy header metadata, unsafe archive entries,
+fingerprints and install-only layout record objects. It allows the required LGPL `relink/` materials.
 
-`KIT_DEPS=/tmp/kit-deps` is identical on every host and inside Docker; `FFMPEG_WORK` is its `ffmpeg/work` subfolder.
-Windows FFmpeg and Mac host FFmpeg receive explicit prefixes under that root. The Linux job mounts the dependency
-root at the same absolute path; FFmpeg is built inside the image. This fixes the remaining path-sensitive Linux
-relink object noted in step 4. No public build dependency is placed under `private/`. Both llvm-mingw host archives
-are pinned in `tools/ci/fetch_llvm_mingw.sh`; the Linux archive's SHA-256 was verified against GitHub's release-asset
-digest. FFmpeg's source pin and minimal static LGPL recipe remain in `tools/ffmpeg/build.sh`.
-
-Every kit job runs `tools/ci/check_kit.sh`: scan the completed directory with `tools/kit_scan.sh`, validate the ZIP
-inventory and every checksum with `tools/ci/kits.py inventory`, re-extract into a fresh temporary folder, verify
-`files.sha256` independently, then scan the extracted kit. Mac program signatures and relative rpaths are checked;
-Mac and Linux executable modes are checked without starting a kit program. The inventory requires format 2,
-`layout_record=1`, `abi.context`, all six `abi.policy.<id>` and game-version fields, and rejects legacy header
-metadata, unsafe archive entries, fingerprints and install-only layout record objects. It allows the required
-LGPL `relink/` materials. Only the three final ZIPs are uploaded, with seven-day artifact retention; no dependency
-or build caches are introduced in this pass.
-
-Actions are pinned to revisions. Build jobs have read-only repository permission and no release credential.
-Attachment is serialized across tags. It preserves launcher checksum entries, replaces the hidden games/version
-line, refuses a published release or a different existing kit, and keeps the draft unpublished. A matching existing
-kit can be retried. The helper rechecks the draft immediately before writes and verifies uploaded bytes afterward;
-the owner must leave the draft unchanged during attachment. The launcher's manual `tools/release_kit.sh` remains
-an alternative in its own repository.
-
-### First hosted run and remaining evidence
-
-Start with a manual run without a tag, or a push to `ci/kits`. It must show three successful six-game public builds,
-clean scans of both directories and extracted archives, matching manifests, valid format-2 ABI fields and exactly
-the three named ZIP artifacts. `attach` must be skipped without destination settings or a release token. Record
-elapsed time and peak disk use before tuning parallelism or adding caches; Linux previously took 100–166 minutes
-in Docker on a Mac, so the workflow allows six hours for its first hosted run.
-
-Then a tagged manual run against a prepared launcher draft must show the three canonical kit assets, preserved
-launcher checksum entries, one matching games/version line, successful download verification and an unpublished
-draft. No hosted workflow or real release attachment has been run locally. Local checks cover the helper tests,
-YAML parsing, shell syntax, `tools/test_all_test.py` and the documentation checker.
+Attachment preserves launcher checksum entries, replaces the hidden games/version line, refuses a published release
+or a different existing kit, and keeps the draft unpublished. A matching existing kit can be retried. The helper
+rechecks the draft immediately before writes and verifies uploaded bytes afterward; leave the draft unchanged during
+attachment. The launcher's `tools/release_kit.sh` remains an alternative in its own repository.
 
 Same-commit reference-kit comparison with `tools/parity/public.rules`, native fixture links against extracted kits,
-cold/warm cache measurements and the real-computer parity rows remain separate proof requirements. This workflow
-does not make the record kit the default and does not establish game-install or play parity.
+cold/warm cache measurements and the real-computer parity rows remain separate proof requirements. These builds do
+not make the record kit the default and do not establish game-install or play parity.
 
 ## Parity gate (the owner's requirement, 2026-11-12)
 
@@ -531,7 +497,7 @@ Proof [V], on the Mac, at commit `07b70414` (the code of this step; later commit
   refused policy and context, other bounds left to the record step).
 
 Not proven yet [?]: the Windows and Linux kits installed and played (no Wine or Linux install run here); the
-guard test's compiler case on Windows and Linux; the launcher's own refusal of an unknown format. Step 6 (CI) needs:
+guard test's compiler case on Windows and Linux; the launcher's own refusal of an unknown format. Step 6 (the candidate builds) needs:
 the three `make_kit.sh` runs with `KIT_LAYOUT_RECORD=1` and `KIT_DEPS` from pinned public downloads (llvm-mingw's
 Linux-hosted archive for Windows; FFmpeg built by `tools/ffmpeg/build.sh` with `FFMPEG_WORK`), `tools/parity/public.rules`
 against a reference kit of the same commit, `kit_scan`, and one fixed `KIT_DEPS` path (the Linux relink object
@@ -544,7 +510,7 @@ change; ZIP/signature/compiler metadata also preclude treating binary equality a
 permitted file inventory and normalized link/compile recipes; unaffected public libraries should remain identical
 under a pinned toolchain, while layout consumers gain the documented descriptor dependency.
 
-Public CI can prove absence of private production inputs and synthetic ABI/install behavior. It cannot prove that
+The public candidate builds can prove absence of private production inputs and synthetic ABI/install behavior. It cannot prove that
 each real disc still builds and plays correctly. A later, separately permitted private acceptance run must compare
 old/new installs for every supported game/platform: identification, generated-header/translation equivalence,
 shader set, link inputs, installed layout, incremental updates and the existing isolation/game checks. Retain only

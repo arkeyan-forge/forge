@@ -149,6 +149,10 @@ namespace game
     const Adapter& Current();
     // The game's glow colour (0xRRGGBB, Skylauncher's StyleOf(game).glow): the debug screen's accent (games/<id>/adapter.cpp).
     uint32_t Accent();
+    // True while the game brings a figure in, read from its memory every frame (games/<id>/adapter.cpp): the Toy Box
+    // holds a new swap until it ends (docs/runtime/host/toybox_ux.md, "A quick swap the game missed"). Always false for a
+    // game whose arrival is not known yet.
+    bool FigureArriving();
 
     // A movie's name from its path ("game:\movies\fre\legal.bik" -> "legal"): the file name, lower case, without
     // its extension.

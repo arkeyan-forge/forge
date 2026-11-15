@@ -14,7 +14,7 @@ Index of the whole tree: [../README.md](../README.md). The runtime's own `--laun
 | [licensing.md](licensing.md) | What may be distributed and under which obligations? |
 | [launcher/README.md](launcher/README.md) | Arkeyan Launcher (the public launcher): its relation to this repo, who changes what, its code, `launcher.ini` keys. |
 | [launcher/kit_contract.md](launcher/kit_contract.md) | **The kit contract**: assets, `kit.txt`, `config/<id>/game.txt`, Arkeyan-Builder's CLI and events, layout, licences. |
-| [launcher/updates_release.md](launcher/updates_release.md) | The updater, the kit download, **the release steps**, CI. |
+| [launcher/updates_release.md](launcher/updates_release.md) | The updater, the kit download, **the release steps**, the local builds. |
 | [launcher/install_flow.md](launcher/install_flow.md) | Arkeyan Launcher's INSTALL: the progress card, resume, where things live, the fake kit. |
 | [launcher/collection_toybox.md](launcher/collection_toybox.md) | Arkeyan Launcher's Collection page (links to the runtime's collection and Toy Box pages). |
 | [launcher/support_portal_probe.md](launcher/support_portal_probe.md) | Logs, the crash dialog, "Report a problem", the portal card. |

@@ -13,6 +13,7 @@
 #include "d3d/tiled_depth.h"
 #include "d3d/device.h"
 #include "d3d/float_scan.h"
+#include "d3d/frame_anchor.h"
 #include "d3d/render_scale.h"
 #include "d3d/resolve_writeback.h"
 #include "d3d/vertex_pairs.h"
@@ -167,8 +168,8 @@ namespace
         // Predicated tiling (Giants' 1280x720 MSAA frontend pass): the surface is one tile, the GPU replays the draws per
         // tile with a window offset nobody executes here. The host target covers all the tiles, so the draws land once at
         // their screen positions and each tile's resolve reads its part.
-        uint32_t tiles = Read32(device + Device::TileCount);
-        if (game::ExpandTiledTargets && tiles > 1 && tiles <= 16)
+        const uint32_t tiles = game::ExpandTiledTargets ? Read32(device + Device::TileCount) : 0;
+        if (tiles > 1 && tiles <= 16)
         {
             uint32_t right = 0, bottom = 0;
             for (uint32_t i = 0; i < tiles; i++)
@@ -893,21 +894,22 @@ namespace
             for (uint32_t pixel : rgba)
             {
                 uint8_t rgb[3] = { uint8_t(pixel), uint8_t(pixel >> 8), uint8_t(pixel >> 16) };
-                fwrite(rgb, 1, 3, file);
+                if (fwrite(rgb, 1, 3, file) != 3)
+                    break;
             }
             fclose(file);
         }
         // SKY_DUMP_ALPHA=1: the alpha channel too, as grey (<file>a.ppm).
         static const bool alpha = skyenv::Get("SKY_DUMP_ALPHA") != nullptr;
-        path[strlen(path) - 4] = 0;
-        strcat(path, "a.ppm");
-        if (FILE* file = alpha ? fopen(path, "wb") : nullptr)
+        const std::string alphaPath = std::string(path, strlen(path) - 4) + "a.ppm";
+        if (FILE* file = alpha ? fopen(alphaPath.c_str(), "wb") : nullptr)
         {
             fprintf(file, "P6\n%u %u\n255\n", width, height);
             for (uint32_t pixel : rgba)
             {
                 uint8_t rgb[3] = { uint8_t(pixel >> 24), uint8_t(pixel >> 24), uint8_t(pixel >> 24) };
-                fwrite(rgb, 1, 3, file);
+                if (fwrite(rgb, 1, 3, file) != 3)
+                    break;
             }
             fclose(file);
         }
@@ -950,7 +952,7 @@ namespace
     std::vector<uint8_t> g_indexData;
     std::vector<float> g_constants(2 * 256 * 4);
     // What PrepareDraw saw of the draw it built, for BuildDraw: it draws into the wide frame, may read the scene, VTE_CNTL.
-    bool g_frameDraw, g_frameSceneRead, g_frameComposite;
+    bool g_frameDraw, g_frameSceneRead, g_frameFrameRead, g_frameComposite;
     // The draw's guest shader hashes, for the frame dump's lines (0: none).
     uint64_t g_drawVertexShader, g_drawPixelShader;
     // The render targets the draw's pixel shader writes (GuestShader::colorOutputs; 0: none, or no pixel shader).
@@ -1053,7 +1055,7 @@ namespace
     bool PrepareDraw(uint32_t device, uint32_t primitive, gpu::DrawDesc& draw)
     {
         memset(&draw, 0, sizeof(draw));
-        g_frameDraw = g_frameSceneRead = g_frameComposite = false;
+        g_frameDraw = g_frameSceneRead = g_frameFrameRead = g_frameComposite = false;
 
         // No pixel shader is allowed: depth-only passes.
         uint32_t pixelShaderObject = Read32(device + Device::PixelShader);
@@ -1243,14 +1245,15 @@ namespace
             // Viewport transform disabled: shaders output pixel positions. Convert them to clip space in the shader
             // (g_PositionScale) and draw over the whole target.
             // The wide frame is still 1280 guest pixels for the game.
-            float guestWidth = float(frame ? ultrawide::FrameWidth16x9 : size.width / targetScale);
+            // A target's size is a whole multiple of its scale: these divisions are exact.
+            float guestWidth = frame ? float(ultrawide::FrameWidth16x9) : float(size.width) / float(targetScale);
             draw.positionScale[0] = 2.0f / guestWidth;
-            draw.positionScale[1] = -2.0f / float(size.height / targetScale);
+            draw.positionScale[1] = -2.0f * float(targetScale) / float(size.height);
             draw.halfPixelOffset[0] = -1.0f;
             draw.halfPixelOffset[1] = 1.0f;
             xScale = guestWidth / 2;
             xOffset = xScale;
-            yScale = -float(size.height / targetScale) / 2;
+            yScale = -float(size.height) / float(targetScale) / 2;
             yOffset = -yScale;
         }
         // An inverted depth range (MinZ > MaxZ) is kept as it is: Swap Force draws its scene with viewports 1..0.2 and
@@ -1327,14 +1330,19 @@ namespace
         // The wide frame (see BuildDraw): does the draw read the scene? (The slots hold stale textures too, so this only
         // says it can be the composite.)
         g_frameDraw = frame;
-        g_frameSceneRead = false;
+        g_frameSceneRead = g_frameFrameRead = false;
         if (frame)
             for (uint32_t slot = 0; slot < gpu::MaxSamplers; slot++)
                 if ((game::UltrawideCompositeSlot < 0 || int(slot) == game::UltrawideCompositeSlot) &&
-                    draw.textures[slot] != nullptr &&
-                    gpu::Desc(draw.textures[slot]).width == ultrawide::SceneWidth() * Scale() &&
-                    gpu::Desc(draw.textures[slot]).height == ultrawide::SceneHeight() * Scale())
-                    g_frameSceneRead = true;
+                    draw.textures[slot] != nullptr)
+                {
+                    const gpu::TextureDesc& read = gpu::Desc(draw.textures[slot]);
+                    if (read.width == ultrawide::SceneWidth() * Scale() &&
+                        read.height == ultrawide::SceneHeight() * Scale())
+                        g_frameSceneRead = true;
+                    else if (IsFrameTexture(read))
+                        g_frameFrameRead = true;
+                }
 
         draw.booleans = (GpuRegister(device, 0x4900) & 0xFFFF) | (GpuRegister(device, 0x4904) & 0xFFFF)
                                                                      << 16; // bool constants
@@ -1640,6 +1648,53 @@ namespace
         draw.first = 0;
     }
 
+    // The wide frame: where a HUD draw of game::UltrawideHudVertexShader goes (d3d/frame_anchor.h), from its positions in
+    // guest memory and the position matrix in vertex constants c0-c3. Small non-indexed draws only (a quad's 4 vertices).
+    d3d::FramePlace HudPlace(uint32_t device, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride)
+    {
+        constexpr uint32_t MaxVertices = 6;
+        if (game::UltrawideHudVertexShader == 0 || g_drawVertexShader != game::UltrawideHudVertexShader || count < 3 ||
+            count > MaxVertices)
+            return d3d::FramePlace::Centre;
+        const uint32_t declaration = Read32(device + Device::VertexDeclaration);
+        if (declaration == 0)
+            return d3d::FramePlace::Centre;
+        const uint32_t elementCount = std::min(Read32(declaration + 0x18), gpu::MaxVertexElements);
+        for (uint32_t i = 0; i < elementCount; i++)
+        {
+            const uint32_t element = declaration + 0x34 + i * 12;
+            const uint32_t stream = g_memory.Read<uint16_t>(element);
+            if (stream >= 16)
+                break;
+            if (g_memory.Read<uint8_t>(element + 9) != 0 || g_memory.Read<uint8_t>(element + 10) != 0)
+                continue; // not POSITION0
+            const uint32_t components = std::min(FloatComponents(xenos::VertexFormat(Read32(element + 4)).host), 3u);
+            const uint32_t offset = g_memory.Read<uint16_t>(element + 2);
+            uint32_t stride = upStride, guest = upData, bytes = (first + count) * upStride;
+            if (upData == 0)
+            {
+                // Stream s fetches through vertex fetch constant 95 - s (PrepareVertices).
+                stride = uint32_t(g_memory.Read<uint8_t>(device + Device::StreamStrides + stream)) * 4;
+                const uint32_t fetch = 0x4800 + (95 - stream) * 2;
+                guest = PhysicalToGuest(GpuRegister(device, fetch) & ~3u);
+                bytes = ((GpuRegister(device, fetch + 1) >> 2) & 0xFFFFFF) * 4;
+            }
+            if (components < 2 || guest == 0 || stride == 0 ||
+                (first + count - 1) * stride + offset + components * 4 > bytes)
+                return d3d::FramePlace::Centre;
+            float positions[MaxVertices * 3];
+            for (uint32_t v = 0; v < count; v++)
+                for (uint32_t c = 0; c < components; c++)
+                    positions[v * components + c] = g_memory.Read<float>(guest + (first + v) * stride + offset + c * 4);
+            const auto* words = static_cast<const uint32_t*>(GpuFloatConstants(device));
+            float rows[16];
+            for (uint32_t r = 0; r < 16; r++)
+                rows[r] = std::bit_cast<float>(ByteSwap(words[r]));
+            return d3d::PlaceFrameDraw(positions, count, components, rows);
+        }
+        return d3d::FramePlace::Centre;
+    }
+
     // Builds the host draw from the device state now. The data it points to (g_streamData, g_indexData, g_constants)
     // stays valid until the next BuildDraw.
     bool BuildDraw(uint32_t device, uint32_t primitive, uint32_t first, uint32_t count, uint32_t upData,
@@ -1649,15 +1704,22 @@ namespace
             return false;
         if (g_frameDraw)
         {
-            // The wide frame. The composite (read from the scene: SSA's one triangle, Giants' one quad) fills it; the rest
-            // (HUD, menus, movies) is centred.
+            // The wide frame. The composite (read from the scene: SSA's one triangle, Giants' one quad) and the passes of
+            // its shape that draw the frame back over itself fill it (ultrawide::FillsFrame); the rest (HUD, menus,
+            // movies) is centred.
             const gpu::TextureDesc& size =
                 gpu::Desc(draw.colorTargetCount != 0 ? draw.colorTargets[0] : draw.depthTarget);
 #ifdef GAME_ULTRAWIDE_COMPOSITE_INDEXED
-            g_frameComposite = g_frameSceneRead && indexed && count == game::UltrawideCompositeVertices;
+            const bool compositeShape = indexed && count == game::UltrawideCompositeVertices;
 #else
-            g_frameComposite = g_frameSceneRead && !indexed && count == game::UltrawideCompositeVertices;
+            const bool compositeShape = !indexed && count == game::UltrawideCompositeVertices;
 #endif
+            g_frameComposite = compositeShape && g_frameSceneRead;
+            // The guest's viewport over its whole frame (host pixels, before the shift below).
+            const bool coversFrame =
+                draw.viewport.x <= 0.0f &&
+                draw.viewport.x + draw.viewport.width >= float(ultrawide::FrameWidth16x9 * uint32_t(FrameScale()));
+            const bool fills = ultrawide::FillsFrame(compositeShape, g_frameSceneRead, g_frameFrameRead, coversFrame);
             if (g_frameComposite && ultrawide::MoviePlaying())
             {
                 // A movie is on: the scene behind it stays 16:9 (centred below) and the sides are black bars.
@@ -1665,7 +1727,7 @@ namespace
                 gpu::ClearColor(draw.colorTargets[0], black, nullptr);
                 g_frameComposite = false;
             }
-            if (g_frameComposite)
+            if (fills && !ultrawide::MoviePlaying())
             {
                 draw.viewport = plume::RenderViewport(
                     0, 0, float(size.width), float(size.height), draw.viewport.minDepth, draw.viewport.maxDepth);
@@ -1682,7 +1744,12 @@ namespace
             }
             else
             {
-                const int32_t shift = FrameShift();
+                // The HUD stays centred; a piece in a corner of its 16:9 frame goes to that corner of the window.
+                const d3d::FramePlace place =
+                    indexed ? d3d::FramePlace::Centre : HudPlace(device, first, count, upData, upStride);
+                const int32_t shift = place == d3d::FramePlace::Left    ? 0
+                                      : place == d3d::FramePlace::Right ? 2 * FrameShift()
+                                                                        : FrameShift();
                 draw.viewport.x += float(shift);
                 draw.scissor.left = std::min(draw.scissor.left + shift, int32_t(size.width));
                 draw.scissor.right = std::min(draw.scissor.right + shift, int32_t(size.width));
@@ -2207,7 +2274,7 @@ namespace
         if (bits >= 0x3FFFFFF8) // rounds to 2 or more (or NaN, infinity)
             return 0xFFFFFF;
         if (bits < 0x38800000) // below 2^-14: denormal
-            return uint32_t(value * 17179869184.0f + 0.5f); // * 2^34
+            return uint32_t(std::lround(value * 17179869184.0f)); // * 2^34, to nearest (value is positive)
         bits -= 112u << 23; // exponent bias 127 -> 15
         return (bits + 3 + ((bits >> 3) & 1)) >> 3; // to 20 mantissa bits, nearest even
     }

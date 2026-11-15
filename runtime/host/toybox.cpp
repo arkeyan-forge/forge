@@ -1015,6 +1015,7 @@ static void FollowPrompt(toybox::Model& model)
 {
     if (model.realPortal)
         return;
+    model.arriving = game::FigureArriving();
     portalprompt::Prompt prompt =
         game::Current().ReadPortalPrompt != nullptr ? game::Current().ReadPortalPrompt() : portalprompt::Prompt{};
     const uint64_t now = SDL_GetTicksNS();

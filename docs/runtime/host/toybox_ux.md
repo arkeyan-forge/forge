@@ -175,11 +175,25 @@ screenshots EN/FR; the log's "[toybox] shelf: N found for ..." lines give each s
 | Giants | Player 1 · Player 2 · Item or adventure (Giants has no packs of its own; SSA's share the item seat) |
 | Swap Force | Player 1 (a swapper, one card of two tags, or one figure) · Player 2 (idem) · Magic item · Adventure pack |
 | Trap Team | Player 1 · Player 2 · Trap · Magic item · Adventure pack |
-| SuperChargers | Player 1 + Vehicle 1 · Player 2 + Vehicle 2 · Magic item / trophy |
-| Imaginators | Player 1 · Player 2 (Sensei, Imaginator crystal or any older figure) · Magic item · Adventure pack |
+| SuperChargers | Player 1 + Vehicle 1 · Player 2 + Vehicle 2 · Magic item / trophy · Trap |
+| Imaginators | Player 1 · Player 2 (Sensei, Imaginator crystal or any older figure) · Magic item · Adventure pack · Trap · Vehicle 1 · Vehicle 2 |
 
 How many items or packs a game reads at once and how it numbers its players are to be checked per game [?]; the seats
 only describe what the menus show. The emulated portal keeps its 16 hardware slots underneath.
+
+**Later-game accessories (issue #101)** [V] host tests, [?] play check: Trap takes traps only in Trap Team,
+SuperChargers and Imaginators. Vehicle 1 and Vehicle 2 take supported vehicles only in the latter two games;
+they do not take player figures, magic items or adventure pieces. The additional seats are appended so existing
+seat indices and preferred slots stay stable. The layout sizes tiles from the catalogue's seat count.
+Both later games' toy tables list traps and vehicles but give no required seat or hardware index. `Model::FreeSlot`
+therefore keeps its ordinary allocation: reuse the seat's slot, otherwise prefer its place in seat order (two
+slots per player for swap halves), otherwise find a free virtual slot. Trap is a logical seat, as in Trap Team,
+without a separate portal command or a reserved hardware slot. Adventure keeps adventure pieces only.
+The game receives the original toy type, variant and stored tag data through the existing portal block reads;
+the host does not turn a trap into a character or a vehicle into an adventure piece. Trapped villains remain tag
+data, with no new villain editor for the later games. Catalogue recognition alone does not prove a reward or race
+has unlocked: follow [SuperChargers' checks](../../../games/superchargers/docs/toybox.md#traps-issue-101) and
+[Imaginators' checks](../../../games/imaginators/docs/toybox.md#vehicles-and-traps-issue-101).
 
 ### Swappers: one card, two tags [SwapForce] (built 2026-10-27)
 
@@ -390,7 +404,7 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
   focuses it (`Hit::focus`, `Pointer` in `draw.cpp`); a still pointer never takes the focus back from the keys, and moving within
   the same element does not either. The seats and Manage's sections are choices: the pointer only outlines them (a click chooses).
 - **Buttons whole**: "+ Add" and "Manage" are as wide as their longer label in the game's language; the seats share the rest
-  (five in Trap Team and SuperChargers: a smaller picture). On Add a figure the "+N" versions badge sits on the card's second line, so the name keeps the card's width.
+  (five in Trap Team, six in SuperChargers and seven in Imaginators: a smaller picture). On Add a figure the "+N" versions badge sits on the card's second line, so the name keeps the card's width.
 - Proof: `ArkeyanToyboxLookTest` (the moves), `tools/regress/toybox_nav.sh` (the real game: 31 focus checks and 12 shots; its
   places follow the 0.9.0 layout, six columns); the before/after screens in English and French: `private/toybox-pass/`
   (`INDEX.md`, not in git); the 0.9.0 screens: `private/runs/overlay/` (not in git).
@@ -535,7 +549,8 @@ adapter then reported a real figure prompt: after three stable polls, `FollowPro
 `Model::ReplaceCards` now plans the affected slots together. `PortalReplaceFigures` loads and locks every replacement
 before committing the whole batch through `PortalSlots::Replace`. The status and block commands use that same slot
 mutex: they see the old card or the new card, including both swapper halves, never an intermediate empty portal.
-Replacements retain presence and set the changed bit so the game rereads them. A single figure replacing a swapper
+Replacements set the changed bit so the game rereads them; since issue #17 an occupied slot is shown empty for one
+status report first (below). A single figure replacing a swapper
 also removes the unused bottom in that commit. A full portal can replace occupied slots; invalid slots, real slots,
 an unreadable replacement or a failed lock leave the old figures and seats intact. The same boundary covers player
 swaps, changing a swapper half in the Toy Box, and the next-figure hotkey. This is shared host code for Lux and Alchemy,
@@ -555,3 +570,60 @@ Verification:
   must finish with `put P1: done`. With portal traffic logging, the occupied player's presence bits must never all be
   zero during the swap; the replacement is reported present and changed. Finally take the figure off explicitly:
   the game's prompt and the Toy Box's automatic opening should still occur. No game or launcher was run for this fix.
+
+### A quick swap the game missed (issue #17, launcher #95)
+
+Imaginators, emulated portal: a wheel swap made while the previous figure's arrival was still loading (its
+`MagicMoment Loading Thread` just started) was never read. The slot went from `11` (present, changed) straight to
+`01`, with no `the game took` line; the game asked for a Skylander while the Toy Box kept the figure on its seat and
+refused it again ("is already there"). A real portal never changes a toy in place: a hand lifts it first.
+
+- `PortalSlots::Replace` (`runtime/host/portal_slots.h`): when any slot of the batch is occupied, the old figures leave
+  at once and every new one waits (`Slot::pending`). The next status report shows those slots `10` (removed), the one
+  after `11` with the new figures; block reads in between fail as on an empty slot, so no write reaches the new figure
+  for the old one. A swapper's halves and a player swap still arrive in the same report. A batch onto empty slots only
+  is placed at once. The host side (`Holds`, `SlotPath`, `SlotOfSerial`, `Place`) counts a waiting figure as on the
+  portal, so its lock and slot stay taken. The gap is one report: the Toy Box only opens after three stable polls of
+  the game's prompt, unlike the load-long gap of #40.
+- `Model::PutOn`: putting the same figure on its own seat places it again (a new removal and arrival) instead of
+  answering "is already there", taken by the game or not; its `previous` figure is kept. It is the way out of the case
+  below that no portal traffic shows.
+- `Model::Retake` (`host/toybox/retake.h`): a figure the game still has not read 1 s after a swap is put on again,
+  then after 2 s and 4 s (three times at most; the player's next change starts over). Giants shows such a figure as
+  loading for good when it arrives while `tfbLoadThread` loads the previous one, Imaginators often leaves it unread
+  during its `MagicMoment Loading Thread`; putting it on again by hand always recovered. Log:
+  `[toybox] P1: the game has not taken <name>: put on again (1 of 3)`.
+- Held swaps (`host/toybox/arrival.h`, `Model::PutOn`, `Model::ReleaseHeld`): while the game brings a figure in
+  (`game::FigureArriving`), or for 1 s after the Toy Box put one on that the game has not taken yet, a new pick for a
+  seat waits instead of going on. One per seat, the last pick wins; it goes on as soon as the arrival ends, after 5 s at
+  most. The player sees a toast with the figure's card, "P1 next: Spyro (once the game is ready)". Putting the seat's
+  own figure on again is never held, and it drops a held pick for that seat. The re-place waits for the arrival too.
+  Log: `[toybox] P1: Spyro held: the game brings a figure in`, then `[toybox] P1: held 1.8 s, put on now`.
+- The arrival per game (`games/<id>/adapter.cpp`, from what the prompt already reads; the classifiers are in
+  `ArkeyanPortalTest`):
+
+  | Game | Arriving while |
+  |---|---|
+  | Giants | the "Portal Control" state is `Magic Moment - 1` to `- 4 - Show Minion` (not `- Z - Canceled`) |
+  | Swap Force, Imaginators | `CMagicMoment` in Activating, SpawnOutLevel, ConfirmRegister, IdleOutro, Load, SpawnShapeshifter, PlayIntro, TransitionOut, SpawnInLevel (1, 2, 6 to 12), Imaginators' TakeHudPortrait (21) |
+  | SuperChargers | the same states in its numbers, with FirstVehicleSequence (1, 2, 6 to 13) |
+  | Spyro's Adventure | the prompt object's mode is 4 (a figure comes in) |
+  | Trap Team | never (its portal state is not read): only the 1 s after a placement |
+
+  The names come from each disc's `EMagicMomentState` table; Giants' window is the one the traces showed
+  (2026-11-14: swaps made in `Magic Moment - 2` to `- 4` were dropped or cancelled, those made in `In Game - 0 - Idle`
+  came in). Not checked in play yet for Swap Force, SuperChargers, Imaginators and Spyro's Adventure.
+- Taken means the title read the new figure's block 0 (`PortalSlotSeen::headRead`, `retake::Taken`): a fresh read
+  always starts there (Giants: `0 1 8 24 11 2D ...`). With `SKY_PORTAL_LOG=1`, each stuck Giants swap showed one read
+  of another block (`31`, `3`, `25`), the tail of the previous figure's read, then `Magic Moment - Z - Canceled` and
+  `Loading_Text` for good; counting any read as taken had logged `the game took ... 0.0 s` and skipped the re-place.
+- Proof: `ArkeyanToyboxSwapTest` (each replacement's `10` then `11`, a second swap before the removal's report, a
+  take-off during it, a full portal, pairs never torn under concurrent reads, the re-place schedule). Played
+  (2026-11-14, macOS, emulated portal), before `Retake`: Imaginators (Europe) and Giants take fast wheel swaps far more
+  often than with 0.9.6, and putting a missed figure on again works in both.
+- Left: Giants can read a figure in full and never start its arrival (no `Magic Moment - 1` state, no
+  `tfbLoadThread`, `Loading_Text` for good), seen once on a swap made right after a re-place. Its traffic is the same
+  as a figure taken; only the game's own state shows it, so it is left to the player: putting the figure on again
+  recovers. Imaginators' `took ... 0.0 s` then `prompt for player 1` is likely the stray read above; not traced there.
+  Each swap now shows the game's `203_PortalError_TagTypeNotOnPortal` state for a moment (the removal's report),
+  too short for the Toy Box to open; a re-place once opened it for a moment in Giants.

@@ -14,4 +14,6 @@ namespace portalprompt
             return { Kind::Player, 1, false, true };
         return {};
     }
+
+    bool SuperChargersArriving(uint32_t state) { return state == 1 || state == 2 || (state >= 6 && state <= 13); }
 }

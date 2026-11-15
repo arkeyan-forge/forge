@@ -5,7 +5,7 @@ name=Skylanders Swap Force
 runtime=Skylanders Swap Force
 # The game's own version (1.0 = the game at 100 %): each fix bumps the last number. The kit carries it (kit.txt game_version.<id>),
 # the release says it (games.json), Skylauncher offers UPDATE when its release has a higher one.
-version=0.5.11
+version=0.5.13
 toml=SwapForce.toml
 xex_sha256=5d9a3bc3c2d85ed59684a9c5f94daf6bffcfdfedcef7650a866737edbf3f4ac3,3db455f6ee17e8cb3a4d58873d96583d9160396d360a0130e5eb88adad8a5518
 # The releases' loaded images (decrypted, decompressed; same order as xex_sha256), labels and title ID: a disc of
