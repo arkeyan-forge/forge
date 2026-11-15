@@ -283,7 +283,9 @@ natively), and in `tools/ci/checks.Dockerfile` (amd64, as the build runs the x86
 `sanitizers` (AddressSanitizer) and `windows` (llvm-mingw, the tests under Wine). `--only job,job` runs some; `--quick` is `format,macos`, which the
 `pre-push` hook runs (`git config core.hooksPath tools/git-hooks`) after `tools/leak_scan.py` (no game data, no
 personal information in the tree; the names it looks for are in the git-ignored `private/kit_scan_words.txt`) and a
-check of the pushed commits' identity. Logs in `.scratch/checks/`; each job keeps its
+check of the pushed commits' identity. The jobs run at the same time (`--serial`: one after the other; a job that
+fails among them runs again alone); a job that already passed on the same tree (commits, uncommitted and untracked
+files, submodule commits, options) is skipped (`--force` runs it again). Logs in `.scratch/checks/`; each job keeps its
 build in a Docker volume, so a second run is incremental. Under emulation a few tests are left out (`tools/ci/job.sh`
 names them and why); the `macos` job runs them natively. Before a merge: `tools/ci/run.sh` and `tools/test_all.sh --quick`, both
 PASS. The kits: `tools/ci/kits_local.sh` ([updates_release.md](../release/launcher/updates_release.md)).
