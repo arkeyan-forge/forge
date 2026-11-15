@@ -1684,6 +1684,36 @@ namespace toybox
         // The seats under the page's title, the figures' bar and grid below (the launcher's look, docs/runtime/host/toybox_ux.md).
         constexpr float SeatTop = look::PageTop + 46, SeatHeight = 92, SeatWidth = 260, SeatGap = 14;
 
+        // A seat's pointer area: a click focuses it, a right click its options, a double click takes its figure off (as
+        // Delete; not a real toy) or, empty, chooses for it.
+        void SeatHit(Model& model, int index, ImVec2 a, ImVec2 b)
+        {
+            const SeatState& seat = model.seats[size_t(index)];
+            const bool takeOff = !model.realPortal && !seat.physical && !seat.path.empty();
+            AddHit(
+                a, b, [&model, index] { model.FocusColumnRow(index); },
+                [&model, index] {
+                    model.FocusColumnRow(index);
+                    model.Run(Command::Options);
+                },
+                [&model, index, takeOff] {
+                    model.FocusColumnRow(index);
+                    model.Run(takeOff ? Command::Delete : Command::Accept);
+                });
+        }
+
+        // An Add a figure card's pointer area: a click focuses it (on the focused one: its versions), the pointer moving
+        // onto it focuses it. While a toy's versions show, the other cards neither light up nor take the focus under the
+        // pointer, so that it can reach the versions across them; a click still picks one.
+        void AddCardHit(Model& model, int index, ImVec2 a, ImVec2 b)
+        {
+            AddHit(a, b, [&model, index] { model.FocusAddCell(index); });
+            if (model.addVersions && index != model.add.cursor)
+                g_hits.back().hover = false;
+            else
+                g_hits.back().focus = [&model, index] { model.HoverAddCell(index); };
+        }
+
         void DrawSeats(Model& model)
         {
             constexpr float Left = look::PageLeft, Right = look::PageRight;
@@ -1800,17 +1830,7 @@ namespace toybox
                         Fit(g_bold, 13, line, tw));
                 if (focused)
                     FocusRing(a, b, look::Radius::Card);
-                int index = int(i);
-                AddHit(
-                    a, b, [&model, index] { model.FocusColumnRow(index); },
-                    [&model, index] {
-                        model.FocusColumnRow(index);
-                        model.Run(Command::Options);
-                    },
-                    [&model, index] {
-                        model.FocusColumnRow(index);
-                        model.Run(Command::Accept);
-                    });
+                SeatHit(model, int(i), a, b);
             }
             float h = (SeatHeight - 8) / 2;
             for (size_t r = 0; r < rows.size(); r++)
@@ -2807,9 +2827,7 @@ namespace toybox
                     ringMin = a;
                     ringMax = b;
                 }
-                int index = int(i);
-                AddHit(a, b, [&model, index] { model.FocusAddCell(index); });
-                g_hits.back().focus = [&model, index] { model.HoverAddCell(index); };
+                AddCardHit(model, int(i), a, b);
             }
             g_draw->PopClipRect();
             if (ring)
