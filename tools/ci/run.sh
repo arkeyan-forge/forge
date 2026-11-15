@@ -8,8 +8,8 @@
 # Jobs: format, tidy, macos, linux, sanitizers, windows, run at the same time (--serial: one after the other). --quick
 # runs format and macos (the pre-push hook). The changed files are those since --base (default: the merge base with
 # origin/main). --tidy-all lists clang-tidy's findings in every file, as a report. A job that passed on the same tree
-# (commits, uncommitted and untracked files, submodule commits, options) is skipped; --force runs it again. Logs:
-# .scratch/checks/<job>.log. Exit code 0: every job passed. The game checks stay tools/test_all.sh.
+# (commits, uncommitted and untracked files but the docs, submodule commits, options) is skipped; --force runs it
+# again. Logs: .scratch/checks/<job>.log. Exit code 0: every job passed. The game checks stay tools/test_all.sh.
 set -uo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -36,12 +36,18 @@ mkdir -p "$logs"
 # Committed and uncommitted changes since the base, deleted files left out.
 CHANGED=$( (git diff --name-only --diff-filter=d "$base"; git ls-files --others --exclude-standard) | sort -u)
 export CHANGED
-# What the jobs check; a job that passed on the same state is skipped.
-state=$( {
-    git rev-parse 'HEAD^{tree}'
-    git diff HEAD --binary
-    git ls-files --others --exclude-standard
-    git ls-files -z --others --exclude-standard | xargs -0 git hash-object --
+# files pathspec...: the tracked and untracked files those match, with their contents.
+files() {
+    git ls-files -s -- "$@"
+    git diff HEAD --binary -- "$@"
+    git ls-files --others --exclude-standard -- "$@"
+    git ls-files -z --others --exclude-standard -- "$@" | xargs -0 git hash-object --
+}
+# What the jobs check; a job that passed on the same state is skipped. The docs change no result: *.md is left out,
+# except the notices the builds ship.
+state=$({
+    files . ':(exclude,glob)**/*.md'
+    files ':(glob)**/THIRD_PARTY_NOTICES.md'
     git submodule status
     echo "$base $TIDY_ALL"
 } | shasum | cut -c1-40)
