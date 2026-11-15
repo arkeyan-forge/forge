@@ -1,8 +1,9 @@
 #!/bin/bash
 # The Toy Box's Xbox-style focus through the real game (docs/runtime/host/toybox_ux.md, "Navigation"): rows (seats, the
-# search and Filters bar, the grid), Up/Down keeping the column, each row remembering its place, LB/RB, Tab, no wrap, and
-# the pointer moving the focus only while it moves. Trap Team, ten scratch figures (two grid rows), keys and pointer
-# through SKY_TOYBOX_SCRIPT; every scripted key logs "[toybox] script: focus: ... home <row> <place> seat <n>".
+# search and Filters bar, the grid), Up/Down keeping the column, each row remembering its place, LB/RB, Tab, no wrap,
+# the pointer moving the focus only while it moves, and a held key not moving it again as the pad button it is bound to
+# ("hold=Down": the game's d-pad). Trap Team, ten scratch figures (two grid rows), keys and pointer through
+# SKY_TOYBOX_SCRIPT; every scripted key logs "[toybox] script: focus: ... home <row> <place> seat <n>".
 #
 #   TRAPTEAM_ISO=<Trap Team .iso> tools/regress/toybox_nav.sh [<run name>]     (about 75 s; build-trapteam/)
 #
@@ -32,7 +33,7 @@ s="$s,Left:43,Left:43.2,Left:43.4,PageUp:43.6,PageDown:43.8,shot=08_rb_player2:4
 s="$s,Left:45,Right:45.2,Right:45.4,Right:45.6,Right:45.8,Right:46,Right:46.2,shot=09_seats_end:46.6,Down:46.8,Up:47"
 s="$s,PageUp:47.2,PageUp:47.4,PageUp:47.6,PageUp:47.8,Tab:48,shift+Tab:48.2,Tab:48.4,Tab:48.6,shot=10_tab_grid:49"
 s="$s,move=1003/307:49.4,shot=11_hover_card4:49.8,Left:50,move=1004/308:50.2,move=340/124:50.4,shot=12_still_pointer:50.8"
-s="$s,move=1170/216:51,Escape:51.5"
+s="$s,move=1170/216:51,hold=Down*0.4:51.2,F10:51.8,Escape:52"
 run="env HOME='$R/home' CFFIXED_USER_HOME='$R/home' SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=disk \
   SDL_AUDIO_DISK_OUTPUT_FILE=/dev/null SKYLANDERS_DATA='$R/data' SKY_SETTINGS='$R/none.ini' SKY_LAUNCHER_INI='$R/none.ini' \
   SKY_COLLECTION='$R/collection' SKY_SAVE_DIR='$R/save' SKY_LOG='$R/game.log' SKY_SKIP_MOVIES=1 SKY_PORTAL=emulated \
@@ -81,6 +82,7 @@ expect 48 "grid 3 seat 0" "a key moves the focus away"
 expect 49 "grid 3 seat 0" "the pointer moving inside the same card does not take it back"
 expect 50 "grid 3 seat 0" "the pointer on a seat does not change the focus or the seat"
 expect 51 "bar 1 seat 0" "the pointer moving onto Filters focuses it"
+expect 52 "bar 1 seat 0" "a key the game's bindings hold (Down: the d-pad) does not move the focus again"
 [ "$(hover 47)" = "card=4" ] && echo "ok:   hover reports card 4" || { echo "FAIL: hover $(hover 47)"; fails=$((fails + 1)); }
 shots=$(ls "$R"/shots_*.png 2>/dev/null | wc -l | tr -d ' ')
 if [ "$shots" -ge 12 ]; then echo "ok:   $shots pictures"; else echo "FAIL: $shots pictures (wanted 12)"; fails=$((fails + 1)); fi

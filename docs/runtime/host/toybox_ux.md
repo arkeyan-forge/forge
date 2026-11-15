@@ -403,9 +403,15 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 - **The pointer moves the focus only while it moves**: moving onto a card, a button, the bar, a row of a list or a dialog's button
   focuses it (`Hit::focus`, `Pointer` in `draw.cpp`); a still pointer never takes the focus back from the keys, and moving within
   the same element does not either. The seats and Manage's sections are choices: the pointer only outlines them (a click chooses).
+- **One key press, one move** (2026-11-15): while the Toy Box, the wheel or the F3 menu is open, a key acts through its own key
+  event only (the Keyboard column of section 8). The game's keyboard bindings do not see it, so Down does not move again as the
+  d-pad, Space does not accept again as A, and typed letters (W, X, C, V...) are not the stick or a button. A key pressed there
+  stays away from the game until it is released, even once the overlay closed (Escape closing the Toy Box gives the game no
+  Back); a key held before it opened stays the game's (Backspace held for the wheel: its release swaps). `toybox::KeyMask`
+  (`runtime/host/toybox/key_mask.h`, checked by `ArkeyanToyboxKeyMaskTest`), applied by `ToyboxKeyboardState`.
 - **Buttons whole**: "+ Add" and "Manage" are as wide as their longer label in the game's language; the seats share the rest
   (five in Trap Team, six in SuperChargers and seven in Imaginators: a smaller picture). On Add a figure the "+N" versions badge sits on the card's second line, so the name keeps the card's width.
-- Proof: `ArkeyanToyboxLookTest` (the moves), `tools/regress/toybox_nav.sh` (the real game: 31 focus checks and 12 shots; its
+- Proof: `ArkeyanToyboxLookTest` (the moves), `tools/regress/toybox_nav.sh` (the real game: 32 focus checks, a held key among them, and 12 shots; its
   places follow the 0.9.0 layout, six columns); the before/after screens in English and French: `private/toybox-pass/`
   (`INDEX.md`, not in git); the 0.9.0 screens: `private/runs/overlay/` (not in git).
 - **The Toy Box's keys are editable** (F3 > Commands, and Arkeyan Launcher's key page): `[input] key_toybox` (F6; while it is not set Tab
