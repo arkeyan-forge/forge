@@ -12,7 +12,7 @@ passed, not reached, crashed, lowest frame rate). With --catalogue (coverage_all
 testable, not run, lowest frame rate, and the share covered is ok over the catalogue's entries (never over what was
 run). --coverage writes the page of every entry not covered, one line each with its reason. A details table lists the
 rows that did not pass; status.png is drawn with Pillow. --subset marks the page as a partial run. --state-lines
-prints one line per crash or [guard] for office/STATE.md.
+prints one line per crash or [guard], for a status note.
 
 The page is published: it names the platform, the build, the level and figure names only. No paths, no host or account
 names, no log text. Wording is factual; no tool framing.

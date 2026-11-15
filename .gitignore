@@ -7,13 +7,6 @@
 .DS_Store
 /.cache/
 
-# Local data (discs, derived data, work clones)
-office/discs/*
-!office/discs/.gitkeep
-office/games/*/private/
-office/work/*
-!office/work/.gitkeep
-
 # Launcher artifacts (screenshots are written to private/ keep ignored)
 private/launcher-shots/
 private/launcher-home/

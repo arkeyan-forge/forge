@@ -73,7 +73,7 @@ ENV_NAMES = set("""AUDIO_DUMP COLLECTION D3D_CAPTURE DISPLAY_NAME DUMP_DRAWS DUM
     TEMP_DUMPFRAMES X XX YY ZZ WW ENVTEST_A ENVTEST_D""".split())
 
 # Historical records and other projects' files keep the names they had.
-SKIP = re.compile(r"^(docs/(?:[^/]+/)*history/|office/|CHANGELOG\.md$|games/[^/]+/docs/history\.md$"
+SKIP = re.compile(r"^(docs/(?:[^/]+/)*history/|CHANGELOG\.md$|games/[^/]+/docs/history\.md$"
                   r"|games/[^/]+/config/|thirdparty/[^/]+/|private/|tools/rename_arkeyan\.py$)")
 
 NAME = re.compile(r"(?:(?<![A-Za-z0-9_])|(?<=-D)|(?<=lib)|(?<=Fake))"

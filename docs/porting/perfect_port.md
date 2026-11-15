@@ -12,7 +12,7 @@ How to read a row. **Where**: *runtime* = shared host code every game gets for f
 per game (rule zero: never reuse an address). **Games**: SSA / Giants / Swap Force (SF), ✅ has it, ❌ not done or not
 proved, n/a does not apply. The proof of a row is a run or a test ([parity.md](../porting/game_template/parity.md) rule:
 a row is ✅ only with one). Sources: [problem_catalogue.md](../porting/problem_catalogue.md),
-[gotchas.md](../porting/gotchas.md), pitfalls.md, each game's `parity.md` and `status.md`,
+[gotchas.md](../porting/gotchas.md), each game's `parity.md` and `status.md`,
 `git log`.
 
 ## 1. Boot and saves
@@ -71,7 +71,7 @@ Hor+ camera, wider scene targets and frame, the HUD and menus centred at their o
 
 ## 4. Performance
 Rule: measure on an idle machine, with a cold app clone (D32), `SKY_SETTINGS` set (a player's `fps_limit=60` skewed tests),
-and run an older build beside HEAD before bisecting (pitfalls.md, time sinks 7 and 14).
+and run an older build beside HEAD before bisecting.
 Inventory with numbers: [renderer_threads.md](../runtime/gpu/renderer_threads.md) ("Optimizations per game").
 
 | Symptom | Fix | Where | Verify | SSA / Giants / SF |
@@ -100,7 +100,7 @@ The engines step by **measured** time, so 60 needs no game patch if the vblank s
 | The 60 FPS option does nothing | the game's interval: SSA and SF ask for 2 (limit 60 lifts it to 1); Giants presents at every blank (limit 30 shows every second frame); **SF paces itself by the interval it reads from its device**, so the runtime writes 1 there before each swap | game flags: `presentsAtEveryBlank`, `presentIntervalPacesGame` | `fps_limit=60` run: 60.0 fps and the game's clock at 1.00 game second per wall second | ✅ ✅ ✅ (SF 52-56 fps, its own work) |
 | Machine too slow for 60: uneven 40-50 fps, "epileptic" lava and crystals | **steady-30 fallback**: at 60, when 3 of the last 30 frames miss their blank, frames are shown every 2 blanks; 60 returns after 10 s that fit (doubling on a quick relapse); a Toy Box toast says "30 FPS: 60 not held" once per run | runtime `HalfRate` in `kernel/video.cpp`, `ToyboxNotice` | median gap 33.3 ms std < 4 ms on a loaded Mac; message once | ✅ ✅ ✅ |
 | Long fall respawns the player at 60 (stuck-falling check counts distance per frame) | scale the distance threshold by 30/fps | game `games/swapforce/fall_check.cpp` | scripted long fall at 60 and 120: **not made yet** | ❌ [?] ❌ [?] 🔧 (hook runs, `[fall]` line) |
-| Counted-frames code at 60: knockback, projectile range/lifetime, jump apex, raft acceleration, camera speed, spinning props | audit with a same-input comparison 30 vs 60 (apex, push distance) and scale what differs | game | the step-dependence list in office/lessons_cemu_2026-10-28.md (the office's Cemu notes) [?] | ❌ ❌ ❌ |
+| Counted-frames code at 60: knockback, projectile range/lifetime, jump apex, raft acceleration, camera speed, spinning props | audit with a same-input comparison 30 vs 60 (apex, push distance) and scale what differs | game | the step-dependence list of the Cemu notes [?] | ❌ ❌ ❌ |
 | Audio bank-load throttle runs twice as often, movies present each frame twice at 60 | harmless | - | - | ✅ ✅ ✅ |
 | Wall-clock timeouts (attract, menus) | already frame-rate independent | - | - | ✅ ✅ ✅ |
 | Above 60 | not implemented (immediate present with a 60 Hz vblank) | - | - | ❌ ❌ ❌ |

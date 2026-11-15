@@ -1,5 +1,11 @@
 #!/bin/sh
 # Install once per clone: git config core.hooksPath tools/git-hooks
-# The quick checks before a push (tools/ci/run.sh --quick: the format, the host tests on macOS). Skip one push with
+# Before a push: no game data and no personal information in the tree (tools/leak_scan.py), the identity of the pushed
+# commits, then the quick checks (tools/ci/run.sh --quick: the format, the host tests on macOS). Skip one push with
 # git push --no-verify; the full run is tools/ci/run.sh.
-exec "$(git rev-parse --show-toplevel)/tools/ci/run.sh" --quick
+root=$(git rev-parse --show-toplevel)
+python3 -I "$root/tools/leak_scan.py" || exit 1
+bad=$(git log --format='%an <%ae>|%cn <%ce>' origin/main..HEAD 2>/dev/null |
+    grep -v -E '^(mflr0 <mflr0@onionmail\.org>|Suolumi <[^>]+>)\|(mflr0 <mflr0@onionmail\.org>|Suolumi <[^>]+>)$')
+[ -z "$bad" ] || { echo "pre-push: commits by another identity: $bad" >&2; exit 1; }
+exec "$root/tools/ci/run.sh" --quick
