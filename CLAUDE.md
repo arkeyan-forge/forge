@@ -24,6 +24,9 @@ Pages over 300 lines (`games/*/docs/{boot,status,history}.md`, `docs/porting/pro
   `patches/`.
 - Comments: why only. Commits: one line, `area: what (#n)`, under 72 characters, signed off (`git commit -s`), no
   co-author lines.
+- **Nothing AI-related in the work itself**: no AI wording, tool or model names, generated notes or trailers in code,
+  comments, docs, strings, commit messages, pull requests or issues. The only AI text is the policy (`README.md`,
+  `CODE_OF_CONDUCT.md`) and this file.
 
 ## Hard rules
 - **No game data, ever, in git or in anything shared** (ISO, `ppc/`, shader cache, extracted art, figure dumps, byte

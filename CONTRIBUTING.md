@@ -43,7 +43,7 @@ scratch settings, saves and figures, never on your real data ([testing](docs/get
 
 ## AI tools
 Welcome, under the rules of the [Code of Conduct](CODE_OF_CONDUCT.md#contributions-and-ai-tools): you are the author of
-what you send.
+what you send. Don't add generated notes, tool names or co-author lines to commits or files.
 
 ## License
 The project is under the [MIT license](LICENSE). By sending a pull request with signed-off commits, you agree that your
