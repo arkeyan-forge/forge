@@ -196,17 +196,27 @@ arkeyan_setup_ffmpeg(ArkeyanRuntime)
 file(GLOB ARKEYAN_ENGINE_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_ENGINE_DIR}/*.cpp)
 file(GLOB ARKEYAN_GAME_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_GAME_DIR}/*.cpp)
 target_sources(ArkeyanRuntime PRIVATE ${ARKEYAN_ENGINE_SOURCES} ${ARKEYAN_GAME_SOURCES})
-target_include_directories(ArkeyanRuntime PRIVATE . ${ARKEYAN_GAME_DIR} ${ARKEYAN_ENGINE_DIR}
-    ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash ${CMAKE_SOURCE_DIR}/thirdparty/stb)
 # A disc edition of other code (docs/tools/edition_finder.md): its own addresses.h, made from its edition report by
 # tools/editions/from_report.py, found before the game's.
 set(ARKEYAN_EDITION "" CACHE STRING "Media ID of a disc edition whose games/<id>/editions/<ID>/addresses.h to build with")
+set(ARKEYAN_ADDRESSES ${ARKEYAN_GAME_DIR}/addresses.h)
 if(ARKEYAN_EDITION)
-    if(NOT EXISTS ${ARKEYAN_GAME_DIR}/editions/${ARKEYAN_EDITION}/addresses.h)
-        message(FATAL_ERROR "no ${ARKEYAN_GAME_DIR}/editions/${ARKEYAN_EDITION}/addresses.h")
+    set(ARKEYAN_ADDRESSES ${ARKEYAN_GAME_DIR}/editions/${ARKEYAN_EDITION}/addresses.h)
+    if(NOT EXISTS ${ARKEYAN_ADDRESSES})
+        message(FATAL_ERROR "no ${ARKEYAN_ADDRESSES}")
     endif()
-    target_include_directories(ArkeyanRuntime BEFORE PRIVATE ${ARKEYAN_GAME_DIR}/editions/${ARKEYAN_EDITION})
 endif()
+# The other runtime files reach the game through game_hooks.h only: its addresses.h is forwarded from a folder of the
+# build tree, so that their compile commands are the same for every game, and tools/make_kit.sh, which builds the
+# games one after the other in one tree, compiles them once.
+file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/game/addresses.h CONTENT "#include \"${ARKEYAN_ADDRESSES}\"\n")
+target_include_directories(ArkeyanRuntime PRIVATE . ${CMAKE_CURRENT_BINARY_DIR}/game
+    ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash ${CMAKE_SOURCE_DIR}/thirdparty/stb)
+set(ARKEYAN_GAME_INCLUDES ${ARKEYAN_GAME_DIR} ${ARKEYAN_ENGINE_DIR})
+if(ARKEYAN_EDITION)
+    list(PREPEND ARKEYAN_GAME_INCLUDES ${ARKEYAN_GAME_DIR}/editions/${ARKEYAN_EDITION})
+endif()
+set_property(SOURCE ${ARKEYAN_ENGINE_SOURCES} ${ARKEYAN_GAME_SOURCES} APPEND PROPERTY INCLUDE_DIRECTORIES ${ARKEYAN_GAME_INCLUDES})
 # Button glyphs are drawn with the embedded Bungee (embedded_fonts.cpp, below); stb_truetype comes from
 # ArkeyanRuntimeLauncherUi's stb_impl.cpp, which the UWP build does not link.
 if(ARKEYAN_UWP)
@@ -829,3 +839,7 @@ endif()
 # The game's version in its window title (games/<id>/game.txt, read by the top CMakeLists.txt): main.cpp only, so a new
 # version leaves the other files' compile commands (and the kit's compile.args) unchanged.
 set_source_files_properties(main.cpp PROPERTIES COMPILE_DEFINITIONS ARKEYAN_GAME_VERSION="${ARKEYAN_GAME_VERSION}")
+# The game's id, for the same reason: only the files that read it (and toybox/model.h's includers) differ between games.
+set_property(SOURCE main.cpp host/log.cpp host/portal.cpp host/portal_mixed.cpp host/gamemenu.cpp host/gamemenu_debug.cpp
+    host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp kernel/files.cpp
+    kernel/xam_achievements.cpp kernel/xam_content.cpp APPEND PROPERTY COMPILE_DEFINITIONS ARKEYAN_GAME_ID="${ARKEYAN_GAME}")

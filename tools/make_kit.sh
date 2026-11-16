@@ -118,31 +118,46 @@ export ZERO_AR_DATE=1
 maps="-ffile-prefix-map=$root=. -fmacro-prefix-map=$root=. -fdebug-prefix-map=$root=."
 revision=$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- . || echo -dirty)
 
-# Configures <build>/runtime against a game-free ppc directory (the two headers, empty sources) and builds every
-# input of ArkeyanRuntime's link but the game code and shader cache libraries, and the code layout record (the
-# player's install writes its own).
-build_runtime() { # <build dir> <game> <cmake args...>: <build dir>/<game>/runtime and /stub-ppc
-    rb=$1/$2
+# Configures <build>/runtime for a game against a game-free ppc directory (the two headers, empty sources), builds every
+# input of ArkeyanRuntime's link but the game code and shader cache libraries, and the code layout record (the player's
+# install writes its own), and packs them into <build>/kit (tools/arkeyan-builder/kit_commands.py). The games share the
+# tree, one after the other: ninja compiles again only what a game's configure changed (its own files, and the files
+# that read its ppc_config.h, its id or its addresses: runtime/CMakeLists.txt), so the rest of the runtime and the
+# libraries are compiled once per platform.
+build_runtime() { # <build dir> <game> <cmake args...>
+    rb=$1
     game=$2
     shift 2
     mkdir -p "$rb/stub-ppc"
-    cp "$(ppc_headers $game)/ppc_config.h" "$(ppc_headers $game)/ppc_context.h" "$rb/stub-ppc/"
-    : > "$rb/stub-ppc/ppc_func_mapping.cpp"
-    : > "$rb/stub-ppc/shader_cache.cpp"
+    # Copied only when they differ: a new date would compile their includers again.
+    for header in ppc_config.h ppc_context.h; do
+        cmp -s "$(ppc_headers $game)/$header" "$rb/stub-ppc/$header" || cp "$(ppc_headers $game)/$header" "$rb/stub-ppc/"
+    done
+    [ -f "$rb/stub-ppc/ppc_func_mapping.cpp" ] || : > "$rb/stub-ppc/ppc_func_mapping.cpp"
+    [ -f "$rb/stub-ppc/shader_cache.cpp" ] || : > "$rb/stub-ppc/shader_cache.cpp"
     # shellcheck disable=SC2086 # launchers is several arguments
     cmake -S . -B "$rb/runtime" -G Ninja $launchers -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG $maps" \
-        -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG $maps" -DARKEYAN_KIT_BUILD=ON -DARKEYAN_GAME="$game" -DARKEYAN_PPC_DIR="$root/$rb/stub-ppc" -DARKEYAN_LAYOUT_RECORD=$layout_record "$@" > "$rb/runtime-cmake.log" 2>&1 ||
-        { tail -20 "$rb/runtime-cmake.log"; exit 1; }
+        -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG $maps" -DARKEYAN_KIT_BUILD=ON -DARKEYAN_GAME="$game" -DARKEYAN_PPC_DIR="$root/$rb/stub-ppc" -DARKEYAN_LAYOUT_RECORD=$layout_record "$@" > "$rb/runtime-cmake-$game.log" 2>&1 ||
+        { tail -20 "$rb/runtime-cmake-$game.log"; exit 1; }
     ninja -C "$rb/runtime" -t commands ArkeyanRuntime | tail -1 | tr ' ' '\n' | grep -E '\.(obj|o|res|a)$' |
         grep -v -E '^[-/]' | grep -v -E 'libArkeyanRecompLib|libArkeyanShaderCache|guest_layout_record' | sort -u |
-        (cd "$rb/runtime" && xargs nice ninja -j"$jobs") > "$rb/runtime-build.log" 2>&1 ||
-        { tail -30 "$rb/runtime-build.log"; exit 1; }
+        (cd "$rb/runtime" && xargs nice ninja -j"$jobs") > "$rb/runtime-build-$game.log" 2>&1 ||
+        { tail -30 "$rb/runtime-build-$game.log"; exit 1; }
+    python3 -I tools/arkeyan-builder/kit_commands.py "$game" "$rb/runtime" "$rb/stub-ppc" "$rb/kit"
+    # macOS: the game's bundle template, its Info.plist naming its executable.
+    name=$(sed -n 's/^runtime=//p' "games/$game/game.txt")
+    plist=$rb/runtime/ArkeyanRuntime/$name.app/Contents/Info.plist
+    if [ -f "$plist" ]; then
+        mkdir -p "$rb/kit/res/$game"
+        cp "$plist" "$rb/kit/res/$game/"
+    fi
 }
 
-# The runtime of every game (cmake args after the build dir go to each).
+# The runtime of every game (cmake args after the build dir go to each), packed into <build dir>/kit.
 build_runtimes() { # <build dir> <cmake args...>
     d=$1
     shift
+    rm -rf "${d:?}/kit"
     for g in $games; do
         build_runtime "$d" "$g" "$@"
     done
@@ -190,9 +205,8 @@ assemble() { # <build dir> <kit dir> <platform>
     rsync -a --exclude .git thirdparty/XenonRecomp/thirdparty/simde/ "$kit/include/simde/"
     cp -R resources/launcher/fonts "$kit/res/fonts"
     cp THIRD_PARTY_NOTICES.md "$kit/res/"
-    for g in $games; do
-        python3 -I tools/arkeyan-builder/kit_commands.py "$g" "$b/$g/runtime" "$b/$g/stub-ppc" "$kit"
-    done
+    # The runtimes' objects, libraries and command templates (build_runtime).
+    cp -R "$b/kit/." "$kit/"
 
     # Arkeyan-Builder now conveys FFmpeg too: keep its objects and full link recipe for replacing the LGPL libraries.
     python3 -I tools/arkeyan-builder/kit_relink.py --pack "$b/tools" "$kit"
@@ -427,12 +441,7 @@ for platform in $platforms; do
         rm -rf "$kit"
         mkdir -p "$kit"
         assemble "$b" "$kit" macos-arm64
-        # Each game's bundle template: its Info.plist names its executable; the icon is shared.
-        for g in $games; do
-            mkdir -p "$kit/res/$g"
-            name=$(sed -n 's/^runtime=//p' "games/$g/game.txt")
-            cp "$b/$g/runtime/ArkeyanRuntime/$name.app/Contents/Info.plist" "$kit/res/$g/"
-        done
+        # Each game's bundle template is in res/<game>/ (build_runtime); the icon is shared.
         cp resources/macos/ArkeyanRuntime.icns "$kit/res/"
         cp "$b/tools/tools/arkeyan-builder/Arkeyan-Builder" "$kit/"
         cp "$b/tools/thirdparty/XenonRecomp/XenonRecomp/XenonRecomp" "$b/xenos/XenosRecomp/XenosRecomp" \

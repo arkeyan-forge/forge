@@ -55,12 +55,17 @@ textures, the intro movies, and whether it presents at every vblank. Everything 
 
 `cmake -DARKEYAN_GAME=ssa|giants` (default `ssa`), in the root `CMakeLists.txt`:
 
-- `games/<id>/` is on the include path (`addresses.h`), and its `*.cpp` are compiled into the runtime;
+- `games/<id>/*.cpp` are compiled into the runtime, with `games/<id>/` and the engine's folder on their include path;
+  the other runtime files reach `addresses.h` through `game_hooks.h` and a forwarding header in the build tree;
 - the engine (`ssa` -> `lux`, `giants` -> `alchemy`) gives `engines/<engine>/*.cpp`, compiled in the same way;
 - the generated code is `private/<id>/ppc` (override: `-DARKEYAN_PPC_DIR=<dir>`); `tools/make_kit.sh` points it at a
   game-free stub;
 - the pipeline baseline is `games/<id>/pipelines/baseline.zst`;
-- `ARKEYAN_GAME_ID="<id>"` is defined for the data folder, the saves and the log.
+- `ARKEYAN_GAME_ID="<id>"` is defined for the data folder, the saves and the log, in the files that read it only
+  (`runtime/CMakeLists.txt`).
+
+Nothing else of the game is on the runtime's compile commands, so that a tree configured for another game compiles
+again only the files that depend on it: `tools/make_kit.sh` builds the six runtimes of a kit in one tree.
 
 The CMake target is `ArkeyanRuntime` for every game and the build tree keeps `build/ArkeyanRuntime/` (the runtime is built
 with `add_subdirectory(runtime ArkeyanRuntime)`); the **executable** is `ARKEYAN_RUNTIME_NAME` (`runtime/CMakeLists.txt`):
