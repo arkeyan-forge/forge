@@ -629,13 +629,22 @@ refused it again ("is already there"). A real portal never changes a toy in plac
   always starts there (Giants: `0 1 8 24 11 2D ...`). With `SKY_PORTAL_LOG=1`, each stuck Giants swap showed one read
   of another block (`31`, `3`, `25`), the tail of the previous figure's read, then `Magic Moment - Z - Canceled` and
   `Loading_Text` for good; counting any read as taken had logged `the game took ... 0.0 s` and skipped the re-place.
+- The swap's prompt (forge #29, launcher #97). Swap Force answers the removal's report with its `CMagicMoment` prompt,
+  steady for the tracker, and leaves the figure that arrives in the next report unread until a re-place: every wheel
+  swap showed the prompt and opened the Toy Box for one to two seconds. `retake::PromptGate`
+  (`host/toybox/retake.h`, used by `FollowPrompt`): a prompt for a seat whose figure the Toy Box put on, not read yet,
+  a re-place still to come (`retake::Holds`), keeps the banner but does not open the Toy Box. Once the hold ends with the
+  prompt still up for 1 s (the last re-place done, the figure taken yet asked again, the seat emptied), it opens as for
+  any prompt. While the game asks for that seat the first re-place comes after 0.3 s instead of 1 s
+  (`retake::AskedWaitNs`, `Model::askedSeat`). Log: `[toybox] prompt for player 1: the figure just put on is not read
+  yet, no Toy Box`, then `put on again (1 of 3)` and `the game took`.
 - Proof: `ArkeyanToyboxSwapTest` (each replacement's `10` then `11`, a second swap before the removal's report, a
-  take-off during it, a full portal, pairs never torn under concurrent reads, the re-place schedule). Played
+  take-off during it, a full portal, pairs never torn under concurrent reads, the re-place schedule, the prompt gate). Played
   (2026-11-14, macOS, emulated portal), before `Retake`: Imaginators (Europe) and Giants take fast wheel swaps far more
   often than with 0.9.6, and putting a missed figure on again works in both.
 - Left: Giants can read a figure in full and never start its arrival (no `Magic Moment - 1` state, no
   `tfbLoadThread`, `Loading_Text` for good), seen once on a swap made right after a re-place. Its traffic is the same
   as a figure taken; only the game's own state shows it, so it is left to the player: putting the figure on again
   recovers. Imaginators' `took ... 0.0 s` then `prompt for player 1` is likely the stray read above; not traced there.
-  Each swap now shows the game's `203_PortalError_TagTypeNotOnPortal` state for a moment (the removal's report),
-  too short for the Toy Box to open; a re-place once opened it for a moment in Giants.
+  Each swap now shows the game's `203_PortalError_TagTypeNotOnPortal` state for a moment (the removal's report); a
+  prompt it raises no longer opens the Toy Box while the new figure waits (the swap's prompt, above).

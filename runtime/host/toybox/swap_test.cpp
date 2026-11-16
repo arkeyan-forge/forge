@@ -167,12 +167,55 @@ namespace
         CHECK(!Due(1, 1900 * Ms) && Due(1, 2100 * Ms)); // then 2 s
         CHECK(!Due(2, 3900 * Ms) && Due(2, 4100 * Ms)); // then 4 s
         CHECK(!Due(3, 60'000 * Ms));                    // then never: the 20 s "not taken yet" toast is left
+        // The game asks for the seat its unread figure is on (Swap Force's prompt after a wheel swap): sooner.
+        CHECK(!Due(0, 250 * Ms, true) && Due(0, 350 * Ms, true));
+        CHECK(!Due(1, 1900 * Ms, true) && Due(1, 2100 * Ms, true)); // later tries keep their wait
+        CHECK(!Due(3, 60'000 * Ms, true));
 
         using toybox::retake::Taken;
         const uint64_t placed = 5'000 * Ms;
         CHECK(!Taken(0, placed));                // only a later block of the previous toy was read since
         CHECK(!Taken(placed - 10 * Ms, placed)); // block 0 read before the swap: the previous toy
         CHECK(Taken(placed + 100 * Ms, placed));
+    }
+
+    // The game's prompt for a seat whose figure the Toy Box just put on, not read yet (launcher #97): no Toy Box over it.
+    void PromptChecks()
+    {
+        using toybox::retake::Holds;
+        using toybox::retake::PromptGate;
+        constexpr uint64_t Ms = 1'000'000;
+        CHECK(Holds(true, 0) && Holds(true, 2)); // unread, a re-place still to come
+        CHECK(!Holds(true, 3));                  // the last re-place done: the player may need the Toy Box
+        CHECK(!Holds(false, 0));                 // taken, or nothing put on
+
+        PromptGate gate;
+        CHECK(gate.Appeared(false)); // a free seat, or its figure taken: opens at once
+        CHECK(!gate.Update(false, 5'000 * Ms));
+        gate.Gone();
+
+        // A wheel swap: P1's new figure unread 0.5 s after, the prompt up. The take answers it.
+        CHECK(!gate.Appeared(true));
+        CHECK(!gate.Update(true, 600 * Ms));
+        CHECK(!gate.Update(false, 700 * Ms)); // taken: the prompt goes away in a few polls
+        CHECK(!gate.Update(false, 900 * Ms));
+        gate.Gone();
+        CHECK(!gate.Update(false, 9'000 * Ms));
+
+        // Taken, yet the game keeps asking: it opens once, a moment after.
+        CHECK(!gate.Appeared(true));
+        CHECK(!gate.Update(false, 10'100 * Ms));
+        CHECK(!gate.Update(false, 10'900 * Ms));
+        CHECK(gate.Update(false, 11'200 * Ms));
+        CHECK(!gate.Update(false, 12'000 * Ms));
+        gate.Gone();
+
+        // Never read: held through the re-places, then it opens.
+        CHECK(!gate.Appeared(true));
+        CHECK(!gate.Update(true, 26'000 * Ms));
+        CHECK(!gate.Update(false, 26'500 * Ms));
+        CHECK(gate.Update(false, 27'600 * Ms));
+        gate.Gone();
     }
 
     void HoldChecks()
@@ -194,6 +237,7 @@ int main()
     ConcurrentChecks();
     RemovalChecks();
     RetakeChecks();
+    PromptChecks();
     HoldChecks();
     printf("Toy Box swap: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
