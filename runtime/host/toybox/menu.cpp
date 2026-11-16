@@ -643,6 +643,8 @@ namespace toybox
         bool saved = true;
         auto flip = [&](bool value, bool (*set)(bool)) { saved = set(!value); };
         auto along = [&](const uint32_t* list, size_t count, uint32_t value, bool (*set)(uint32_t)) {
+            if (count == 0)
+                return;
             int at = 0;
             for (size_t i = 0; i < count; i++)
                 if (list[i] == value)
@@ -865,10 +867,13 @@ namespace toybox
         const bool mouseOn = commands::MouseOn(g_commands, game);
         mouse::Button buttons[mouse::ActionCount];
         mouse::Effective(commands::MouseLines(g_commands, game), ::game::Current().mouseDefaults, buttons);
-        for (const commands::Row& row : InputRows())
+        const std::span<const commands::Row> rows = InputRows();
+        for (size_t slot = 0; slot < rows.size(); slot++)
         {
+            const commands::Row& row = rows[slot];
             CommandLine line{ L(row.label, row.french), std::vector<CommandLine::Cell>(ColumnCount), {} };
-            line.cells[KeyColumn] = { KeyName(commands::Key(g_commands, game, row)), true };
+            line.cells[KeyColumn] = { KeyName(commands::Key(g_commands, game, row)), true,
+                commands::SlotConflict(g_commands, game, rows, slot) };
             if (row.pad == nullptr)
                 line.cells[PadColumn] = { StickName(row.action), false };
             else
@@ -886,7 +891,8 @@ namespace toybox
         for (int which = 0; which < commands::ToyboxKeyCount; which++)
         {
             CommandLine line{ ToyboxLabel(which), std::vector<CommandLine::Cell>(ColumnCount), {} };
-            line.cells[KeyColumn] = { KeyName(commands::ToyboxKey(g_commands, which)), true };
+            line.cells[KeyColumn] = { KeyName(commands::ToyboxKey(g_commands, which)), true,
+                commands::SlotConflict(g_commands, game, rows, rows.size() + size_t(which)) };
             if (which == 0 && commands::ToyboxTab(g_commands))
                 line.cells[KeyColumn].text += ", " + KeyName("Tab");
             lines.push_back(std::move(line));
@@ -1019,13 +1025,12 @@ namespace toybox
             slot < rowCount ? std::string("key_") + InputRows()[slot].action : commands::ToyboxLines[slot - rowCount];
         if (other >= 0)
         {
-            const size_t swapped = size_t(other);
-            const std::string otherLine = swapped < rowCount ? std::string("key_") + InputRows()[swapped].action
-                                                             : commands::ToyboxLines[swapped - rowCount];
-            fprintf(stderr, "[gamemenu] %s = %s (swapped: %s = %s)\n", line.c_str(), keyName, otherLine.c_str(),
-                commands::SlotKey(g_commands, game, InputRows(), swapped).c_str());
-            if (std::string label = commands::SlotLabel(InputRows(), swapped, French()); !label.empty())
-                Toast(std::string(L("Swapped with ", "Échangé avec ")) + label);
+            const size_t shared = size_t(other);
+            const std::string otherLine = shared < rowCount ? std::string("key_") + InputRows()[shared].action
+                                                            : commands::ToyboxLines[shared - rowCount];
+            fprintf(stderr, "[gamemenu] %s = %s (also on: %s)\n", line.c_str(), keyName, otherLine.c_str());
+            if (std::string label = commands::SlotLabel(InputRows(), shared, French()); !label.empty())
+                Toast(std::string(L("Also used by ", "Aussi utilisée par ")) + label);
         }
         else
         {

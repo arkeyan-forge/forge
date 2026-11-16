@@ -135,15 +135,16 @@ the mouse, and keyboard/pad navigation reveals the selected row. A notice reserv
 
 - **Same file and rules as Arkeyan Launcher** (`host/commands.cpp`). The first change seeds the game's copy from the shared `[input]` keys
   and writes `seeded=1` (Arkeyan Launcher's `SeedGameInput`); every change then puts the game's keys in `[input]` as Arkeyan Launcher's PLAY
-  does (`ApplyGameInput`), so a start without the launcher has them too. A key another row of the game or a Toy Box key has: the two
-  **swap** keys. A pad button: it takes the row's job and the button that did that job takes its old one, so **no job is lost**
+  does (`ApplyGameInput`), so a start without the launcher has them too. A key another row of the game or a Toy Box key has: both
+  **keep** it (both act on that key) and both keys are drawn **red** (`commands::SlotConflict`), with an "Also used by" toast
+  naming the other row. A pad button: it takes the row's job and the button that did that job takes its old one, so **no job is lost**
   (pressing the row's own button gives every button its own job back). A mouse button: one action per button, the one that had it
   (by its line or the game's default, `game::Adapter::mouseDefaults`) gets `none`. **Reset to defaults** removes the game's `key_`,
   `pad_` and `mouse_` lines and the Toy Box's keys (`seeded` and the mouse switch stay) and `[input]` gets the game's default keys.
 - **At once**: the page hands the bindings it saved to the main loop (`commands::Publish` / `Take`, read as `ParseSettings` reads them:
   `[input]`, then `[<game>.input]`: keys, pad, mouse, Toy Box keys), which rebuilds its input the same frame:
   `[input] bindings in use now: key_b=K, ...` in the log; the Toy Box's keys apply at once too (`ToyboxSetKeys`, which also gives
-  the portal its add and clear keys, `PortalSetHotkeys`). Every change is a line: `[gamemenu] key_b = K (swapped: key_right_down = X)`,
+  the portal its add and clear keys, `PortalSetHotkeys`). Every change is a line: `[gamemenu] key_b = K (also on: key_right_down)`,
   `[gamemenu] pad_a = b (swapped: pad_b = a)`, `[gamemenu] mouse = 1`, `[gamemenu] mouse_b = Mouse Right (mouse_x = none)`.
 - A binding just taken: the pad does nothing on the page until every button is released (a key that is also a pad button through the
   keyboard bindings would otherwise act again).
@@ -239,12 +240,12 @@ written`, `[toybox] closed`. The script starts at 100 s (`PAD_START`): the game'
 cold start (no shader cache), and the panel does not open over it. SuperChargers and Imaginators: PASS (2026-11-06, the 0.9.0 builds).
 
 The Commands page: `ArkeyanCommandsTest` (in `sky_add_tests`; a scratch `launcher.ini` in the temporary folder or `argv[1]`): the seed once,
-the key written, the swap, the pad jobs swapped and given back, a `none` line, Reset, `[input]` as PLAY leaves it, `commands::Read`
+the key written, a shared key kept and flagged, the pad jobs swapped and given back, a `none` line, Reset, `[input]` as PLAY leaves it, `commands::Read`
 equal to `ParseSettings`, and `Take` once. `tools/regress/f3commands.sh <Spyro's Adventure disc>` (~1 min; `SKY_LANGUAGE=fr` for the
-French page): F3, Settings, Commands (the Controls page), B's key to K (it swaps with the right stick down's), the pad's A to B's job, Escape, F3; it checks the log
-lines, `[ssa.input]` `key_b=K`, `key_right_down=X`, `pad_a=b`, `pad_b=a`, `seeded=1`, `[input] key_b=K`, and, through the script's
+French page): F3, Settings, Commands (the Controls page), B's key to K (the right stick down keeps it too), the pad's A to B's job, Escape, F3; it checks the log
+lines, `[ssa.input]` `key_b=K` (no `key_right_down` line), `pad_a=b`, `pad_b=a`, `seeded=1`, `[input] key_b=K`, and, through the script's
 `hold=K` (a key the game's input reads as held, `ToyboxKeyboardState`), that K gave the game the right stick down before and gives it
-B (`0x2000`) after. Shots: `private/runs/commands/ssa/c_menu.png`, `c_page.png`, `c_waitkey.png`, `c_key.png`, `c_waitpad.png`, `c_pad.png`.
+B (`0x2000`) and the right stick down after. Shots: `private/runs/commands/ssa/c_menu.png`, `c_page.png`, `c_waitkey.png`, `c_key.png`, `c_waitpad.png`, `c_pad.png`.
 `tools/regress/f3mouse.sh <Spyro's Adventure disc>` (~1 min, 24 scratch figures): through `move=`, `click=`, `rclick=` and `wheel=`
 (each, and each scripted key, logs the focus: `[toybox] script: focus: ...`), the pointer moving onto the panel's Settings row focuses
 it and a click opens the page; wheel ticks move the focus down the list (it scrolls), the pointer moving onto VSync and the FPS
@@ -253,7 +254,7 @@ Mouse row (on), the first page, B's mouse cell, a right click gives B the right 
 click keeps it and three wheel ticks move down the list. It checks the log, `[ssa.input]` `mouse=1`,
 `mouse_b=Mouse Right`, `mouse_x=none`, and the running game taking them. Shots: `private/runs/commands/mouse/m_*.png` (`m_hover`,
 `m_settings`, `m_settings_fps`, `m_page`, `m_waitmouse`, `m_mouse`, `m_card_hover`, `m_card`, `m_scrolled`). `ArkeyanCommandsTest` also covers the mouse lines, the
-switch, the Toy Box keys and their swaps, and Reset.
+switch, the Toy Box keys and their conflicts, and Reset.
 Shots (offscreen, `SKY_TOYBOX_SHOTS`): `private/regress/f3menu-<game>/b_open.png`, `b_report.png`, `b_closed.png`; the English and French ones are in the wave's report.
 
 The frame rate row offers the launcher's list (`gamemenu::FrameRates`). A value read from `launcher.ini` is shown as it is, and `NormalFrameRate` keeps

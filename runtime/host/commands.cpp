@@ -129,25 +129,25 @@ std::string commands::SlotKey(
     return slot < rows.size() ? Key(config, game, rows[slot]) : ToyboxKey(config, int(slot - rows.size()));
 }
 
+bool commands::SlotConflict(const LauncherConfig& config, std::string_view game, std::span<const Row> rows, size_t slot)
+{
+    const std::string key = SlotKey(config, game, rows, slot);
+    for (size_t i = 0; i < rows.size() + ToyboxKeyCount; i++)
+        if (i != slot && SameKey(SlotKey(config, game, rows, i), key))
+            return true;
+    return false;
+}
+
 int commands::SetKey(
     LauncherConfig& config, std::string_view game, std::span<const Row> rows, size_t slot, const std::string& key)
 {
     Seed(config, game);
-    const std::string old = SlotKey(config, game, rows, slot);
-    if (SameKey(old, key))
-    {
-        ShareKeys(config, game, rows);
-        return -1;
-    }
-    int other = -1;
-    for (size_t i = 0; i < rows.size() + ToyboxKeyCount && other < 0; i++)
-        if (i != slot && SameKey(SlotKey(config, game, rows, i), key))
-            other = int(i);
     StoreSlot(config, game, rows, slot, key);
-    if (other >= 0)
-        StoreSlot(config, game, rows, size_t(other), old);
     ShareKeys(config, game, rows);
-    return other;
+    for (size_t i = 0; i < rows.size() + ToyboxKeyCount; i++)
+        if (i != slot && SameKey(SlotKey(config, game, rows, i), key))
+            return int(i);
+    return -1;
 }
 
 std::string commands::SlotLabel(std::span<const Row> rows, size_t slot, bool french)

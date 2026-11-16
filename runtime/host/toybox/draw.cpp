@@ -3355,11 +3355,16 @@ namespace toybox
                         focused         ? Look::CardSelected
                         : cell.editable ? Look::Raised
                                         : Look::Page,
-                        cell.editable ? Colour::Border : Colour::Hairline, Radius::Control, 1);
+                        cell.conflict   ? Colour::Danger
+                        : cell.editable ? Colour::Border
+                                        : Colour::Hairline,
+                        Radius::Control, 1);
                     if (focused)
                         FocusRing(a, b, Radius::Control);
                     TextCentered(g_black, Type::Small, ImVec2((a.x + b.x) / 2, cy),
-                        cell.editable ? Look::Text : Look::TextDim,
+                        cell.conflict   ? Look::DangerText
+                        : cell.editable ? Look::Text
+                                        : Look::TextDim,
                         Fit(g_black, Type::Small, cell.text, CellWidth - Space::XL));
                     int column = int(c);
                     AddHit(a, b, [&model, index, column] { model.FocusCommand(index, column); });

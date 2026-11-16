@@ -43,13 +43,15 @@ namespace commands
 
     // A key slot of the page: [0, rows.size()) the game's rows, then the Toy Box's three keys.
     std::string SlotKey(const LauncherConfig& config, std::string_view game, std::span<const Row> rows, size_t slot);
-    // A swap notice names a direction even when the page abbreviates its action as "Same".
+    // True when another slot of the page has the slot's key (both do something on that key).
+    bool SlotConflict(const LauncherConfig& config, std::string_view game, std::span<const Row> rows, size_t slot);
+    // A conflict notice names a direction even when the page abbreviates its action as "Same".
     std::string SlotLabel(std::span<const Row> rows, size_t slot, bool french);
 
     // Each change seeds the game's copy first and then puts the game's keys in [input] (as Skylauncher's PLAY does), so
     // that a start without the launcher has them too.
-    // `key` for a slot; the slot that had it (a row of the game or a Toy Box key) gets the slot's old key. Returns that
-    // slot, -1: none.
+    // `key` for a slot; a slot that has it too (a row of the game or a Toy Box key) keeps it: both are flagged
+    // (SlotConflict). Returns the first such slot, -1: none.
     int SetKey(
         LauncherConfig& config, std::string_view game, std::span<const Row> rows, size_t slot, const std::string& key);
     // The physical `button` does the job `job` (g_padButtons' indexes); the button that did `job` takes `button`'s old

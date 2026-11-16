@@ -1,11 +1,11 @@
 #!/bin/bash
 # The F3 menu's Commands page (docs/runtime/host/gamemenu.md, "Commands"), through the Toy Box's own script (SKY_TOYBOX_SCRIPT):
 # F3 opens the menu on Commands (its first row, under "Game"), Enter opens the page; Down x7 reaches
-# Spyro's Adventure's "Special Power / Back" (B, key X), Enter waits for a key, K is taken (K was "Same", the right stick down:
-# the two rows swap); Right, Enter waits for a pad button, the pad's A is taken (A does B's job, B takes A's); Escape, F3.
+# Spyro's Adventure's "Special Power / Back" (B, key X), Enter waits for a key, K is taken (K is "Same", the right stick down:
+# both rows keep it, flagged red); Right, Enter waits for a pad button, the pad's A is taken (A does B's job, B takes A's); Escape, F3.
 # A key held by the script ("hold=K") before and after shows what the game gets from it.
-# Checks: the log lines, [ssa.input] key_b=K, key_right_down=X, pad_a=b, pad_b=a, seeded=1, [input] key_b=K, the bindings
-# taken by the running game, and K giving the game B (0x2000) after the change and the right stick before it.
+# Checks: the log lines, [ssa.input] key_b=K (no key_right_down line), pad_a=b, pad_b=a, seeded=1, [input] key_b=K, the bindings
+# taken by the running game, and K giving the game the right stick before the change and B (0x2000) with it after.
 #
 #   tools/regress/f3commands.sh <disc image>        (Spyro's Adventure; SKY_LANGUAGE=fr for the French page)
 #   EXE=<game executable>   default build/ArkeyanRuntime/Skylanders Spyro's Adventure
@@ -42,7 +42,7 @@ run() {
 # F3 opens the panel on Resume; Down x3: Settings, Enter: its first row (Commands), Enter: the Controls page; Down x7: B's row.
 downs=Down:32.8,Down:33,Down:33.2,Down:33.4,Down:33.6,Down:33.8,Down:34
 script="hold=K*0.6:26,F3:30,shot=menu:31,Down:31.3,Down:31.5,Down:31.7,Return:32,Return:32.4,$downs,shot=page:34.4,Return:35,shot=waitkey:35.5"
-script="$script,K:36,shot=key:37,Right:38,Return:38.5,shot=waitpad:39,pad=a:40,shot=pad:41,Escape:42,F3:43,hold=K*0.6:46,hold=X*0.6:48"
+script="$script,K:36,shot=key:37,Right:38,Return:38.5,shot=waitpad:39,pad=a:40,shot=pad:41,Escape:42,F3:43,hold=K*0.6:46"
 echo "== ssa: the Commands page"
 run c 55 SKY_TOYBOX_SCRIPT="$script"
 log=$r/game.log
@@ -50,21 +50,22 @@ ini=$r/launcher.ini
 section() { awk '/^\[/ { in_it = ($0 == "['"$1"']") } in_it' "$ini"; }
 grep -q '^\[gamemenu\] commands opened' "$log" || bad "the Commands page did not open"
 grep -q '^\[gamemenu\] commands: waiting for a key for b' "$log" || bad "Enter did not wait for a key on B's row"
-grep -q '^\[gamemenu\] key_b = K (swapped: key_right_down = X)' "$log" || bad "K was not taken for B (with the swap)"
+grep -q '^\[gamemenu\] key_b = K (also on: key_right_down)' "$log" || bad "K was not taken for B (shared with the right stick down)"
 grep -q '^\[gamemenu\] commands: waiting for a pad button for b' "$log" || bad "Enter did not wait for a pad button on B's row"
 grep -q '^\[gamemenu\] pad_a = b (swapped: pad_b = a)' "$log" || bad "the pad's A was not given B's job (with the swap)"
 grep -q '^\[input\] bindings in use now: .*key_b=K' "$log" || bad "the running game did not take the new key"
 grep -q '^\[input\] bindings in use now: .*pad_a=b, pad_b=a' "$log" || bad "the running game did not take the new pad buttons"
 grep -q '^\[toybox\] closed' "$log" || bad "F3 did not close the menu"
-for line in seeded=1 key_b=K key_right_down=X pad_a=b pad_b=a; do
+for line in seeded=1 key_b=K pad_a=b pad_b=a; do
     section ssa.input | grep -qx "$line" || bad "[ssa.input] $line is not in launcher.ini"
 done
+section ssa.input | grep -q '^key_right_down=' && bad "[ssa.input] key_right_down changed (no swap)"
 section input | grep -qx key_b=K || bad "[input] key_b=K is not in launcher.ini"
 held=$(grep '^\[toybox\] script: K held: ' "$log")
 echo "$held" | head -1 | grep -q 'right stick 0/-32767' || bad "before: K did not give the game the right stick down"
 echo "$held" | tail -1 | grep -q 'buttons 0x2000' || bad "after: K does not give the game B"
-grep '^\[toybox\] script: X held: ' "$log" | grep -q 'right stick 0/-32767' || bad "after: X does not give the game the right stick down"
+echo "$held" | tail -1 | grep -q 'right stick 0/-32767' || bad "after: K no longer gives the game the right stick down"
 grep -E '^\[(gamemenu|input)\]|held: ' "$log"
 ls "$r"/c_*.png 2>/dev/null
-if [ $fail -eq 0 ]; then echo "PASS: ssa: the Commands page writes the key and the pad button, swaps, and the running game uses them (under $r)"; else echo "FAIL (logs in $r)"; fi
+if [ $fail -eq 0 ]; then echo "PASS: ssa: the Commands page writes the key and the pad button, keeps a shared key, and the running game uses them (under $r)"; else echo "FAIL (logs in $r)"; fi
 exit $fail

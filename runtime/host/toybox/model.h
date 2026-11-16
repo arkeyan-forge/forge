@@ -267,6 +267,7 @@ namespace toybox
         {
             std::string text;
             bool editable = false; // a stick direction's pad cell is not, nor a Toy Box key's pad and mouse cells
+            bool conflict = false; // a key another row has too (commands::SlotConflict): drawn red
         };
         std::string label;
         std::vector<Cell> cells;
