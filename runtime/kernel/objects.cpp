@@ -1,4 +1,5 @@
 #include "kernel/objects.h"
+#include "netplay/clock.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -62,6 +63,8 @@ namespace
 
 uint64_t GuestSystemTime()
 {
+    if (netplay::Enabled())
+        return netplay::g_clock.SystemTime();
     constexpr uint64_t UnixEpochAsFileTime = 116444736000000000ull;
     auto sinceEpoch = std::chrono::system_clock::now().time_since_epoch();
     return UnixEpochAsFileTime + std::chrono::duration_cast<std::chrono::nanoseconds>(sinceEpoch).count() / 100;

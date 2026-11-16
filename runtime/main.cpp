@@ -1,3 +1,4 @@
+#include "netplay/clock.h"
 #include "host/audio.h"
 #include "host/collection/collection.h"
 #include "host/collection/datadir.h"
@@ -605,6 +606,7 @@ int main(int argc, char** argv)
             {
                 savebackup::SetGameRunning(false);
                 progress::EndSession();
+                netplay::Finish();
                 std::_Exit(0);
             }
             // The chosen gamepad (--gamepad) replaces another one in use when it shows up.
@@ -665,5 +667,6 @@ int main(int argc, char** argv)
     fprintf(stderr, "Main thread exited with 0x%08X\n", mainThread->exitCode);
     savebackup::SetGameRunning(false);
     progress::EndSession();
+    netplay::Finish();
     std::_Exit(0);
 }

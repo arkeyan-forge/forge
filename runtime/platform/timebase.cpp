@@ -1,4 +1,5 @@
 #include "platform/platform.h"
+#include "netplay/clock.h"
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <chrono>
@@ -29,6 +30,21 @@ uint64_t PlatformTimeBaseFrequency()
         return uint64_t(double(counterEnd - counterStart) / seconds);
     }();
     return frequency;
+#else
+#error "Unsupported host CPU"
+#endif
+}
+
+extern "C" uint64_t ppc_mftb()
+{
+    if (netplay::Enabled())
+        return netplay::ReadTimeBase();
+#if defined(__aarch64__)
+    uint64_t value;
+    __asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(value) : : "memory");
+    return value;
+#elif defined(__x86_64__) || defined(_M_X64)
+    return __rdtsc();
 #else
 #error "Unsupported host CPU"
 #endif

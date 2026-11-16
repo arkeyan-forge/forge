@@ -4,6 +4,8 @@
 #include "host/env.h"
 #include "host/input.h"
 #include "memory.h"
+#include "netplay/clock.h"
+#include "netplay/inputs.h"
 #include <cstdio>
 #include <cstring>
 #include <ppc_config.h>
@@ -16,6 +18,8 @@ namespace
 
     constexpr uint8_t DeviceTypeGamepad = 1;
     constexpr uint8_t DeviceSubTypeGamepad = 1;
+
+    bool Connected(int user) { return netplay::Enabled() ? netplay::LatchedConnected(user) : GamepadConnected(user); }
 
     void WriteGamepad(uint32_t address, const GamepadState& state)
     {
@@ -32,7 +36,7 @@ namespace
 // XamInputGetCapabilities(user, flags, X_INPUT_CAPABILITIES*): type, sub type, flags, gamepad, vibration.
 PPC_FUNC(__imp__XamInputGetCapabilities)
 {
-    if (!GamepadConnected(int(ctx.r3.u32)))
+    if (!Connected(int(ctx.r3.u32)))
     {
         ctx.r3.u64 = ErrorDeviceNotConnected;
         return;
@@ -53,14 +57,14 @@ PPC_FUNC(__imp__XamInputGetState)
 {
     if (gpu::framestats::Enabled())
         gpu::framestats::NoteInputRead(); // the debug screen's latency starts at the game's input read
-    if (!GamepadConnected(int(ctx.r3.u32)))
+    uint32_t packetNumber;
+    GamepadState state;
+    if (!netplay::ReadPad(int(ctx.r3.u32), state, packetNumber))
     {
         ctx.r3.u64 = ErrorDeviceNotConnected;
         return;
     }
 
-    uint32_t packetNumber;
-    GamepadState state = GetGamepad(packetNumber, int(ctx.r3.u32));
     // SKY_INPUT_LOG=1: what the title reads, when it changes (the pad remapping test, tools/regress/pad_qol.sh).
     static const bool log = skyenv::Get("SKY_INPUT_LOG") != nullptr;
     static GamepadState last[MaxUsers];
@@ -81,7 +85,7 @@ PPC_FUNC(__imp__XamInputGetState)
 PPC_FUNC(__imp__XamInputSetState)
 {
     const int user = int(ctx.r3.u32);
-    if (!GamepadConnected(user))
+    if (!Connected(user))
     {
         ctx.r3.u64 = ErrorDeviceNotConnected;
         return;
