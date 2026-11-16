@@ -18,7 +18,8 @@ used: the game falls back to the disc image.
 
 ## The folder
 
-`<data>/<Game>/gamedata/` (`gamedata::Folder(id)`, [datadir.h](collection.md)):
+`<data>/<Game>/gamedata/` (`gamedata::Folder(id)`, [datadir.h](collection.md)), or `<SKY_GAMES_DIR>/<Game>/gamedata/`
+when the launcher set a games folder (`datadir::GameFiles`, [settings.md](../../getting-started/settings.md#where-everything-is-one-folder-skylanders)):
 
 - the disc's files under their disc paths, **lowercase** (the disc is case-insensitive; the reader lowercases every lookup, so a
   case-sensitive file system works too), e.g. `gamedata/default.xex`, `gamedata/media/...`;

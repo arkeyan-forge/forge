@@ -33,6 +33,20 @@ namespace
 
     fs::path g_scratch;
 
+    // The test runs on one thread: changing the environment cannot race here.
+    void SetEnv(const char* name, const std::string& value)
+    {
+        setenv(name, value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+    }
+    void UnsetEnv(const char* name)
+    {
+        unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+    }
+    bool HasEnv(const char* name)
+    {
+        return getenv(name) != nullptr; // NOLINT(concurrency-mt-unsafe)
+    }
+
     void Write(const fs::path& path, const std::string& content)
     {
         fs::create_directories(path.parent_path());
@@ -57,7 +71,7 @@ namespace
                 files[fs::relative(it->path(), path).generic_string()] = Read(it->path());
         std::string text;
         for (const auto& [name, bytes] : files)
-            text += name + "\n" + bytes + "\n--\n";
+            text.append(name).append("\n").append(bytes).append("\n--\n");
         return text;
     }
 
@@ -110,7 +124,7 @@ namespace
     void TestPaths()
     {
         fs::path root = g_scratch / "paths";
-        setenv("SKYLANDERS_DATA", root.string().c_str(), 1);
+        SetEnv("SKYLANDERS_DATA", root.string());
         CHECK(Root() == root);
         CHECK(Game("ssa") == root / "SSA" && Game("giants") == root / "Giants");
         CHECK(LauncherIni() == root / "launcher.ini" && Kits() == root / "kit" && Toolchains() == root / "toolchains" &&
@@ -118,10 +132,19 @@ namespace
         CHECK(!Has(root)); // nothing is created
         // A player profile's own folder for the games' player files (saves, achievements, portal seats).
         CHECK(PlayerGame("ssa") == root / "SSA");
-        setenv("SKY_PROFILE_DIR", (root / "profiles" / "0A1B").string().c_str(), 1);
+        SetEnv("SKY_PROFILE_DIR", (root / "profiles" / "0A1B").string());
         CHECK(PlayerGame("ssa") == root / "profiles" / "0A1B" / "SSA" && Game("ssa") == root / "SSA");
-        unsetenv("SKY_PROFILE_DIR");
-        unsetenv("SKYLANDERS_DATA");
+        UnsetEnv("SKY_PROFILE_DIR");
+        // The player's games folder (the launcher's Games folder): the built game's big rebuildable files go there.
+        CHECK(GameFiles("ssa") == root / "SSA");
+        SetEnv("SKY_GAMES_DIR", (g_scratch / "games").string());
+        CHECK(GameFiles("ssa") == g_scratch / "games" / "SSA" &&
+              GameFiles("swapforce") == g_scratch / "games" / "SwapForce");
+        CHECK(Game("ssa") == root / "SSA" && PlayerGame("ssa") == root / "SSA");
+        SetEnv("SKY_GAMES_DIR", "");
+        CHECK(GameFiles("ssa") == root / "SSA");
+        UnsetEnv("SKY_GAMES_DIR");
+        UnsetEnv("SKYLANDERS_DATA");
         CHECK(Root().filename() == "Skylanders");
         // Portable mode: portable.txt in the folder makes <folder>/data the root; the program's own folder is found.
         fs::path portable = g_scratch / "portable";
@@ -131,7 +154,7 @@ namespace
         CHECK(PortableRoot(portable) == portable / "data");
         CHECK(PortableRoot({}).empty());
         CHECK(!ProgramFolder().empty() && !fs::exists(ProgramFolder() / "portable.txt"));
-        CHECK(!ApplyPortable() && getenv("SKYLANDERS_DATA") == nullptr);
+        CHECK(!ApplyPortable() && !HasEnv("SKYLANDERS_DATA"));
         CHECK(GameFolderName("ssa") == "SSA" && GameFolderName("giants") == "Giants");
         CHECK(GameFolderName("swapforce") == "SwapForce" && Game("swapforce") == Root() / "SwapForce");
         CHECK(GameFolderName("trapteam") == "TrapTeam" && Game("trapteam") == Root() / "TrapTeam");

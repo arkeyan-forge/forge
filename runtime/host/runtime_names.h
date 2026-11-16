@@ -12,7 +12,7 @@ namespace runtime_names
     inline std::filesystem::path ReadLog(const std::filesystem::path& folder, bool previous = false)
     {
         namespace fs = std::filesystem;
-        const fs::path current = folder / (previous ? PreviousLog : Log);
+        fs::path current = folder / (previous ? PreviousLog : Log);
         const fs::path legacy = folder / (previous ? LegacyPreviousLog : LegacyLog);
         std::error_code error;
         if (!fs::is_regular_file(current, error))

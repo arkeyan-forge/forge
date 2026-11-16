@@ -38,7 +38,7 @@ namespace texpack
     void Configure(const std::filesystem::path& dump, bool dumping, const std::filesystem::path& packs, bool replacing,
         const std::filesystem::path& generated = {});
     // The same for a game's folders: datadir::Game(gameId) / "textures-dump", / "textures" (`replacing`: texture_packs)
-    // and / "textures-hd" (`hd`: hd_textures, on its own).
+    // and datadir::GameFiles(gameId) / "textures-hd" (`hd`: hd_textures, on its own).
     void ConfigureForGame(std::string_view gameId, bool dumping, bool replacing, bool hd);
 
     bool Dumping();

@@ -4,7 +4,7 @@
 
 An optional install step. Arkeyan-Builder reads every texture of the player's own disc, doubles the ones that gain from
 it with our own classical pass, and writes them as a texture pack in the player's data folder,
-`<game data>/textures-hd/`. The game loads it through the texture packs it already has
+`<game data>/textures-hd/` (`datadir::GameFiles`: the games folder `SKY_GAMES_DIR` when the launcher set one). The game loads it through the texture packs it already has
 ([texture_packs.md](../runtime/gpu/texture_packs.md)): nothing changes in the renderer, a pack file replaces the game's
 texture by the hash of its content. Nothing of it is shipped, downloaded or kept in git: the pack exists only on the
 player's machine, made from their disc.
