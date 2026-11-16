@@ -129,7 +129,7 @@ int main(int argc, char** argv)
         CHECK(toybox::HitAt(std::span<const Hit>(hits), 30, 30) == -1);
         CHECK(toybox::HitAt(std::span<const Hit>{}, 0, 0) == -1);
     }
-    // A swap into any right-stick row names its direction, never the page's abbreviated "Same".
+    // A key on any right-stick row names its direction, never the page's abbreviated "Same"; both rows keep the key.
     {
         constexpr commands::Row rows[] = {
             { "b", "Special Power / Back", "Pouvoir spécial / Retour", "b" },
@@ -146,13 +146,20 @@ int main(int argc, char** argv)
             LauncherConfig config;
             int other = commands::SetKey(config, "game", rows, 0, keys[i]);
             CHECK(other == int(i + 1));
+            CHECK(commands::SlotKey(config, "game", rows, size_t(other)) == keys[i]); // not swapped
+            CHECK(commands::SlotConflict(config, "game", rows, 0) &&
+                  commands::SlotConflict(config, "game", rows, size_t(other)));
             CHECK(commands::SlotLabel(rows, size_t(other), false) == english[i]);
             CHECK(commands::SlotLabel(rows, size_t(other), true) == french[i]);
-            CHECK(commands::SetKey(config, "game", rows, 0, keys[i]) == -1);
-            // Rebinding from a right-stick row must name the other game action as well.
+            CHECK(commands::SetKey(config, "game", rows, 0, keys[i]) == int(i + 1)); // still shared
+            CHECK(commands::SetKey(config, "game", rows, 0, "T") == -1);
+            CHECK(!commands::SlotConflict(config, "game", rows, 0) &&
+                  !commands::SlotConflict(config, "game", rows, size_t(other)));
+            // From a right-stick row, the other game action is named as well.
             config.clear();
             other = commands::SetKey(config, "game", rows, i + 1, "X");
             CHECK(other == 0);
+            CHECK(commands::SlotKey(config, "game", rows, 0) == "X");
             CHECK(commands::SlotLabel(rows, size_t(other), false) == "Special Power / Back");
         }
         CHECK(commands::SlotLabel(rows, 0, false) == "Special Power / Back");
@@ -206,14 +213,19 @@ int main(int argc, char** argv)
         CHECK(Value(config, section, "key_x") == "<none>");
     }
 
-    // A key another row has: the two rows swap.
+    // A key another row has: both rows keep it, both flagged; another key clears the flags.
     {
         LauncherConfig config = LoadLauncherConfig(path);
         CHECK(commands::SetKey(config, "game", Rows, RowX, "z") == int(RowA)); // the same key, whatever its case
         CHECK(Value(config, section, "key_x") == "z");
-        CHECK(Value(config, section, "key_a") == "C"); // x's old key
-        CHECK(commands::Key(config, "game", Rows[RowA]) == "C");
+        CHECK(Value(config, section, "key_a") == "Z"); // unchanged
+        CHECK(commands::SlotConflict(config, "game", Rows, RowX) && commands::SlotConflict(config, "game", Rows, RowA));
+        CHECK(!commands::SlotConflict(config, "game", Rows, RowB));
         CHECK(SameAsParse(config));
+        CHECK(commands::SetKey(config, "game", Rows, RowX, "C") == -1);
+        CHECK(!commands::SlotConflict(config, "game", Rows, RowA));
+        CHECK(commands::SetKey(config, "game", Rows, RowA, "C") == int(RowX));
+        CHECK(Value(config, section, "key_a") == "C" && Value(config, section, "key_x") == "C");
         CHECK(SaveLauncherConfig(path, config));
     }
 
@@ -276,7 +288,7 @@ int main(int argc, char** argv)
         CHECK(SaveLauncherConfig(path, config));
     }
 
-    // The Toy Box's keys: F6 (Tab too), F7, F8 until set; in [input]; swapped with a row of the game.
+    // The Toy Box's keys: F6 (Tab too), F7, F8 until set; in [input]; flagged against each other and the game's rows.
     {
         LauncherConfig config = LoadLauncherConfig(path);
         CHECK(commands::ToyboxKey(config, 0) == "F6" && commands::ToyboxKey(config, 2) == "F8");
@@ -284,10 +296,18 @@ int main(int argc, char** argv)
         CHECK(commands::SetKey(config, "game", Rows, SlotToyboxAdd, "G") == -1);
         CHECK(Value(config, "input", "key_toybox_add") == "G");
         CHECK(commands::ToyboxTab(config)); // only key_toybox takes Tab's place
-        // A row takes the Toy Box's key: the Toy Box gets the row's.
+        // Two Toy Box keys on one key: both kept, both flagged.
+        CHECK(commands::SetKey(config, "game", Rows, SlotToyboxAdd, "F8") == int(SlotToybox + 2));
+        CHECK(commands::SlotConflict(config, "game", Rows, SlotToyboxAdd) &&
+              commands::SlotConflict(config, "game", Rows, SlotToybox + 2));
+        CHECK(commands::SetKey(config, "game", Rows, SlotToyboxAdd, "G") == -1);
+        // A row takes the Toy Box's key: both keep it, both flagged.
         const std::string xKey = commands::Key(config, "game", Rows[RowX]);
-        CHECK(commands::SetKey(config, "game", Rows, RowX, "F6") == int(SlotToybox));
+        CHECK(commands::SetKey(config, "game", Rows, SlotToybox, xKey) >= 0);
         CHECK(Value(config, "input", "key_toybox") == xKey);
+        CHECK(commands::Key(config, "game", Rows[RowX]) == xKey);
+        CHECK(commands::SlotConflict(config, "game", Rows, RowX) &&
+              commands::SlotConflict(config, "game", Rows, SlotToybox));
         CHECK(!commands::ToyboxTab(config));
         CHECK(SameAsParse(config));
         commands::Bindings bindings = commands::Read(config, "game");
