@@ -31,6 +31,8 @@ def compiler_part(line):
     # "a && b && :" -> the segment that runs the compiler
     for part in line.split(" && "):
         part = part.strip()
+        if part.startswith("ccache "):
+            part = part[len("ccache "):] # make_kit.sh's KIT_CCACHE=1; the player's compile has no launcher
         if "clang" in part.split(" ")[0] or part.startswith(("/usr/bin/c++", "/opt/zig/zig ")):
             return shlex.split(part)
     raise SystemExit("no compiler command in: " + line)

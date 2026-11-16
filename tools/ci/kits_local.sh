@@ -4,8 +4,8 @@
 #
 #   tools/ci/kits_local.sh [--attach vX.Y.Z] [--serial] [macos] [linux] [windows]     (default: the three)
 #
-# macOS natively (Xcode's Metal compiler, Homebrew's cmake ninja rsync nasm xz molten-vk), Windows cross-compiled with
-# llvm-mingw, Linux in its Docker image (tools/make_kit.sh). --attach needs `gh` logged in with write access to
+# macOS natively (Xcode's Metal compiler, Homebrew's cmake ninja rsync nasm xz molten-vk ccache), Windows
+# cross-compiled with llvm-mingw, Linux in its Docker image (tools/make_kit.sh). --attach needs `gh` logged in with write access to
 # KITS_LAUNCHER_REPO (default mflr0/Arkeyan-Launcher) and every kit; the draft must already hold the launcher's files
 # and SHA256SUMS (tools/release_local.sh in the launcher). The platforms build at the same time, one log each in
 # .scratch/kits/<platform>.log, and the first failure stops the others; --serial builds them one after the other, on
@@ -28,12 +28,14 @@ done
 platforms=${platforms:-macos linux windows}
 export LAUNCHER_TAG=$tag KITS_LAUNCHER_REPO=${KITS_LAUNCHER_REPO:-mflr0/Arkeyan-Launcher}
 export JOBS=${JOBS:-4} KIT_LAYOUT_RECORD=1
+# Compiles from earlier kit builds are reused (tools/make_kit.sh, KIT_CCACHE); KIT_CCACHE=0 builds cold.
+export KIT_CCACHE=${KIT_CCACHE:-1}
 # The kits made on a Mac so far run on macOS 26 and later (LSMinimumSystemVersion 26.0).
 export MACOSX_DEPLOYMENT_TARGET=26.0
 [ -z "$tag" ] || python3 -I tools/ci/kits.py destination
 [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ] || { echo "error: needs an Apple Silicon Mac" >&2; exit 1; }
 xcrun --find metal >/dev/null
-for package in cmake ninja rsync nasm xz molten-vk; do
+for package in cmake ninja rsync nasm xz molten-vk ccache; do
     brew list --versions "$package" >/dev/null || { echo "error: brew install $package" >&2; exit 1; }
 done
 LLVM_MINGW_ROOT=$(sh tools/ci/fetch_llvm_mingw.sh)

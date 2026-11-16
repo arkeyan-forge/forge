@@ -29,6 +29,7 @@
 # The platforms share the submodule patches, the public headers (build-kit-abi/, .scratch/abi/) and the FFmpeg source:
 # `prepare` makes them once, and a KIT_PREPARED=1 run reuses them instead of writing them again, so that several
 # platforms can be built at the same time (tools/ci/kits_local.sh).
+# KIT_CCACHE=1 (ccache, below) reuses earlier compiles.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -51,6 +52,30 @@ case $layout_record/${KIT_HEADERS_FROM_PRIVATE:-0} in
 esac
 # The public build dependencies (llvm-mingw, FFmpeg and its source); a folder outside the checkout too.
 deps=${KIT_DEPS:-$root/private}
+# KIT_CCACHE=1: every compile goes through ccache, its cache in KIT_CCACHE_DIR (default $KIT_DEPS/ccache). The key holds
+# the flags, and with them the checkout's path (-ffile-prefix-map): only a checkout at the same path hits.
+case ${KIT_CCACHE:-0} in
+    0) launch="" ;;
+    1)
+        command -v ccache > /dev/null || { echo "error: KIT_CCACHE=1 needs ccache" >&2; exit 1; }
+        launch=ccache
+        mkdir -p "${KIT_CCACHE_DIR:-$deps/ccache}"
+        CCACHE_DIR=$(cd "${KIT_CCACHE_DIR:-$deps/ccache}" && pwd)
+        export CCACHE_DIR CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-30G}
+        # base_dir would hand the compiler relative paths, and the objects would differ from a build without ccache.
+        export CCACHE_BASEDIR=
+        # The compiler's own version: Xcode's /usr/bin shims keep their mtime (ccache's default check) across updates.
+        # zig, the Linux kit's, has no --version.
+        if [ -x /opt/zig/zig ] && [ "$(uname -s)" = Linux ]; then
+            export CCACHE_COMPILERCHECK='%compiler% version'
+        else
+            export CCACHE_COMPILERCHECK='%compiler% --version'
+        fi
+        ;;
+    *) echo "error: KIT_CCACHE is 0 or 1" >&2; exit 1 ;;
+esac
+# Empty, they clear a launcher an earlier configure of the same build folder cached.
+launchers="-DCMAKE_C_COMPILER_LAUNCHER=$launch -DCMAKE_CXX_COMPILER_LAUNCHER=$launch -DCMAKE_OBJC_COMPILER_LAUNCHER=$launch -DCMAKE_OBJCXX_COMPILER_LAUNCHER=$launch"
 abi=$root/build-kit-abi
 # Where the runtime of game $1 finds its two headers.
 ppc_headers() { if [ $headers = private ]; then echo "private/$1/ppc"; else echo "$abi/$1"; fi; }
@@ -104,7 +129,8 @@ build_runtime() { # <build dir> <game> <cmake args...>: <build dir>/<game>/runti
     cp "$(ppc_headers $game)/ppc_config.h" "$(ppc_headers $game)/ppc_context.h" "$rb/stub-ppc/"
     : > "$rb/stub-ppc/ppc_func_mapping.cpp"
     : > "$rb/stub-ppc/shader_cache.cpp"
-    cmake -S . -B "$rb/runtime" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG $maps" \
+    # shellcheck disable=SC2086 # launchers is several arguments
+    cmake -S . -B "$rb/runtime" -G Ninja $launchers -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG $maps" \
         -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG $maps" -DARKEYAN_KIT_BUILD=ON -DARKEYAN_GAME="$game" -DARKEYAN_PPC_DIR="$root/$rb/stub-ppc" -DARKEYAN_LAYOUT_RECORD=$layout_record "$@" > "$rb/runtime-cmake.log" 2>&1 ||
         { tail -20 "$rb/runtime-cmake.log"; exit 1; }
     ninja -C "$rb/runtime" -t commands ArkeyanRuntime | tail -1 | tr ' ' '\n' | grep -E '\.(obj|o|res|a)$' |
@@ -131,12 +157,14 @@ build_tools() { # <build dir> <extra C++ flags for XenosRecomp> <cmake args...>
     shift 2
     # -U: XenonRecomp built by clang outside Apple emits weak aliases instead of wrapper functions; every kit
     # emits the wrappers, the form the macOS-built game code always had (tested on every platform).
-    cmake -S . -B "$b/tools" -G Ninja -DCMAKE_BUILD_TYPE=Release -DARKEYAN_FFMPEG=ON -DARKEYAN_TOOLS_ONLY=ON \
+    # shellcheck disable=SC2086
+    cmake -S . -B "$b/tools" -G Ninja $launchers -DCMAKE_BUILD_TYPE=Release -DARKEYAN_FFMPEG=ON -DARKEYAN_TOOLS_ONLY=ON \
         -DARKEYAN_KIT_VERSION="$version" -DCMAKE_C_FLAGS="$maps ${tool_flags:-}" -DCMAKE_CXX_FLAGS="-UXENON_RECOMP_USE_ALIAS $maps ${tool_flags:-}" "$@" \
         > "$b/tools-cmake.log" 2>&1 || { tail -20 "$b/tools-cmake.log"; exit 1; }
     nice ninja -C "$b/tools" -j"$jobs" Arkeyan-Builder XenonRecomp > "$b/tools-build.log" 2>&1 ||
         { tail -30 "$b/tools-build.log"; exit 1; }
-    cmake -S thirdparty/XenosRecomp -B "$b/xenos" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS_RELEASE=-O2 -DCMAKE_SKIP_BUILD_RPATH=ON \
+    # shellcheck disable=SC2086
+    cmake -S thirdparty/XenosRecomp -B "$b/xenos" -G Ninja $launchers -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS_RELEASE=-O2 -DCMAKE_SKIP_BUILD_RPATH=ON \
         -DCMAKE_C_FLAGS_RELEASE=-O2 -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS="$maps ${tool_flags:-}" -DCMAKE_CXX_FLAGS="$xenos_flags $maps ${tool_flags:-}" "$@" \
         ${xenos_link:+-DCMAKE_EXE_LINKER_FLAGS="$xenos_link"} > "$b/xenos-cmake.log" 2>&1 || { tail -20 "$b/xenos-cmake.log"; exit 1; }
     nice ninja -C "$b/xenos" -j"$jobs" XenosRecomp > "$b/xenos-build.log" 2>&1 || { tail -30 "$b/xenos-build.log"; exit 1; }
@@ -434,6 +462,13 @@ for platform in $platforms; do
                 *) inner_deps=$deps; set -- "$@" -v "$deps:$deps" ;;
             esac
             if [ -n "${KIT_SCAN_WORDS:-}" ]; then set -- "$@" -v "$KIT_SCAN_WORDS:/kit_scan_words.txt:ro" -e KIT_SCAN_WORDS=/kit_scan_words.txt; fi
+            if [ -n "$launch" ]; then
+                case $CCACHE_DIR in
+                    "$root"/*) inner_cache=$src/${CCACHE_DIR#"$root"/} ;;
+                    *) inner_cache=$CCACHE_DIR; set -- "$@" -v "$CCACHE_DIR:$CCACHE_DIR" ;;
+                esac
+                set -- "$@" -e KIT_CCACHE=1 -e KIT_CCACHE_DIR="$inner_cache" -e CCACHE_MAXSIZE="$CCACHE_MAXSIZE"
+            fi
             docker build -q --platform linux/amd64 -t ssarecomp-kit-linux -f tools/linux/kit.Dockerfile tools/linux > /dev/null
             # --init: the docker client passes on a SIGTERM, and a shell as PID 1 would ignore it.
             docker run --rm --init --platform linux/amd64 --user "$(id -u):$(id -g)" -v "$root:$src" -w "$src" "$@" -e JOBS="$jobs" -e KIT_GAMES="$games" \

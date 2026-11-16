@@ -11,7 +11,7 @@ ARG ZIG_SHA256=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        cmake ninja-build make pkg-config git python3 perl curl xz-utils ca-certificates nasm file zip rsync binutils \
+        cmake ninja-build make pkg-config git python3 perl curl xz-utils ca-certificates nasm file zip rsync binutils ccache \
         zlib1g-dev \
         libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
         libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libgl-dev libdrm-dev libgbm-dev \
