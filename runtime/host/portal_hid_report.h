@@ -59,6 +59,85 @@ namespace portal_hid
         return order;
     }
 
+    // The methods one command tries, in order. A portal just opened tries the system's methods in their order. Once a
+    // method has worked on it, a failure retries that method and never moves to another: on Windows a Wii Traptanium
+    // portal's SET_REPORT failed once as its speaker started, the fallback (hidapi's write, the interrupt OUT endpoint
+    // that carries the speaker's sound) went through, and every later command went there unanswered: the portal froze.
+    // When the retries fail too, the portal is closed and its reopen starts over from the first method.
+    // `speakerAvoidsHidWrite`: a portal with a speaker never takes a command by hidapi's write (Windows).
+    template <size_t N>
+    class MethodChoice
+    {
+    public:
+        static constexpr size_t Retries = 2;
+        static constexpr size_t MaxTries = N + Retries;
+
+        struct Order
+        {
+            std::array<WriteMethod, MaxTries> methods{};
+            size_t count = 0;
+            const WriteMethod* begin() const { return methods.data(); }
+            const WriteMethod* end() const { return methods.data() + count; }
+        };
+
+        constexpr MethodChoice(const WriteMethod (&methods)[N], bool speakerAvoidsHidWrite)
+            : m_methods(&methods), m_last(methods[0]), m_speakerAvoidsHidWrite(speakerAvoidsHidWrite)
+        {}
+
+        // The portal (re)opened: nothing proven. Its speaker is kept: a reopen is most likely the same portal, and a
+        // new one says its model in its first 'R' answer.
+        void Opened()
+        {
+            m_last = (*m_methods)[0];
+            m_proven = false;
+        }
+
+        void Worked(WriteMethod method)
+        {
+            m_last = method;
+            m_proven = true;
+        }
+
+        void SetSpeaker(bool speaker) { m_speaker = speaker; }
+        bool Speaker() const { return m_speaker; }
+
+        Order Next() const
+        {
+            Order order;
+            if (m_proven && Allowed(m_last))
+            {
+                for (size_t i = 0; i <= Retries; i++)
+                    order.methods[order.count++] = m_last;
+                return order;
+            }
+            for (WriteMethod method : TryOrder(*m_methods, m_last))
+                if (Allowed(method))
+                    order.methods[order.count++] = method;
+            return order;
+        }
+
+    private:
+        bool Allowed(WriteMethod method) const
+        {
+            return !(m_speaker && m_speakerAvoidsHidWrite && method == WriteMethod::HidWrite);
+        }
+
+        const WriteMethod (*m_methods)[N];
+        WriteMethod m_last;
+        bool m_proven = false, m_speaker = false;
+        bool m_speakerAvoidsHidWrite;
+    };
+
+    // 16-bit samples in one write of the speaker's sound. Windows' HID driver sends reports of the descriptor's output
+    // length (the report id byte, then the data): the Wii Traptanium portal's 33 bytes carry 16 samples, and a longer
+    // write is not split into reports. Elsewhere (`outputReportLength` 0) hidapi's write goes to the OUT endpoint as it
+    // is: 64 bytes, 32 samples.
+    constexpr size_t MaxSoundSamples = 32;
+    constexpr size_t SoundSamplesPerWrite(size_t outputReportLength)
+    {
+        return outputReportLength < 3 ? MaxSoundSamples : std::min((outputReportLength - 1) / 2, MaxSoundSamples);
+    }
+
     // `command` starts at the letter; zero-padded to 32 bytes, cut beyond.
     inline SetReport MakeSetReport(const uint8_t* command, size_t size, int interface)
     {
