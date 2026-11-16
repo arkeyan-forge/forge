@@ -202,7 +202,7 @@ namespace
                 files[Slashes(fs::relative(entry.path(), path))] = Sha256File(entry.path());
         std::string text;
         for (const auto& [name, sha] : files)
-            text += name + "=" + sha + "\n";
+            text.append(name).append("=").append(sha).append("\n");
         return Sha256Text(text);
     }
 
@@ -323,7 +323,7 @@ namespace
 
 #if defined(_WIN32) || defined(__linux__)
     // Downloads, checks and extracts Compiler into the cache once; returns its folder.
-    fs::path DownloadToolchain(Build& build, fs::path cache)
+    fs::path DownloadToolchain(Build& build, const fs::path& cache)
     {
         auto hasCompiler = [](const fs::path& root) { return fs::exists(root / Compiler.compiler); };
         fs::path root = cache / Compiler.folder;
@@ -516,7 +516,11 @@ namespace
         {
             auto values = ReadKeyValues(build.options.kit / "config" / id / "game.txt");
             if (values.empty())
-                Fail("the kit lists the game " + id + " but has no config/" + id + "/game.txt");
+                Fail(std::string("the kit lists the game ")
+                        .append(id)
+                        .append(" but has no config/")
+                        .append(id)
+                        .append("/game.txt"));
             games.push_back(ReadGame(id, std::move(values)));
         }
         return games;
@@ -866,7 +870,7 @@ namespace
                 files[Slashes(entry.path().filename())] = Sha256File(entry.path());
         std::string config;
         for (const auto& [name, sha] : files)
-            config += name + "=" + sha + ",";
+            config.append(name).append("=").append(sha).append(",");
         const std::string base = DiscStamp(build) + "config=" + Sha256Text(config) + "\ntranslator=" +
                                  Sha256File(build.options.kit / "bin" / (std::string("XenonRecomp") + Exe)) +
                                  "\ncontext=" + Sha256File(build.options.kit / "share" / "ppc_context.h");
@@ -1035,6 +1039,7 @@ namespace
         if (image.data == nullptr)
             Fail("cannot read the disc's executable for the code layout record");
         std::vector<GuestSection> sections;
+        sections.reserve(image.sections.size());
         for (const Section& section : image.sections)
             sections.push_back({ uint32_t(section.base), section.size, (section.flags & SectionFlags_Code) != 0 });
         WriteLayoutRecord(build, ParsedGuestLayout(uint32_t(image.base), image.size, sections),
@@ -1139,7 +1144,7 @@ namespace
         }
         std::string compilers;
         for (const auto& [name, sha] : tools)
-            compilers += name + "=" + sha + ",";
+            compilers.append(name).append("=").append(sha).append(",");
         std::string cacheId = "compilers=" + Sha256Text(compilers) + "\n";
         if (ReadText(cacheStamp) != cacheId)
         {
@@ -1243,7 +1248,7 @@ namespace
         }
         std::string headers = "include=" + ContentDigest(build.options.kit / "include") + "\n";
         for (const auto& [name, sha] : headerFiles)
-            headers += name + "=" + sha + "\n";
+            headers.append(name).append("=").append(sha).append("\n");
         // The layout record (LayoutRecord): the game code's recipe, its own key with the header it includes.
         fs::path record = build.work / "layout" / (std::string(LayoutRecordName) + ".cpp");
         if (LayoutRecordKit(build))
@@ -1751,7 +1756,7 @@ namespace
         fs::path game = datadir::Game(build.game.id);
         if (game.empty())
             Fail("HD textures: no data folder");
-        fs::path folder = game / "textures-hd", dump = game / "textures-dump";
+        fs::path folder = datadir::GameFiles(build.game.id) / "textures-hd", dump = game / "textures-dump";
         if (mode == hdtex::Mode::Off)
         {
             fs::remove_all(folder);
@@ -1997,7 +2002,7 @@ int main(int argc, char** argv)
             IdentifyGame(build);
             HdTextures(build);
             EndStep();
-            Emit("done", Slashes(datadir::Game(build.game.id) / "textures-hd"));
+            Emit("done", Slashes(datadir::GameFiles(build.game.id) / "textures-hd"));
             return 0;
         }
 

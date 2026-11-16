@@ -223,7 +223,7 @@ namespace texpack
         if (game.empty())
             return;
         Configure(game / "textures-dump", dumping, game / "textures", replacing,
-            hd ? game / "textures-hd" : std::filesystem::path());
+            hd ? datadir::GameFiles(gameId) / "textures-hd" : std::filesystem::path());
     }
 
     bool Dumping() { return g_state.dumping; }

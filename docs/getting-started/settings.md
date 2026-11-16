@@ -254,6 +254,13 @@ including with `SKY_TOYBOX_LINK=0`; level-start writes retain the latest charact
 unchanged snapshots and the disabled-link worker. [?] Live real-portal swaps and the launcher's catalogue display
 still need a player check; neither the game nor the launcher is needed for these unit tests.
 
+**The games folder** (`SKY_GAMES_DIR=<folder>`, set by Arkeyan Launcher from its Games folder setting): a game's big
+rebuildable files go to `<folder>/<Game>/` instead of `<root>/<Game>/`, so they can live on another drive:
+`textures-hd/` (the HD textures, written by Arkeyan-Builder and read by the game) and `gamedata/` (the copied game
+data). `datadir::GameFiles(id)` names that folder, `datadir::Game(id)` when the variable is empty or unset; everything
+else of the game (saves, settings, logs, portraits, `textures/`, `textures-dump/`) stays in `<root>/<Game>/`. The built
+game itself goes where the launcher's `--out` says. [V] `ArkeyanDatadirTest` checks both cases.
+
 The environment variables that name one file or folder keep winning over the root: `SKY_SETTINGS` and
 `SKY_LAUNCHER_INI` (the settings file), `SKY_SAVE_DIR` (saves, `pipelines.bin`, `portal.txt`), `SKY_COLLECTION`,
 `SKY_PORTRAITS`, `SKY_LOG`, `SKY_LAUNCHER_DATA` (the launcher's kits, see its `docs/install.md`). The player's profile
