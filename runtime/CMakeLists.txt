@@ -722,6 +722,11 @@ add_executable(ArkeyanCollectionTest host/collection/collection_test.cpp)
 target_include_directories(ArkeyanCollectionTest PRIVATE .)
 target_link_libraries(ArkeyanCollectionTest PRIVATE ArkeyanArtReader)
 
+# The picture lookups' memory of the portraits folders (synthetic pictures in a scratch folder): ./ArkeyanPictureLookupTest
+add_executable(ArkeyanPictureLookupTest host/collection/picture_lookup_test.cpp)
+target_include_directories(ArkeyanPictureLookupTest PRIVATE .)
+target_link_libraries(ArkeyanPictureLookupTest PRIVATE ArkeyanArtReader)
+
 # Data folder helper and its migration (no game data, scratch folders only): ./ArkeyanDatadirTest
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_executable(ArkeyanDatadirTest host/collection/datadir_test.cpp)

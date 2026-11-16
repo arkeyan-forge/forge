@@ -183,6 +183,13 @@ viewed game, variant art before plain art. A half first uses its own half image,
 matching top for a bottom), then a generated icon. `SwapperPicture` still requires two genuine half images. Existing
 caches need no re-extraction or version change.
 
+The lookups are cheap enough for every frame: each portraits folder (and its `artworks/`) is listed once and answered
+from memory, any case, with one stat for the picture found (a deleted picture is never returned). A folder is looked at
+again at most once a second (its time; a folder changed in the last 3 s, the coarse clock of a FAT card, is listed
+again): a picture another process writes, or `art::Extract`, shows within about a second, one written by
+`collection::SavePng` at once. `collection::ForgetPictureFolders()` drops every listing (the launcher calls it when the
+disc's pictures arrive). Safe from any thread (`ArkeyanPictureLookupTest`).
+
 ## Threads and processes
 
 The calls are synchronous file operations; run `List()` off the UI thread for big folders (it reads every dump:
