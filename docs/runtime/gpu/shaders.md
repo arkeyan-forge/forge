@@ -186,7 +186,7 @@ SPIR-V is stored as **smol-v** (`smolv::Encode`): decode before `createShader` (
   case and a different component. Every game's cache is translated again on its next build.
 - A shader the translator or the Metal compiler cannot handle is **reported and skipped** (`Skipped <hash> (<file>): reason`), not fatal; `N of M shaders translated`, `N of them without DXIL`.
 
-### Binding model (`SharedConstants`, 352 bytes; `shader_common.h` offsets)
+### Binding model (`SharedConstants`, 360 bytes; `shader_common.h` offsets)
 
 | Offset | Field |
 |---|---|
@@ -202,11 +202,25 @@ SPIR-V is stored as **smol-v** (`smolv::Encode`): decode before `createShader` (
 | 304 | point scale (1 / viewport size, D3D12 point-sprite GS) |
 | 312 | `g_ScaledTextures`: bit n = sampler register n holds a resolve (host size = guest size x `g_ResolutionScale`); unnormalized fetches scale by it (2026-10-27) |
 | 320, 336 | a vertex shader's texture heap indices (2D x4) and sampler indices (x4): vertex texture fetch |
+| 352 | `g_TargetClamps`: how each colour export is stored, 2 bits per target (`d3d::TargetClamps`; see below) |
 
 **Metal/Vulkan**: push constants = three device addresses `{vertexShaderConstants, pixelShaderConstants, sharedConstants}` (`[[buffer(8)]]`); bindless heaps: descriptor sets 0-2 = 2D/3D/cube textures,
 set 3 = samplers (`[[buffer(0..3)]]`; `[[id(binding)]]`; Metal needs tier-2 argument buffers). **D3D12** (no device addresses): sets 0-3 = register spaces 0-3 and **four root descriptors**: CBV b0/b1/b2 in
 space 4 (VS, PS, shared constants, 256-byte aligned) and SRV `t0, space5` (pulled vertices; the shared constants' address when none). Up to **16 samplers** per draw (`MaxSamplers`), plus 4 vertex samplers (`MaxVertexSamplers`).
 Textures per slot: placeholders black for unbound slots; sampler 0 kept. Constants: 256 float4 per stage uploaded once per frame when identical banks repeat.
+
+### Colour exports stored as the target's format (2026-11-15)
+Xenos colour targets in `2_10_10_10_FLOAT` (7e3 colour, 0 to 31.875; a 2-bit alpha) and in `16_16` / `16_16_16_16`
+(fixed point, -32 to 32) are half-float targets on the host (`xenos::ColorTargetFormat`), which keep the NaN and the
+infinities the console never stores. A NaN in a target a game reads back every frame never goes away: Swap Force's
+picture turned plain green and stayed so (forge #9). Each translated pixel shader now ends, after the alpha test and
+before each return, with `output.oC<i> = exportClamp(output.oC<i>, g_TargetClamps >> 2i)` (`shader_common.h`): mode 1
+clamps to the 7e3 range (alpha 0 to 1), mode 2 to -32..32, and both store a NaN as 0; mode 0 (every other format) keeps
+the value. The draw sets the modes from each target's RB_COLOR_INFO format (`d3d::ExportClamp`,
+`runtime/d3d/target_writes.h`). Host blending still runs in half float: a sum of clamped values can exceed the range,
+but stays finite. Checks: `ShaderTranslationTest` (the clamp after the alpha test and before each return, one per
+output, DXIL and SPIR-V) and `ArkeyanTargetWritesTest` (the modes). Every game's cache is translated again on its next
+build.
 
 ### Specialization constants
 

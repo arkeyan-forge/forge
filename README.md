@@ -25,7 +25,7 @@ status page (written by `tools/game_status.py` from those pages).
 |---|---|---|---|---|
 | [Spyro's Adventure (SSA, 2011)](games/ssa/docs/status.md) | Lux | 0.9.14 | macOS, Windows, Linux | Some bosses and Heroic Challenges not yet confirmed (#58) |
 | [Giants (2012)](games/giants/docs/status.md) | Alchemy | 0.8.14 | macOS, Windows, Linux | A few challenge levels crash (#54) |
-| [Swap Force (2013)](games/swapforce/docs/status.md) | Alchemy | 0.5.13 | macOS, Windows, Linux | A plain green picture at some events with Direct3D 12 at scale x4, fixed in 0.9.6, to confirm (#26); not every mode played |
+| [Swap Force (2013)](games/swapforce/docs/status.md) | Alchemy | 0.5.13 | macOS, Windows, Linux | A plain green picture after some in-level events, fixed in 0.9.9, to confirm (#9); not every mode played |
 | [Trap Team (2014)](games/trapteam/docs/status.md) | Alchemy | 0.1.7 | macOS, Windows | Linux not tried yet; Spy Rise dark on macOS (#50); separate voice language and LB fixed in 0.9.6, to confirm (#51) |
 | [SuperChargers (2015)](games/superchargers/docs/status.md) | Alchemy | 0.1.7 | macOS, Windows, Linux | The figure owner fix of 0.9.6 to confirm with a real portal (#28) |
 | [Imaginators (2016)](games/imaginators/docs/status.md) | Alchemy | 0.1.7 | macOS, Windows | Linux not tried yet; a created character's HUD portrait fixed in 0.9.6 (#47) |

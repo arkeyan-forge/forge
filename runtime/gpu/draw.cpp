@@ -117,13 +117,14 @@ namespace
         uint32_t vertexTexture2D
             [gpu::MaxVertexSamplers]; // a vertex shader's descriptor indices (XenosRecomp VERTEX_*_OFFSET)
         uint32_t vertexSampler[gpu::MaxVertexSamplers];
+        uint32_t targetClamps; // DrawDesc::targetClamps, read by the translated pixel shaders' exportClamp
     };
     static_assert(offsetof(SharedConstants, booleans) == 256 && offsetof(SharedConstants, alphaThreshold) == 272 &&
                   offsetof(SharedConstants, positionScale) == 280 && offsetof(SharedConstants, pulledVertices) == 288 &&
                   offsetof(SharedConstants, pulledCount) == 296 && offsetof(SharedConstants, resolutionScale) == 300 &&
                   offsetof(SharedConstants, pointScale) == 304 && offsetof(SharedConstants, scaledTextures) == 312 &&
                   offsetof(SharedConstants, mipBias) == 316 && offsetof(SharedConstants, vertexTexture2D) == 320 &&
-                  offsetof(SharedConstants, vertexSampler) == 336 && sizeof(SharedConstants) == 352);
+                  offsetof(SharedConstants, vertexSampler) == 336 && offsetof(SharedConstants, targetClamps) == 352);
 
     struct HeapSlots
     {
@@ -1572,6 +1573,7 @@ void gpu::detail::DrawNow(const DrawDesc& draw)
     shared.resolutionScale = draw.resolutionScale;
     shared.scaledTextures = draw.scaledTextures;
     shared.mipBias = draw.mipBias;
+    shared.targetClamps = draw.targetClamps;
     shared.pointScale[0] = draw.viewport.width != 0.0f ? 1.0f / std::fabs(draw.viewport.width) : 0.0f;
     shared.pointScale[1] = draw.viewport.height != 0.0f ? 1.0f / std::fabs(draw.viewport.height) : 0.0f;
 
