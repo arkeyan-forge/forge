@@ -61,6 +61,21 @@ The isolation block every run starts from, the fast recipe and the harness: [../
 | `SKY_TOYBOX_SCRIPT`, `SKY_TOYBOX_SHOTS`, `SKY_TOYBOX_REAL_VIEW=1` | drive the Toy Box unattended / screenshots / show the real-portal view over the emulated portal The script also takes `prompt=1` / `prompt=2d` (the game asks that player for a Skylander for 3 s; `d`: and says its Skylander died) and `level` (a level starts), for the out-of-health test ([toybox_ux.md](../runtime/host/toybox_ux.md), "Out of health"); `place=<dump>`, `remove=<slot>`, `remove=all` change the emulated portal while the game plays (`host/portal_script.h`; the coverage runs' figures, [testing.md](../getting-started/testing.md)) [V] |
 | `SKY_LAUNCHER_SHOTS=<dir>`, `SKY_LAUNCHER_TEST_DROP=<iso>`, `SKY_LAUNCHER_FONT_DIR` | launcher screenshot test (writes `01-no-iso.png`, `02-verified.png`, `03-settings.png`, 1280x800) and fonts folder |
 
+### Netplay determinism probe [Xbox]
+
+[V] Host-side tests cover these tools; the first SSA measurement is in the netplay page. All subordinate variables
+require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format:
+[netplay step 0a](../runtime/host/netplay.md#step-0a-local-determinism-probe-xbox).
+
+| Variable | Effect |
+|---|---|
+| `SKY_NETPLAY_DETERMINISTIC=1` | virtual frame time, 49.875 MHz per-thread timebase, time-stamp bundle updated on flips and frame-latched XAM pads; guest threads still run freely |
+| `SKY_NETPLAY_RECORD=<file>` | versioned little-endian pad recording, all XAM users and connection flags |
+| `SKY_NETPLAY_REPLAY=<file>` | pad replay instead of SDL / `SKY_PRESS*`; strict parser and game-id check; exclusive with record; EOF neutral with recorded connections, logged once |
+| `SKY_NETPLAY_HASH=<file>` | per-frame totals of allocated guest heaps and writable executable sections; at exit, a log line with the count and mean/max milliseconds |
+| `SKY_NETPLAY_HASH_BLOCKS=1` | address/heap/hash records in `<file>.blocks`; compare with `python3 -I tools/netplay/hash_diff.py <a> <b>` |
+| `SKY_NETPLAY_HASH_SKIP=<start>-<end>,...` | skip hex guest address ranges, end exclusive (e.g. `a0010000-a0020000`); invalid syntax refused |
+
 ### Renderer, GPU, performance
 | Variable | Effect |
 |---|---|

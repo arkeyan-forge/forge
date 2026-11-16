@@ -8,6 +8,7 @@
 // rejects as a redefinition. Nothing here uses IReference<boolean>, so skip that declaration.
 #define ____FIReference_1_boolean_INTERFACE_DEFINED__
 
+#include "netplay/clock.h"
 #include "host/audio.h"
 #include "host/display.h"
 #include "host/input.h"
@@ -498,7 +499,10 @@ namespace
             }
 
             if (g_closed)
+            {
+                netplay::Finish();
                 std::_Exit(0);
+            }
             fprintf(stderr, "Main thread exited with 0x%08X\n", mainThread->exitCode);
             return S_OK;
         }

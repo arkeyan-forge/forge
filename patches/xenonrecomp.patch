@@ -13,6 +13,7 @@ index d08371e..501370e 100644
  }
  
 diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index fa91527..2e37d69 100644
 --- a/XenonRecomp/recompiler.cpp
 +++ b/XenonRecomp/recompiler.cpp
 @@ -1,5 +1,6 @@
@@ -401,7 +402,18 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_LWZX:
          print("\t{}.u64 = PPC_LOAD_U32(", r(insn.operands[0]));
          if (insn.operands[1] != 0)
-@@ -1305,6 +1450,18 @@ bool Recompiler::Recompile(
+@@ -1259,9 +1404,7 @@ bool Recompiler::Recompile(
+         println("\t{}.u64 = ({}.lt << 7) | ({}.gt << 6) | ({}.eq << 5) | ({}.so << 4);", r(insn.operands[0]), cr(6), cr(6), cr(6), cr(6));
+         break;
+ 
+-    case PPC_INST_MFTB:
+-        println("\t{}.u64 = __rdtsc();", r(insn.operands[0]));
+-        break;
++    case PPC_INST_MFTB: println("\t{}.u64 = PPC_MFTB();", r(insn.operands[0])); break;
+ 
+     case PPC_INST_MR:
+         println("\t{}.u64 = {}.u64;", r(insn.operands[0]), r(insn.operands[1]));
+@@ -1305,6 +1448,18 @@ bool Recompiler::Recompile(
          println("\t{}.s64 = (int64_t({}.s32) * int64_t({}.s32)) >> 32;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
          break;
  
@@ -420,7 +432,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_MULHWU:
          println("\t{}.u64 = (uint64_t({}.u32) * uint64_t({}.u32)) >> 32;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
          if (strchr(insn.opcode->name, '.'))
-@@ -1486,6 +1643,12 @@ bool Recompiler::Recompile(
+@@ -1486,6 +1641,12 @@ bool Recompiler::Recompile(
          println("\t{}.u32 = {};", r(insn.operands[2]), ea());
          break;
  
@@ -433,7 +445,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_STBX:
          print("{}", mmioStore() ? "\tPPC_MM_STORE_U8(" : "\tPPC_STORE_U8(");
          if (insn.operands[1] != 0)
-@@ -1516,6 +1679,12 @@ bool Recompiler::Recompile(
+@@ -1516,6 +1677,12 @@ bool Recompiler::Recompile(
          println("\t{}.u32 = {};", r(insn.operands[2]), ea());
          break;
  
@@ -446,7 +458,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_STDX:
          print("{}", mmioStore() ? "\tPPC_MM_STORE_U64(" : "\tPPC_STORE_U64(");
          if (insn.operands[1] != 0)
-@@ -1531,6 +1700,13 @@ bool Recompiler::Recompile(
+@@ -1531,6 +1698,13 @@ bool Recompiler::Recompile(
          println("{}, {}.u64);", int32_t(insn.operands[1]), f(insn.operands[0]));
          break;
  
@@ -460,7 +472,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_STFDX:
          printSetFlushMode(false);
          print("{}", mmioStore() ? "\tPPC_MM_STORE_U64(" : "\tPPC_STORE_U64(");
-@@ -1556,6 +1732,22 @@ bool Recompiler::Recompile(
+@@ -1556,6 +1730,22 @@ bool Recompiler::Recompile(
          println("{}, {}.u32);", int32_t(insn.operands[1]), temp());
          break;
  
@@ -483,7 +495,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_STFSX:
          printSetFlushMode(false);
          println("\t{}.f32 = float({}.f64);", temp(), f(insn.operands[0]));
-@@ -1579,6 +1771,18 @@ bool Recompiler::Recompile(
+@@ -1579,6 +1769,18 @@ bool Recompiler::Recompile(
          println("{}.u32, __builtin_bswap16({}.u16));", r(insn.operands[2]), r(insn.operands[0]));
          break;
  
@@ -502,7 +514,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_STHX:
          print("{}", mmioStore() ? "\tPPC_MM_STORE_U16(" : "\tPPC_STORE_U16(");
          if (insn.operands[1] != 0)
-@@ -1710,8 +1914,16 @@ bool Recompiler::Recompile(
+@@ -1710,8 +1912,16 @@ bool Recompiler::Recompile(
          println("\t{}.s64 = {} - {}.s64;", r(insn.operands[0]), int32_t(insn.operands[2]), r(insn.operands[1]));
          break;
  
@@ -520,7 +532,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
          break;
  
      case PPC_INST_TDLGEI:
-@@ -1744,6 +1956,15 @@ bool Recompiler::Recompile(
+@@ -1744,6 +1954,15 @@ bool Recompiler::Recompile(
          println("\tsimde_mm_store_si128((simde__m128i*){}.s16, simde_mm_adds_epi16(simde_mm_load_si128((simde__m128i*){}.s16), simde_mm_load_si128((simde__m128i*){}.s16)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
  
@@ -536,7 +548,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VADDUBM:
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_add_epi8(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
-@@ -1756,6 +1977,10 @@ bool Recompiler::Recompile(
+@@ -1756,6 +1975,10 @@ bool Recompiler::Recompile(
          println("\tsimde_mm_store_si128((simde__m128i*){}.u16, simde_mm_add_epi16(simde_mm_load_si128((simde__m128i*){}.u16), simde_mm_load_si128((simde__m128i*){}.u16)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
  
@@ -547,7 +559,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VADDUWM:
          println("\tsimde_mm_store_si128((simde__m128i*){}.u32, simde_mm_add_epi32(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
-@@ -1769,6 +1994,7 @@ bool Recompiler::Recompile(
+@@ -1769,6 +1992,7 @@ bool Recompiler::Recompile(
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_and_si128(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
  
@@ -555,7 +567,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VANDC128:
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_andnot_si128(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[2]), v(insn.operands[1]));
          break;
-@@ -1781,6 +2007,10 @@ bool Recompiler::Recompile(
+@@ -1781,6 +2005,10 @@ bool Recompiler::Recompile(
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_avg_epi16(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
  
@@ -566,7 +578,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VAVGUB:
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_avg_epu8(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
-@@ -1795,6 +2025,16 @@ bool Recompiler::Recompile(
+@@ -1795,6 +2023,16 @@ bool Recompiler::Recompile(
              println("simde_mm_load_ps({}.f32)));", v(insn.operands[1]));
          break;
  
@@ -583,7 +595,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VCFSX:
      case PPC_INST_VCSXWFP128:
      {
-@@ -1871,12 +2111,60 @@ bool Recompiler::Recompile(
+@@ -1871,12 +2109,60 @@ bool Recompiler::Recompile(
              println("\t{}.setFromMask(simde_mm_load_ps({}.f32), 0xF);", cr(6), v(insn.operands[0]));
          break;
  
@@ -644,7 +656,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
          break;
  
      case PPC_INST_VEXPTEFP:
-@@ -1966,6 +2254,11 @@ bool Recompiler::Recompile(
+@@ -1966,6 +2252,11 @@ bool Recompiler::Recompile(
          println("\tsimde_mm_store_ps({}.f32, simde_mm_xor_ps(simde_mm_sub_ps(simde_mm_mul_ps(simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)), simde_mm_load_ps({}.f32)), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000)))));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]), v(insn.operands[3]));
          break;
  
@@ -656,7 +668,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VOR:
      case PPC_INST_VOR128:
          print("\tsimde_mm_store_si128((simde__m128i*){}.u8, ", v(insn.operands[0]));
-@@ -1995,6 +2288,24 @@ bool Recompiler::Recompile(
+@@ -1995,6 +2286,24 @@ bool Recompiler::Recompile(
      }
  
      case PPC_INST_VPKD3D128:
@@ -681,7 +693,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
          // TODO: vectorize somehow?
          // NOTE: handling vector reversal here too
          printSetFlushMode(true);
-@@ -2014,26 +2325,23 @@ bool Recompiler::Recompile(
+@@ -2014,26 +2323,23 @@ bool Recompiler::Recompile(
              println("\t{}.u32[{}] = {}.u32;", v(insn.operands[0]), insn.operands[4], temp());
              break;
  
@@ -721,7 +733,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
              break;
  
          default:
-@@ -2041,12 +2349,24 @@ bool Recompiler::Recompile(
+@@ -2041,12 +2347,24 @@ bool Recompiler::Recompile(
              break;
          }
          break;
@@ -746,7 +758,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VREFP:
      case PPC_INST_VREFP128:
          // TODO: see if we can use rcp safely
-@@ -2066,6 +2386,12 @@ bool Recompiler::Recompile(
+@@ -2066,6 +2384,12 @@ bool Recompiler::Recompile(
          println("\tsimde_mm_store_ps({}.f32, simde_mm_round_ps(simde_mm_load_ps({}.f32), SIMDE_MM_FROUND_TO_NEAREST_INT | SIMDE_MM_FROUND_NO_EXC));", v(insn.operands[0]), v(insn.operands[1]));
          break;
  
@@ -759,7 +771,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VRFIZ:
      case PPC_INST_VRFIZ128:
          printSetFlushMode(true);
-@@ -2088,6 +2414,7 @@ bool Recompiler::Recompile(
+@@ -2088,6 +2412,7 @@ bool Recompiler::Recompile(
          break;
  
      case PPC_INST_VSEL:
@@ -767,7 +779,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_or_si128(simde_mm_andnot_si128(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)), simde_mm_and_si128(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8))));", v(insn.operands[0]), v(insn.operands[3]), v(insn.operands[1]), v(insn.operands[3]), v(insn.operands[2]));
          break;
  
-@@ -2126,6 +2453,10 @@ bool Recompiler::Recompile(
+@@ -2126,6 +2451,10 @@ bool Recompiler::Recompile(
          break;
      }
  
@@ -778,7 +790,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VSPLTISB:
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_set1_epi8(char(0x{:X})));", v(insn.operands[0]), insn.operands[1]);
          break;
-@@ -2149,6 +2480,42 @@ bool Recompiler::Recompile(
+@@ -2149,6 +2478,42 @@ bool Recompiler::Recompile(
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vsr(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
  
@@ -821,7 +833,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VSRAW:
      case PPC_INST_VSRAW128:
          // TODO: vectorize, ensure endianness is correct
-@@ -2169,6 +2536,14 @@ bool Recompiler::Recompile(
+@@ -2169,6 +2534,14 @@ bool Recompiler::Recompile(
          println("\tsimde_mm_store_ps({}.f32, simde_mm_sub_ps(simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
  
@@ -836,7 +848,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VSUBSWS:
          // TODO: vectorize
          for (size_t i = 0; i < 4; i++)
-@@ -2178,10 +2553,18 @@ bool Recompiler::Recompile(
+@@ -2178,10 +2551,18 @@ bool Recompiler::Recompile(
          }
          break;
  
@@ -855,7 +867,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      case PPC_INST_VSUBUHM:
          println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_sub_epi16(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
          break;
-@@ -2200,6 +2583,20 @@ bool Recompiler::Recompile(
+@@ -2200,6 +2581,20 @@ bool Recompiler::Recompile(
              println("\t{} = {};", v(insn.operands[0]), vTemp());
              break;
  
@@ -876,7 +888,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
          case 1: // 2 shorts
              for (size_t i = 0; i < 2; i++)
              {
-@@ -2282,6 +2679,51 @@ bool Recompiler::Recompile(
+@@ -2282,6 +2677,51 @@ bool Recompiler::Recompile(
      return true;
  }
  
@@ -928,7 +940,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
  bool Recompiler::Recompile(const Function& fn)
  {
      auto base = fn.base;
-@@ -2391,6 +2833,7 @@ bool Recompiler::Recompile(const Function& fn)
+@@ -2391,6 +2831,7 @@ bool Recompiler::Recompile(const Function& fn)
      auto switchTable = config.switchTables.end();
      bool allRecompiled = true;
      CSRState csrState = CSRState::Unknown;
@@ -936,7 +948,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
  
      // TODO: the printing scheme here is scuffed
      RecompilerLocalVariables localVariables;
-@@ -2495,6 +2938,43 @@ bool Recompiler::Recompile(const Function& fn)
+@@ -2495,6 +2936,43 @@ bool Recompiler::Recompile(const Function& fn)
      if (localVariables.ea)
          println("\tuint32_t ea{{}};");
  
@@ -980,7 +992,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
      out += tempString;
  
      return allRecompiled;
-@@ -2505,29 +2985,7 @@
+@@ -2505,29 +2983,7 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
      out.reserve(10 * 1024 * 1024);
  
      {
@@ -1011,7 +1023,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
  
          println("#define PPC_IMAGE_BASE 0x{:X}ull", image.base);
          println("#define PPC_IMAGE_SIZE 0x{:X}ull", image.size);
-@@ -2563,17 +3021,7 @@
+@@ -2563,17 +3019,7 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
      }
  
      {
@@ -1030,7 +1042,7 @@ diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
  
          SaveCurrentOutData("ppc_context.h");
      }
-@@ -2602,6 +3050,8 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
+@@ -2602,6 +3048,8 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
          SaveCurrentOutData("ppc_func_mapping.cpp");
      }
  
@@ -1100,7 +1112,7 @@ index 534e503..2c3ef21 100644
      std::unordered_map<uint32_t, RecompilerMidAsmHook> midAsmHooks;
  
 diff --git a/XenonUtils/CMakeLists.txt b/XenonUtils/CMakeLists.txt
-index 1807323..3de24b8 100644
+index 1807323..31fa7f9 100644
 --- a/XenonUtils/CMakeLists.txt
 +++ b/XenonUtils/CMakeLists.txt
 @@ -26,7 +26,10 @@ target_include_directories(XenonUtils
@@ -1199,7 +1211,7 @@ index 195bc85..4ebe502 100644
  
      static int Disassemble(const void* code, uint64_t base, ppc_insn& out)
 diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
-index 31a86cd..4284271 100644
+index 31a86cd..ae311f2 100644
 --- a/XenonUtils/ppc_context.h
 +++ b/XenonUtils/ppc_context.h
 @@ -251,7 +251,7 @@ struct PPCFPSCRRegister
@@ -1365,6 +1377,14 @@ index 31a86cd..4284271 100644
  inline simde__m128i simde_mm_vsr(simde__m128i a, simde__m128i b)
  {
      b = simde_mm_srli_epi64(simde_mm_slli_epi64(b, 61), 61);
+@@ -700,4 +699,7 @@ inline uint64_t __rdtsc()
+ #   error "Missing implementation for __rdtsc()"
+ #endif
+ 
++extern "C" uint64_t ppc_mftb();
++#define PPC_MFTB() ppc_mftb()
++
+ #endif
 diff --git a/XenonUtils/xex.cpp b/XenonUtils/xex.cpp
 index 4e79042..337c945 100644
 --- a/XenonUtils/xex.cpp

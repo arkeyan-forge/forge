@@ -1,4 +1,5 @@
 #include "kernel/objects.h"
+#include "netplay/clock.h"
 #include "platform/platform.h"
 #include <chrono>
 #include <thread>
@@ -12,6 +13,11 @@ namespace
 
 void StartTimeStampBundle(uint32_t bundle)
 {
+    if (netplay::Enabled())
+    {
+        netplay::SetTimeStampBundle(bundle);
+        return;
+    }
     // KeTimeStampBundle: u64 InterruptTime (100 ns since boot), u64 SystemTime, u32 TickCount (ms since boot).
     std::thread([bundle] {
         auto boot = std::chrono::steady_clock::now();
@@ -36,5 +42,7 @@ PPC_FUNC(__imp__KeSetCurrentProcessType) {}
 
 PPC_FUNC(__imp__KeQuerySystemTime) { g_memory.Write<uint64_t>(ctx.r3.u32, GuestSystemTime()); }
 
-// mftb is translated to the host CPU counter (cntvct_el0 on arm64, the TSC on x64), so report that counter's frequency.
-PPC_FUNC(__imp__KeQueryPerformanceFrequency) { ctx.r3.u64 = PlatformTimeBaseFrequency(); }
+PPC_FUNC(__imp__KeQueryPerformanceFrequency)
+{
+    ctx.r3.u64 = netplay::Enabled() ? netplay::TimeBaseFrequency : PlatformTimeBaseFrequency();
+}

@@ -199,6 +199,20 @@ endif()
 # The runtime is built into build/ArkeyanRuntime/: the executable, the bundle and the test paths keep their names.
 add_subdirectory(runtime ArkeyanRuntime)
 
+add_library(ArkeyanNetplay STATIC runtime/netplay/clock.cpp runtime/netplay/inputs.cpp runtime/netplay/state_hash.cpp)
+target_include_directories(ArkeyanNetplay PUBLIC ${CMAKE_SOURCE_DIR}/runtime)
+sky_quality(ArkeyanNetplay)
+target_sources(ArkeyanRuntime PRIVATE runtime/netplay/runtime.cpp)
+target_link_libraries(ArkeyanRuntime PRIVATE ArkeyanNetplay)
+foreach(target ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
+    if(TARGET ${target})
+        target_link_libraries(${target} PRIVATE ArkeyanNetplay)
+    endif()
+endforeach()
+add_executable(ArkeyanNetplayTest runtime/netplay/netplay_test.cpp)
+target_link_libraries(ArkeyanNetplayTest PRIVATE ArkeyanNetplay)
+set_target_properties(ArkeyanNetplayTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/ArkeyanRuntime)
+
 # Our own targets only. ArkeyanRecompLib (generated code), thirdparty/, imgui and ArkeyanXenonUtils are left alone.
 sky_quality(ArkeyanRuntime)
 foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi ArkeyanArtReader ArkeyanHostFiles ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanGameDataTest ArkeyanFileListTest ArkeyanPortablePackTest ArkeyanVfsTest
@@ -208,7 +222,7 @@ foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi Ar
     endif()
 endforeach()
 # The tests that build by default and need no argument (the others run from tools/test_all.sh with a disc or a scratch folder).
-sky_add_tests(ArkeyanSettingsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanDatadirTest
+sky_add_tests(ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanDatadirTest
     ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanClockTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
     ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanFrameAnchorTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest ArkeyanToyboxKeyMaskTest
     ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanGlyphModelsTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanToyboxLinkTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest

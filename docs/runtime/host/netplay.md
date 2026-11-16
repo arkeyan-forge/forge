@@ -1,6 +1,6 @@
 # Online play (0.10.0): netplay in input lockstep
 
-> **Purpose:** how two players, each on his own computer with his own portal and Skylanders, play one game together online, and what the runtime must change to make that possible? · **Status:** design (not built yet; agreed by the owner 2026-11-08, step 0 started) · **Tags:** [Xbox] [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [TrapTeam] [SuperChargers] [Imaginators]
+> **Purpose:** how two players, each on his own computer with his own portal and Skylanders, play one game together online, and what the runtime must change to make that possible? · **Status:** design; step 0a probe implemented, game validation pending · **Tags:** [Xbox] [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [TrapTeam] [SuperChargers] [Imaginators]
 
 The owner's decision of 2026-11-04 (free exploration) stays the long-term goal; 0.10.0 is its first step, with
 the game's shared camera.
@@ -126,6 +126,85 @@ loops) as yield points; the step-0 probe finds any loop that hangs.
 6. Release 0.10.0 after the owner's own test with a friend.
 
 Rollback, joining a running game and more than two players: after 0.10.0.
+
+## Step 0a: local determinism probe [Xbox]
+
+[V] The runtime tools are behind **exactly** `SKY_NETPLAY_DETERMINISTIC=1`. Unset, or another value: native
+clocks and live pad reads; no probe files, frame buffers or frame logs. This step supplies virtual time, frame-latched
+pads, pad recording/replay and allocation hashes. [?] Two replays are still expected to diverge: guest threads run
+freely, VBlank/audio/GPU callbacks still follow host scheduling, and portals are not recorded. This is a diagnostic
+probe, not online play or proof of determinism. The cooperative guest scheduler and fixed-point delivery of interrupts
+are the next step; the remaining sources in section 3 still need an audit.
+
+[V] Each `WaitForFlip` starts the next numbered frame (first: 1), advances by the guest's present interval / 60 seconds
+(0 and immediate count as 1), updates the time-stamp bundle and latches every XAM user. System time starts at
+2026-01-01 00:00 UTC (FILETIME); `mftb` and the reported performance frequency use 49.875 MHz. Each host thread has
+its own per-read tick, reset on observing a new frame; reads remain monotonic through long busy waits. Rebuild the
+translated game code with the patched XenonRecomp so `mftb` calls `PPC_MFTB()` through the runtime.
+
+| Variable | Effect (requires deterministic mode) |
+|---|---|
+| `SKY_NETPLAY_RECORD=<file>` | writes all users' latched pads and connection flags; packet numbers come from changes, not polling rate |
+| `SKY_NETPLAY_REPLAY=<file>` | replaces live pads, SDL and every `SKY_PRESS*` source; mutually exclusive with recording; wrong game or malformed data refuses startup at the first frame |
+| `SKY_NETPLAY_HASH=<file>` | one `<frame> <64-bit hex total>` line per frame; finalization logs count and mean/max milliseconds (exit integration below) |
+| `SKY_NETPLAY_HASH_BLOCKS=1` | also writes `<file>.blocks`, with address, heap kind and hash for each block |
+| `SKY_NETPLAY_HASH_SKIP=<start>-<end>,...` | excludes hex guest address ranges, end exclusive; `0x` optional; malformed ranges are refused |
+
+[V] Replay EOF returns neutral pads while retaining the last recorded connection flags (an empty recording has no
+connected pads), with one log line. Reads before the first flip return neutral, disconnected pads. Replays have a
+512 MiB / 10,000,000-frame limit; magic, version, lengths, connection flags and trailing bytes are checked before
+states are decoded. The unit test includes 10,000 fixed-seed random malformed buffers.
+
+[V] Hash coverage: every current allocation in the virtual 4K, virtual 64K and physical heaps, and each mapped PE
+section with the writable characteristic. The executable is mapped by `runtime/loader.cpp`; the probe reads its
+mapped section table, without reopening the disc. Blocks end at 64 KiB guest address boundaries or allocation/section
+ends. The multiply-xor hash packs eight bytes per word and includes addresses, sizes of included bytes and heap
+identities in the total. Fully skipped blocks disappear. The block list is reused; each heap's allocation list is copied once per frame (a debug probe). Timing includes enumeration, hashing and output. [?] These are unsynchronised observations of running
+guest memory, not consistent snapshots; GPU/audio buffers are included until explicitly skipped. Use matching skip
+ranges for both runs. A hash contains no memory dump, and the diff tool reads only these probe outputs.
+
+To record, replay twice and diff, first set `EXE` to the rebuilt game executable and `ISO` to its read-only disc image.
+Use a new scratch directory for each run, the same starting save/settings/figures, and the full
+[isolation recipe](../../getting-started/testing.md#isolation-every-game-run). Keep portal changes identical manually;
+only pads are recorded. Example (run each game to normal exit, one process at a time):
+
+```sh
+probe="$PWD/.scratch/netplay"; mkdir -p "$probe"
+probe_run()
+{
+    run="$probe/$1"; shift
+    mkdir -p "$run"
+    nice env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=disk SDL_AUDIO_DISK_OUTPUT_FILE=/dev/null \
+        SKY_SETTINGS="$run/none.ini" SKY_LAUNCHER_INI="$run/none.ini" SKY_COLLECTION="$run/collection" \
+        SKY_SAVE_DIR="$run/save" SKYLANDERS_DATA="$run/data" SKY_LOG="$run/game.log" \
+        SKY_LAUNCHER_NO_UPDATE_CHECK=1 SKY_NETPLAY_DETERMINISTIC=1 "$@" "$EXE" "$ISO"
+}
+probe_run record SKY_NETPLAY_RECORD="$probe/pads.bin"
+probe_run replay-a SKY_NETPLAY_REPLAY="$probe/pads.bin" SKY_NETPLAY_HASH="$probe/a.hash" SKY_NETPLAY_HASH_BLOCKS=1
+probe_run replay-b SKY_NETPLAY_REPLAY="$probe/pads.bin" SKY_NETPLAY_HASH="$probe/b.hash" SKY_NETPLAY_HASH_BLOCKS=1
+python3 -I tools/netplay/hash_diff.py "$probe/a.hash" "$probe/b.hash"
+python3 -I tools/netplay/hash_diff.py --self-test
+```
+
+[V] `runtime/main.cpp` and the UWP entry point end with `std::_Exit` (static destructors never run), so both call
+`netplay::Finish()` first: it closes the probe files and logs the hash timing once. Hash files are flushed every
+frame, so a crash keeps every complete frame, without the timing line.
+
+The diff reports the first unequal or missing frame, then up to 16 differing blocks with guest address and heap.
+Exit codes: 0 identical, 1 divergence, 2 invalid input.
+
+[V] [SSA] First measurement (2026-11-16, M1 Pro, Europe disc): the fast recipe's presses recorded over 1059 frames,
+replayed twice. The replays differ from frame 1 (3 blocks: one 64K-heap block, two in the executable's data); from
+frame 10 on, about 145 of the 8193 blocks (2%) differ in every frame, stable to frame 1400: about 92 of 6904 physical
+blocks, 40 of 1240 in the 64K heap, 12 of 49 in the executable. Hashing the 512 MB costs about 80 ms per frame (the
+game runs at 12 FPS while it hashes). The guest scheduler is what these numbers wait for.
+
+[V] Formats are our own, little-endian, version 1. Pads: `SKYPAD01` (8 bytes), u32 version, u32 game-id byte length,
+u64 frame count, u32 user count, then the ASCII game id (1–64 lowercase letters, digits or underscore). Each frame
+has `MaxUsers` records: u8 connected, u16 buttons, u8 left/right trigger, four signed i16 sticks (13 bytes per user).
+The recorder updates the frame count and flushes after every complete frame. Blocks: `SKYBLK01` (8 bytes), u32 version;
+then per frame u64 frame, u32 block count, followed by `(u32 address, u32 heap, u64 hash)` records. Heap ids:
+1 virtual4K, 2 virtual64K, 3 physical, 4 executable image. Neither format stores guest bytes.
 
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one

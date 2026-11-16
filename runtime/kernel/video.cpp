@@ -1,3 +1,4 @@
+#include "netplay/clock.h"
 #include "kernel/video.h"
 #include "d3d/ultrawide.h"
 #include "game.h"
@@ -185,6 +186,8 @@ static void ClockCheck()
 
 void WaitForFlip(uint32_t presentInterval)
 {
+    if (netplay::Enabled())
+        netplay::OnFrame(presentInterval);
     // Test aid: delay real presents before sampling the actual vblank counter, never fabricate misses.
     static const uint32_t lateMs = [] {
         const char* value = skyenv::Get("SKY_FPS_TEST_LATE_MS");

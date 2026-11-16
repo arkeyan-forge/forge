@@ -32,7 +32,7 @@ and per-game manifests; Giants' hat picker; the four Giants sidekicks. What was 
 the per-game `accepts`, the extra areas written only when needed, variants as figures (LightCore creation was already
 in both Add a figure screens).
 
-### Co-op: a Toy Box per player (design; the code has one player today)
+### Co-op: a Toy Box per player (design and current building blocks)
 
 The owner: "each player has their own Toy Box and their physical figures".
 - **Seats belong to players**: the catalogue's `seats` already carry `player` (1, 2; 0 for shared seats such as the
@@ -42,11 +42,14 @@ The owner: "each player has their own Toy Box and their physical figures".
   screen); the wheel is per player too.
 - **Emulated and real figures side by side**: a seat holds either a collection dump (emulated) or what a real portal
   reads (read-only, "Save a copy to My Skylanders"); the emulated portal's 16 slots are shared, so Player 2's emulated
-  figure can sit next to Player 1's real one once the real and emulated portals are merged (a mixed portal: not built,
-  `toybox_ux.md` section 4).
+  figure can sit next to Player 1's real one through the mixed portal [V]
+  (`runtime/host/portal_mixed.cpp`; [portal.md](portal.md)).
 - **The collection is shared**: both players pick from the same folder; a figure on one player's seat is marked in
   the other's list ("Player 1 has it") and cannot be placed twice (one physical toy = one place).
-- **Not built**: a second pad's input (only XAM user 0 gets input today), two Toy Boxes, the mixed portal.
+- **Current building blocks [V]**: two controller users (`MaxUsers = 2`, `runtime/host/input.h`): XAM user 0 gets the
+  keyboard/first pad, user 1 gets the second pad or `SKY_PRESS2` script. The mixed portal combines real and emulated
+  figures (`runtime/host/portal_mixed.cpp`).
+- **Still design [?]**: the two independently opened, per-player Toy Boxes described above.
 
 ## Where it is
 
