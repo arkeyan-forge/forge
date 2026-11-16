@@ -1,5 +1,6 @@
 #include "gpu/buffer_cache.h"
 #include "gpu/context.h"
+#include "gpu/index_convert.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -126,7 +127,7 @@ namespace
     {
         uint32_t address;
         uint32_t bytes;
-        uint32_t wordSize; // 2: 8-in-32 (vertices), 1: 8-in-16 (indices)
+        uint32_t wordSize; // 2: 8-in-32 (vertices), 1: 8-in-16 (16-bit indices), 4: 8-in-32 (32-bit indices)
         uint32_t stride;   // vertices with pairWords: the vertex size
         uint64_t pairWords; // the vertex words swapped 8-in-16 (gpu::CacheVertices)
 
@@ -192,16 +193,7 @@ namespace
 #endif
     }
 
-    uint16_t Swap16(uint16_t value)
-    {
-#if defined(_MSC_VER) && !defined(__clang__)
-        return _byteswap_ushort(value);
-#else
-        return __builtin_bswap16(value);
-#endif
-    }
-
-    // Byte-swaps the key's guest bytes into `destination`; for indices (`wordSize` 1) also records the smallest and
+    // Byte-swaps the key's guest bytes into `destination`; for indices (`wordSize` 1 or 4) also records the smallest and
     // largest index in `entry`.
     void Convert(const uint8_t* source, uint8_t* destination, const Key& key, Entry& entry)
     {
@@ -222,20 +214,9 @@ namespace
         }
         else
         {
-            uint32_t minIndex = 0xFFFF, maxIndex = 0;
-            uint32_t i = 0;
-            for (; i + 2 <= bytes; i += 2)
-            {
-                uint16_t value;
-                memcpy(&value, source + i, 2);
-                value = Swap16(value);
-                memcpy(destination + i, &value, 2);
-                minIndex = std::min<uint32_t>(minIndex, value);
-                maxIndex = std::max<uint32_t>(maxIndex, value);
-            }
-            memcpy(destination + i, source + i, bytes - i);
-            entry.minIndex = std::min(minIndex, maxIndex);
-            entry.maxIndex = maxIndex;
+            const gpu::IndexRange range = gpu::ConvertIndices(source, destination, bytes, key.wordSize == 4);
+            entry.minIndex = range.minIndex;
+            entry.maxIndex = range.maxIndex;
         }
     }
 
@@ -350,12 +331,12 @@ BufferRange gpu::CacheVertices(
 }
 
 BufferRange gpu::CacheIndices(
-    const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex, uint32_t& maxIndex)
+    const void* data, uint32_t guestAddress, uint32_t bytes, uint32_t& minIndex, uint32_t& maxIndex, bool indices32)
 {
     ProducerLock producer;
     if (gpu::detail::DeviceLost())
         return {};
-    return Acquire(data, { guestAddress, bytes, 1, 0, 0 }, &minIndex, &maxIndex);
+    return Acquire(data, { guestAddress, bytes, indices32 ? 4u : 1u, 0, 0 }, &minIndex, &maxIndex);
 }
 
 void gpu::BufferCacheFrameDone(uint64_t completed)

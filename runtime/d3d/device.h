@@ -44,6 +44,9 @@ namespace d3d
     {
         constexpr uint32_t VertexBufferFetch = 0x18; // vertex fetch constant: address dword, size dword
         constexpr uint32_t IndexBufferAddress = 0x18;
+        // An index buffer's Common bit 31: 32-bit indices (D3DFMT_INDEX32), else 16-bit.
+        constexpr uint32_t Index32 = 0x80000000;
+        constexpr uint32_t IndexSize(uint32_t common) { return (common & Index32) != 0 ? 4 : 2; }
         constexpr uint32_t TextureFetch = 0x1C; // 6-dword texture fetch constant
         constexpr uint32_t SurfaceInfo = 0x1C; // RB_COLOR_INFO / RB_DEPTH_INFO word
         constexpr uint32_t SurfaceSize = 0x24;

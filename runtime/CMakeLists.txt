@@ -382,6 +382,10 @@ target_include_directories(ArkeyanClockTest PRIVATE .)
 add_executable(ArkeyanRangeHashTest gpu/range_hash_test.cpp)
 target_include_directories(ArkeyanRangeHashTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 
+# Guest indices in host order, 16-bit and 32-bit: ./ArkeyanIndexConvertTest
+add_executable(ArkeyanIndexConvertTest gpu/index_convert_test.cpp)
+target_include_directories(ArkeyanIndexConvertTest PRIVATE .)
+
 # 16-bit vertex component pairs back in order after the 32-bit swap: ./ArkeyanVertexPairsTest
 add_executable(ArkeyanVertexPairsTest d3d/vertex_pairs_test.cpp)
 target_include_directories(ArkeyanVertexPairsTest PRIVATE .)
