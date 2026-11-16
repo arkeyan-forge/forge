@@ -54,9 +54,12 @@ runs its Linux checks on the host's architecture; the workshop's need amd64 for 
 launcher's Windows build uses clang-cl and lld-link with the CRT and SDK fetched by `xwin`, in an image built locally and
 never pushed (Microsoft's licence covers building, not redistributing them).
 
-**Player kits** (`tools/ci/kits_local.sh [--attach vX.Y.Z] [macos] [linux] [windows]`, an Apple Silicon Mac): the
-three kits with `KIT_LAYOUT_RECORD=1` (public headers, no disc), `KIT_DEPS=/tmp/kit-deps` (the same path in Docker),
-macOS natively, Windows cross-built with the Mac-hosted llvm-mingw, Linux in its image (100 to 166 minutes). Each kit
+**Player kits** (`tools/ci/kits_local.sh [--attach vX.Y.Z] [--serial] [macos] [linux] [windows]`, an Apple Silicon
+Mac): the three kits with `KIT_LAYOUT_RECORD=1` (public headers, no disc), `KIT_DEPS=/tmp/kit-deps` (the same path in
+Docker), macOS natively, Windows cross-built with the Mac-hosted llvm-mingw, Linux in its image. `tools/make_kit.sh
+prepare` first applies the submodule patches, emits the public headers and unpacks the FFmpeg source, which the
+platforms share; the three then build at the same time (`JOBS` each, one log each in `.scratch/kits/`), and the first
+failure stops the others. `--serial` builds them one after the other (100 to 166 minutes). Each kit
 passes `tools/ci/check_kit.sh`: scan with `tools/kit_scan.sh`, the ZIP's inventory and format-2 ABI metadata,
 re-extract, verify `files.sha256`, scan again, executable modes, Mac signatures and rpaths. `--attach` then runs
 `tools/ci/kits.py publish` with the local `gh` login: it needs an existing draft holding the launcher's files and

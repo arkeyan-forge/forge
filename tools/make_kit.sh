@@ -10,6 +10,7 @@
 #   tools/make_kit.sh [windows] [macos] [linux]        (default: windows and macos)
 #   KIT_GAMES="ssa" tools/make_kit.sh macos            (a kit of some games only; default: the six games)
 #   KIT_LAYOUT_RECORD=1 tools/make_kit.sh macos        (#72, opt-in: kit_format=2, built from public sources only)
+#   tools/make_kit.sh prepare; KIT_PREPARED=1 tools/make_kit.sh macos & ...   (the platforms side by side, #20)
 #
 # The default kit needs private/<game>/ppc/ppc_config.h and ppc_context.h of every game (SSA: tools/prepare_game.sh;
 # the others: Arkeyan-Builder's output, docs/release/launcher/kit_contract.md; the runtime is compiled against these two
@@ -25,6 +26,9 @@
 # ($KIT_DEPS/ffmpeg/work, downloaded when missing). KIT_DEPS (default private/) holds only these public downloads and
 # builds. The Linux kit is built in Docker (tools/linux/kit.Dockerfile, amd64: zig's clang for glibc 2.34, the compiler
 # the player's Arkeyan-Builder downloads), KIT_DEPS mounted. JOBS (default 6) sets the parallelism.
+# The platforms share the submodule patches, the public headers (build-kit-abi/, .scratch/abi/) and the FFmpeg source:
+# `prepare` makes them once, and a KIT_PREPARED=1 run reuses them instead of writing them again, so that several
+# platforms can be built at the same time (tools/ci/kits_local.sh).
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -51,7 +55,7 @@ abi=$root/build-kit-abi
 # Where the runtime of game $1 finds its two headers.
 ppc_headers() { if [ $headers = private ]; then echo "private/$1/ppc"; else echo "$abi/$1"; fi; }
 for g in $games; do
-    if [ $headers = public ]; then
+    if [ $headers = public ] && [ "${KIT_PREPARED:-0}" != 1 ]; then
         # The Linux kit image has no clang++: zig's builds the host emitter there.
         [ -x /opt/zig/zig ] && [ "$(uname -s)" = Linux ] && emit_cxx="/opt/zig/zig c++" || emit_cxx=${CXX:-clang++}
         rm -rf "${abi:?}/$g"
@@ -173,7 +177,7 @@ assemble() { # <build dir> <kit dir> <platform>
     # The FFmpeg source as released, but for tests/ (fate reference data: not part of the library, and it holds names
     # that have no place in a kit). The build script downloads and checks the original, by its SHA-256.
     ffsrc=$deps/ffmpeg/work/ffmpeg-8.1.2.tar.xz
-    [ -f "$ffsrc" ] || { mkdir -p "$deps/ffmpeg/work" && curl -fL --retry 3 -o "$ffsrc" https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz; }
+    [ -f "$ffsrc" ] || FFMPEG_WORK=$deps/ffmpeg/work tools/ffmpeg/build.sh source
     if tar --version 2>/dev/null | grep -q GNU; then # the Linux kit image: GNU tar has no @archive input
         xz -dc "$ffsrc" | tar --delete --wildcards 'ffmpeg-8.1.2/tests' | xz > "$kit/licenses/ffmpeg-8.1.2-without-tests.tar.xz"
     else
@@ -419,14 +423,22 @@ for platform in $platforms; do
             # copied into the image.
             # KIT_DEPS and KIT_SCAN_WORDS mounted when they are outside the checkout, KIT_DEPS at its own path (the
             # FFmpeg relink objects keep it: docs/release/launcher/kits_without_disc.md, step 6).
+            # A git worktree names the main checkout's .git by its full path and its submodules by relative paths: the
+            # checkout and that .git are then mounted at their own paths instead of /src.
+            src=/src
+            set --
+            common=$(cd "$(git rev-parse --git-common-dir)" && pwd)
+            case $common in "$root"/*) ;; *) src=$root; set -- -v "$common:$common" ;; esac
             case $deps in
-                "$root"/*) inner_deps=/src/${deps#"$root"/}; set -- ;;
-                *) inner_deps=$deps; set -- -v "$deps:$deps" ;;
+                "$root"/*) inner_deps=$src/${deps#"$root"/} ;;
+                *) inner_deps=$deps; set -- "$@" -v "$deps:$deps" ;;
             esac
             if [ -n "${KIT_SCAN_WORDS:-}" ]; then set -- "$@" -v "$KIT_SCAN_WORDS:/kit_scan_words.txt:ro" -e KIT_SCAN_WORDS=/kit_scan_words.txt; fi
             docker build -q --platform linux/amd64 -t ssarecomp-kit-linux -f tools/linux/kit.Dockerfile tools/linux > /dev/null
-            docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -v "$root:/src" "$@" -e JOBS="$jobs" -e KIT_GAMES="$games" \
+            # --init: the docker client passes on a SIGTERM, and a shell as PID 1 would ignore it.
+            docker run --rm --init --platform linux/amd64 --user "$(id -u):$(id -g)" -v "$root:$src" -w "$src" "$@" -e JOBS="$jobs" -e KIT_GAMES="$games" \
                 -e KIT_LAYOUT_RECORD="${KIT_LAYOUT_RECORD:-0}" -e KIT_HEADERS_FROM_PRIVATE="${KIT_HEADERS_FROM_PRIVATE:-0}" \
+                -e KIT_PREPARED="${KIT_PREPARED:-0}" \
                 -e KIT_DEPS="$inner_deps" -e KIT_SCAN_USER="$(id -un)" ssarecomp-kit-linux tools/make_kit.sh linux
             continue
         fi
@@ -467,8 +479,13 @@ for platform in $platforms; do
             thirdparty/XenosRecomp/thirdparty/dxc-bin/lib/x64/libdxcompiler.so "$kit/bin/"
         finish "$kit" linux
         ;;
+    prepare)
+        # The submodule patches (each configure applies them otherwise) and the FFmpeg source; the headers are above.
+        cmake -P cmake/patches.cmake
+        FFMPEG_WORK=$deps/ffmpeg/work tools/ffmpeg/build.sh source
+        ;;
     *)
-        echo "usage: $0 [windows] [macos] [linux]" >&2
+        echo "usage: $0 [windows] [macos] [linux] [prepare]" >&2
         exit 1
         ;;
     esac
