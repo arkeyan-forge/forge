@@ -10,6 +10,7 @@
 #   uwp-x64      Xbox One / Series X|S in Dev Mode (UWP AppContainer), with llvm-mingw: WINAPI_FAMILY_APP, no
 #                instruction above -march=btver2 in compiled code (FFmpeg's SIMD is chosen at run time)
 #   linux-x64    the Linux player kit, in its image (tools/linux/kit.Dockerfile): zig cc for glibc 2.34 (zig-cc)
+#   source       only download, check and unpack the source (tools/make_kit.sh prepare: once for every kit)
 #
 # The default prefix is private/ffmpeg/<target>; configure the game with -DARKEYAN_FFMPEG_ROOT=<prefix>. Tested with
 # Apple clang on macOS arm64 and llvm-mingw 20260922 (the Windows build decodes under Wine, the UWP one passes
@@ -23,13 +24,12 @@ SHA256=464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c
 URL="https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz"
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-TARGET=${1:?usage: build.sh host|windows-x64|uwp-x64|linux-x64 [prefix]}
+TARGET=${1:?usage: build.sh host|windows-x64|uwp-x64|linux-x64|source [prefix]}
 PREFIX=${2:-$ROOT/private/ffmpeg/$TARGET}
 WORK=${FFMPEG_WORK:-$ROOT/private/ffmpeg/work} # make_kit.sh: $KIT_DEPS/ffmpeg/work
 JOBS=${JOBS:-4}
 
-mkdir -p "$WORK" "$PREFIX"
-PREFIX=$(cd "$PREFIX" && pwd)
+mkdir -p "$WORK"
 ARCHIVE=$WORK/ffmpeg-$VERSION.tar.xz
 if [ ! -f "$ARCHIVE" ]; then
     curl -fL --retry 3 -o "$ARCHIVE.part" "$URL"
@@ -43,6 +43,9 @@ fi
 
 SOURCE=$WORK/ffmpeg-$VERSION
 [ -d "$SOURCE" ] || tar -xf "$ARCHIVE" -C "$WORK"
+[ "$TARGET" != source ] || exit 0
+mkdir -p "$PREFIX"
+PREFIX=$(cd "$PREFIX" && pwd)
 BUILD=$WORK/build-$TARGET-$(uname -s)-$(uname -m) # "host" differs between macOS and a Linux container
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
