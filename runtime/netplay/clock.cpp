@@ -1,4 +1,5 @@
 #include "netplay/clock.h"
+#include "netplay/events.h"
 #include <algorithm>
 #include <cstdlib>
 #include <string_view>
@@ -40,6 +41,7 @@ namespace netplay
     uint64_t ReadTimeBase()
     {
         thread_local ReadCursor cursor;
+        CountEvent(Counter::TimeBase);
         return cursor.Read(g_clock.Steps());
     }
 }

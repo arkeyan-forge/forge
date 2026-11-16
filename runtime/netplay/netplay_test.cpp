@@ -1,11 +1,15 @@
 #include "netplay/clock.h"
+#include "netplay/delivery.h"
+#include "netplay/events.h"
 #include "netplay/inputs.h"
 #include "netplay/state_hash.h"
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <random>
+#include <string>
 #include <thread>
 
 namespace
@@ -190,8 +194,108 @@ namespace
         Check(netplay::WritableSections(image, 0x82000000, skips, error), "mapped PE sections");
         Check(skips.size() == 1 && skips[0].begin == 0x82000200 && skips[0].end == 0x82000240,
             "only writable section included");
+        // A section that ends past the mapped image (the executable's last, read-only one) is not mapped there: it
+        // is cut at the image's end, not a reason to refuse the hash.
+        put(128 + 12, 1000, 4);
+        Check(netplay::WritableSections(image, 0x82000000, skips, error, 1024) && skips.size() == 1,
+            "read-only section past the mapped image ignored");
+        put(128 + 36, 0x80000000, 4);
+        Check(netplay::WritableSections(image, 0x82000000, skips, error, 1024) && skips.size() == 2 &&
+                  skips[1].begin == 0x820003E8 && skips[1].end == 0x82000400,
+            "writable section cut at the mapped end");
+        put(128 + 12, 2000, 4);
+        Check(netplay::WritableSections(image, 0x82000000, skips, error, 1024) && skips.size() == 1,
+            "section wholly past the mapped image ignored");
         put(88 + 8, 0xFFFFFFFF, 4);
         Check(!netplay::WritableSections(image, 0x82000000, skips, error), "invalid PE section refused");
+    }
+
+    void BlockSizeTest()
+    {
+        std::vector<uint8_t> bytes(0x2101, 0x5A);
+        std::vector<netplay::Block> blocks;
+        netplay::HashAllocation(bytes, 0x10F00, netplay::Heap::Virtual64K, {}, blocks, 0x1000);
+        Check(blocks.size() == 4 && blocks[0].address == 0x10F00 && blocks[1].address == 0x11000 &&
+                  blocks[2].address == 0x12000 && blocks[3].address == 0x13000,
+            "4 KiB block edges");
+        uint64_t value = 0;
+        Check(netplay::ParseCount("4096", 256, 0x10000, true, value) && value == 4096, "block size parse");
+        Check(netplay::ParseCount("30", 1, 100000, false, value) && value == 30, "sampling parse");
+        for (const char* text : { "", "0", "100", "3000", "131072", "4k", "-4096", "4096 " })
+            Check(!netplay::ParseCount(text, 256, 0x10000, true, value), "bad block size refused");
+        Check(!netplay::ParseCount("100001", 1, 100000, false, value), "oversize sampling refused");
+    }
+
+    void DeliveriesTest()
+    {
+        netplay::Deliveries audio(48000, 256);
+        Check(audio.GrantSteps(4) == 12 && audio.WaitDone(12, std::chrono::nanoseconds(0)),
+            "no wait before the delivering thread exists");
+        audio.Start();
+        Check(!audio.TryTake(), "grants before the start dropped");
+        uint64_t granted = 0;
+        std::array<uint64_t, 8> totals{};
+        for (auto& total : totals)
+            total = granted = audio.GrantSteps(1);
+        Check(totals == std::array<uint64_t, 8>{ 15, 18, 21, 25, 28, 31, 34, 37 },
+            "audio periods per frame, remainder kept");
+        uint64_t taken = 0;
+        while (audio.TryTake())
+            ++taken;
+        Check(taken == 25, "every granted delivery taken once");
+        Check(!audio.WaitDone(granted, std::chrono::nanoseconds(0)), "flip waits for the callbacks");
+        for (uint64_t i = 0; i < taken; ++i)
+            audio.Done();
+        Check(audio.WaitDone(granted, std::chrono::nanoseconds(0)), "flip released once all are done");
+        netplay::Deliveries vblanks(60, 1);
+        vblanks.Start();
+        Check(vblanks.Grant(2) == 2 && vblanks.GrantSteps(1) == 3, "vblanks per frame");
+        std::thread deliverer([&] {
+            for (int i = 0; i < 3;)
+                if (vblanks.TryTake())
+                {
+                    vblanks.Done();
+                    ++i;
+                }
+        });
+        Check(vblanks.WaitDone(3, std::chrono::seconds(5)), "flip released by another thread");
+        deliverer.join();
+        Check(!vblanks.TryTake(), "no delivery without a grant");
+    }
+
+    std::string LogText(FILE* file)
+    {
+        std::string text;
+        if (fflush(file) != 0 || fseek(file, 0, SEEK_SET) != 0)
+            return {};
+        for (int c = fgetc(file); c != EOF; c = fgetc(file))
+            text += char(c);
+        return text;
+    }
+
+    void EventsTest()
+    {
+        FILE* file = tmpfile();
+        Check(file != nullptr, "event scratch file");
+        if (!file)
+            return;
+        netplay::EventLog log(file);
+        log.Count(netplay::Counter::VBlank);
+        log.Count(netplay::Counter::VBlank);
+        log.Count(netplay::Counter::TimeBase);
+        log.Note("thread", "0x82001000");
+        Check(log.EndFrame(0), "frame 0 written");
+        log.Note("open", "game:\\levels\\a b.str");
+        log.Count(netplay::Counter::AudioCallback);
+        Check(log.EndFrame(1), "frame 1 written");
+        Check(log.EndFrame(2), "empty frame written");
+        Check(LogText(file) == "0 thread 0x82001000\n"
+                               "0 counts vblank=2 gfxint=0 audio=0 timebase=1\n"
+                               "1 open game:\\levels\\a b.str\n"
+                               "1 counts vblank=0 gfxint=0 audio=1 timebase=0\n"
+                               "2 counts vblank=0 gfxint=0 audio=0 timebase=0\n",
+            "frame-stamped events and counters reset per frame");
+        fclose(file);
     }
 }
 
@@ -200,6 +304,9 @@ int main()
     ClockTest();
     InputsTest();
     HashTest();
+    BlockSizeTest();
+    EventsTest();
+    DeliveriesTest();
     if (g_failures)
     {
         fprintf(stderr, "ArkeyanNetplayTest: %d failures\n", g_failures);

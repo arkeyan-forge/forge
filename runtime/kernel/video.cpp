@@ -1,4 +1,6 @@
 #include "netplay/clock.h"
+#include "netplay/delivery.h"
+#include "netplay/events.h"
 #include "kernel/video.h"
 #include "d3d/ultrawide.h"
 #include "game.h"
@@ -92,11 +94,16 @@ namespace
         static const bool logVBlanks = skyenv::Get("SKY_VBLANK_LOG") != nullptr;
         VBlankLog log;
         auto nextVBlank = std::chrono::steady_clock::now() + VBlankPeriod;
+        const bool frameDelivery = netplay::FrameDelivery();
+        if (frameDelivery)
+            netplay::g_vblankDeliveries.Start();
+        uint32_t ungranted = 0;
         while (true)
         {
             std::pair<uint32_t, std::function<void()>> interrupt;
             uint32_t callback, callbackContext;
             std::chrono::steady_clock::time_point due{};
+            bool granted = false;
             {
                 std::unique_lock lock(g_mutex);
                 if (g_wake.wait_until(lock, nextVBlank, [] { return !g_pending.empty(); }))
@@ -108,6 +115,17 @@ namespace
                 {
                     due = nextVBlank;
                     nextVBlank += VBlankPeriod;
+                    // Netplay: a blank only when a frame granted one, so every frame holds the same blanks.
+                    if (frameDelivery)
+                    {
+                        granted = netplay::g_vblankDeliveries.TryTake();
+                        if (!granted && (netplay::g_flipping.load(std::memory_order_acquire) ||
+                                            ++ungranted < netplay::VBlankFallbackTicks))
+                            continue;
+                        if (!granted)
+                            netplay::NoteEvent("vblank", "fallback");
+                        ungranted = 0;
+                    }
                     g_vblanks++;
                     g_vblankSignal.notify_all();
                     interrupt = { VBlankInterrupt, [] { g_memory.Write<uint32_t>(VBlankStatusRegister, 1); } };
@@ -119,12 +137,20 @@ namespace
             if (interrupt.second)
                 interrupt.second();
             if (callback == 0)
+            {
+                if (granted)
+                    netplay::g_vblankDeliveries.Done();
                 continue;
+            }
 
+            netplay::CountEvent(
+                interrupt.first == VBlankInterrupt ? netplay::Counter::VBlank : netplay::Counter::GraphicsInterrupt);
             ctx.r3.u64 = interrupt.first;
             ctx.r4.u64 = callbackContext;
             auto called = std::chrono::steady_clock::now();
             CallGuest(ctx, callback);
+            if (granted)
+                netplay::g_vblankDeliveries.Done();
             {
                 std::lock_guard lock(g_mutex);
                 g_interruptsHandled++;
@@ -184,8 +210,31 @@ static void ClockCheck()
     }
 }
 
+namespace
+{
+    // Netplay: the frame grants its blanks and audio periods and returns once their guest callbacks ran, so every
+    // frame of a replay holds the same ones. The blanks keep their wall-clock tick, which paces the frames.
+    void FrameDeliveryFlip(uint32_t presentInterval, uint32_t vblanks)
+    {
+        const uint32_t steps = presentInterval == 0 || (presentInterval & 0x80000000u) ? 1 : presentInterval;
+        const uint64_t audio = netplay::g_audioDeliveries.GrantSteps(steps);
+        const uint64_t blanks = netplay::g_vblankDeliveries.Grant(std::max(vblanks, 1u));
+        constexpr auto Late = std::chrono::milliseconds(250);
+        if (!netplay::g_vblankDeliveries.WaitDone(blanks, Late))
+            netplay::NoteEvent("vblank", "late");
+        if (!netplay::g_audioDeliveries.WaitDone(audio, Late))
+            netplay::NoteEvent("audio", "late");
+        netplay::g_flipping.store(false, std::memory_order_release);
+        std::lock_guard lock(g_mutex);
+        g_lastFlip = g_vblanks;
+        g_lastFlipNs = SteadyNs();
+    }
+}
+
 void WaitForFlip(uint32_t presentInterval)
 {
+    if (netplay::FrameDelivery())
+        netplay::g_flipping.store(true, std::memory_order_release);
     if (netplay::Enabled())
         netplay::OnFrame(presentInterval);
     // Test aid: delay real presents before sampling the actual vblank counter, never fabricate misses.
@@ -223,6 +272,11 @@ void WaitForFlip(uint32_t presentInterval)
     else if (g_fpsLimit == 30 && vblanks == 1 && game::Current().presentsAtEveryBlank)
         vblanks = 2;
 
+    if (netplay::FrameDelivery())
+    {
+        FrameDeliveryFlip(presentInterval, vblanks);
+        return;
+    }
     std::unique_lock lock(g_mutex);
     if (!g_vblanksRunning)
         return;

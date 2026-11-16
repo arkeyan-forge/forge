@@ -1,4 +1,5 @@
 #include "kernel/files.h"
+#include "netplay/events.h"
 #include "kernel/level_redirect.h"
 #include "game.h"
 #include "gpu/draw.h"
@@ -503,6 +504,7 @@ namespace
         if (status == StatusSuccess)
         {
             ::game::NoteFileOpen(file->path);
+            netplay::NoteEvent("open", file->path);
             g_lastOpenNs.store(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now().time_since_epoch())
                                        .count()),

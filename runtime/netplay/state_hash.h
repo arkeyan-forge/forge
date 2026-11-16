@@ -30,7 +30,9 @@ namespace netplay
     uint64_t Mix(uint64_t hash, uint64_t word);
     uint64_t HashBytes(std::span<const uint8_t> bytes, uint64_t address, std::span<const Range> skips);
     void HashAllocation(std::span<const uint8_t> bytes, uint32_t address, Heap heap, std::span<const Range> skips,
-        std::vector<Block>& blocks);
+        std::vector<Block>& blocks, uint32_t blockBytes = 0x10000);
+    // A decimal count in [min, max] (a power of two when asked): the probe's block size and sampling period.
+    bool ParseCount(std::string_view text, uint64_t min, uint64_t max, bool powerOfTwo, uint64_t& value);
     bool ParseSkips(std::string_view text, std::vector<Range>& ranges, std::string& error);
     bool WritableSections(std::span<const uint8_t> image, uint32_t base, std::vector<Range>& ranges, std::string& error,
         uint64_t mappedSize = 0);

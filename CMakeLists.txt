@@ -171,7 +171,8 @@ endif()
 # The runtime is built into build/ArkeyanRuntime/: the executable, the bundle and the test paths keep their names.
 add_subdirectory(runtime ArkeyanRuntime)
 
-add_library(ArkeyanNetplay STATIC runtime/netplay/clock.cpp runtime/netplay/inputs.cpp runtime/netplay/state_hash.cpp)
+add_library(ArkeyanNetplay STATIC runtime/netplay/clock.cpp runtime/netplay/delivery.cpp runtime/netplay/events.cpp runtime/netplay/inputs.cpp
+    runtime/netplay/state_hash.cpp)
 target_include_directories(ArkeyanNetplay PUBLIC ${CMAKE_SOURCE_DIR}/runtime)
 sky_quality(ArkeyanNetplay)
 target_sources(ArkeyanRuntime PRIVATE runtime/netplay/runtime.cpp)

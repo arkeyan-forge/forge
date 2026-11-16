@@ -1,3 +1,5 @@
+#include "netplay/clock.h"
+#include "netplay/events.h"
 #include "kernel/objects.h"
 #include "kernel/yield_backoff.h"
 #include "loader.h"
@@ -63,6 +65,12 @@ PPC_FUNC(__imp__ExCreateThread)
     uint8_t cpu = affinity != 0 ? uint8_t(__builtin_ctz(affinity)) : 0;
 
     auto thread = CreateGuestThread(start, context, xapiStartup, stackSize, flags & CreateSuspended, cpu);
+    if (netplay::Enabled())
+    {
+        char detail[16];
+        snprintf(detail, sizeof(detail), "0x%08X", start);
+        netplay::NoteEvent("thread", detail);
+    }
     fprintf(stderr, "[thread] %u created: start 0x%08X context 0x%08X%s\n", thread->id, start, context,
         (flags & CreateSuspended) ? " (suspended)" : "");
     if (handlePointer != 0)

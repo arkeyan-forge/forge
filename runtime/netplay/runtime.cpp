@@ -1,4 +1,5 @@
 #include "netplay/clock.h"
+#include "netplay/events.h"
 #include "netplay/inputs.h"
 #include "netplay/state_hash.h"
 #include "host/env.h"
@@ -10,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
+#include <optional>
 #include <ppc_config.h>
 
 extern const GameInfo g_gameInfo;
@@ -79,7 +81,8 @@ namespace netplay
             FILE* record = nullptr;
             FILE* totals = nullptr;
             FILE* sidecar = nullptr;
-            uint64_t frames = 0, hashed = 0;
+            std::optional<EventLog> events;
+            uint64_t frames = 0, hashed = 0, hashEvery = 1, blockBytes = 0x10000;
             double totalMs = 0, maxMs = 0;
             std::vector<Range> skips, imageRanges;
             std::vector<Block> blocks;
@@ -125,6 +128,12 @@ namespace netplay
                         headers[i] = g_memory.Read<uint8_t>(PPC_IMAGE_BASE + uint32_t(i));
                     if (!WritableSections(headers, PPC_IMAGE_BASE, imageRanges, error, PPC_IMAGE_SIZE))
                         Refuse(error.c_str());
+                    if (const char* every = skyenv::Get("SKY_NETPLAY_HASH_EVERY"))
+                        if (!ParseCount(every, 1, 100000, false, hashEvery))
+                            Refuse("SKY_NETPLAY_HASH_EVERY is not a count from 1 to 100000");
+                    if (const char* size = skyenv::Get("SKY_NETPLAY_HASH_BLOCK"))
+                        if (!ParseCount(size, 256, 0x10000, true, blockBytes))
+                            Refuse("SKY_NETPLAY_HASH_BLOCK is not a power of two from 256 to 65536");
                     // The guest address space bounds the number of page fragments, even with one allocation per page.
                     blocks.reserve(1 << 20);
                     totals = Open(path, "w");
@@ -135,6 +144,11 @@ namespace netplay
                         Write(sidecar, "SKYBLK01", 8);
                         WriteLE(sidecar, 1, 4);
                     }
+                }
+                if (const char* path = skyenv::Get("SKY_NETPLAY_EVENTS"))
+                {
+                    events.emplace(Open(path, "w"));
+                    g_events.store(&*events, std::memory_order_release);
                 }
                 g_probe.store(this, std::memory_order_release);
             }
@@ -152,6 +166,11 @@ namespace netplay
                     fclose(totals);
                 if (sidecar)
                     fclose(sidecar);
+                if (events)
+                {
+                    g_events.store(nullptr, std::memory_order_release);
+                    events->Close();
+                }
                 if (hashed)
                     fprintf(stderr, "[netplay] hashes: %llu frames, mean %.3f ms, max %.3f ms\n",
                         static_cast<unsigned long long>(hashed), totalMs / double(hashed), maxMs);
@@ -197,7 +216,7 @@ namespace netplay
             void Allocation(uint32_t address, uint32_t size, Heap heap)
             {
                 const auto* bytes = static_cast<const uint8_t*>(g_memory.Translate(address));
-                HashAllocation(std::span(bytes, size), address, heap, skips, blocks);
+                HashAllocation(std::span(bytes, size), address, heap, skips, blocks, uint32_t(blockBytes));
             }
 
             void Scan(const GuestHeap& heap, Heap kind)
@@ -212,7 +231,7 @@ namespace netplay
 
             void Hash()
             {
-                if (!totals)
+                if (!totals || frames % hashEvery != 0)
                     return;
                 const auto start = std::chrono::steady_clock::now();
                 blocks.clear();
@@ -264,6 +283,8 @@ namespace netplay
         std::lock_guard lock(probe.mutex);
         if (probe.finished)
             return;
+        if (probe.events && !probe.events->EndFrame(probe.frames))
+            Refuse("event log write failed");
         g_clock.Advance(presentInterval);
         WriteBundle();
         probe.Latch();
