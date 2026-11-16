@@ -1,7 +1,15 @@
 // Test the actual drawing hit registry and pointer/click handlers without initializing the renderer.
 #include "draw.cpp"
 
-void toybox::Model::Run(Command) {} // Click's unmatched right button goes Back; no game model is needed here.
+// No game model is needed here: the model's actions only record what the hits asked for.
+namespace
+{
+    std::vector<std::string> g_calls;
+}
+void toybox::Model::Run(Command command) { g_calls.push_back("run=" + std::to_string(int(command))); }
+void toybox::Model::FocusAddCell(int cell) { g_calls.push_back("focus add=" + std::to_string(cell)); }
+void toybox::Model::HoverAddCell(int cell) { g_calls.push_back("hover add=" + std::to_string(cell)); }
+void toybox::Model::FocusColumnRow(int row) { g_calls.push_back("seat=" + std::to_string(row)); }
 
 int main()
 {
@@ -73,8 +81,79 @@ int main()
     g_hovered = HoveredHit();
     Pointer(65, 5, true);
     check(focused == 1);
-    printf("%d checks, %d failures\n", 15, failures);
-    puts(failures ? "FAIL: menu pointer and click"
-                  : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus");
+    // Add a figure: while a toy's versions are open, the other cards neither light up nor take the focus under the
+    // pointer; a click still picks one. With none open, the pointer focuses the card it moves onto.
+    g_hits.clear();
+    g_hovered = -1;
+    g_calls.clear();
+    model.add.cursor = 0;
+    model.addVersions = true;
+    AddCardHit(model, 0, { 0, 100 }, { 20, 120 });
+    AddCardHit(model, 1, { 30, 100 }, { 50, 120 });
+    Pointer(35, 105, true);
+    check(HoveredHit() == -1 && g_calls.empty());
+    Click(model, 35, 105, 1, false);
+    check(g_calls == std::vector<std::string>{ "focus add=1" });
+    Pointer(5, 105, true);
+    check(HoveredHit() == 0); // the toy whose versions show keeps its outline
+    // A click on none of the cards nor the versions panel closes the versions; the panel's own gaps keep them.
+    g_hits.clear();
+    g_hovered = -1;
+    g_calls.clear();
+    model.addVersions = true;
+    AddBackdropHit(model);
+    AddCardHit(model, 0, { 0, 100 }, { 20, 120 });
+    AddCardHit(model, 1, { 30, 100 }, { 50, 120 });
+    AddVersionsPanelHit({ 60, 100 }, { 90, 140 });
+    Click(model, 75, 130, 1, false);
+    check(model.addVersions && g_calls.empty());
+    Click(model, 25, 110, 1, false); // the gap between the cards
+    check(!model.addVersions && g_calls.empty());
+    g_hits.clear();
+    g_hovered = -1;
+    g_calls.clear();
+    model.addVersions = false;
+    AddCardHit(model, 0, { 0, 100 }, { 20, 120 });
+    AddCardHit(model, 1, { 30, 100 }, { 50, 120 });
+    Pointer(35, 105, true);
+    check(HoveredHit() == 1 && g_calls == std::vector<std::string>{ "hover add=1" });
+    // A double click on a seat with a figure takes it off (Delete); an empty seat, a real portal's or a physical
+    // figure's is chosen for (Accept), as before.
+    model.seats.assign(2, {});
+    model.seats[0].path = "a.bin";
+    auto seatHits = [&] { // drawn again each frame, from the seats as they are
+        g_hits.clear();
+        g_hovered = -1;
+        SeatHit(model, 0, { 0, 200 }, { 20, 220 });
+        SeatHit(model, 1, { 30, 200 }, { 50, 220 });
+    };
+    seatHits();
+    const std::string del = "run=" + std::to_string(int(Command::Delete)),
+                      accept = "run=" + std::to_string(int(Command::Accept));
+    g_calls.clear();
+    Click(model, 5, 205, 1, true);
+    check(g_calls == std::vector<std::string>{ "seat=0", del });
+    g_calls.clear();
+    Click(model, 35, 205, 1, true);
+    check(g_calls == std::vector<std::string>{ "seat=1", accept });
+    g_calls.clear();
+    Click(model, 5, 205, 1, false);
+    check(g_calls == std::vector<std::string>{ "seat=0" });
+    model.seats[0].physical = true;
+    seatHits();
+    g_calls.clear();
+    Click(model, 5, 205, 1, true);
+    check(g_calls == std::vector<std::string>{ "seat=0", accept });
+    model.seats[0].physical = false;
+    model.realPortal = true;
+    seatHits();
+    g_calls.clear();
+    Click(model, 5, 205, 1, true);
+    check(g_calls == std::vector<std::string>{ "seat=0", accept });
+    printf("%d checks, %d failures\n", 26, failures);
+    puts(failures
+             ? "FAIL: menu pointer and click"
+             : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus, Add "
+               "cards' hover and a click beside them while versions show, a seat's double click");
     return failures ? 1 : 0;
 }
