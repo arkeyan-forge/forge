@@ -52,9 +52,8 @@ else()
     set(ARKEYAN_ENGINE lux)
 endif()
 set(ARKEYAN_ENGINE_DIR ${CMAKE_SOURCE_DIR}/engines/${ARKEYAN_ENGINE})
-# The catalogue id of the game this tree builds (its data folder, saves, launcher row): "ssa", "giants", "swapforce", "trapteam",
-# "superchargers" or "imaginators".
-add_compile_definitions(ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
+# The catalogue id of the game this tree builds (its data folder, saves, launcher row), ARKEYAN_GAME_ID, is defined for
+# the files that read it only (runtime/CMakeLists.txt).
 # The game's own version (games/<id>/game.txt, raised with each fix), shown in its window title: defined for
 # runtime/main.cpp only (runtime/CMakeLists.txt), so a new version does not change the game code's compile command.
 file(STRINGS ${ARKEYAN_GAME_DIR}/game.txt ARKEYAN_GAME_VERSION REGEX "^version=")
@@ -162,6 +161,12 @@ endif()
 set(ARKEYAN_PPC_DIR ${CMAKE_SOURCE_DIR}/private/${ARKEYAN_GAME}/ppc CACHE PATH "XenonRecomp output (ppc_*.cpp/h, shader_cache.cpp)")
 if(NOT SKY_TESTS_ONLY)
     add_subdirectory(ArkeyanRecompLib)
+    # Unread by the game code, but part of the player's compile command (the kit's compile.args), whose freshness key
+    # would otherwise compile every install's game code again.
+    get_target_property(ARKEYAN_PPC_IMPORTED ArkeyanRecompLib IMPORTED)
+    if(NOT ARKEYAN_PPC_IMPORTED)
+        target_compile_definitions(ArkeyanRecompLib PRIVATE ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
+    endif()
 endif()
 # The runtime is built into build/ArkeyanRuntime/: the executable, the bundle and the test paths keep their names.
 add_subdirectory(runtime ArkeyanRuntime)

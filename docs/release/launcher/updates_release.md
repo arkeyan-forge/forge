@@ -59,7 +59,10 @@ Mac): the three kits with `KIT_LAYOUT_RECORD=1` (public headers, no disc), `KIT_
 Docker), macOS natively, Windows cross-built with the Mac-hosted llvm-mingw, Linux in its image. `tools/make_kit.sh
 prepare` first applies the submodule patches, emits the public headers and unpacks the FFmpeg source, which the
 platforms share; the three then build at the same time (`JOBS` each, one log each in `.scratch/kits/`), and the first
-failure stops the others. `--serial` builds them one after the other (100 to 166 minutes cold).
+failure stops the others. `--serial` builds them one after the other (100 to 166 minutes cold, before the six
+runtimes shared one tree). Each platform builds its six runtimes in one tree, one game after the other
+(`tools/make_kit.sh`, `build_runtime`): only the files that depend on the game compile again, so a cold run of the
+three side by side took 7 minutes for macOS, 8 for Windows and 19 for Linux (13, 16 and 45 before).
 Compiles go through ccache (`KIT_CCACHE=1`, `KIT_CCACHE_DIR`, default `$KIT_DEPS/ccache`, mounted in the Linux image;
 `KIT_CCACHE=0` builds cold). Its key holds every flag, the checkout's `-ffile-prefix-map` among them, and the
 compiler's `--version` (`zig version` on Linux): only a checkout at the same path reuses the cache, so build each
