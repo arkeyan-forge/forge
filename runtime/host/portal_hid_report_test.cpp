@@ -129,6 +129,59 @@ namespace
     }
 #endif
 
+    template <size_t N>
+    std::vector<portal_hid::WriteMethod> Tries(const portal_hid::MethodChoice<N>& choice)
+    {
+        const auto order = choice.Next();
+        return std::vector<portal_hid::WriteMethod>(order.begin(), order.end());
+    }
+
+    // The write methods across a session (the Wii Traptanium portal on Windows, launcher issue #113).
+    void MethodChoiceChecks()
+    {
+        using portal_hid::WriteMethod;
+        constexpr WriteMethod Report = WriteMethod::OutputReport, Write = WriteMethod::HidWrite,
+                              Control = WriteMethod::ControlReport;
+        using Methods = std::vector<WriteMethod>;
+
+        // A new portal tries the system's order.
+        portal_hid::MethodChoice windows(portal_hid::WindowsMethods, true);
+        CHECK(Tries(windows) == (Methods{ Report, Write }));
+        // Output-report worked once: a later failure retries it, and never falls back to hidapi's write.
+        windows.Worked(Report);
+        CHECK(Tries(windows) == (Methods{ Report, Report, Report }));
+        windows.Worked(Report); // the retry went through
+        CHECK(Tries(windows) == (Methods{ Report, Report, Report }));
+        // The reopen after a failed retry starts over from the first method.
+        windows.Opened();
+        CHECK(Tries(windows) == (Methods{ Report, Write }));
+
+        // A portal that never took output-report keeps hidapi's write, as before...
+        windows.Worked(Write);
+        CHECK(Tries(windows) == (Methods{ Write, Write, Write }));
+        // ...unless it has a speaker (its 'R' answer said 02 18): commands then never go by hidapi's write.
+        windows.SetSpeaker(true);
+        CHECK(Tries(windows) == (Methods{ Report }));
+        windows.Opened();
+        CHECK(windows.Speaker() && Tries(windows) == (Methods{ Report }));
+        windows.SetSpeaker(false);
+        CHECK(Tries(windows) == (Methods{ Report, Write }));
+
+        // The other systems keep hidapi's write for a speaker (no evidence against it there), with the same retries.
+        portal_hid::MethodChoice linuxChoice(portal_hid::LinuxMethods, false);
+        linuxChoice.SetSpeaker(true);
+        CHECK(Tries(linuxChoice) == (Methods{ Write, Control }));
+        linuxChoice.Worked(Control);
+        CHECK(Tries(linuxChoice) == (Methods{ Control, Control, Control }));
+        linuxChoice.Opened();
+        CHECK(Tries(linuxChoice) == (Methods{ Write, Control }));
+
+        // The speaker's sound: 16 samples per write in Windows' 33-byte reports, 32 elsewhere.
+        CHECK(portal_hid::SoundSamplesPerWrite(33) == 16);
+        CHECK(portal_hid::SoundSamplesPerWrite(65) == 32 && portal_hid::SoundSamplesPerWrite(129) == 32);
+        CHECK(portal_hid::SoundSamplesPerWrite(0) == 32 && portal_hid::SoundSamplesPerWrite(2) == 32);
+    }
+
     void ControlLinkChecks(const std::filesystem::path& scratch)
     {
         using portal_hid::WriteMethod;
@@ -145,6 +198,8 @@ namespace
         auto unknown = portal_hid::TryOrder(portal_hid::WindowsMethods, WriteMethod::ControlReport);
         CHECK(unknown[0] == WriteMethod::OutputReport && unknown[1] == WriteMethod::HidWrite);
         CHECK(std::string(portal_hid::MethodName(WriteMethod::ControlReport)) == "usb-control");
+
+        MethodChoiceChecks();
 
         portal_hid::UsbAddress address{ 1, 7, 0 };
 #ifndef _WIN32

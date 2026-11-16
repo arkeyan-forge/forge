@@ -10,8 +10,8 @@
 # SuperChargers (SUPERCHARGERS_ISO: tools/regress/superchargers_lobby.sh, ~9 min) and Imaginators (IMAGINATORS_ISO: tools/regress/imaginators_hub.sh,
 # ~9 min) each build, run the host units and a new game plus a continue to the hub; a SKIP row without the disc.
 # Trap Team adds its build and host units when TRAPTEAM_ISO is set; runtime coverage remains an explicit SKIP.
-# Needs SSA_ISO and GIANTS_ISO (the discs, read only). Builds SSA (build/) and Giants (build-giants/) and every unit
-# test, runs them, then one isolated game run each (SSA to level_027, Giants from the title to Chapter 1) with the
+# Needs SSA_ISO and GIANTS_ISO (the discs, read only). Builds SSA (build/) and Giants (build-giants/) and the unit
+# tests (every one in the first section, those that depend on the game in the others), runs them, then one isolated game run each (SSA to level_027, Giants from the title to Chapter 1) with the
 # checks of tools/regress/analyze.py. Swap Force (build-swapforce/, one run from the title to the tutorial level,
 # ~2 min, then a swapper through the Toy Box, tools/regress/swapper_toybox.sh, ~2 min, and its search and filters, tools/regress/search_toybox.sh, ~2 min) runs only when SWAPFORCE_ISO is set: without it the section is skipped (a SKIP row, not a failure). Giants has
 # three runs (~3.5 min): from the title past Chapter 1's start with an SSA figure, the same save read back, and a level
@@ -63,18 +63,23 @@ check() {
     return $status
 }
 
-all_tests="ArkeyanBuilderTest ArkeyanBuilderGuardTest ArkeyanEditionTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest ArkeyanGuestLayoutTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanToyboxLinkTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanSettingsTest ArkeyanDatadirTest ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanGameDataTest ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanRecompGpuTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanFloatScanTest ArkeyanAutoScaleTest ArkeyanCommandsTest ArkeyanPortablePackTest ArkeyanVfsTest ArkeyanMouseTest ArkeyanDebugScreenTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanXenonRecompTest ArkeyanPpcDecoderTest ArkeyanGlyphModelsTest ArkeyanFileListTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest ArkeyanPortalUsbBackendTest ArkeyanFirstFrameTest ArkeyanVideoDriverTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanClockTest ArkeyanResolveWritebackTest ArkeyanResourceLockTest"
-# ArkeyanRuntimeLauncherTest checks SSA's disc and game entry only: the Giants and Swap Force builds have no "ssa" game to find.
-giants_tests=${all_tests% ArkeyanRuntimeLauncherTest*}${all_tests#*ArkeyanRuntimeLauncherTest}
+all_tests="ArkeyanBuilderTest ArkeyanBuilderGuardTest ArkeyanEditionTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest ArkeyanGuestLayoutTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanToyboxLinkTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanSettingsTest ArkeyanDatadirTest ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanGameDataTest ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanRecompGpuTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanFloatScanTest ArkeyanAutoScaleTest ArkeyanCommandsTest ArkeyanPortablePackTest ArkeyanVfsTest ArkeyanMouseTest ArkeyanDebugScreenTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest ArkeyanToyboxKeyMaskTest ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanXenonRecompTest ArkeyanPpcDecoderTest ArkeyanGlyphModelsTest ArkeyanFileListTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest ArkeyanPortalUsbBackendTest ArkeyanFirstFrameTest ArkeyanVideoDriverTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanClockTest ArkeyanResolveWritebackTest ArkeyanResourceLockTest"
+# The units built and run in every section: their binaries hold the game's own code (its id, info.cpp, ppc/ headers) or
+# read its disc. The others build the same in every folder, so only the first section to build builds and runs them;
+# the later ones build the game, these units and ArkeyanFigureTest (the regress scripts' figure maker).
+game_tests="ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest ArkeyanPortalTest ArkeyanArtTest ArkeyanRuntimeLauncherTest ArkeyanCommandsTest ArkeyanDebugScreenTest"
+shared_done=0
 
 build_and_test() { # <section> <build dir> <cmake args...>
     section=$1; dir=$2; shift 2
-    tests=$all_tests; [ "$section" != ssa ] && tests=$giants_tests
+    if [ $shared_done -eq 0 ]; then tests=$all_tests; targets=all; else tests=$game_tests; targets="ArkeyanRuntime ArkeyanFigureTest"; fi
+    # ArkeyanRuntimeLauncherTest checks SSA's disc and game entry only: the other builds have no "ssa" game to find.
+    [ "$section" != ssa ] && tests=$(printf '%s\n' $tests | grep -vx ArkeyanRuntimeLauncherTest)
     echo "== $section: build ($dir)"
     t=$SECONDS
     [ -f "$dir/build.ninja" ] || cmake -S . -B "$dir" -G Ninja -DCMAKE_BUILD_TYPE=Release "$@" > "$work/$section-cmake.log" 2>&1
     # shellcheck disable=SC2086
-    if nice cmake --build "$dir" -j2 --target all $tests > "$work/$section-build.log" 2>&1; then
+    if nice cmake --build "$dir" -j2 --target $targets $tests > "$work/$section-build.log" 2>&1; then
         row "$section" "build" PASS "$((SECONDS - t)) s"
     else
         row "$section" "build" FAIL "see $work/$section-build.log: $(grep -m1 -E 'error:|FAILED' "$work/$section-build.log" | cut -c1-120)"
@@ -116,6 +121,8 @@ build_and_test() { # <section> <build dir> <cmake args...>
         fi
     done
     check "$section" "unit host menu input" python3 -I "$root/tools/regress/f3mouse_unit.py" "$dir"
+    [ $shared_done -eq 0 ] || return 0
+    shared_done=1
     check "$section" "unit PID timer" bash "$root/tools/regress/pid_timer_test.sh"
     check "$section" "unit movie shader targets" python3 -I "$root/tools/regress/movie_targets.py"
     check "$section" "unit edition report to release" python3 -I "$root/tools/editions/from_report.py" --self-test

@@ -319,8 +319,53 @@ static void DenormTexelModel(const std::string& common)
     CHECK(DenormTexelMisses(1.0f / 256.0f) == 0);
 }
 
+// Every colour export is stored as its Xenos target would store it (exportClamp, the draw's g_TargetClamps): last, after
+// the alpha test, before each return, on straight shaders and on those that run their blocks in a loop.
+static void ExportClamps(const std::string& common)
+{
+    CHECK(common.find("#define g_TargetClamps             vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + "
+                      "352)") != std::string::npos);
+    CHECK(common.find("SharedConstants + 352)))") != std::string::npos);
+    CHECK(common.find("uint g_TargetClamps : packoffset(c22.x);") != std::string::npos);
+    CHECK(common.find("float4 exportClamp(float4 value, uint mode)") != std::string::npos);
+
+    auto fetch = Fetch(FetchOpcode::TextureFetch);
+    fetch.useRegLod = 0;
+    auto straight = Translate(Program({ Exec(1, 1, true) }, { fetch }), common);
+    const char* const oC0 = "output.oC0 = exportClamp(output.oC0, g_TargetClamps >> 0u);";
+    const size_t clamp = straight.find(oC0);
+    CHECK(clamp != std::string::npos);
+    CHECK(straight.find("clip(output.oC0.w - g_AlphaThreshold);") < clamp);
+    CHECK(clamp < straight.find("return output;"));
+    CHECK(straight.find(oC0, clamp + 1) == std::string::npos);
+    CHECK(straight.find("oC1") == std::string::npos);
+    Compile(straight);
+
+    // Four targets: each export reads its own two bits.
+    auto program = Program({ Exec(1, 1, true) }, { fetch });
+    Put32(program, 92,
+        PIXEL_SHADER_OUTPUT_COLOR0 | PIXEL_SHADER_OUTPUT_COLOR1 | PIXEL_SHADER_OUTPUT_COLOR2 |
+            PIXEL_SHADER_OUTPUT_COLOR3);
+    auto four = Translate(program, common);
+    for (const char* line : { "output.oC1 = exportClamp(output.oC1, g_TargetClamps >> 2u);",
+             "output.oC2 = exportClamp(output.oC2, g_TargetClamps >> 4u);",
+             "output.oC3 = exportClamp(output.oC3, g_TargetClamps >> 6u);" })
+        CHECK(four.find(line) != std::string::npos && four.find(line) < four.find("return output;"));
+    Compile(four);
+
+    // A backwards jump: the blocks run in a loop, which ends at one return after it.
+    const uint64_t back = (11ull << 44) | (1ull << 14) | (1ull << 33) | (1ull << 42);
+    auto looped = Translate(Program({ Exec(2, 1), back, Exec(3, 1, true) }, { fetch, fetch }), common);
+    const size_t last = looped.rfind(oC0);
+    CHECK(last != std::string::npos && looped.find(oC0) == last);
+    CHECK(looped.find("while (true)") < last);
+    CHECK(last < looped.rfind("\treturn output;\n}"));
+    Compile(looped);
+}
+
 static void Test(const std::string& common)
 {
+    ExportClamps(common);
     DenormTexelModel(common);
     // The scan itself: a temp without a value, an output left as it came, then both given one.
     CHECK(UninitialisedLocals("shaderMain(\n\tPixelShaderOutput output = (PixelShaderOutput)0;\n\tfloat4 r6;\n") == 1);

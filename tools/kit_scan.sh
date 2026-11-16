@@ -18,8 +18,9 @@ kit=$1
 # (private/kit_scan_words.txt, git-ignored, one word per line; KIT_SCAN_WORDS points elsewhere).
 # KIT_SCAN_USER names the host's user when the kit is built in a container (make_kit.sh sets it): there `id -un` has
 # no name for the user's uid and prints the number, which matches ordinary text.
-# It is an extended regular expression, so a build machine can pass a path instead when its user name is an ordinary word.
-words=${KIT_SCAN_USER:-$(id -un 2>/dev/null)} || words=
+# It is an extended regular expression, matched as a whole word: a short user name is often part of ordinary words.
+user=${KIT_SCAN_USER:-$(id -un 2>/dev/null)} || user=
+words=${user:+"(^|[^[:alnum:]_])($user)([^[:alnum:]_]|\$)"}
 list=${KIT_SCAN_WORDS:-$(dirname "$0")/../private/kit_scan_words.txt}
 if [ -f "$list" ]; then
     extra=$(grep -v '^#' "$list" | grep -v '^[[:space:]]*$' | paste -sd'|' -)

@@ -112,6 +112,8 @@ namespace gpu
         uint32_t scaledTextures;
         float resolutionScale; // the target's: guest pixels (vPos, point sizes) to host pixels
         float mipBias = 0.0f; // texture LOD bias of every implicit-LOD fetch (an upscaled scene's: -log2(ratio))
+        // How each colour export is stored (d3d::TargetClamps: 2 bits per target), as its guest format would store it.
+        uint32_t targetClamps = 0;
         // The vertex input the vertex shader fetches at a computed index, as `pulledCount` float4s (0: none).
         const float* pulledVertices;
         uint32_t pulledCount;

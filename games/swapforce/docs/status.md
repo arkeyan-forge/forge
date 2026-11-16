@@ -5,7 +5,7 @@
 ## At a glance
 
 - **Played on:** macOS (the test suite, the owner); Windows (issue #26); Linux on a Steam Deck (issue #23).
-- **Known limits:** A plain green picture at some events with Direct3D 12 at scale x4, fixed in 0.9.6, to confirm (#26); not every mode played.
+- **Known limits:** A plain green picture after some in-level events, fixed in 0.9.9, to confirm (#9); not every mode played.
 
 (The source of the README's game table: `python3 -I tools/game_status.py` writes it from this section and `game.txt`.)
 
@@ -59,3 +59,12 @@ in D3D12 and Vulkan: another GPU could read other bits [?]. `TargetFor` now clea
 zero before their first use ([EDRAM model](../../../docs/runtime/gpu/edram_resolve_tiling.md)); reused targets retain
 their contents. This removes the undefined initial read. It has not been compared in a game run and is not proof of
 the reported green-screen cause ([issue #26](https://github.com/mflr0/Arkeyan-Launcher/issues/26)): that is a movie read that fails, retried since 2026-11-12 ([bink.md](../../../docs/engines/lux/bink.md#movie-data-that-stops-arriving-issue-26)).
+
+## The green picture after in-level events (2026-11-15) [?]
+Launcher #125: in Wildwoods (`ww2`), after a pickup, coins, a broken object or a new figure, the whole picture turns
+(0, 153, 0) and stays so while the game runs on, on D3D12 (NVIDIA) and Vulkan (AMD), at scale 1 and 2. No movie is
+open and no read fails, so the #26 cause does not fit. The suspect: a bright effect writes a value its 7e3 or 16-bit
+fixed-point target would have clamped, or a NaN, which the host's half-float target keeps and a buffer the game carries
+from frame to frame then spreads. Colour exports are now stored as the console stores them
+([shaders.md](../../../docs/runtime/gpu/shaders.md#colour-exports-stored-as-the-targets-format-2026-11-15)). Not
+reproduced here: to confirm by the player, or by `SKY_DUMP_FLOATS` on a green frame.

@@ -375,7 +375,7 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 | Screen | Gamepad | Keyboard | Mouse |
 |---|---|---|---|
 | In game | hold View: wheel; View + Y: Toy Box | hold Tab: wheel; F6 (or tap Tab): Toy Box; F7: add the folder's next figure; F8: clear the portal (the three are editable, below) | — |
-| Toy Box: seats (top row) | left/right: seat (it is chosen at once), then Add a figure and Manage (one above the other: up/down between them); A: choose for it; X: options; down: the bar; B: close | arrows, Enter, Delete: take off, Tab / Shift+Tab: next / previous row, Escape | click a seat; right click: options |
+| Toy Box: seats (top row) | left/right: seat (it is chosen at once), then Add a figure and Manage (one above the other: up/down between them); A: choose for it; X: options; down: the bar; B: close | arrows, Enter, Delete: take off, Tab / Shift+Tab: next / previous row, Escape | click a seat; double click: take its figure off (as Delete; not a real toy), an empty one: choose for it; right click: options |
 | Toy Box: bar (search, Filters) | left/right: the search field, Filters; A: the on-screen keyboard / the Filters panel; up: the seats; down: the figures; LB/RB: other seat; B: clear the search, else close | arrows, Enter, Tab, Escape; typing goes into the field from any row | click the field, Filters, a tag's x |
 | Toy Box: figures | d-pad: move (left/right stay in the row; up/down keep the column); up from the first row: the bar; A: put on the seat; X: the figure; LB/RB: other seat; Y: search; Start: Filters; B: close | arrows, Enter, F2, Page Up/Down, F3, F4: Filters, Tab, type: search, Escape: clear / close | click: focus; double click: place; right click: the figure; wheel: scroll |
 | Figure | up/down: action; A: do it; B: back (out of More first); LB/RB: previous/next figure | arrows, Enter, Escape | click |
@@ -386,6 +386,10 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
   the one under the pointer gets a soft outline. The wheel scrolls the lists (Edit stats: steps; the F3 menu: moves the focus).
   Script checks: `SKY_TOYBOX_SCRIPT` `move=x/y`, `wheel=up|down` beside `click=x/y` (`tools/regress/f3mouse.sh`;
   [gamemenu.md](gamemenu.md)).
+- **No system on-screen keyboard** (#17): opening the Toy Box or the F3 menu starts SDL's text input so a real
+  keyboard types into the search. Unset, `SDL_HINT_ENABLE_SCREEN_KEYBOARD` makes SDL also show Steam's keyboard when
+  `SteamDeck=1` (Steam's Game Mode); `sdlhints::ApplyStartup` (`runtime/host/sdl_hints.cpp`) sets it to `0`. A pad uses
+  the Toy Box's own keyboard. Checked by `ArkeyanSdlHintsTest`.
 
 ### Navigation (2026-11-02, the owner's Xbox-style spec)
 
@@ -403,9 +407,17 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 - **The pointer moves the focus only while it moves**: moving onto a card, a button, the bar, a row of a list or a dialog's button
   focuses it (`Hit::focus`, `Pointer` in `draw.cpp`); a still pointer never takes the focus back from the keys, and moving within
   the same element does not either. The seats and Manage's sections are choices: the pointer only outlines them (a click chooses).
+  On Add a figure, once a click opens a toy's versions, the other cards neither light up nor take the focus under the pointer
+  (#10: crossing them to reach the versions closed them); a click still picks another (`AddCardHit`).
+- **One key press, one move** (2026-11-15): while the Toy Box, the wheel or the F3 menu is open, a key acts through its own key
+  event only (the Keyboard column of section 8). The game's keyboard bindings do not see it, so Down does not move again as the
+  d-pad, Space does not accept again as A, and typed letters (W, X, C, V...) are not the stick or a button. A key pressed there
+  stays away from the game until it is released, even once the overlay closed (Escape closing the Toy Box gives the game no
+  Back); a key held before it opened stays the game's (Backspace held for the wheel: its release swaps). `toybox::KeyMask`
+  (`runtime/host/toybox/key_mask.h`, checked by `ArkeyanToyboxKeyMaskTest`), applied by `ToyboxKeyboardState`.
 - **Buttons whole**: "+ Add" and "Manage" are as wide as their longer label in the game's language; the seats share the rest
   (five in Trap Team, six in SuperChargers and seven in Imaginators: a smaller picture). On Add a figure the "+N" versions badge sits on the card's second line, so the name keeps the card's width.
-- Proof: `ArkeyanToyboxLookTest` (the moves), `tools/regress/toybox_nav.sh` (the real game: 31 focus checks and 12 shots; its
+- Proof: `ArkeyanToyboxLookTest` (the moves), `tools/regress/toybox_nav.sh` (the real game: 32 focus checks, a held key among them, and 12 shots; its
   places follow the 0.9.0 layout, six columns); the before/after screens in English and French: `private/toybox-pass/`
   (`INDEX.md`, not in git); the 0.9.0 screens: `private/runs/overlay/` (not in git).
 - **The Toy Box's keys are editable** (F3 > Commands, and Arkeyan Launcher's key page): `[input] key_toybox` (F6; while it is not set Tab

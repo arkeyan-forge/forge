@@ -852,7 +852,7 @@ index 0000000..65d5a44
 +    return (fileKey & ~0xFFFull) == configuration && (fileKey & 0xF00) == 0x100 && (fileKey & streams) == streams;
 +}
 diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
-index 9191a28..861852b 100644
+index 9191a28..ae67a1c 100644
 --- a/XenosRecomp/shader_common.h
 +++ b/XenosRecomp/shader_common.h
 @@ -3,6 +3,10 @@
@@ -880,7 +880,7 @@ index 9191a28..861852b 100644
  #ifdef __spirv__
  
  struct PushConstants
-@@ -32,6 +43,25 @@ struct PushConstants
+@@ -32,6 +43,26 @@ struct PushConstants
  #define g_SwappedTexcoords         vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 260)
  #define g_HalfPixelOffset          vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 264)
  #define g_AlphaThreshold           vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 272)
@@ -889,6 +889,7 @@ index 9191a28..861852b 100644
 +#define g_ParamGen                 vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 276)
 +#define g_ScaledTextures           vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 312)
 +#define g_MipBias                  vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 316)
++#define g_TargetClamps             vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 352)
 +// Skylanders: the vertices a fetch with a computed index reads, gathered by the host as float4s (count 0: none, and the
 +// address is then 0: never read).
 +#define g_PulledVertices           vk::RawBufferLoad<uint64_t>(g_PushConstants.SharedConstants + 288)
@@ -906,7 +907,7 @@ index 9191a28..861852b 100644
  
  [[vk::constant_id(0)]] const uint g_SpecConstants = 0;
  
-@@ -62,6 +92,18 @@ struct PushConstants
+@@ -62,6 +93,20 @@ struct PushConstants
  #define g_SwappedTexcoords (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + 260)))
  #define g_HalfPixelOffset (*(reinterpret_cast<device float2*>(g_PushConstants.SharedConstants + 264)))
  #define g_AlphaThreshold (*(reinterpret_cast<device float*>(g_PushConstants.SharedConstants + 272)))
@@ -921,11 +922,13 @@ index 9191a28..861852b 100644
 +#define g_ScaledTextures (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + 312)))
 +// Skylanders: the texture LOD bias of an upscaled scene (docs/runtime/gpu/upscaling.md): 0 otherwise.
 +#define g_MipBias (*(reinterpret_cast<device float*>(g_PushConstants.SharedConstants + 316)))
++// Skylanders: how each colour export is stored by its target's Xenos format (exportClamp), 2 bits per target.
++#define g_TargetClamps (*(reinterpret_cast<device uint*>(g_PushConstants.SharedConstants + 352)))
 +#define PULLED_VERTEX(index) (g_PulledCount != 0 ? *(reinterpret_cast<device float4*>(g_PulledVertices + min(uint(index), g_PulledCount - 1) * 16)) : float4(0.0))
  
  #else
  
-@@ -69,9 +111,24 @@ struct PushConstants
+@@ -69,9 +114,25 @@ struct PushConstants
      uint g_Booleans : packoffset(c16.x); \
      uint g_SwappedTexcoords : packoffset(c16.y); \
      float2 g_HalfPixelOffset : packoffset(c16.z); \
@@ -936,7 +939,8 @@ index 9191a28..861852b 100644
 +    uint g_PulledCount : packoffset(c18.z); \
 +    float g_ResolutionScale : packoffset(c18.w); \
 +    uint g_ScaledTextures : packoffset(c19.z); \
-+    float g_MipBias : packoffset(c19.w);
++    float g_MipBias : packoffset(c19.w); \
++    uint g_TargetClamps : packoffset(c22.x);
 +
 +// Skylanders: D3D12 has no specialization constants. XenosRecomp compiles one DXIL shader per combination of the
 +// shader's specialization constants, each with SPEC_CONSTANTS defined to it.
@@ -952,7 +956,7 @@ index 9191a28..861852b 100644
  
  #endif
  
-@@ -108,47 +165,89 @@ uint2 getTexture2DDimensions(texture2d<float> texture)
+@@ -108,47 +169,89 @@ uint2 getTexture2DDimensions(texture2d<float> texture)
      return uint2(texture.get_width(), texture.get_height());
  }
  
@@ -964,25 +968,25 @@ index 9191a28..861852b 100644
                  uint samplerDescriptorIndex,
 -                float2 texCoord, float2 offset)
 +                float2 texCoord, float2 offset, float scale, float mipBias)
-+{
-+    texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
-+    sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
+ {
+     texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
+     sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
+-    return texture.sample(sampler, texCoord + offset / (float2)getTexture2DDimensions(texture));
 +    return texture.sample(sampler, texCoord + offset * scale / (float2)getTexture2DDimensions(texture), bias(mipBias));
-+}
-+
+ }
+ 
 +// Skylanders: a vertex shader's fetch, at level 0.
 +float4 tfetch2DVertex(constant Texture2DDescriptorHeap* textureHeap,
 +                      constant SamplerDescriptorHeap* samplerHeap,
 +                      uint resourceDescriptorIndex,
 +                      uint samplerDescriptorIndex,
 +                      float2 texCoord, float2 offset)
- {
-     texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
-     sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
--    return texture.sample(sampler, texCoord + offset / (float2)getTexture2DDimensions(texture));
++{
++    texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
++    sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
 +    return texture.sample(sampler, texCoord + offset / (float2)getTexture2DDimensions(texture), level(0));
- }
- 
++}
++
 +// Skylanders: the bilinear weights on the guest texel grid (the host one divided by `scale`), to go with offsets in guest texels.
  float2 getWeights2D(constant Texture2DDescriptorHeap* textureHeap,
                      constant SamplerDescriptorHeap* samplerHeap,
@@ -990,9 +994,8 @@ index 9191a28..861852b 100644
                      uint samplerDescriptorIndex,
 -                    float2 texCoord, float2 offset)
 +                    float2 texCoord, float2 offset, float scale)
- {
-     texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
--    return select(fract(texCoord * float2(getTexture2DDimensions(texture)) + offset - 0.5), 0.0, isnan(texCoord));
++{
++    texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
 +    return select(fract(texCoord * float2(getTexture2DDimensions(texture)) / scale + offset - 0.5), 0.0, isnan(texCoord));
 +}
 +
@@ -1004,8 +1007,9 @@ index 9191a28..861852b 100644
 +                      uint resourceDescriptorIndex,
 +                      uint samplerDescriptorIndex,
 +                      float2 texCoord, float2 offset, float scale, float mipBias)
-+{
-+    texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
+ {
+     texture2d<float> texture = textureHeap[resourceDescriptorIndex].tex;
+-    return select(fract(texCoord * float2(getTexture2DDimensions(texture)) + offset - 0.5), 0.0, isnan(texCoord));
 +    sampler sampler = samplerHeap[samplerDescriptorIndex].samp;
 +    // Skylanders: the pixel position is guest pixels (iPos / scale - 0.5), so at scale N a host pixel h lands on host texel
 +    // coordinate h + 0.5 - N / 2: the centre of texel h - 1 at scale 2, and even pixels read the previous guest pixel (a
@@ -1050,7 +1054,7 @@ index 9191a28..861852b 100644
  }
  
  float4 cube(float4 value, thread CubeMapData* cubeMapData)
-@@ -174,26 +273,47 @@ uint2 getTexture2DDimensions(Texture2D<float4> texture)
+@@ -174,26 +277,47 @@ uint2 getTexture2DDimensions(Texture2D<float4> texture)
      return dimensions;
  }
  
@@ -1078,20 +1082,20 @@ index 9191a28..861852b 100644
 -    return g_Texture3DDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord);
 +    Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
 +    return select(isnan(texCoord), 0.0, frac(texCoord * getTexture2DDimensions(texture) / scale + offset - 0.5));
- }
- 
--float4 tfetchCube(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, inout CubeMapData cubeMapData)
++}
++
 +// Skylanders: unnormalized coordinates (texCoordDenorm), in texels.
 +float4 tfetch2DDenorm(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float scale, float mipBias)
- {
--    return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z]);
++{
 +    Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
 +    // Skylanders: (scale - 1) / 2 keeps the fetch on the host pixel's own texel at scale N (see the Metal version).
 +    return texture.SampleBias(g_SamplerDescriptorHeap[samplerDescriptorIndex], DENORM_TEXEL(texCoord, offset, scale) / getTexture2DDimensions(texture), mipBias);
-+}
-+
+ }
+ 
+-float4 tfetchCube(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, inout CubeMapData cubeMapData)
 +float2 getWeights2DDenorm(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float scale)
-+{
+ {
+-    return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z]);
 +    return select(isnan(texCoord), 0.0, frac(texCoord + offset - 0.5));
 +}
 +
@@ -1106,7 +1110,7 @@ index 9191a28..861852b 100644
  }
  
  float4 cube(float4 value, inout CubeMapData cubeMapData)
-@@ -211,11 +331,10 @@ float4 tfetchR11G11B10(uint4 value)
+@@ -211,11 +335,10 @@ float4 tfetchR11G11B10(uint4 value)
  {
      if (g_SpecConstants() & SPEC_CONSTANT_R11G11B10_NORMAL)
      {
@@ -1122,7 +1126,7 @@ index 9191a28..861852b 100644
      }
      else
      {
-@@ -227,6 +346,22 @@ float4 tfetchR11G11B10(uint4 value)
+@@ -227,12 +350,47 @@ float4 tfetchR11G11B10(uint4 value)
      }
  }
  
@@ -1145,7 +1149,32 @@ index 9191a28..861852b 100644
  #ifdef __air__
  #define selectWrapper(a, b, c) select(c, b, a)
  #else
-@@ -257,6 +392,17 @@ float4x4 mul(T a, T b)
+ #define selectWrapper(a, b, c) select(a, b, c)
+ #endif
+ 
++// Skylanders: a colour export as its Xenos target stores it (`mode`: 2 bits of g_TargetClamps). 1: 2_10_10_10_FLOAT,
++// whose 7e3 colour holds 0 to 31.875 and whose 2-bit alpha 0 to 1; 2: 16_16 and 16_16_16_16, fixed point from -32 to 32.
++// Neither has a NaN or an infinity: the console stores a NaN as 0 and clamps the rest. Their host targets are half
++// floats, which keep both, and a NaN kept in a target a game reads back every frame never goes away.
++float4 exportClamp(float4 value, uint mode)
++{
++    mode &= 3u;
++#ifdef __air__
++    uint4 bits = as_type<uint4>(value);
++#else
++    uint4 bits = asuint(value);
++#endif
++    float low = mode == 1u ? 0.0 : -32.0;
++    float high = mode == 1u ? 31.875 : 32.0;
++    float4 clamped = min(max(value, float4(low, low, low, low)), float4(high, high, high, mode == 1u ? 1.0 : 32.0));
++    clamped = selectWrapper((bits & 0x7FFFFFFFu) > 0x7F800000u, float4(0.0, 0.0, 0.0, 0.0), clamped);
++    return mode == 0u ? value : clamped;
++}
++
+ #ifdef __air__
+ #define frac(X) fract(X)
+ 
+@@ -257,6 +415,17 @@ float4x4 mul(T a, T b)
  }
  #endif
  
@@ -1164,7 +1193,7 @@ index 9191a28..861852b 100644
  #define UNROLL
  #define BRANCH
 diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
-index fd59693..61146a8 100644
+index fd59693..9118193 100644
 --- a/XenosRecomp/shader_recompiler.cpp
 +++ b/XenosRecomp/shader_recompiler.cpp
 @@ -1,6 +1,77 @@
@@ -1958,7 +1987,29 @@ index fd59693..61146a8 100644
      if (isPixelShader)
      {
  #ifdef UNLEASHED_RECOMP
-@@ -1991,7 +2372,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -1932,6 +2313,21 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+     uint32_t instrSize = shader->size;
+     bool simpleControlFlow = true;
+ 
++    // Skylanders: each colour export is stored as its target's Xenos format would (exportClamp in shader_common.h), last,
++    // after the alpha test reads oC0.
++    const uint32_t colorOutputs = isPixelShader ? reinterpret_cast<const PixelShader*>(shader)->outputs & 0xF : 0;
++    auto clampExports = [&]()
++    {
++        for (uint32_t i = 0; i < 4; i++)
++        {
++            if (colorOutputs & (1u << i))
++            {
++                indent();
++                println("output.oC{0} = exportClamp(output.oC{0}, g_TargetClamps >> {1}u);", i, i * 2);
++            }
++        }
++    };
++
+     while (instrAddress < instrSize)
+     {
+         code0 = controlFlowCode[0];
+@@ -1991,7 +2387,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
          out += "\n\tuint pc = 0;\n";
          out += "\twhile (true)\n";
          out += "\t{\n";
@@ -1967,7 +2018,7 @@ index fd59693..61146a8 100644
          out += "\t\t{\n";
      }
  
-@@ -2011,7 +2392,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2011,7 +2407,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
              if (!simpleControlFlow)
              {
                  indentation = 3;
@@ -1976,7 +2027,7 @@ index fd59693..61146a8 100644
              }
              else
              {
-@@ -2115,7 +2496,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2115,7 +2511,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                      }
                      else
                      {
@@ -1990,7 +2041,7 @@ index fd59693..61146a8 100644
                          if (findResult != boolConstants.end())
                              println("if ((g_Booleans & {}) {}= 0)", findResult->second, cfInstr.condJmp.condition ^ simpleControlFlow ? "!" : "=");
                          else
-@@ -2253,7 +2639,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2253,12 +2654,15 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                      if (!hasMtxProjection)
                  #endif
                      {
@@ -2001,7 +2052,13 @@ index fd59693..61146a8 100644
                      }
                  }
  
-@@ -2295,7 +2683,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+                 if (simpleControlFlow)
+                 {
++                    clampExports();
+                     indent();
+                 #ifdef UNLEASHED_RECOMP
+                     if (hasMtxProjection)
+@@ -2295,15 +2699,40 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
          out += "\t}\n";
  
      if (!isPixelShader && hasMtxProjection)
@@ -2014,7 +2071,13 @@ index fd59693..61146a8 100644
  #endif
  
      if (!simpleControlFlow)
-@@ -2306,4 +2698,22 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
++    {
++        clampExports();
+         out += "\treturn output;\n";
++    }
+ #ifdef UNLEASHED_RECOMP
+     else if (hasMtxProjection)
+         out += "\treturn output;\n";
  #endif
  
      out += "}";

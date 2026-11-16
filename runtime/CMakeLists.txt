@@ -67,6 +67,7 @@ add_executable(ArkeyanRuntime
     host/pad_map.cpp
     host/mouse.cpp
     host/mouse_input.cpp
+    host/sdl_hints.cpp
     host/launcher.cpp
     host/launcher_games.cpp
     host/portable.cpp
@@ -290,10 +291,9 @@ if(WIN32)
 endif()
 
 # Launcher checks without UI: ArkeyanRuntimeLauncherTest <game disc .iso> <scratch dir> [<damaged copy>...]
-add_executable(ArkeyanRuntimeLauncherTest EXCLUDE_FROM_ALL host/launcher_test.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp ${ARKEYAN_GAME_DIR}/info.cpp vfs.cpp
-    host/collection/datadir.cpp host/collection/game_data.cpp host/collection/portable_pack.cpp host/collection/json.cpp ${ARKEYAN_PLATFORM_SOURCES})
+add_executable(ArkeyanRuntimeLauncherTest EXCLUDE_FROM_ALL host/launcher_test.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp ${ARKEYAN_GAME_DIR}/info.cpp)
 target_include_directories(ArkeyanRuntimeLauncherTest PRIVATE .)
-target_link_libraries(ArkeyanRuntimeLauncherTest PRIVATE ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
+target_link_libraries(ArkeyanRuntimeLauncherTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
 if(NOT ARKEYAN_UWP)
     target_link_libraries(ArkeyanRuntimeLauncherTest PRIVATE ArkeyanRuntimeLauncherUi)
 endif()
@@ -305,14 +305,15 @@ list(REMOVE_ITEM ARKEYAN_COMMANDS_TEST_SOURCES host/launcher_test.cpp)
 add_executable(ArkeyanCommandsTest host/commands_test.cpp host/commands.cpp host/settings.cpp host/pad_map.cpp host/mouse.cpp
     ${ARKEYAN_COMMANDS_TEST_SOURCES})
 target_include_directories(ArkeyanCommandsTest PRIVATE .)
-target_link_libraries(ArkeyanCommandsTest PRIVATE ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
+target_link_libraries(ArkeyanCommandsTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
 if(NOT ARKEYAN_UWP)
     target_link_libraries(ArkeyanCommandsTest PRIVATE ArkeyanRuntimeLauncherUi)
 endif()
 
 # DDS reader and writer, content hash and texture pack index (no game data needed): ./ArkeyanTexturePackTest
-add_executable(ArkeyanTexturePackTest EXCLUDE_FROM_ALL host/texture_pack_test.cpp host/dds.cpp host/texture_pack.cpp host/collection/datadir.cpp)
+add_executable(ArkeyanTexturePackTest EXCLUDE_FROM_ALL host/texture_pack_test.cpp host/dds.cpp host/texture_pack.cpp)
 target_include_directories(ArkeyanTexturePackTest PRIVATE . ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
+target_link_libraries(ArkeyanTexturePackTest PRIVATE ArkeyanArtReader)
 
 # The guest's printf (flags, width, precision, the Microsoft conversions; no game data needed): ./ArkeyanGuestFormatTest
 add_executable(ArkeyanGuestFormatTest kernel/guest_format_test.cpp kernel/guest_format.cpp)
@@ -327,15 +328,20 @@ target_include_directories(ArkeyanToyboxLookTest PRIVATE .)
 add_executable(ArkeyanToyboxInPlayTest host/toybox/in_play_test.cpp)
 target_include_directories(ArkeyanToyboxInPlayTest PRIVATE .)
 
+# The keys the game's bindings see around the Toy Box and the F3 menu (host/toybox/key_mask.h): ./ArkeyanToyboxKeyMaskTest
+add_executable(ArkeyanToyboxKeyMaskTest host/toybox/key_mask_test.cpp)
+target_include_directories(ArkeyanToyboxKeyMaskTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxKeyMaskTest PRIVATE SDL3::SDL3-static)
+
 # Atomic virtual figure and swapper replacements (no device or figure files): ./ArkeyanToyboxSwapTest
 add_executable(ArkeyanToyboxSwapTest host/toybox/swap_test.cpp host/portal_prompt.cpp)
 target_include_directories(ArkeyanToyboxSwapTest PRIVATE .)
 
 # A trap's Villain row (host/toybox/trap_villain.h): the choices of each element, the write, the evolved switch, in a
 # scratch collection (no game data): ./ArkeyanToyboxTrapTest
-add_executable(ArkeyanToyboxTrapTest host/toybox/trap_villain_test.cpp host/toybox/trap_villain.cpp ${ARKEYAN_COLLECTION_SOURCES})
+add_executable(ArkeyanToyboxTrapTest host/toybox/trap_villain_test.cpp host/toybox/trap_villain.cpp)
 target_include_directories(ArkeyanToyboxTrapTest PRIVATE .)
-target_link_libraries(ArkeyanToyboxTrapTest PRIVATE SDL3::SDL3-static)
+target_link_libraries(ArkeyanToyboxTrapTest PRIVATE ArkeyanArtReader)
 
 # The remembered "resolution scale auto" step-down's file line: ./ArkeyanAutoScaleTest
 add_executable(ArkeyanAutoScaleTest gpu/auto_scale_test.cpp)
@@ -356,11 +362,9 @@ add_executable(ArkeyanResourceLockTest d3d/resource_lock_test.cpp)
 target_include_directories(ArkeyanResourceLockTest PRIVATE .)
 
 # The write watch (faults on watched guest pages, the stamps, the cool-down): ./ArkeyanWriteWatchTest
-add_executable(ArkeyanWriteWatchTest write_watch_test.cpp write_watch.cpp ${ARKEYAN_PLATFORM_SOURCES})
+add_executable(ArkeyanWriteWatchTest write_watch_test.cpp write_watch.cpp)
 target_include_directories(ArkeyanWriteWatchTest PRIVATE .)
-if(WIN32)
-    target_link_libraries(ArkeyanWriteWatchTest PRIVATE winmm) # platform_win32.cpp's timer resolution
-endif()
+target_link_libraries(ArkeyanWriteWatchTest PRIVATE ArkeyanHostFiles)
 
 # A file read that a passing failure does not cut short (read_fully.h, issue #26): ./ArkeyanReadFullyTest
 add_executable(ArkeyanReadFullyTest read_fully_test.cpp)
@@ -590,6 +594,10 @@ target_include_directories(ArkeyanFirstFrameTest PRIVATE .)
 # SDL video selection and Linux native driver retries, without SDL or game data: ./ArkeyanVideoDriverTest
 add_executable(ArkeyanVideoDriverTest host/video_driver_test.cpp)
 target_include_directories(ArkeyanVideoDriverTest PRIVATE .)
+# The SDL hints set at startup (Steam's on-screen keyboard off, the portals ignored by the gamepad code): ./ArkeyanSdlHintsTest
+add_executable(ArkeyanSdlHintsTest host/sdl_hints_test.cpp host/sdl_hints.cpp)
+target_include_directories(ArkeyanSdlHintsTest PRIVATE .)
+target_link_libraries(ArkeyanSdlHintsTest PRIVATE SDL3::SDL3-static)
 
 # The pacer of per-frame simulation steps, with a fake clock: ./ArkeyanStepPacerTest
 add_executable(ArkeyanStepPacerTest d3d/step_pacer_test.cpp)
@@ -652,8 +660,9 @@ target_include_directories(ArkeyanSpeakersTest PRIVATE .)
 
 # The Toy Box link: its messages and the game's end on the loopback, with a fake window (no game data needed): ./ArkeyanToyboxLinkTest
 add_executable(ArkeyanToyboxLinkTest host/toybox_link_test.cpp host/toybox_link.cpp host/toybox_remote.cpp host/toybox_socket.cpp
-    host/collection/presence.cpp host/collection/save_backup.cpp host/collection/datadir.cpp)
+    host/collection/presence.cpp)
 target_include_directories(ArkeyanToyboxLinkTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxLinkTest PRIVATE ArkeyanArtReader)
 if(WIN32)
     target_link_libraries(ArkeyanToyboxLinkTest PRIVATE ws2_32)
 endif()
@@ -667,17 +676,16 @@ if(WIN32)
 endif()
 
 # Figure library test (no game data needed): ./ArkeyanFigureTest [--iso <disc image>] [<figure dump>...]
-add_executable(ArkeyanFigureTest host/figures/figure_test.cpp ${ARKEYAN_COLLECTION_SOURCES}
-    host/portal_emulated.cpp host/portal_identity.cpp d3d/xenos.cpp vfs.cpp ${ARKEYAN_PLATFORM_SOURCES})
+add_executable(ArkeyanFigureTest host/figures/figure_test.cpp host/portal_emulated.cpp host/portal_identity.cpp d3d/xenos.cpp)
 target_include_directories(ArkeyanFigureTest PRIVATE .)
-target_link_libraries(ArkeyanFigureTest PRIVATE plume ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
+target_link_libraries(ArkeyanFigureTest PRIVATE ArkeyanHostFiles plume ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
 
 # Disc pictures: the texture, archive and image readers on synthetic data (no game data needed); with SSA_ISO and/or
 # GIANTS_ISO set, each game's pictures read from its disc into a scratch SKYLANDERS_DATA: ./ArkeyanArtTest
-add_executable(ArkeyanArtTest host/art/art_test.cpp host/stb_impl.cpp ${ARKEYAN_ART_SOURCES} ${ARKEYAN_COLLECTION_SOURCES} vfs.cpp ${ARKEYAN_PLATFORM_SOURCES})
+add_executable(ArkeyanArtTest host/art/art_test.cpp host/stb_impl.cpp)
 target_include_directories(ArkeyanArtTest PRIVATE .)
 target_include_directories(ArkeyanArtTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
-target_link_libraries(ArkeyanArtTest PRIVATE SDL3::SDL3-static)
+target_link_libraries(ArkeyanArtTest PRIVATE ArkeyanHostFiles)
 if(NOT ARKEYAN_UWP)
     target_sources(ArkeyanArtTest PRIVATE host/accents_test.cpp host/launcher.cpp host/launcher_games.cpp host/xex_title.cpp
         host/portal_emulated.cpp host/texture_pack.cpp host/dds.cpp host/log.cpp host/settings.cpp host/pad_map.cpp host/mouse.cpp host/portable.cpp
@@ -692,74 +700,71 @@ if(NOT ARKEYAN_UWP)
     target_link_libraries(ArkeyanArtTest PRIVATE ArkeyanRuntimeLauncherUi ArkeyanXenonUtils)
     if(WIN32)
         target_sources(ArkeyanArtTest PRIVATE platform/win32/SSARecomp.rc)
-        target_link_libraries(ArkeyanArtTest PRIVATE winmm)
     endif()
 endif()
 
 # Collection library test (no game data, never the player's folders: a scratch collection): ./ArkeyanCollectionTest
-add_executable(ArkeyanCollectionTest host/collection/collection_test.cpp ${ARKEYAN_COLLECTION_SOURCES})
+add_executable(ArkeyanCollectionTest host/collection/collection_test.cpp)
 target_include_directories(ArkeyanCollectionTest PRIVATE .)
-target_link_libraries(ArkeyanCollectionTest PRIVATE SDL3::SDL3-static)
+target_link_libraries(ArkeyanCollectionTest PRIVATE ArkeyanArtReader)
 
 # Data folder helper and its migration (no game data, scratch folders only): ./ArkeyanDatadirTest
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_executable(ArkeyanDatadirTest host/collection/datadir_test.cpp host/collection/datadir.cpp)
+    add_executable(ArkeyanDatadirTest host/collection/datadir_test.cpp)
     target_include_directories(ArkeyanDatadirTest PRIVATE .)
+    target_link_libraries(ArkeyanDatadirTest PRIVATE ArkeyanArtReader)
 endif()
 
 # "Copy the game data" and the folder reader (synthetic files, scratch folders only): ./ArkeyanGameDataTest <scratch dir>
-add_executable(ArkeyanGameDataTest host/collection/game_data_test.cpp host/collection/game_data.cpp host/collection/datadir.cpp vfs.cpp
-    host/collection/portable_pack.cpp host/collection/json.cpp ${ARKEYAN_PLATFORM_SOURCES})
+add_executable(ArkeyanGameDataTest host/collection/game_data_test.cpp)
 target_include_directories(ArkeyanGameDataTest PRIVATE .)
-target_link_libraries(ArkeyanGameDataTest PRIVATE SDL3::SDL3-static)
+target_link_libraries(ArkeyanGameDataTest PRIVATE ArkeyanHostFiles)
 
 # The file list of the kit and of an installed game, and its checker (synthetic files, scratch folders only): ./ArkeyanFileListTest <scratch dir>
-add_executable(ArkeyanFileListTest host/collection/file_list_test.cpp host/collection/file_list.cpp host/collection/datadir.cpp)
+add_executable(ArkeyanFileListTest host/collection/file_list_test.cpp host/collection/file_list.cpp)
 target_include_directories(ArkeyanFileListTest PRIVATE .)
+target_link_libraries(ArkeyanFileListTest PRIVATE ArkeyanArtReader)
 
 # The disc reader on damaged and crafted images (synthetic files, scratch folders only): ./ArkeyanVfsTest <scratch dir>
-add_executable(ArkeyanVfsTest vfs_test.cpp vfs.cpp host/collection/portable_pack.cpp host/collection/json.cpp
-    host/collection/datadir.cpp ${ARKEYAN_PLATFORM_SOURCES})
+add_executable(ArkeyanVfsTest vfs_test.cpp)
 target_include_directories(ArkeyanVfsTest PRIVATE .)
-target_link_libraries(ArkeyanVfsTest PRIVATE SDL3::SDL3-static)
+target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 
 # The portable game's pack and the game's reader of it (synthetic files, scratch folders only): ./ArkeyanPortablePackTest <scratch dir>
-add_executable(ArkeyanPortablePackTest host/collection/portable_pack_test.cpp host/collection/portable_pack.cpp host/collection/json.cpp
-    host/collection/datadir.cpp vfs.cpp ${ARKEYAN_PLATFORM_SOURCES})
+add_executable(ArkeyanPortablePackTest host/collection/portable_pack_test.cpp)
 target_include_directories(ArkeyanPortablePackTest PRIVATE .)
-target_link_libraries(ArkeyanPortablePackTest PRIVATE SDL3::SDL3-static)
+target_link_libraries(ArkeyanPortablePackTest PRIVATE ArkeyanHostFiles)
 
 # The launcher's presence snapshot and the worker with the link disabled (synthetic states only).
 add_executable(ArkeyanPresenceTest game.cpp host/collection/presence_test.cpp host/collection/presence.cpp
-    host/collection/save_backup.cpp host/collection/datadir.cpp host/toybox_remote.cpp host/toybox_socket.cpp
-    host/toybox_link.cpp)
+    host/toybox_remote.cpp host/toybox_socket.cpp host/toybox_link.cpp)
 target_include_directories(ArkeyanPresenceTest PRIVATE .)
+target_link_libraries(ArkeyanPresenceTest PRIVATE ArkeyanArtReader)
 if(WIN32)
     target_link_libraries(ArkeyanPresenceTest PRIVATE ws2_32)
 endif()
 
 # Save backups, atomic writes, restoring and the running game's marker (no game data, scratch folders only): ./ArkeyanSavesTest
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_executable(ArkeyanSavesTest host/collection/save_backup_test.cpp host/collection/save_backup.cpp host/collection/datadir.cpp)
+    add_executable(ArkeyanSavesTest host/collection/save_backup_test.cpp)
     target_include_directories(ArkeyanSavesTest PRIVATE .)
+    target_link_libraries(ArkeyanSavesTest PRIVATE ArkeyanArtReader)
 endif()
 
 # Achievements (the XDBF reader), unlocks and play time (synthetic data, scratch folders; the discs given are only read):
 # ./ArkeyanProgressTest [<disc>.iso...]. And the achievement calls of a title on a fake guest context, against a disc:
 # ./ArkeyanAchievementsKernelTest <disc>.iso
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_executable(ArkeyanProgressTest host/collection/progress_test.cpp host/collection/achievements.cpp host/collection/progress.cpp
-        host/collection/save_backup.cpp host/collection/datadir.cpp host/collection/portable_pack.cpp host/collection/json.cpp vfs.cpp ${ARKEYAN_PLATFORM_SOURCES})
+    add_executable(ArkeyanProgressTest host/collection/progress_test.cpp host/collection/achievements.cpp)
     target_include_directories(ArkeyanProgressTest PRIVATE .)
-    target_link_libraries(ArkeyanProgressTest PRIVATE ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
+    target_link_libraries(ArkeyanProgressTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
 
     add_executable(ArkeyanAchievementsKernelTest EXCLUDE_FROM_ALL kernel/xam_achievements_test.cpp kernel/xam_achievements.cpp kernel/objects.cpp
-        kernel/overlapped.cpp memory.cpp host/collection/achievements.cpp host/collection/progress.cpp host/collection/save_backup.cpp
-        host/collection/datadir.cpp host/collection/portable_pack.cpp host/collection/json.cpp vfs.cpp ${ARKEYAN_PLATFORM_SOURCES})
+        kernel/overlapped.cpp memory.cpp host/collection/achievements.cpp)
     target_include_directories(ArkeyanAchievementsKernelTest PRIVATE .)
     target_include_directories(ArkeyanAchievementsKernelTest SYSTEM PRIVATE ${ARKEYAN_PPC_DIR} ${ARKEYAN_XENON_UTILS}) # as ArkeyanRuntime's
     arkeyan_tidy_standin(ArkeyanAchievementsKernelTest)
-    target_link_libraries(ArkeyanAchievementsKernelTest PRIVATE ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
+    target_link_libraries(ArkeyanAchievementsKernelTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
 
     # Host calls into the guest, thread memory over 2000 create/exit cycles, the dispatcher table; the game's code range,
     # no game code: ./ArkeyanGuestThreadTest
@@ -796,7 +801,7 @@ if(ARKEYAN_UWP)
     # Xbox Dev Mode (UWP app, packaged by tools/xbox/package.sh): host/uwp replaces main.cpp and the SDL host
     # (window and events, audio, launcher, real portals).
     get_target_property(ARKEYAN_SOURCES ArkeyanRuntime SOURCES)
-    list(REMOVE_ITEM ARKEYAN_SOURCES main.cpp host/mouse_input.cpp host/audio.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp host/log.cpp host/portal_hid.cpp
+    list(REMOVE_ITEM ARKEYAN_SOURCES main.cpp host/sdl_hints.cpp host/mouse_input.cpp host/audio.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp host/log.cpp host/portal_hid.cpp
         host/portal_usb.cpp host/windows_devices.cpp host/gamemenu.cpp host/report.cpp)
     set_property(TARGET ArkeyanRuntime PROPERTY SOURCES ${ARKEYAN_SOURCES} host/audio_xaudio2.cpp host/uwp/main.cpp
         host/uwp/portal_backends.cpp host/uwp/settings_uwp.cpp host/uwp/uwp_compat.cpp host/uwp/cpu_check.cpp host/uwp/gamemenu_uwp.cpp)

@@ -35,7 +35,10 @@ A trap's voice uses the portal's speaker: `M 01` on, sound blocks, `M 00` off. *
   queries) fails without it.
 - **Each backend's format.** Xbox 360 USB: the console's own report, `0B 17` and the 30 bytes, on the OUT endpoint. HID (Wii, Wii U, PS):
   decoded by the backend and sent as 16-bit little-endian PCM, 32 samples (64 bytes) per `SDL_hid_write`, the format the HID Traptanium
-  portal is said to take [?] (Dolphin and Cemu as leads); a portal that refuses a block (Windows' HID writes are the descriptor's 33 bytes)
+  portal is said to take [?] (Dolphin and Cemu as leads); on Windows 16 samples per write (0.9.9, launcher #113): its HID driver sends
+  reports of the descriptor's output length, 33 bytes, so a 65-byte write likely reached the portal cut (a player heard it choppy)
+  [?] (`portal_hid::SoundSamplesPerWrite`; logged once, `[portal] hid: the speaker's sound goes in 33-byte writes (16 samples
+  each)`). A portal that refuses a block
   logs `[portal] hid: the portal refused a sound block (...)` and the computer plays the rest. Xbox One (GIP): its sound message is not
   known, so the computer plays it [?]. `AsyncPortal` queues the blocks with the commands, in order; a refused block never drops the portal.
 - **The computer's stream** (`SpeakerStream`, one producer, one consumer, no allocation, no lock): the title's portal thread decodes
@@ -110,7 +113,7 @@ the calls and the bytes through a fake libusb). A player's Spyro's Adventure Wii
 (hid-write: Protocol error)` (`EPROTO`: hidraw's write goes to the interrupt OUT endpoint, which this family stalls; the Wii
 Swap Force portal takes it). hidraw has no other way to an output report (`HIDIOCSOUTPUT` goes the same way), so Linux
 gets the macOS method through libusb, loaded as for the Xbox portals: `LinuxMethods` = `hid-write`, then `usb-control`
-(`host/portal_hid_report.h`, `TryOrder`: the method that worked last first). The first `usb-control` command finds the
+(`host/portal_hid_report.h`, `MethodChoice`, below). The first `usb-control` command finds the
 USB device behind the hidraw node from sysfs (`/sys/class/hidraw/hidrawN/device`, up to the interface's
 `bInterfaceNumber` and the device's `busnum`/`devnum`; any `1430:0150` if that fails), opens it, reads the IN endpoint
 from the configuration descriptor and claims the interface with libusb's auto-detach, which takes it from the kernel's
@@ -123,6 +126,16 @@ ATTRS{idVendor}=="1430"` rule (an access error names it). Tests: `ArkeyanPortalH
 fake libusb: the claim, the bytes, the reads, the release, the failures; also built and run in the Linux container). To
 verify with that portal: `--portal-probe` shows `hid-write R: error: ...` then `usb-control R: ok, 'R' ...` and `=> ok,
 the game writes with usb-control`.
+
+**The method across a session** (0.9.9, launcher #113, `portal_hid::MethodChoice`) [?] (the logic through
+`ArkeyanPortalHidReportTest`; no Windows HID Traptanium portal here). A portal just opened tries its system's methods in
+order. Once one has worked, a failure retries it twice, 3 ms apart, and never moves to another; if the retries fail the
+portal is closed and the reopen starts over from the first method. Before (0.9.8), one failed `HidD_SetOutputReport` as a
+trap's sound started on a Windows Wii Traptanium portal sent that command and every later one by `hid-write`, the interrupt
+OUT endpoint that carries the speaker's PCM, even after a reconnect: unanswered, the portal froze (lights on or off, static
+in its speaker). On Windows a portal whose `R` answer names a speaker model never takes a command by `hid-write`. Logged:
+`[portal] hid: '<letter>' went through with <method> after: <each method's error>` (20 lines per open at most), so the
+next log says why SET_REPORT failed.
 
 **macOS: the Xbox portals through IOKit** (2026-11-09) [?] (no Xbox portal here; the code paths, the log and the device list
 were run). A Mac has no libusb ("USB (Xbox) portals can't be used: libusb-1.0 not found" before), so `portal_usb_mac.cpp`

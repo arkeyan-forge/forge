@@ -188,6 +188,7 @@ option(ARKEYAN_TOOLS_ONLY "Configure only the host tools (XenonRecomp, xexdump);
 if(ARKEYAN_TOOLS_ONLY)
     include(cmake/art_reader.cmake) # Arkeyan-Builder links ArkeyanArtReader
     sky_quality(ArkeyanArtReader)
+    sky_quality(ArkeyanHostFiles)
     return()
 endif()
 # The translated game code; tools/make_kit.sh points it at a game-free stub to build the player kit's runtime.
@@ -200,7 +201,7 @@ add_subdirectory(runtime ArkeyanRuntime)
 
 # Our own targets only. ArkeyanRecompLib (generated code), thirdparty/, imgui and ArkeyanXenonUtils are left alone.
 sky_quality(ArkeyanRuntime)
-foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi ArkeyanArtReader ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanGameDataTest ArkeyanFileListTest ArkeyanPortablePackTest
+foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi ArkeyanArtReader ArkeyanHostFiles ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanGameDataTest ArkeyanFileListTest ArkeyanPortablePackTest ArkeyanVfsTest
         ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
     if(TARGET ${target})
         sky_quality(${target})
@@ -209,9 +210,9 @@ endforeach()
 # The tests that build by default and need no argument (the others run from tools/test_all.sh with a disc or a scratch folder).
 sky_add_tests(ArkeyanSettingsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanDatadirTest
     ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanClockTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
-    ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanFrameAnchorTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest
+    ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanFrameAnchorTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest ArkeyanToyboxKeyMaskTest
     ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanGlyphModelsTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanToyboxLinkTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest
-    ArkeyanBinkFrameTest ArkeyanBinkDisplayTest ArkeyanPresenceTest)
+    ArkeyanBinkFrameTest ArkeyanBinkDisplayTest ArkeyanPresenceTest ArkeyanSdlHintsTest)
 if(SKY_TESTS_ONLY)
     set_target_properties(ArkeyanRuntime ArkeyanRecompGpuTest PROPERTIES EXCLUDE_FROM_ALL ON)
     # Adapter tests use synthetic guest calls and do not require translated game code.

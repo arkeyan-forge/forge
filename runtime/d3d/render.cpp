@@ -1100,13 +1100,16 @@ namespace
         // Render targets.
         uint32_t surfaces[gpu::MaxRenderTargets];
         uint64_t keys[gpu::MaxRenderTargets];
+        uint32_t formats[gpu::MaxRenderTargets];
         uint32_t surfaceCount = 0;
         for (; surfaceCount < gpu::MaxRenderTargets; surfaceCount++)
         {
             surfaces[surfaceCount] = Read32(device + Device::RenderTargets + surfaceCount * 4);
             if (surfaces[surfaceCount] == 0)
                 break;
-            keys[surfaceCount] = ShapeOf(device, surfaces[surfaceCount], false).key;
+            const TargetShape shape = ShapeOf(device, surfaces[surfaceCount], false);
+            keys[surfaceCount] = shape.key;
+            formats[surfaceCount] = shape.format;
         }
         for (uint32_t own = d3d::SlotsNeedingOwnTarget(keys, surfaces, surfaceCount); own != 0; own &= own - 1)
         {
@@ -1131,6 +1134,7 @@ namespace
                 GpuRegister(device, blendRegisters[i]), d3d::TargetWriteMask(colorMask, g_drawColorOutputs, i));
             draw.colorTargetCount++;
         }
+        draw.targetClamps = d3d::TargetClamps(formats, std::min(draw.colorTargetCount, surfaceCount));
         for (uint32_t i = 0; i < 4; i++)
             draw.blendFactor[i] = std::bit_cast<float>(GpuRegister(device, Reg::RB_BLEND_RED + i));
         // SKY_LOG_SHADER=<hex hash>: says once where a pixel shader is first used (a test aid for shaders built at run time).

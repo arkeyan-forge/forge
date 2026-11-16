@@ -12,6 +12,7 @@
 #include "host/portal_adpcm.h"
 #include "host/portal_backend.h"
 #include "host/portal_hid_report.h"
+#include "host/portal_identity.h"
 #include <SDL3/SDL_hidapi.h>
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_stdinc.h>
@@ -19,6 +20,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <set>
 #include <vector>
 #ifdef _WIN32
@@ -324,6 +326,16 @@ namespace
     };
 #endif
 
+    // On Windows hidapi's write goes to the interrupt OUT endpoint, which a Traptanium portal keeps for its speaker
+    // (MethodChoice), and the HID driver cuts every write to the descriptor's output report (SoundSamplesPerWrite).
+#ifdef _WIN32
+    constexpr bool SpeakerAvoidsHidWrite = true;
+    size_t SoundReportLength(const OutputHandle& output) { return output.length; }
+#else
+    constexpr bool SpeakerAvoidsHidWrite = false;
+    size_t SoundReportLength(const OutputHandle&) { return 0; }
+#endif
+
     // Report id 0 first, then the command zero-padded: 1 + 32 bytes, the output report's exact length that Windows wants.
     bool SendCommand(WriteMethod method, SDL_hid_device* device, OutputHandle& output, const uint8_t* command,
         size_t size, std::string& error)
@@ -427,7 +439,7 @@ namespace
 
         bool IsOpen() override { return Opened(); }
 
-        // Tries the method that worked last first, then the others; keeps the first that works.
+        // The methods in MethodChoice's order (host/portal_hid_report.h); the first that works is kept.
         bool Write(const uint8_t* command, size_t size) override
         {
             if (!Opened())
@@ -440,22 +452,33 @@ namespace
                 m_samples = 0;
             }
             std::string errors;
-            for (WriteMethod method : portal_hid::TryOrder(Methods, m_method))
+            bool tried = false;
+            for (WriteMethod method : m_choice.Next())
             {
                 if (m_linkOnly)
                     method = WriteMethod::ControlReport; // no HID device: the control link is the only way
+                if (tried && method == m_method)
+                    SDL_Delay(RetryDelayMs); // a retry of the same method: give the pipe a moment
+                tried = true;
                 std::string error;
                 if (SendCommand(method, m_device, m_output, command, size, error))
                 {
                     if (!m_wrote || method != m_method)
                         fprintf(stderr, "[portal] hid: wrote '%c' with %s (%zu-byte output report)\n", letter,
                             MethodName(method), m_output.length);
+                    // What failed before it worked, so a log shows why (a retry, or a fallback on a new portal).
+                    if (!errors.empty() && m_recovered < MaxRecoveredLines)
+                        fprintf(stderr, "[portal] hid: '%c' went through with %s after: %s%s\n", letter,
+                            MethodName(method), errors.c_str(),
+                            ++m_recovered == MaxRecoveredLines ? " (further ones not logged)" : "");
                     m_method = method;
+                    m_choice.Worked(method);
                     m_wrote = true;
                     m_said.clear(); // working: the next failure is news
                     return true;
                 }
                 errors += std::string(errors.empty() ? "" : "; ") + MethodName(method) + ": " + error;
+                m_method = method;
                 if (m_linkOnly)
                     break;
             }
@@ -464,9 +487,10 @@ namespace
             return false;
         }
 
-        // HID portals take the speaker's sound as 16-bit PCM at 8 kHz, 32 samples (64 bytes, little-endian) per write on the
-        // interrupt OUT endpoint, where the console's ADPCM is decoded first. A portal that refuses it (Windows sends only
-        // reports of the descriptor's 33 bytes) leaves the sound to the computer.
+        // HID portals take the speaker's sound as 16-bit PCM at 8 kHz (little-endian) on the interrupt OUT endpoint,
+        // where the console's ADPCM is decoded first: 32 samples (64 bytes) per write, 16 on Windows, whose writes are
+        // the descriptor's 33-byte reports (portal_hid::SoundSamplesPerWrite). A portal that refuses it leaves the
+        // sound to the computer.
         bool TakesSound() override { return m_device != nullptr && !m_soundRefused && !Linked(m_output); }
 
         bool WriteSound(const uint8_t* block, size_t size) override
@@ -480,10 +504,17 @@ namespace
                 const int16_t sample = m_decoder.Decode(low ? byte & 15 : byte >> 4);
                 m_pcm[1 + m_samples * 2] = uint8_t(sample);
                 m_pcm[2 + m_samples * 2] = uint8_t(uint16_t(sample) >> 8);
-                if (++m_samples < SoundBlockSamples)
+                if (++m_samples < m_soundSamples)
                     continue;
                 m_samples = 0;
-                if (SDL_hid_write(m_device, m_pcm, sizeof(m_pcm)) < 0)
+                const size_t bytes = 1 + m_soundSamples * 2;
+                if (!m_soundWritten)
+                {
+                    fprintf(stderr, "[portal] hid: the speaker's sound goes in %zu-byte writes (%zu samples each)\n",
+                        bytes, m_soundSamples);
+                    m_soundWritten = true;
+                }
+                if (SDL_hid_write(m_device, m_pcm, bytes) < 0)
                 {
                     fprintf(stderr,
                         "[portal] hid: the portal refused a sound block (%s): the computer plays the sound\n",
@@ -509,6 +540,9 @@ namespace
                 Close();
                 return 0;
             }
+            // The answer to 'R' names the portal's model: one with a speaker keeps its commands off hidapi's write.
+            if (size >= 3 && buffer[0] == 'R')
+                m_choice.SetSpeaker(PortalModelHasSpeaker(buffer + 1, 2));
             if (size > 0 && !m_read)
             {
                 fprintf(stderr, "[portal] hid: read the first report, '%c' (%d bytes)\n", buffer[0], size);
@@ -591,8 +625,12 @@ namespace
             }
 #endif
             m_lastCount = count;
-            m_wrote = m_read = m_soundRefused = false;
+            m_wrote = m_read = m_soundRefused = m_soundWritten = false;
             m_samples = 0;
+            m_recovered = 0;
+            m_choice.Opened();
+            m_method = Methods[0];
+            m_soundSamples = portal_hid::SoundSamplesPerWrite(SoundReportLength(m_output));
             SDL_hid_free_enumeration(devices);
         }
 
@@ -610,14 +648,17 @@ namespace
         SDL_hid_device* m_device = nullptr;
         bool m_linkOnly = false;
         OutputHandle m_output;
-        WriteMethod m_method = Methods[0];
+        WriteMethod m_method = Methods[0]; // the last one tried
+        portal_hid::MethodChoice<std::size(Methods)> m_choice{ Methods, SpeakerAvoidsHidWrite };
+        static constexpr Uint32 RetryDelayMs = 3;
+        static constexpr int MaxRecoveredLines = 20;
+        int m_recovered = 0;
         int m_lastCount = -1;
         bool m_wrote = false, m_read = false;
-        static constexpr size_t SoundBlockSamples = 32;
         portal_adpcm::Decoder m_decoder;
-        uint8_t m_pcm[1 + SoundBlockSamples * 2]{}; // report id 0, then the samples
-        size_t m_samples = 0;
-        bool m_soundRefused = false;
+        uint8_t m_pcm[1 + portal_hid::MaxSoundSamples * 2]{}; // report id 0, then the samples
+        size_t m_samples = 0, m_soundSamples = portal_hid::MaxSoundSamples;
+        bool m_soundRefused = false, m_soundWritten = false;
         std::set<std::string> m_said;
     };
 }
@@ -708,7 +749,9 @@ std::string ProbeHidPortals(std::vector<PortalProbe>& portals)
                 if (probe.id.empty())
                     NameProbe(probe, answer.data(), answer.size());
                 std::string status = reset.rfind("ok", 0) == 0 ? Query(handle, output, method, 'S') : "not tried";
-                probe.methods.push_back({ MethodName(method), "R: " + reset + "; S: " + status });
+                std::string result = "R: ";
+                result.append(reset).append("; S: ").append(status);
+                probe.methods.push_back({ MethodName(method), result });
                 if (probe.write.empty() && reset.rfind("ok", 0) == 0)
                     probe.write = MethodName(method);
                 if (probe.status.empty() || probe.write == MethodName(method))
