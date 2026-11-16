@@ -158,7 +158,10 @@ namespace toybox
             {
                 size_t space = text.find(' ', at);
                 std::string word = text.substr(at, space == std::string::npos ? std::string::npos : space - at);
-                std::string candidate = line.empty() ? word : line + " " + word;
+                std::string candidate = line;
+                if (!candidate.empty())
+                    candidate += ' ';
+                candidate += word;
                 if (!line.empty() && Measure(font, size, candidate).x > width)
                 {
                     lines.push_back(line);
@@ -193,7 +196,7 @@ namespace toybox
                     const float channels[] = { color.x, color.y, color.z, color.w };
                     uint32_t pixel = 0;
                     for (int c = 0; c < 4; c++)
-                        pixel |= uint32_t(uint8_t(std::clamp(channels[c], 0.0f, 1.0f) * 255 + 0.5f)) << (c * 8);
+                        pixel |= uint32_t(uint8_t(std::lround(std::clamp(channels[c], 0.0f, 1.0f) * 255))) << (c * 8);
                     texture->pixels[size_t(y) * size_t(width) + size_t(x)] = pixel;
                 }
             }
@@ -230,7 +233,7 @@ namespace toybox
         {
             if (alpha < 1)
             {
-                g_draw->AddRectFilled(min, max, Rgb(rgb, int(alpha * 255 + 0.5f)));
+                g_draw->AddRectFilled(min, max, Rgb(rgb, int(std::lround(alpha * 255))));
                 return;
             }
             char key[24];
@@ -1026,7 +1029,7 @@ namespace toybox
                             float cover = Coverage(Side / 2.0f, std::sqrt(dx * dx + dy * dy));
                             g_avatar->pixels[size_t(y) * Side + size_t(x)] = uint32_t(px[0]) | uint32_t(px[1]) << 8 |
                                                                              uint32_t(px[2]) << 16 |
-                                                                             uint32_t(px[3] * cover + 0.5f) << 24;
+                                                                             uint32_t(std::lround(px[3] * cover)) << 24;
                         }
                 }
                 SDL_free(data);
@@ -1211,7 +1214,7 @@ namespace toybox
             ImVec2 min(std::round(x), std::round(y)), max(std::round(x + width), std::round(y + height));
             // Baked corners are kept per alpha: steps of 1/16 keep them few.
             const float alpha = std::round(motion.alpha * 16) / 16;
-            const int ink = int(alpha * 255 + 0.5f);
+            const int ink = int(std::lround(alpha * 255));
             const float radius = kind == Kind::Notice ? Radius::Row : Radius::Card;
             RoundRect(min, max, Colour::Border, radius, 0.94f * alpha);
             RoundRect(ImVec2(min.x + 1, min.y + 1), ImVec2(max.x - 1, max.y - 1), Colour::Page,
@@ -1312,6 +1315,7 @@ namespace toybox
                 return;
             int current = grid.cells.empty() ? 0 : grid.cells[grid.cursor].section;
             std::vector<float> widths;
+            widths.reserve(grid.sections.size());
             for (const ListSection& section : grid.sections)
                 widths.push_back(Measure(g_black, 13, StripLabel(model, grid, section)).x + 22);
             float offset = 0, before = 0;
@@ -1745,13 +1749,15 @@ namespace toybox
                 if (empty && !lit)
                 {
                     RoundRect(a, b, Look::Surface, look::Radius::Card);
-                    for (float d = a.x + 14; d < b.x - 14; d += 12)
+                    for (int k = 0; a.x + 14 + 12 * float(k) < b.x - 14; k++)
                     {
+                        const float d = a.x + 14 + 12 * float(k);
                         Fill(ImVec2(d, a.y), ImVec2(std::min(d + 6, b.x - 14), a.y + 2), look::Colour::Border);
                         Fill(ImVec2(d, b.y - 2), ImVec2(std::min(d + 6, b.x - 14), b.y), look::Colour::Border);
                     }
-                    for (float d = a.y + 14; d < b.y - 14; d += 12)
+                    for (int k = 0; a.y + 14 + 12 * float(k) < b.y - 14; k++)
                     {
+                        const float d = a.y + 14 + 12 * float(k);
                         Fill(ImVec2(a.x, d), ImVec2(a.x + 2, std::min(d + 6, b.y - 14)), look::Colour::Border);
                         Fill(ImVec2(b.x - 2, d), ImVec2(b.x, std::min(d + 6, b.y - 14)), look::Colour::Border);
                     }
@@ -2315,7 +2321,7 @@ namespace toybox
             {
                 float angle = -1.5707963f + i * 6.2831853f / Model::WheelPlaces;
                 ImVec2 at(center.x + std::cos(angle) * 160, center.y + std::sin(angle) * 160);
-                int index = places[i].file.empty() ? -1 : -1;
+                int index = -1;
                 for (size_t k = 0; k < model.figures.size() && !places[i].file.empty(); k++)
                 {
                     if (model.figures[k].file == places[i].file)
@@ -2411,6 +2417,7 @@ namespace toybox
             case 6: return L("Hero Points", "Points de héros");
             case 7: return L("Heroic Challenges", "Défis héroïques");
             case 8: return L("Upgrades", "Améliorations");
+            default: break;
             }
             return "";
         }
@@ -2448,6 +2455,7 @@ namespace toybox
                     int(table.upgrades.size()));
                 break;
             }
+            default: break;
             }
             return text;
         }
@@ -3155,6 +3163,7 @@ namespace toybox
                 button(L("Tidy now", "Ranger maintenant"));
                 break;
             }
+            default: break;
             }
             std::vector<HintItem> hints = { { 'A', m.inPanel ? L("Do it", "Valider") : L("Open", "Ouvrir") } };
             if (m.section == 0 && m.inPanel)
