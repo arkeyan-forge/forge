@@ -269,6 +269,7 @@ namespace
         bool resolved = false; // written by resolves: the host copy is the only valid one
         bool swapRB =
             false; // resolved with red and blue swapped (RB_COPY_DEST_INFO.copy_dest_swap): the host copy is not
+        const gpu::Texture* resolvedFrom = nullptr; // the colour target last resolved into it (compared, never used)
         uint64_t checkedFrame = 0;
         uint64_t contentHash = 0;
         uint64_t guestHash = 0; // GuestContentHash at the last full check (contentHash may be a glyph's host hash)
@@ -953,6 +954,12 @@ namespace
     std::vector<float> g_constants(2 * 256 * 4);
     // What PrepareDraw saw of the draw it built, for BuildDraw: it draws into the wide frame, may read the scene, VTE_CNTL.
     bool g_frameDraw, g_frameSceneRead, g_frameFrameRead, g_frameComposite;
+    // Fill's smaller HUD (ultrawide::HudInset): the draw reads a copy of a render target (a resolve), not a texture of the
+    // game's files; a screen-covering pass that does is a picture of the scene, not HUD.
+    bool g_frameTargetRead;
+    // aspect=fill: the colour target whose copy the last swap presented (the game's frame, whatever its size: in the
+    // later games the scene is 1280x720 too); its HUD draws are made smaller (ultrawide::HudInset). Compared only.
+    const gpu::Texture* g_presentedTarget;
     // The draw's guest shader hashes, for the frame dump's lines (0: none).
     uint64_t g_drawVertexShader, g_drawPixelShader;
     // The render targets the draw's pixel shader writes (GuestShader::colorOutputs; 0: none, or no pixel shader).
@@ -1333,18 +1340,21 @@ namespace
 
         // The wide frame (see BuildDraw): does the draw read the scene? (The slots hold stale textures too, so this only
         // says it can be the composite.)
-        g_frameDraw = frame;
-        g_frameSceneRead = g_frameFrameRead = false;
-        if (frame)
+        // Fill cuts the frame's sides: the frame is the presented target, and its HUD is drawn smaller (BuildDraw).
+        const bool inset = ultrawide::HudInset() < 1.0f && sizeTarget == g_presentedTarget && sizeTarget != nullptr;
+        g_frameDraw = frame || inset;
+        g_frameSceneRead = g_frameFrameRead = g_frameTargetRead = false;
+        if (g_frameDraw)
             for (uint32_t slot = 0; slot < gpu::MaxSamplers; slot++)
                 if ((game::UltrawideCompositeSlot < 0 || int(slot) == game::UltrawideCompositeSlot) &&
                     draw.textures[slot] != nullptr)
                 {
                     const gpu::TextureDesc& read = gpu::Desc(draw.textures[slot]);
+                    g_frameTargetRead |= (read.usage & gpu::TextureUsage::RenderTarget) != 0;
                     if (read.width == ultrawide::SceneWidth() * Scale() &&
                         read.height == ultrawide::SceneHeight() * Scale())
                         g_frameSceneRead = true;
-                    else if (IsFrameTexture(read))
+                    else if (IsFrameTexture(read) || (inset && read.width == size.width && read.height == size.height))
                         g_frameFrameRead = true;
                 }
 
@@ -1723,7 +1733,11 @@ namespace
             const bool coversFrame =
                 draw.viewport.x <= 0.0f &&
                 draw.viewport.x + draw.viewport.width >= float(ultrawide::FrameWidth16x9 * uint32_t(FrameScale()));
-            const bool fills = ultrawide::FillsFrame(compositeShape, g_frameSceneRead, g_frameFrameRead, coversFrame);
+            // Fill's smaller HUD: any screen-covering pass of the composite's shape that reads a resolve also covers the
+            // frame (Trap Team's title draws its 3D backdrop through passes that read smaller copies, not the scene).
+            const bool fills = ultrawide::FillsFrame(compositeShape, g_frameSceneRead, g_frameFrameRead, coversFrame) ||
+                               (ultrawide::HudInset() < 1.0f && !ultrawide::Active() && compositeShape && coversFrame &&
+                                   g_frameTargetRead);
             if (g_frameComposite && ultrawide::MoviePlaying())
             {
                 // A movie is on: the scene behind it stays 16:9 (centred below) and the sides are black bars.
@@ -1757,6 +1771,24 @@ namespace
                 draw.viewport.x += float(shift);
                 draw.scissor.left = std::min(draw.scissor.left + shift, int32_t(size.width));
                 draw.scissor.right = std::min(draw.scissor.right + shift, int32_t(size.width));
+                // aspect=fill on a narrower window: the present cuts the frame's sides, so the HUD is drawn as much
+                // smaller towards the frame's centre and stays whole. Movies fill; a corner piece stays in its corner,
+                // and a quad over the whole frame (a fade, a full-screen page) covers it as the scene does.
+                const float inset = ultrawide::HudInset();
+                if (inset < 1.0f && place == d3d::FramePlace::Centre && !ultrawide::MoviePlaying())
+                {
+                    const float cx = float(size.width) * 0.5f, cy = float(size.height) * 0.5f;
+                    draw.viewport.x = cx + (draw.viewport.x - cx) * inset;
+                    draw.viewport.y = cy + (draw.viewport.y - cy) * inset;
+                    draw.viewport.width *= inset;
+                    draw.viewport.height *= inset;
+                    const auto in = [inset](int32_t edge, float centre, bool low) {
+                        const float at = centre + (float(edge) - centre) * inset;
+                        return int32_t(low ? std::floor(at) : std::ceil(at));
+                    };
+                    draw.scissor = plume::RenderRect(in(draw.scissor.left, cx, true), in(draw.scissor.top, cy, true),
+                        in(draw.scissor.right, cx, false), in(draw.scissor.bottom, cy, false));
+                }
             }
         }
 
@@ -2431,6 +2463,7 @@ namespace
             for (uint32_t i = 0; i < 6; i++)
                 fetch.dword[i] = Read32(args.destination + Resource::TextureFetch + i * 4);
             HostTexture& host = g_textures[TextureKey(fetch)];
+            host.resolvedFrom = depth ? nullptr : target;
             // Depth (k_24_8, k_24_8_FLOAT textures) is sampled as its value in X, as Xenia converts it.
             gpu::Format format = depth ? gpu::Format::R32_FLOAT : gpu::Desc(target).format;
             // The frame's copy is as wide as the frame: that is what the swap presents.
@@ -2834,6 +2867,8 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
         {
             // Present(nullptr) clears the output to black and still draws the host overlay.
             const gpu::Texture* presented = failedMovie ? nullptr : it->second.texture;
+            if (!failedMovie)
+                g_presentedTarget = it->second.resolvedFrom;
             SetGameRendering(true);
             if (presented != nullptr)
                 DumpResolve(presented);

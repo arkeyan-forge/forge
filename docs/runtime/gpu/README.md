@@ -128,7 +128,7 @@ Results (M1 Pro, scale 2, vsync, limit 60, a 6 s drag, load average 10-30 with b
 | [plume_backends.md](plume_backends.md) | Metal/Vulkan/D3D12 backends, every plume patch, limits |
 | [renderer_threads.md](renderer_threads.md) | GPU thread, texture threads, caches, performance findings, the perf log |
 | [render_bugs.md](render_bugs.md) | Every rendering bug with cause and fix, open items, the lessons |
-| [ultrawide.md](ultrawide.md) | How does `aspect=auto` widen the scene, the frame and the HUD? |
+| [ultrawide.md](ultrawide.md) | How does `aspect=auto` widen the scene, the frame and the HUD? How does `aspect=fill` cover a 16:10 screen? |
 | [texture_packs.md](texture_packs.md) | How do I dump the game's textures and replace them (HD packs)? |
 | [steamdeck_startup.md](steamdeck_startup.md) | Why might the Steam Deck's Game Mode show nothing, and what does the game log? |
 

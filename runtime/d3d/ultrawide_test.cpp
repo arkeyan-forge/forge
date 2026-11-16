@@ -131,6 +131,37 @@ int main()
         ultrawide::WindowSize(3440, 1440, false, 67000 + ultrawide::SettleMs);
         CHECK(ultrawide::FrameEnd() && ultrawide::Active() && ultrawide::FrameWidth() == 1720);
 
+        // aspect=fill: on a window narrower than 16:9 the HUD is drawn smaller (gpu/present_rect.h, HudInset), from the
+        // swap after the size settled; a wider window or 16:9 draws it whole. Without fill it never changes.
+        ultrawide::SetScene16x9(1120, 704, false);
+        ultrawide::SetFill(true);
+        ultrawide::Configure(true, 1280, 800);
+        CHECK(!ultrawide::Active() && ultrawide::HudInset() < 0.91f && ultrawide::HudInset() > 0.89f);
+        ultrawide::WindowSize(1280, 720, false, 68000);
+        ultrawide::WindowSize(1280, 720, false, 68000 + ultrawide::SettleMs);
+        CHECK(ultrawide::HudInset() < 0.91f); // not before the swap
+        ultrawide::FrameEnd();
+        CHECK(ultrawide::HudInset() == 1.0f);
+        ultrawide::WindowSize(1280, 800, false, 69000);
+        ultrawide::WindowSize(1280, 800, false, 69000 + ultrawide::SettleMs);
+        CHECK(!ultrawide::FrameEnd() && ultrawide::HudInset() < 0.91f); // the frame stays: no new targets
+        ultrawide::WindowSize(2560, 1080, false, 69500);
+        ultrawide::WindowSize(2560, 1080, false, 69500 + ultrawide::SettleMs);
+        CHECK(ultrawide::FrameEnd() && ultrawide::Active() && ultrawide::HudInset() == 1.0f);
+        // A full-resolution scene (1280x720, the frame's size: Swap Force and the later games) is made one tile wider
+        // with fill, so that the renderer tells it from the frame; a scene that differs already keeps its size.
+        ultrawide::SetScene16x9(1280, 720, false);
+        ultrawide::Configure(true, 1280, 800);
+        CHECK(ultrawide::SceneWide() && ultrawide::SceneWidth() == 1312 && ultrawide::SceneHeight() == 720);
+        CHECK(!ultrawide::Active() && ultrawide::FrameWidth() == 1280);
+        ultrawide::SetScene16x9(1120, 704, false);
+        ultrawide::Configure(true, 1280, 800);
+        CHECK(!ultrawide::SceneWide() && ultrawide::SceneWidth() == 1120);
+        ultrawide::SetFill(false);
+        ultrawide::SetScene16x9(1280, 720, false);
+        ultrawide::Configure(true, 1280, 800);
+        CHECK(ultrawide::HudInset() == 1.0f && !ultrawide::SceneWide() && ultrawide::SceneWidth() == 1280);
+
         // aspect=16:9: a wide window changes nothing.
         ultrawide::Configure(false, 1280, 720);
         ultrawide::WindowSize(2560, 1080, false, 70000);

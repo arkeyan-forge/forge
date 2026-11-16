@@ -75,6 +75,7 @@ namespace gpu
         bool gpuThread = true; // the GPU thread (worker.cpp); off: the callers record and submit (SKY_GPU_THREAD=0)
         bool pipelineLibrary = true; // D3D12: the persistent pipeline cache (d3d12_pipeline_cache.cpp)
         uint32_t fpsLimit = 30; // the game's frame rate (fps_limit), for the [perf] log's GPU-bound hint
+        bool fill = false; // [video] aspect=fill: the game's frame covers a narrower output (gpu/present_rect.h)
         uint32_t edgeSmoothing =
             0; // edgesmoothing::Mode of the game's FXAA pass (gpu/edge_smoothing.h); changed while playing
         // Desktop Windows: [<game>.video] gpu_backend, the one tried first (gpu/gpu_backend.h); ignored elsewhere.
@@ -104,8 +105,8 @@ namespace gpu
         std::function<void(uint8_t* destination, uint32_t rowPitch)> fill);
 
     // Ends the frame: clears the output to black, draws the image (if any) scaled to fit with its aspect ratio kept
-    // (letterbox: scale = min(outW / w, outH / h), size rounded to whole pixels, centred with the offset rounded down),
-    // presents. Paced by vsync, or at 60 Hz for an offscreen output. Queued: the caller waits only while the GPU thread
+    // (letterbox: scale = min(outW / w, outH / h), size rounded to whole pixels, centred with the offset rounded down;
+    // with Settings::fill, scaled up to cover a narrower output, its sides cut: gpu/present_rect.h), presents. Paced by vsync, or at 60 Hz for an offscreen output. Queued: the caller waits only while the GPU thread
     // is still on the frame before.
     void Present(const Texture* image);
 

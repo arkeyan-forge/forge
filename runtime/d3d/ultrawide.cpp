@@ -1,4 +1,5 @@
 #include "d3d/ultrawide.h"
+#include "gpu/present_rect.h"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -28,6 +29,15 @@ namespace
     std::mutex g_nextMutex;
     ultrawide::Layout g_next;
     bool g_hasNext;
+
+    // Fill: the HUD's scale in use (render thread) and the one the settled window gives (main thread, under g_nextMutex).
+    bool g_fill;
+    float g_hudInset = 1.0f, g_nextHudInset = 1.0f;
+
+    float InsetFor(uint32_t width, uint32_t height)
+    {
+        return g_fill ? gpu::presentrect::HudInset(width, height) : 1.0f;
+    }
 }
 
 void ultrawide::SetScene16x9(uint32_t width, uint32_t height, bool keepsArea, uint32_t maxWidth)
@@ -86,6 +96,7 @@ void ultrawide::Configure(
     g_automatic = automatic;
     g_settle = Settle(windowWidth, windowHeight);
     g_hasNext = false;
+    g_hudInset = g_nextHudInset = InsetFor(windowWidth, windowHeight);
     const Layout layout = LayoutFor(automatic, windowWidth, windowHeight);
     g_active = layout.active;
     g_aspect = layout.aspect;
@@ -95,6 +106,17 @@ void ultrawide::Configure(
     g_sceneWide = sceneLayout.active;
     g_sceneWidth = g_baseWidth;
     g_sceneHeight = g_baseHeight;
+    if (!sceneLayout.active && g_fill && !g_keepsArea && g_baseWidth == FrameWidth16x9 && g_baseHeight == FrameHeight)
+    {
+        // Fill draws the HUD smaller in the frame (HudInset): the renderer must tell the frame from the scene, and a
+        // full-resolution scene is the frame's size. One 32-pixel tile wider, it is a scene made for a wider display:
+        // the camera stays 16:9 and the composite fits it to the frame, as when the window is narrower than the display.
+        g_sceneWide = true;
+        g_sceneWidth = g_baseWidth + 32;
+        fprintf(stderr, "[ultrawide] window %ux%u: fill, scene %ux%u (wider than the frame), frame %ux%u\n",
+            windowWidth, windowHeight, g_sceneWidth, g_sceneHeight, layout.frameWidth, FrameHeight);
+        return;
+    }
     if (!sceneLayout.active)
         return;
     const float aspect = sceneLayout.aspect;
@@ -122,6 +144,10 @@ void ultrawide::WindowSize(uint32_t width, uint32_t height, bool minimized, uint
 {
     if (!g_automatic || minimized || !g_settle.Update(width, height, nowMs))
         return;
+    {
+        std::lock_guard lock(g_nextMutex);
+        g_nextHudInset = InsetFor(width, height);
+    }
     const Layout layout = LayoutFor(true, width, height);
     if (layout.active && !Follows(layout))
     {
@@ -150,6 +176,7 @@ bool ultrawide::FrameEnd()
     Layout next;
     {
         std::lock_guard lock(g_nextMutex);
+        g_hudInset = g_nextHudInset;
         if (!g_hasNext)
             return false;
         g_hasNext = false;
@@ -169,6 +196,8 @@ bool ultrawide::FillsFrame(bool compositeShape, bool readsScene, bool readsFrame
     return compositeShape && (readsScene || (readsFrame && coversFrame));
 }
 
+void ultrawide::SetFill(bool fill) { g_fill = fill; }
+float ultrawide::HudInset() { return g_hudInset; }
 bool ultrawide::Active() { return g_active; }
 float ultrawide::Aspect() { return g_aspect; }
 bool ultrawide::SceneWide() { return g_sceneWide; }

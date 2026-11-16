@@ -35,6 +35,8 @@ struct RuntimeSettings
     uint32_t fpsLimit = 30;       // 30 or 60 (an older limit above 60, or none, reads as 60)
     bool aspectAuto = true; // [video] aspect: auto follows a window wider than 16:9 (Hor+ camera, wide scene and
     // frame, HUD centred); 16:9 keeps the game's 16:9 picture, with bars on a wider window
+    bool aspectFill = false; // [video] aspect=fill: auto (aspectAuto stays on), and on a window narrower than 16:9 the
+    // frame is scaled up to cover it, its sides cut (gpu/present_rect.h)
     bool showFps = false; // [<game>.video] show_fps: the frame rate in a corner (the F3 menu's FPS counter)
     uint32_t debugScreen = 0; // [<game>.video] debug_screen: the diagnostic overlay, 0 off (default), 1 compact, 2 full
     bool reduceMotion = false; // [video] reduce_motion: the in-game messages fade without sliding (host/toybox/look.h)

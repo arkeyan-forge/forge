@@ -1,9 +1,10 @@
 # Ultrawide: a Hor+ camera, a scene and a frame as wide as the window, the HUD where it belongs
 
-> **Purpose:** how does `aspect=auto` widen the scene, the frame and the HUD? · **Status:** current (2026-11-12) · **Tags:** [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [SuperChargers] [Imaginators]
+> **Purpose:** how does `aspect=auto` widen the scene, the frame and the HUD? · **Status:** current (2026-11-16) · **Tags:** [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [SuperChargers] [Imaginators]
 
-`[video] aspect=auto` (default) or `16:9` (`--aspect`, [settings.md](../../getting-started/settings.md)). With `auto`, a window or display more than 1 %
-wider than 16:9 shows more of the world to the sides; a 16:9 window (or `16:9`) runs exactly as before. Code:
+`[video] aspect=auto` (default), `fill` or `16:9` (`--aspect`, [settings.md](../../getting-started/settings.md)). With `auto`, a window or display more than 1 %
+wider than 16:9 shows more of the world to the sides; a 16:9 window (or `16:9`) runs exactly as before. `fill` is `auto`
+plus a narrower window covered without bars (below, "Narrower than 16:9: fill"). Code:
 `d3d/ultrawide.{h,cpp}` (the sizes), `engines/lux/ultrawide.cpp` and `engines/alchemy/ultrawide.cpp` (the games' sides),
 `games/<id>/adapter.cpp` (the camera), `d3d/render.cpp` (the wide frame). SSA **[Lux]**, Giants and Swap Force **[Alchemy]**
 have it; the per-game constants are in `games/<id>/addresses.h` (`Ultrawide*`). [Xbox] for the frame part.
@@ -77,6 +78,54 @@ that has the wider view. Code: `ultrawide::WindowSize` (the main loop gives it t
   a 20-step drag settled once, minimised and restored, 3440x1440, back to 1280x720, no fault. `aspect=16:9` with the wide
   display: the console's scene (no texture widened). Unit test: `ArkeyanUltrawideTest` (`SceneShape`, a 16:9 start on a
   wide display, the width bound, Giants' window shape).
+
+## Narrower than 16:9: fill (issue #24) (2026-11-16)
+
+On a window narrower than 16:9 (16:10: the Steam Deck's 1280x800, most laptops) the frame stays 1280x720 and the
+present letterboxes it: 40-pixel bars at 1280x800. With `aspect=fill` the present scales the game's frame up to cover
+the window instead and lets its sides go past the window's edges: `gpu/present_rect.h` (`presentrect::Fit`), used by
+`gpu::Present` for the game's frame and for frame generation's generated one (`gpu/gpu.cpp`, `FrameViewport`); the
+viewport starts left of the output (negative x), the full-output scissor clips it (checked on Metal with API
+validation; D3D12 and Vulkan allow a viewport past the target's edges by their specs, not run here [?]).
+
+- **How much is cut**: `scale = (outW / w) x (w / h) / max(outW / outH, 16:10)`, centred, offsets rounded down. On
+  16:10 the height is covered and about 5 % of the width goes on each side (1280x720 in 1280x800: 1422x800 at -71,0).
+  The cut stops at a 16:10 screen's: narrower (4:3, 5:4, portrait) gets that crop with thinner bars above and below
+  (1024x768: 1138x640 at -57,64). An output at least as wide as the frame (less than 1 % narrower: the wide frame's
+  rounded width) keeps the letterbox, so a wider window takes the ultrawide path unchanged; an image no wider than
+  16:10 (a 4:3 movie presented on its own) too.
+- **The HUD stays whole**: the cut would take a corner HUD piece with it (Trap Team's save icon lost about a fifth of
+  itself), so the HUD is drawn as much smaller as the frame is cut, towards the frame's centre
+  (`gpu::presentrect::HudInset`: 0.9 on 16:10). It ends where the letterboxed HUD would be, whole, over a 3D scene
+  that covers the window. The frame is the colour target whose copy the last swap presented (`d3d/render.cpp`,
+  `g_presentedTarget`). Its draws split as in the wide frame (`ultrawide::FillsFrame`): the composite and the passes
+  that draw the frame back over itself cover it; so does, with fill only, any screen-covering pass of the composite's
+  shape that reads a resolve (`g_frameTargetRead`: Trap Team's title draws its 3D backdrop through passes that read
+  smaller copies). Every other draw is the HUD. Movies are filled, a Trap Team corner piece (`d3d/frame_anchor.h`)
+  stays in its corner. The scale follows the window like the layout (`ultrawide::SetFill`, `HudInset`, applied at the
+  swap after the size settled).
+- **A full-resolution scene** (1280x720: Swap Force and the later games) shares the frame's EDRAM surface, so the
+  renderer cannot tell its draws from the HUD's: with fill it is made one 32-pixel tile wider (1312x720, `Configure`,
+  `[ultrawide] window WxH: fill, scene 1312x720`), the state of a game started on a wider display (the camera stays
+  16:9, the composite fits the scene to the frame). About 2.5 % more scene pixels.
+- **Full-screen 2D**: a quad over the whole frame drawn with `game::UltrawideHudVertexShader` (Trap Team's fades and
+  full-screen pages: the start-up legal page fading in, the black behind a level's loading picture) is placed `Whole`
+  (`d3d/frame_anchor.h`) and covers the frame at full size; drawn smaller, it left the scene undimmed in 40-pixel bands
+  above and below. The other games have no HUD shader set (`0`): a fade or a menu drawn all in 2D there would be drawn
+  smaller with the HUD, bands above and below [?] (none seen in the SSA and Giants runs). The host overlay (Toy Box,
+  F3 menu) stays letterboxed.
+- **Log**: `[present] fill: 1280x720 in 1280x800 -> 1422x800 at -71,0`, once per change of the frame's or the output's
+  size.
+- **Not done**: a taller view (Vert+, the camera showing more above and below instead of the sides cut). It needs a
+  frame taller than 720 (`d3d/render.cpp`, `FrameShift` is horizontal), taller scene targets in every game, and a
+  vertical field-of-view hook in SSA, Giants and Swap Force (their cameras keep the vertical field).
+- Tests: `ArkeyanPresentRectTest` (the rectangles, the HUD's scale), `ArkeyanUltrawideTest` (the scale follows the
+  window), `ArkeyanRecompGpuTest` (`fill`, `fill_4x3`, `fill_wide`: a pattern presented and read back against a CPU
+  reference), `ArkeyanSettingsTest` (`aspect=fill`). In game [V] (2026-11-16, Metal, offscreen 1280x800, the
+  black rows of the presented picture counted, `auto` 40 at the top and the bottom): Trap Team (Europe disc) from the
+  logos through the menus and the opening movie to the tutorial with Gusto, SSA (level_027, Gill Grunt), Giants
+  (level_203_the_machine, Jet-Vac): 0 black rows, the HUD (portrait, health, coins) whole at the letterbox's place;
+  29 fps in `fill` and `auto` (limit 30). Swap Force, SuperChargers and Imaginators not run [?].
 
 ## What changes
 

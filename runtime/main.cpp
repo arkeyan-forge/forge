@@ -465,6 +465,7 @@ int main(int argc, char** argv)
             .anisotropy = settings.anisotropy,
             .vsync = settings.vsync,
             .fpsLimit = settings.fpsLimit,
+            .fill = settings.aspectFill,
             .edgeSmoothing = settings.edgeSmoothing,
             .backend = settings.gpuBackend };
         gpu::SetFirstFrameFallback(SwitchToVulkan);
@@ -505,6 +506,7 @@ int main(int argc, char** argv)
             if (::game::Current().ultrawide) // else the game keeps its 16:9 (game.h)
             {
                 const ultrawide::Shape display = WindowDisplay(window);
+                ultrawide::SetFill(settings.aspectFill);
                 ultrawide::Configure(
                     settings.aspectAuto, uint32_t(windowWidth), uint32_t(windowHeight), display.width, display.height);
             }

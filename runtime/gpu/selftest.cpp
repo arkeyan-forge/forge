@@ -1,6 +1,6 @@
 // ArkeyanRecompGpuTest [output directory]: draws test images through the present pass into an offscreen target (no
 // window), reads the result back and compares it with a CPU reference: bilinear, clamped sampling inside the
-// letterboxed rectangle, black elsewhere. Writes <dir>/gpu_<case>_{actual,expected}.ppm when given a directory.
+// letterboxed rectangle (or the filled one, its sides past the output), black elsewhere. Writes <dir>/gpu_<case>_{actual,expected}.ppm when given a directory.
 // Then two producer threads at once ("producers"), and FSR 3 through the running backend ("fsr"). Exit code 0 when every
 // case matches.
 #include "d3d/upscale_math.h"
@@ -8,6 +8,7 @@
 #include "gpu/draw.h"
 #include "gpu/fsr/framegen.h"
 #include "gpu/gpu.h"
+#include "gpu/present_rect.h"
 #include "gpu/upscale.h"
 #include <algorithm>
 #include <bit>
@@ -50,19 +51,18 @@ namespace
 
     uint8_t Channel(uint32_t pixel, int channel) { return uint8_t(pixel >> (channel * 8)); }
 
-    struct Rect
-    {
-        uint32_t left, top, width, height;
-    };
+    using gpu::presentrect::Rect;
 
-    Image Expected(const Image& image, uint32_t outputWidth, uint32_t outputHeight, Rect& rect)
+    bool Inside(const Rect& rect, uint32_t x, uint32_t y)
     {
-        float scale = std::min(float(outputWidth) / image.width, float(outputHeight) / image.height);
-        uint32_t width = std::min(outputWidth, uint32_t(std::lround(image.width * scale)));
-        uint32_t height = std::min(outputHeight, uint32_t(std::lround(image.height * scale)));
-        uint32_t left = (outputWidth - width) / 2;
-        uint32_t top = (outputHeight - height) / 2;
-        rect = { left, top, width, height };
+        return int64_t(x) >= rect.x && int64_t(x) < rect.x + int64_t(rect.width) && int64_t(y) >= rect.y &&
+               int64_t(y) < rect.y + int64_t(rect.height);
+    }
+
+    Image Expected(const Image& image, uint32_t outputWidth, uint32_t outputHeight, bool fill, Rect& rect)
+    {
+        rect = gpu::presentrect::Fit(image.width, image.height, outputWidth, outputHeight, fill);
+        const uint32_t width = rect.width, height = rect.height;
 
         Image expected{ outputWidth, outputHeight, std::vector<uint32_t>(outputWidth * outputHeight) };
         auto texel = [&](int x, int y) {
@@ -70,10 +70,13 @@ namespace
             y = std::clamp(y, 0, int(image.height) - 1);
             return image.rgba[y * image.width + x];
         };
-        for (uint32_t y = 0; y < height; y++)
+        for (uint32_t outY = 0; outY < outputHeight; outY++)
         {
-            for (uint32_t x = 0; x < width; x++)
+            for (uint32_t outX = 0; outX < outputWidth; outX++)
             {
+                if (!Inside(rect, outX, outY))
+                    continue;
+                const float x = float(int64_t(outX) - rect.x), y = float(int64_t(outY) - rect.y);
                 float u = (x + 0.5f) / width * image.width - 0.5f;
                 float v = (y + 0.5f) / height * image.height - 0.5f;
                 int x0 = int(std::floor(u)), y0 = int(std::floor(v));
@@ -86,7 +89,7 @@ namespace
                         Channel(texel(x0, y0 + 1), channel) * (1 - fx) + Channel(texel(x0 + 1, y0 + 1), channel) * fx;
                     pixel |= uint32_t(std::lround(top0 * (1 - fy) + bottom * fy)) << (channel * 8);
                 }
-                expected.rgba[(top + y) * outputWidth + left + x] = pixel;
+                expected.rgba[outY * outputWidth + outX] = pixel;
             }
         }
         return expected;
@@ -100,7 +103,8 @@ namespace
             for (uint32_t pixel : image.rgba)
             {
                 uint8_t rgb[3] = { Channel(pixel, 0), Channel(pixel, 1), Channel(pixel, 2) };
-                fwrite(rgb, 1, 3, file);
+                if (fwrite(rgb, 1, 3, file) != 3)
+                    break;
             }
             fclose(file);
         }
@@ -108,8 +112,9 @@ namespace
 
     // Uploads each image in turn into one texture, presents it, and checks the output of the last.
     bool RunCase(const char* name, uint32_t outputWidth, uint32_t outputHeight, const std::vector<Image>& images,
-        const char* directory)
+        const char* directory, bool fill = false)
     {
+        gpu::g_settings.fill = fill;
         if (!gpu::Init(nullptr, outputWidth, outputHeight))
             return false;
 
@@ -126,6 +131,7 @@ namespace
         bool readBack = gpu::ReadbackOutput(actual.rgba, actual.width, actual.height);
         gpu::DestroyTexture(texture);
         gpu::Shutdown();
+        gpu::g_settings.fill = false;
         if (!readBack || actual.width != outputWidth || actual.height != outputHeight)
         {
             printf("%s: no readback\n", name);
@@ -133,7 +139,7 @@ namespace
         }
 
         Rect rect;
-        Image expected = Expected(last, outputWidth, outputHeight, rect);
+        Image expected = Expected(last, outputWidth, outputHeight, fill, rect);
         int maxError = 0;
         uint32_t mismatches = 0;
         for (uint32_t y = 0; y < outputHeight; y++)
@@ -146,8 +152,7 @@ namespace
                     error = std::max(
                         error, std::abs(Channel(actual.rgba[i], channel) - Channel(expected.rgba[i], channel)));
                 // The bars must be exactly black.
-                bool inside = x - rect.left < rect.width && y - rect.top < rect.height;
-                mismatches += error > (inside ? Tolerance : 0);
+                mismatches += error > (Inside(rect, x, y) ? Tolerance : 0);
                 maxError = std::max(error, maxError);
             }
         }
@@ -157,8 +162,8 @@ namespace
             WritePpm(std::string(directory) + "/gpu_" + name + "_actual.ppm", actual);
             WritePpm(std::string(directory) + "/gpu_" + name + "_expected.ppm", expected);
         }
-        printf("%s: %ux%u image in %ux%u output at (%u, %u) %ux%u, max channel error %d, %u mismatching pixels\n", name,
-            last.width, last.height, outputWidth, outputHeight, rect.left, rect.top, rect.width, rect.height, maxError,
+        printf("%s: %ux%u image in %ux%u output at (%d, %d) %ux%u, max channel error %d, %u mismatching pixels\n", name,
+            last.width, last.height, outputWidth, outputHeight, rect.x, rect.y, rect.width, rect.height, maxError,
             mismatches);
         return mismatches == 0;
     }
@@ -397,8 +402,8 @@ namespace
         _putenv_s("SKY_FSR_FG_SNAPSHOT_FROM", "40");
         _putenv_s("SKY_FSR_FG_SNAPSHOT_EVERY", "1000");
 #else
-        setenv("SKY_FSR_FG_SNAPSHOT_FROM", "40", 1);
-        setenv("SKY_FSR_FG_SNAPSHOT_EVERY", "1000", 1);
+        setenv("SKY_FSR_FG_SNAPSHOT_FROM", "40", 1);    // NOLINT(concurrency-mt-unsafe)
+        setenv("SKY_FSR_FG_SNAPSHOT_EVERY", "1000", 1); // NOLINT(concurrency-mt-unsafe)
 #endif
         gpu::framegen::SetEnabled(true);
         gpu::Texture* color =
@@ -674,6 +679,11 @@ int main(int argc, char** argv)
     pass &= RunCase("letterbox", 150, 260, { Pattern(200, 50, 0) }, directory);
     // Same aspect ratio, odd sizes (row pitch not a multiple of the upload alignment).
     pass &= RunCase("fit", 333, 111, { Pattern(99, 33, 1) }, directory);
+    // [video] aspect=fill: a 16:9 frame in a 16:10 output covers it (no bars), the sides past the output cut; in a 4:3
+    // one, the same crop with bars above and below; in a wider output, the letterbox.
+    pass &= RunCase("fill", 320, 200, { Pattern(160, 90, 0) }, directory, true);
+    pass &= RunCase("fill_4x3", 256, 192, { Pattern(160, 90, 1) }, directory, true);
+    pass &= RunCase("fill_wide", 420, 180, { Pattern(160, 90, 0) }, directory, true);
     pass &= RunProducers();
     pass &= RunFsr(directory);
     pass &= RunFrameGeneration(directory);

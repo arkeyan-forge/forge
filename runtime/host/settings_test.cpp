@@ -155,7 +155,7 @@ namespace
     {
         CheckMember({ "video", "resolution_scale", "2", "4", "11", "auto or 1 to 10", "--scale" },
             &RuntimeSettings::resolutionScale, 2u, 4u);
-        CheckMember({ "video", "aspect", "auto", "16:9", "wide", "auto or 16:9", "--aspect" },
+        CheckMember({ "video", "aspect", "auto", "16:9", "wide", "auto, fill or 16:9", "--aspect" },
             &RuntimeSettings::aspectAuto, true, false);
         CheckMember({ "video", "anisotropy", "2", "16", "3", "1, 2, 4, 8 or 16", "--anisotropy" },
             &RuntimeSettings::anisotropy, 2u, 16u);
@@ -371,7 +371,7 @@ int main()
 #if defined(_WIN32)
             _putenv_s(name, value);
 #else
-            setenv(name, value, 1);
+            setenv(name, value, 1); // NOLINT(concurrency-mt-unsafe)
 #endif
         };
         CHECK(skyenv::Get("SKY_ENVTEST_A") == nullptr);
@@ -389,7 +389,8 @@ int main()
             return variable == "SKY_ENVTEST_D" ? "" : variable == "SSA_ENVTEST_D" ? "old" : nullptr;
         };
         CHECK(std::string(skyenv::Get("SKY_ENVTEST_D", table)).empty());
-        CHECK(std::string(skyenv::Get("PATH")) == std::string(std::getenv("PATH"))); // other names are plain
+        // Other names are plain.
+        CHECK(std::string(skyenv::Get("PATH")) == std::string(std::getenv("PATH"))); // NOLINT(concurrency-mt-unsafe)
     }
 
     // Defaults.
@@ -634,7 +635,19 @@ int main()
     run = Parse({}, {}, { "--aspect=16:9" });
     CHECK(run.ok && run.warnings.empty() && !run.settings.aspectAuto);
     run = Parse({ { "video", { { "aspect", "21:9" } } } }, {}, {});
-    CHECK(run.ok && run.warnings.size() == 1 && run.settings.aspectAuto);
+    CHECK(run.ok && run.warnings.size() == 1 && run.settings.aspectAuto && !run.settings.aspectFill);
+    // fill: auto on a wider window, and the 16:9 frame covers a narrower one; off unless asked.
+    run = Parse({}, {}, {});
+    CHECK(!run.settings.aspectFill);
+    run = Parse({ { "video", { { "aspect", "fill" } } } }, {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.aspectAuto && run.settings.aspectFill);
+    CHECK(DescribeSettings(run.settings).find(", aspect fill") != std::string::npos);
+    run = Parse({ { "video", { { "aspect", "fill" } } } }, {}, { "--aspect", "16:9" });
+    CHECK(run.ok && run.warnings.empty() && !run.settings.aspectAuto && !run.settings.aspectFill);
+    run = Parse({ { "video", { { "aspect", "16:9" } } } }, {}, { "--aspect=fill" });
+    CHECK(run.ok && run.warnings.empty() && run.settings.aspectAuto && run.settings.aspectFill);
+    run = Parse({ { "video", { { "aspect", "fill" } } } }, {}, { "--aspect", "auto" });
+    CHECK(run.ok && run.warnings.empty() && run.settings.aspectAuto && !run.settings.aspectFill);
 
     // Texture packs: packs on and dump off by default; launcher.ini < variable < command line.
     run = Parse({}, {}, {});

@@ -585,6 +585,10 @@ target_include_directories(ArkeyanGpuBackendTest PRIVATE .)
 add_executable(ArkeyanPresentModeTest gpu/present_mode_test.cpp)
 target_include_directories(ArkeyanPresentModeTest PRIVATE .)
 
+# Where the present pass draws the frame, letterboxed or filled: ./ArkeyanPresentRectTest
+add_executable(ArkeyanPresentRectTest gpu/present_rect_test.cpp)
+target_include_directories(ArkeyanPresentRectTest PRIVATE .)
+
 # The automatic 60 -> 30 policy on recorded and made-up frame sequences: ./ArkeyanFrameRateFallbackTest
 add_executable(ArkeyanFrameRateFallbackTest host/settings_fallback_test.cpp)
 target_include_directories(ArkeyanFrameRateFallbackTest PRIVATE .)
