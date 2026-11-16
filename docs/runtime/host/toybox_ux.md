@@ -386,6 +386,10 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
   the one under the pointer gets a soft outline. The wheel scrolls the lists (Edit stats: steps; the F3 menu: moves the focus).
   Script checks: `SKY_TOYBOX_SCRIPT` `move=x/y`, `wheel=up|down` beside `click=x/y` (`tools/regress/f3mouse.sh`;
   [gamemenu.md](gamemenu.md)).
+- **No system on-screen keyboard** (#17): opening the Toy Box or the F3 menu starts SDL's text input so a real
+  keyboard types into the search. Unset, `SDL_HINT_ENABLE_SCREEN_KEYBOARD` makes SDL also show Steam's keyboard when
+  `SteamDeck=1` (Steam's Game Mode); `sdlhints::ApplyStartup` (`runtime/host/sdl_hints.cpp`) sets it to `0`. A pad uses
+  the Toy Box's own keyboard. Checked by `ArkeyanSdlHintsTest`.
 
 ### Navigation (2026-11-02, the owner's Xbox-style spec)
 

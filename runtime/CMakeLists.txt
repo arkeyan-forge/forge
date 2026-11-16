@@ -67,6 +67,7 @@ add_executable(ArkeyanRuntime
     host/pad_map.cpp
     host/mouse.cpp
     host/mouse_input.cpp
+    host/sdl_hints.cpp
     host/launcher.cpp
     host/launcher_games.cpp
     host/portable.cpp
@@ -589,6 +590,10 @@ target_include_directories(ArkeyanFirstFrameTest PRIVATE .)
 # SDL video selection and Linux native driver retries, without SDL or game data: ./ArkeyanVideoDriverTest
 add_executable(ArkeyanVideoDriverTest host/video_driver_test.cpp)
 target_include_directories(ArkeyanVideoDriverTest PRIVATE .)
+# The SDL hints set at startup (Steam's on-screen keyboard off, the portals ignored by the gamepad code): ./ArkeyanSdlHintsTest
+add_executable(ArkeyanSdlHintsTest host/sdl_hints_test.cpp host/sdl_hints.cpp)
+target_include_directories(ArkeyanSdlHintsTest PRIVATE .)
+target_link_libraries(ArkeyanSdlHintsTest PRIVATE SDL3::SDL3-static)
 
 # The pacer of per-frame simulation steps, with a fake clock: ./ArkeyanStepPacerTest
 add_executable(ArkeyanStepPacerTest d3d/step_pacer_test.cpp)
@@ -792,7 +797,7 @@ if(ARKEYAN_UWP)
     # Xbox Dev Mode (UWP app, packaged by tools/xbox/package.sh): host/uwp replaces main.cpp and the SDL host
     # (window and events, audio, launcher, real portals).
     get_target_property(ARKEYAN_SOURCES ArkeyanRuntime SOURCES)
-    list(REMOVE_ITEM ARKEYAN_SOURCES main.cpp host/mouse_input.cpp host/audio.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp host/log.cpp host/portal_hid.cpp
+    list(REMOVE_ITEM ARKEYAN_SOURCES main.cpp host/sdl_hints.cpp host/mouse_input.cpp host/audio.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp host/log.cpp host/portal_hid.cpp
         host/portal_usb.cpp host/windows_devices.cpp host/gamemenu.cpp host/report.cpp)
     set_property(TARGET ArkeyanRuntime PROPERTY SOURCES ${ARKEYAN_SOURCES} host/audio_xaudio2.cpp host/uwp/main.cpp
         host/uwp/portal_backends.cpp host/uwp/settings_uwp.cpp host/uwp/uwp_compat.cpp host/uwp/cpu_check.cpp host/uwp/gamemenu_uwp.cpp)

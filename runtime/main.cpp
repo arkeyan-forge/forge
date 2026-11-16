@@ -15,6 +15,7 @@
 #include "host/pad_map.h"
 #include "host/portable.h"
 #include "host/portal.h"
+#include "host/sdl_hints.h"
 #include "host/settings.h"
 #include "host/xex_title.h"
 #include "host/texture_pack.h"
@@ -326,10 +327,7 @@ static void ListGamepads()
 
 int main(int argc, char** argv)
 {
-    // The Xbox portals are vendor-class USB devices that look like Xbox pads: SDL's gamepad code would claim them through
-    // libusb (the portal's own reads then fail, "cannot claim interface") and list them as a second gamepad (#82).
-    for (const char* hint : { SDL_HINT_HIDAPI_IGNORE_DEVICES, SDL_HINT_JOYSTICK_BLACKLIST_DEVICES })
-        SDL_SetHint(hint, "0x1430/0x1f17,0x1430/0x09aa,0x1430/0x09ab,0x24c6/0xfa00");
+    sdlhints::ApplyStartup();
     datadir::MigrateOnce(); // the older folders into <data root> (datadir.h), before any path is used
     const GameInfo& game = *FindGame(ARKEYAN_GAME_ID); // the game this runtime was built for (-DARKEYAN_GAME)
     // A portable's figures and keys, before the settings are read.
