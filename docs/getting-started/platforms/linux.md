@@ -39,8 +39,8 @@ over lavapipe; Xvfb not needed), disk audio to /dev/null, the fast recipe, one f
   byte-identical, the final 1280x720 image 0.96/255 mean difference (1.6 % of pixels > 8: the clouds move).
 
 ## The player kit (since Arkeyan Launcher 0.3.1)
-`tools/make_kit.sh linux` builds `dist/skylanders-kit-linux-x64` (71 MB, zip 30 MB) in Docker (`tools/linux/kit.Dockerfile`)
-with zig 0.17.0 for glibc 2.34; why zig: [../../tools/arkeyan-builder.md](../../tools/arkeyan-builder.md#linux-the-compiler). Tested on
+`tools/make_kit.sh linux` builds `dist/skylanders-kit-linux-x64` (71 MB, zip 30 MB) in Docker (`tools/linux/kit.Dockerfile`, an
+image of the Docker host's architecture: arm64 on an Apple silicon Mac) with zig 0.17.0 for x86-64 and glibc 2.34; why zig: [../../tools/arkeyan-builder.md](../../tools/arkeyan-builder.md#linux-the-compiler). Tested on
 2026-10-25 in amd64 containers under Rosetta, the kit mounted, the disc read only:
 - `tools/linux/kit_test.sh` on plain `ubuntu:22.04` (`tools/linux/player.Dockerfile`: curl, xz, Mesa; no compiler):
   Arkeyan-Builder from the disc to `@done` (zig downloaded and checked, 1115 of 1119 shaders as SPIR-V, 124 files compiled,

@@ -56,7 +56,10 @@ never pushed (Microsoft's licence covers building, not redistributing them).
 
 **Player kits** (`tools/ci/kits_local.sh [--attach vX.Y.Z] [--serial] [macos] [linux] [windows]`, an Apple Silicon
 Mac): the three kits with `KIT_LAYOUT_RECORD=1` (public headers, no disc), `KIT_DEPS=/tmp/kit-deps` (the same path in
-Docker), macOS natively, Windows cross-built with the Mac-hosted llvm-mingw, Linux in its image. `tools/make_kit.sh
+Docker), macOS natively, Windows cross-built with the Mac-hosted llvm-mingw, Linux in its image, built for the Docker
+host's architecture (arm64 on the Mac: zig cross-compiles the x86-64 kit natively, about 9 minutes cold alone against 38
+in the former amd64 image under emulation, with the same `files.sha256` but for the configure line FFmpeg keeps,
+`--arch=x86_64`). `tools/make_kit.sh
 prepare` first applies the submodule patches, emits the public headers and unpacks the FFmpeg source, which the
 platforms share; the three then build at the same time (`JOBS` each, one log each in `.scratch/kits/`), and the first
 failure stops the others. `--serial` builds them one after the other (100 to 166 minutes cold).
