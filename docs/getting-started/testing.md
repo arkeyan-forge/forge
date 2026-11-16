@@ -307,17 +307,20 @@ the end, the total time. Logs and run folders: `.scratch/regress/` (local scratc
 to date): `--quick` ~10 s (a cold build of both games ~15 min more); the full run ~8 min.
 
 Trap Team has its own section: set `TRAPTEAM_ISO` and provide its translated code in `private/trapteam/ppc/`.
-It builds `build-trapteam/` and runs the shared units with that disc, including both achievements tests; without the
+It builds `build-trapteam/` and runs its units with that disc, including both achievements tests; without the
 disc the section is a visible `SKIP`. Its game route and picture references remain unvalidated, so a full section
 shows a runtime `SKIP` instead of claiming game coverage. `--quick --only trapteam` runs the build and units only.
 
-**Builds and unit tests.** `build/` (SSA) and `build-giants/` (`-DARKEYAN_GAME=giants`) are configured Release when
-missing and built with `--target all` plus every unit test by name (the `EXCLUDE_FROM_ALL` ones too, so a stale or
-non-linking test fails here). Then each test runs in a scratch folder with the isolation variables:
-`ArkeyanPortalTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanSettingsTest ArkeyanDatadirTest
-ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest ArkeyanGuestLayoutTest ArkeyanTexturePackTest ArkeyanRecompGpuTest` in every build folder (the two achievements
-tests read that section's own disc), and `ArkeyanRuntimeLauncherTest` in SSA's only (it checks SSA's disc and game entry; it needs `SSA_ISO`). What each test checks:
-[../porting/debugging.md](../porting/debugging.md#unit-tests).
+**Builds and unit tests.** Each section's build folder (`build/` for SSA, `build-<game>/` with `-DARKEYAN_GAME=<game>`)
+is configured Release when missing. The first section to build (SSA's, or the one `--only` names) builds `--target all`
+plus every unit test by name (the `EXCLUDE_FROM_ALL` ones too, so a stale or non-linking test fails here) and runs them
+all, with the script checks (PID timer, movie targets, editions, public headers, tree parity). The units build the same
+in every folder, so a later section builds only the game, `ArkeyanFigureTest` (the regress scripts make figures with it)
+and the units that hold the game's own code or read its disc: `ArkeyanProgressTest ArkeyanAchievementsKernelTest
+ArkeyanGuestThreadTest ArkeyanPortalTest ArkeyanArtTest ArkeyanCommandsTest ArkeyanDebugScreenTest` (the two
+achievements tests read that section's own disc), and runs those and the host menu input check.
+`ArkeyanRuntimeLauncherTest` runs in SSA's only (it checks SSA's disc and game entry; it needs `SSA_ISO`). Each test
+runs in a scratch folder with the isolation variables. What each test checks: [../porting/debugging.md](../porting/debugging.md#unit-tests).
 
 **The game runs.** Each run uses the isolation variables (plus `SKY_FIGURES`) in its own folder, the emulated portal
 with `new_14.sky`, `SKY_SKIP_MOVIES=1`, `SKY_TRACE_FILES=1`, `SKY_RENDER_STATS=1`, `SKY_FRAME_TIMES`, `SKY_AUDIO_DUMP`,
@@ -340,8 +343,8 @@ Checks on every run:
 |---|---|
 | **launcher update from published macOS releases** | `bash tools/regress/launcher_update.sh`: local `private/update/{v0.6.1,v0.7.0,candidate}/ArkeyanLauncher-macOS.zip`; proves both old versions update to 0.8.0 and restart, preserving settings, fake install records, collection and desktop shortcuts; wrong checksum and missing asset must refuse and leave the old app running. No game or network; scratch homes under `private/update/run/`, screenshots under `private/update/shots/`; requires macOS, `sandbox-exec` and Apple Vision via `xcrun swiftc`. Exit 2 means isolation blocked, with no launcher started; clicking Restart now and the non-writable-folder DMG fallback stay manual. |
 | **Windows kit install and Vulkan picture** | `WINDOWS_KIT="<Windows kit>" WINDOWS_TOOLCHAIN="<extracted Windows llvm-mingw>" bash tools/windows/install_test.sh <game> "<disc>.iso" .scratch/windows-install`: the kit's own `Arkeyan-Builder.exe` under Wine in the existing `ssarecomp-d3d12-test` image, `--jobs 2`, then its installed runtime on Vulkan for 180 s (`RUN_SECONDS`, minimum 120). Requires `@done`, actual run-time containers and their translated cache entries at least `movie_shaders` from the kit's `game.txt`, zero `no translated` lines, and two recent nonblack presented images including one within 15 s of the end (centre luma >= 3, >= 1% pixels above 16, range >= 16). A known Rosetta `invalid gdt selector` crash resumes once across install/play, prints `@warn` and preserves attempt logs; a second crash fails. Requires a new/empty output below `.scratch/`, an existing image and compiler; downloads nothing. `INSTALL_SECONDS` defaults to 3600. Synthetic proof: `python3 -I tools/windows/install_test_test.py`; real Wine/GPU proof is still required. |
-| **build** | `build/` (SSA) and `build-giants/` (`-DARKEYAN_GAME=giants`) build with every unit test target, the `EXCLUDE_FROM_ALL` ones included (they are named explicitly, so a stale or non-linking test fails here) |
-| **unit tests** | `ArkeyanPortalTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanSettingsTest ArkeyanDatadirTest ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanGameDataTest ArkeyanFileListTest ArkeyanTexturePackTest ArkeyanRecompGpuTest` in both build directories (and Swap Force's), plus `ArkeyanProgressTest` and `ArkeyanAchievementsKernelTest`, which read each section's own disc (the achievements' counts and gamerscore: SSA 38, Giants 45, Swap Force 39, 1000 each); `ArkeyanRuntimeLauncherTest` in SSA's (it checks SSA's disc and game entry; it needs `SSA_ISO`). The row shows each test's own "N checks, M failures" |
+| **build** | the first section's folder builds every unit test target, the `EXCLUDE_FROM_ALL` ones included (they are named explicitly, so a stale or non-linking test fails here); the later ones build the game and the units that depend on it |
+| **unit tests** | every unit test in the first section; in each later one, the units that hold the game's own code or read its disc, including `ArkeyanProgressTest` and `ArkeyanAchievementsKernelTest` (the achievements' counts and gamerscore: SSA 38, Giants 45, Swap Force 39, 1000 each); `ArkeyanRuntimeLauncherTest` in SSA's (it checks SSA's disc and game entry; it needs `SSA_ISO`). The row shows each test's own "N checks, M failures" |
 | **run** | the game is still running when the harness stops it (an early exit is a crash or a quit: FAIL with the log's last lines) |
 | **no fault, [guard] or [stub] regression** | no `Fault (`, `Indirect call to unrecompiled`, SIGSEGV/SIGBUS/SIGABRT line; every `[guard]` target and `[stub]` name already in `private/test-refs/<game>/{guards,stubs}.txt` |
 | **reaches the expected point** | SSA: `level_027\mission.str` opened; Giants 1: `\level\level_213_tutotial.arc` (Chapter 1); Giants 2: `Save_Slot_1.xsg`; Giants 3: `\level\level_203_the_machine.arc`; Swap Force: `open \archives\tutorial_a.pak`, `create save: "SWAPFORCE_0"` (the new game) and `open \archives\eruptor.pak` (the figure read from the portal and loaded) |
