@@ -47,6 +47,8 @@ SOURCE=$WORK/ffmpeg-$VERSION
 mkdir -p "$PREFIX"
 PREFIX=$(cd "$PREFIX" && pwd)
 BUILD=$WORK/build-$TARGET-$(uname -s)-$(uname -m) # "host" differs between macOS and a Linux container
+# The Linux kit's relink objects keep this folder's name in their debug info: the same on an amd64 or arm64 image.
+[ "$TARGET" != linux-x64 ] || BUILD=$WORK/build-linux-x64-Linux-x86_64
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
@@ -71,7 +73,8 @@ host)
     set -- "$@" --cc="${CC:-cc}" # configure's default is gcc, which the Linux build image does not have
     ;;
 linux-x64)
-    set -- "$@" --cc=zig-cc
+    # configure takes the architecture from uname -m: the kit image may run on arm64.
+    set -- "$@" --cc=zig-cc --arch=x86_64
     ;;
 windows-x64 | uwp-x64)
     MINGW=${LLVM_MINGW_ROOT:-$ROOT/private/xbox/toolchain/llvm-mingw}

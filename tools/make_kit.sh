@@ -24,8 +24,9 @@
 # (LLVM_MINGW_ROOT, else $KIT_DEPS/toolchains, as tools/build_windows.sh), the minimal LGPL FFmpeg per target
 # (FFMPEG_WINDOWS, FFMPEG_MACOS, FFMPEG_LINUX, else $KIT_DEPS/ffmpeg/<target>, built when missing) and its source
 # ($KIT_DEPS/ffmpeg/work, downloaded when missing). KIT_DEPS (default private/) holds only these public downloads and
-# builds. The Linux kit is built in Docker (tools/linux/kit.Dockerfile, amd64: zig's clang for glibc 2.34, the compiler
-# the player's Arkeyan-Builder downloads), KIT_DEPS mounted. JOBS (default 6) sets the parallelism.
+# builds. The Linux kit is built in Docker (tools/linux/kit.Dockerfile, in an image of the Docker host's architecture:
+# zig's clang cross-compiles for x86-64 and glibc 2.34, the compiler the player's Arkeyan-Builder downloads), KIT_DEPS
+# mounted. JOBS (default 6) sets the parallelism.
 # The platforms share the submodule patches, the public headers (build-kit-abi/, .scratch/abi/) and the FFmpeg source:
 # `prepare` makes them once, and a KIT_PREPARED=1 run reuses them instead of writing them again, so that several
 # platforms can be built at the same time (tools/ci/kits_local.sh).
@@ -478,16 +479,21 @@ for platform in $platforms; do
                 esac
                 set -- "$@" -e KIT_CCACHE=1 -e KIT_CCACHE_DIR="$inner_cache" -e CCACHE_MAXSIZE="$CCACHE_MAXSIZE"
             fi
-            docker build -q --platform linux/amd64 -t ssarecomp-kit-linux -f tools/linux/kit.Dockerfile tools/linux > /dev/null
+            # The image of the Docker host's own architecture: on an Apple Silicon Mac, arm64 compiles natively, about four
+            # times as fast as an emulated amd64 image, for the same kit.
+            arch=$(docker version -f '{{.Server.Arch}}')
+            case $arch in amd64 | arm64) ;; *) echo "error: no Linux kit image for a $arch Docker host" >&2; exit 1 ;; esac
+            image=ssarecomp-kit-linux-$arch
+            docker build -q --platform "linux/$arch" -t "$image" -f tools/linux/kit.Dockerfile tools/linux > /dev/null
             # --init: the docker client passes on a SIGTERM, and a shell as PID 1 would ignore it.
-            docker run --rm --init --platform linux/amd64 --user "$(id -u):$(id -g)" -v "$root:$src" -w "$src" "$@" -e JOBS="$jobs" -e KIT_GAMES="$games" \
+            docker run --rm --init --platform "linux/$arch" --user "$(id -u):$(id -g)" -v "$root:$src" -w "$src" "$@" -e JOBS="$jobs" -e KIT_GAMES="$games" \
                 -e KIT_LAYOUT_RECORD="${KIT_LAYOUT_RECORD:-0}" -e KIT_HEADERS_FROM_PRIVATE="${KIT_HEADERS_FROM_PRIVATE:-0}" \
                 -e KIT_PREPARED="${KIT_PREPARED:-0}" \
-                -e KIT_DEPS="$inner_deps" -e KIT_SCAN_USER="$(id -un)" ssarecomp-kit-linux tools/make_kit.sh linux
+                -e KIT_DEPS="$inner_deps" -e KIT_SCAN_USER="$(id -un)" "$image" tools/make_kit.sh linux
             continue
         fi
-        [ "$(uname -m)" = x86_64 ] && [ -x /opt/zig/zig ] ||
-            { echo "error: the Linux kit is built in its image (tools/linux/kit.Dockerfile, amd64)" >&2; exit 1; }
+        case $(uname -m) in x86_64 | aarch64) [ -x /opt/zig/zig ] ;; *) false ;; esac ||
+            { echo "error: the Linux kit is built in its image (tools/linux/kit.Dockerfile)" >&2; exit 1; }
         zig_version=$(/opt/zig/zig version)
         ffmpeg=${FFMPEG_LINUX:-$deps/ffmpeg/linux-x64}
         [ -f "$ffmpeg/lib/libavcodec.a" ] || JOBS=$jobs FFMPEG_WORK=$deps/ffmpeg/work tools/ffmpeg/build.sh linux-x64 "$ffmpeg"
@@ -506,15 +512,21 @@ for platform in $platforms; do
         # player's game code through the compile templates (docs/release/launcher/kit_contract.md). zig's spelling:
         # -march=x86-64-v2 reads as the CPU "x86".
         march="-mcpu=x86_64_v2"
+        # The target is x86-64 on any build machine: zstd's assembly and the libdxcompiler.so XenosRecomp links follow
+        # CMAKE_SYSTEM_PROCESSOR, the build machine's unless CMAKE_SYSTEM_NAME is set. Not a cross build all the same:
+        # the x86-64 programs run here (emulated on arm64), as the try_run probes and the build steps expect.
+        target="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DCMAKE_CROSSCOMPILING=OFF"
         # CMAKE_LIBRARY_PATH: with zig as the compiler, find_library does not search the image's multiarch folder, so
         # SDL's configure found no libX11 and built without its X11 driver: the Steam Deck's Game Mode (X11 only, under
         # gamescope) then had sound and no picture (#22). SDL opens these libraries at run time; nothing links them.
-        build_runtimes "$b" -DCMAKE_C_FLAGS="$march -idirafter /usr/include" -DCMAKE_CXX_FLAGS="$march -idirafter /usr/include" \
+        # shellcheck disable=SC2086 # target is several arguments
+        build_runtimes "$b" $target -DCMAKE_C_FLAGS="$march -idirafter /usr/include" -DCMAKE_CXX_FLAGS="$march -idirafter /usr/include" \
             -DCMAKE_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu \
             -DARKEYAN_FFMPEG_ROOT="$ffmpeg" -DZLIB_INCLUDE_DIR="$root/$b/zlib/include" \
             -DZLIB_LIBRARY=/usr/lib/x86_64-linux-gnu/libz.a
         # XenosRecomp finds libdxcompiler.so next to itself (quoted: ninja runs the link through sh); its fmt needs <cstdlib> with zig's libc++ too.
-        build_tools "$b" "-include cstdlib" -DARKEYAN_FFMPEG_ROOT="$ffmpeg" -DCMAKE_SKIP_BUILD_RPATH=ON -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,'\$ORIGIN'"
+        # shellcheck disable=SC2086
+        build_tools "$b" "-include cstdlib" $target -DARKEYAN_FFMPEG_ROOT="$ffmpeg" -DCMAKE_SKIP_BUILD_RPATH=ON -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,'\$ORIGIN'"
         rm -rf "$kit"
         mkdir -p "$kit"
         assemble "$b" "$kit" linux-x64
