@@ -81,9 +81,10 @@ namespace
 
         bool Aspect(const std::string& source, const std::string& value)
         {
-            if (value != "auto" && value != "16:9")
-                return Warn(source, "aspect", value, "auto or 16:9");
-            s.aspectAuto = value == "auto";
+            if (value != "auto" && value != "fill" && value != "16:9")
+                return Warn(source, "aspect", value, "auto, fill or 16:9");
+            s.aspectAuto = value != "16:9";
+            s.aspectFill = value == "fill";
             return true;
         }
 
@@ -708,8 +709,9 @@ std::string SettingsHelp(const char* program)
         "\n"
         "  --scale <auto|1-10>         render the 3D at this multiple of 1120x704 (default auto: 1 on integrated\n"
         "                              GPUs, 2 on discrete GPUs and Apple silicon)\n"
-        "  --aspect <auto|16:9>        auto: a window wider than 16:9 shows more to the sides (default); 16:9: the\n"
-        "                              game's own picture, with bars on a wider window\n"
+        "  --aspect <auto|fill|16:9>   auto: a window wider than 16:9 shows more to the sides (default); fill: auto,\n"
+        "                              and a narrower window is covered, the sides cut; 16:9: the game's own picture,\n"
+        "                              with bars on a wider window\n"
         "  --vsync <0|1>               wait for the display's refresh (default 1)\n"
         "  --fullscreen, --windowed    desktop fullscreen or a window (default windowed)\n"
         "  --anisotropy <1|2|4|8|16>   anisotropic texture filtering (default 1)\n"
@@ -781,9 +783,9 @@ std::string DescribeSettings(const RuntimeSettings& s)
                s.voiceLanguage.empty() ? "game" : s.voiceLanguage, s.toyboxAutoOpen ? "" : ", toybox auto-open off",
                padDescription) +
            fmt::format(", fps auto fallback {}", s.fpsAutoFallback ? "on" : "off") +
-           (s.aspectAuto ? "" : ", aspect 16:9") + (s.textureDump ? ", texture dump" : "") +
-           (s.texturePacks ? "" : ", texture packs off") + (s.hdTextures ? "" : ", HD textures off") +
-           (s.originalResolution ? ", original resolution" : "") +
+           (s.aspectFill ? ", aspect fill" : "") + (s.aspectAuto ? "" : ", aspect 16:9") +
+           (s.textureDump ? ", texture dump" : "") + (s.texturePacks ? "" : ", texture packs off") +
+           (s.hdTextures ? "" : ", HD textures off") + (s.originalResolution ? ", original resolution" : "") +
            (s.edgeSmoothing != edgesmoothing::Auto
                    ? fmt::format(", edge smoothing {}", edgesmoothing::Name(s.edgeSmoothing))
                    : "") +

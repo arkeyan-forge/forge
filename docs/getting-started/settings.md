@@ -26,7 +26,7 @@ Options take their value as the next argument or after `=` (`--scale 3`, `--scal
 | Option | Values | Default | `launcher.ini` key |
 | --- | --- | --- | --- |
 | `--scale N` | auto, 1 to 10 | auto | `[video] resolution_scale` |
-| `--aspect A` | auto, 16:9 | auto | `[video] aspect` (the launcher's Settings > Graphics key): auto shows more to the sides on a window wider than 16:9 ([ultrawide.md](../runtime/gpu/ultrawide.md)); 16:9 keeps the game's picture, with bars |
+| `--aspect A` | auto, fill, 16:9 | auto | `[video] aspect` (the launcher's Settings > Graphics key): auto shows more to the sides on a window wider than 16:9 ([ultrawide.md](../runtime/gpu/ultrawide.md)); fill does the same and covers a narrower window (16:10) without bars, the sides cut; 16:9 keeps the game's picture, with bars |
 | `--vsync N` | 0, 1 | 1 | `[video] vsync` |
 | `--fullscreen`, `--windowed` | | windowed | `[video] fullscreen` (0, 1) |
 | `--anisotropy N` | 1, 2, 4, 8, 16 | 1 | `[video] anisotropy` |
@@ -103,11 +103,16 @@ Example:
   changed in play.
 - **`vsync`**: the swapchain's vsync (`setVsyncEnabled`). 0 also stops pacing the offscreen output at 60 Hz. The
   game itself stays paced by the emulated vertical blanks at 30 or 60 (`fps_limit`, `kernel/video.cpp`).
-- **`aspect`**: `auto` (default) or `16:9`. With `auto`, a window (or fullscreen display) more than 1 % wider than 16:9
+- **`aspect`**: `auto` (default), `fill` or `16:9`. With `auto`, a window (or fullscreen display) more than 1 % wider than 16:9
   gets a Hor+ camera, a scene wide enough to fill it, and the HUD centred at its own 16:9 layout, in SSA and Giants
   ([ultrawide.md](../runtime/gpu/ultrawide.md)); movies keep 16:9 with black bars.
   The shape is read once, when the window is created: resizing the window later only changes how the picture is scaled.
-  A 16:9 window, or `16:9`, behaves exactly as without the feature.
+  A 16:9 window, or `16:9`, behaves exactly as without the feature. `fill` is `auto` on a wider window; on a narrower
+  one (a 16:10 laptop, the Steam Deck's 1280x800) the 16:9 frame, movies included, is scaled up to cover the window
+  and its sides are cut, at most a 16:10 screen's cut (about 5 % of the width each side); narrower than 16:10 (4:3)
+  that crop with thinner bars above and below. The HUD is drawn smaller to stay whole; menus drawn all in 2D keep
+  their bars. The Toy Box and the F3 menu stay whole (letterboxed).
+  ([ultrawide.md](../runtime/gpu/ultrawide.md), "Narrower than 16:9: fill").
 - **`fullscreen`**: the SDL window is created fullscreen on the desktop (no display mode change).
 - **`original_resolution`** [SwapForce] [TrapTeam]: Swap Force and Trap Team draw their 3D scene at 1040x620 and stretch it to the 1280x720
   frame (the console's 10 MB of EDRAM). By default the runtime asks the game for a 1280x720 scene (with a wide window, the

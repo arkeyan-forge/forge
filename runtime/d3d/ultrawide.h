@@ -75,6 +75,13 @@ namespace ultrawide
     void Configure(bool automatic, uint32_t windowWidth, uint32_t windowHeight, uint32_t displayWidth = 0,
         uint32_t displayHeight = 0);
 
+    // [video] aspect=fill (set before Configure): on a window narrower than 16:9 the present cuts the frame's sides, and
+    // the HUD is drawn HudInset() as large, centred, so that it stays whole (gpu/present_rect.h).
+    void SetFill(bool fill);
+    // The render thread: the HUD's scale in the frame, 1 unless fill cuts the frame; it changes at the swap after the
+    // window's size settled, as the layout does.
+    float HudInset();
+
     // The main thread, every pass of its loop: the window's size now. A settled new shape becomes the next layout.
     void WindowSize(uint32_t width, uint32_t height, bool minimized, uint64_t nowMs);
 

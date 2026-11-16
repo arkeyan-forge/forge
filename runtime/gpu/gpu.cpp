@@ -7,6 +7,7 @@
 #include "gpu/fsr/framegen.h"
 #include "gpu/frame_stats.h"
 #include "gpu/present_mode.h"
+#include "gpu/present_rect.h"
 #include "gpu/shader_cache.h"
 #include "../write_watch.h"
 #include "../platform/platform.h"
@@ -915,13 +916,34 @@ namespace
         c.offscreenFramebuffer = c.device->createFramebuffer(framebufferDesc);
     }
 
+    RenderViewport Viewport(const gpu::presentrect::Rect& rect)
+    {
+        return RenderViewport(float(rect.x), float(rect.y), float(rect.width), float(rect.height));
+    }
+
+    // The host overlay (Toy Box, F3 menu): always whole.
     RenderViewport Letterbox(const gpu::TextureDesc& image, uint32_t outputWidth, uint32_t outputHeight)
     {
-        float scale = std::min(float(outputWidth) / image.width, float(outputHeight) / image.height);
-        uint32_t width = std::clamp(uint32_t(std::lround(image.width * scale)), 1u, outputWidth);
-        uint32_t height = std::clamp(uint32_t(std::lround(image.height * scale)), 1u, outputHeight);
-        const uint32_t x = (outputWidth - width) / 2, y = (outputHeight - height) / 2; // rounded down
-        return RenderViewport(float(x), float(y), float(width), float(height));
+        return Viewport(gpu::presentrect::Fit(image.width, image.height, outputWidth, outputHeight, false));
+    }
+
+    // The game's frame: filled with [video] aspect=fill, its sides past the output clipped by the full-output scissor.
+    RenderViewport FrameViewport(const gpu::TextureDesc& image, uint32_t outputWidth, uint32_t outputHeight)
+    {
+        const bool fill = gpu::g_settings.fill;
+        const gpu::presentrect::Rect rect =
+            gpu::presentrect::Fit(image.width, image.height, outputWidth, outputHeight, fill);
+        // Once per change of size (a resized window, the frame widening), from the one thread that records presents.
+        static uint32_t loggedImage[2] = {}, loggedOutput[2] = {};
+        if (fill && (loggedImage[0] != image.width || loggedImage[1] != image.height ||
+                        loggedOutput[0] != outputWidth || loggedOutput[1] != outputHeight))
+        {
+            loggedImage[0] = image.width, loggedImage[1] = image.height;
+            loggedOutput[0] = outputWidth, loggedOutput[1] = outputHeight;
+            fprintf(stderr, "[present] fill: %ux%u in %ux%u -> %ux%u at %d,%d\n", image.width, image.height,
+                outputWidth, outputHeight, rect.width, rect.height, rect.x, rect.y);
+        }
+        return Viewport(rect);
     }
 }
 
@@ -1701,7 +1723,7 @@ namespace
         list.setScissors(RenderRect(0, 0, int32_t(width), int32_t(height)));
         list.clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 1.0f));
         c.generatedSets[slot]->setTexture(0, generated.texture.get(), RenderTextureLayout::SHADER_READ);
-        list.setViewports(Letterbox(generated.desc, width, height));
+        list.setViewports(FrameViewport(generated.desc, width, height));
         list.setGraphicsPipelineLayout(c.presentLayout.get());
         list.setPipeline(c.presentPipeline.get());
         list.setGraphicsDescriptorSet(c.generatedSets[slot].get(), 0);
@@ -1829,7 +1851,7 @@ void gpu::detail::PresentNow(const Texture* image)
     if (image != nullptr)
     {
         c.presentSet->setTexture(0, image->texture.get(), RenderTextureLayout::SHADER_READ);
-        list.setViewports(Letterbox(image->desc, width, height));
+        list.setViewports(FrameViewport(image->desc, width, height));
         c.bound = {};
         list.setGraphicsPipelineLayout(c.presentLayout.get());
         list.setPipeline(c.presentPipeline.get());

@@ -54,9 +54,14 @@ int main()
     const float leftBar[16] = { 100, 0, 0, 0, 0, 0, 0, 0, 0, -400, 0, 0, -w, 200, 0, w };
     CHECK(PlaceQuad(leftBar) == FramePlace::Centre);
 
-    // Across the whole width (a full-frame quad): centred, as before.
+    // Over the whole frame (a fade, a full-screen page): Whole, centred in the wide frame as before, and never drawn
+    // smaller with aspect=fill. Across the whole width but not the height (a band): centred.
     const float full[16] = { 2 * w, 0, 0, 0, 0, 0, 0, 0, 0, -2 * w, 0, 0, -w, w, 0, w };
-    CHECK(PlaceQuad(full) == FramePlace::Centre);
+    CHECK(PlaceQuad(full) == FramePlace::Whole);
+    const float beyond[16] = { 2.2f * w, 0, 0, 0, 0, 0, 0, 0, 0, -2.2f * w, 0, 0, -1.1f * w, 1.1f * w, 0, w };
+    CHECK(PlaceQuad(beyond) == FramePlace::Whole);
+    const float band[16] = { 2 * w, 0, 0, 0, 0, 0, 0, 0, 0, -0.5f * w, 0, 0, -w, w, 0, w };
+    CHECK(PlaceQuad(band) == FramePlace::Centre);
 
     // One pixel short of the corner (x from 1 to 201): centred.
     const float inset[16] = { 346.41f, 0, 0, 0, 0, 0, 0, 0, 0, -615.84f, 0, 0, -w + 2 * w / 1280, w, 0, w };
