@@ -286,6 +286,7 @@ namespace toybox
         const collection::Game* gameInfo = nullptr;
         bool realPortal = false; // read-only seats from the traffic
         bool arriving = false; // the game brings a figure in (game::FigureArriving), set every frame
+        int askedSeat = -1; // the seat the game's prompt asks for, -1: none; set every frame
         // A real portal with virtual seats: its toys' seats read-only, the others as on the emulated one.
         bool mixed = false;
         std::vector<collection::Figure> figures; // every dump but the untouched starters

@@ -643,7 +643,7 @@ namespace toybox
                     double(seen.headRead - s.placedAt) / 1e9);
                 m_dirty = true;
             }
-            else if (!s.physical && !s.path.empty() && retake::Due(s.retakes, now - s.placedAt) &&
+            else if (!s.physical && !s.path.empty() && retake::Due(s.retakes, now - s.placedAt, int(i) == askedSeat) &&
                      (!arriving || now - s.placedAt > arrival::MaxWaitNs))
                 retakes.push_back(int(i));
             else if (!s.late && now - s.placedAt > LateAfter)

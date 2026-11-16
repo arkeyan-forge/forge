@@ -12,6 +12,7 @@
 #include "host/portal_script.h"
 #include "host/toybox/draw.h"
 #include "host/toybox/in_play.h"
+#include "host/toybox/retake.h"
 #include "host/toybox/model.h"
 #include "host/toybox/key_mask.h"
 #include "host/toybox/keys.h"
@@ -1009,6 +1010,8 @@ void ToyboxFilterGamepad(GamepadState& state)
 void ToyboxSetAutoOpen(bool enabled) { g_autoOpen = enabled; }
 
 static toybox::InPlay g_inPlay;
+static toybox::retake::PromptGate g_promptGate;
+static int g_promptSeat = -1; // the seat of the prompt that is up, -1: none
 static uint64_t g_portalResets = 0;
 
 // Opens the Toy Box on the seat the game asks for, and closes it once the prompt is gone. A figure the game gave up on
@@ -1038,11 +1041,27 @@ static void FollowPrompt(toybox::Model& model)
     if (asked.kind == portalprompt::Kind::Player)
         snprintf(askedId, sizeof(askedId), "%s%d", asked.vehicle ? "vehicle" : "p", asked.player);
     const bool playing = !game::InMenuLevel() && !ultrawide::MoviePlaying();
+    model.askedSeat = -1;
     for (size_t i = 0; i < model.seats.size(); i++)
     {
         const toybox::SeatState& s = model.seats[i];
         g_inPlay.Update(i, { s.path, s.placedAt, !s.waiting && !s.physical, s.seat.id == askedId, playing }, now);
+        if (s.seat.id == askedId)
+            model.askedSeat = int(i);
     }
+    // A figure the Toy Box just put on, not read yet: the game's prompt for its seat is the swap's removal report.
+    auto held = [&](size_t i) {
+        const toybox::SeatState& s = model.seats[i];
+        return !s.physical && !s.path.empty() && toybox::retake::Holds(s.waiting, s.retakes);
+    };
+    auto openOn = [&](int seat) {
+        // Left alone when the player has it open already.
+        if (!model.open)
+        {
+            OpenToybox(Screen::Home, seat);
+            g_openedByPrompt = true;
+        }
+    };
     switch (event)
     {
     case portalprompt::Tracker::Event::Appeared:
@@ -1056,6 +1075,8 @@ static void FollowPrompt(toybox::Model& model)
                             : toybox::L("Put a Skylander for Player ", "Posez un Skylander pour le joueur ")) +
             std::to_string(appeared.player);
         model.Touch();
+        g_promptGate.Gone();
+        g_promptSeat = -1;
         for (size_t i = 0; i < model.seats.size(); i++)
         {
             if (model.seats[i].seat.id != id)
@@ -1069,13 +1090,16 @@ static void FollowPrompt(toybox::Model& model)
                                       : "the game asks for the seat again while it is on it");
             if (!g_autoOpen)
                 break;
-            fprintf(stderr, "[toybox] prompt for player %d%s\n", appeared.player, appeared.vehicle ? "'s vehicle" : "");
-            // Left alone when the player has it open already.
-            if (!model.open)
+            g_promptSeat = int(i);
+            if (g_promptGate.Appeared(held(i)))
             {
-                OpenToybox(Screen::Home, int(i));
-                g_openedByPrompt = true;
+                fprintf(
+                    stderr, "[toybox] prompt for player %d%s\n", appeared.player, appeared.vehicle ? "'s vehicle" : "");
+                openOn(int(i));
             }
+            else
+                fprintf(stderr, "[toybox] prompt for player %d: the figure just put on is not read yet, no Toy Box\n",
+                    appeared.player);
             break;
         }
         break;
@@ -1083,6 +1107,8 @@ static void FollowPrompt(toybox::Model& model)
     case portalprompt::Tracker::Event::Gone:
         model.prompt.clear();
         model.Touch();
+        g_promptGate.Gone();
+        g_promptSeat = -1;
         if (!g_autoOpen)
             break;
         fprintf(stderr, "[toybox] the prompt is gone\n");
@@ -1090,7 +1116,14 @@ static void FollowPrompt(toybox::Model& model)
             model.Close();
         g_openedByPrompt = false;
         break;
-    case portalprompt::Tracker::Event::None: break;
+    case portalprompt::Tracker::Event::None:
+        if (g_promptSeat >= 0 && size_t(g_promptSeat) < model.seats.size() &&
+            g_promptGate.Update(held(size_t(g_promptSeat)), now))
+        {
+            fprintf(stderr, "[toybox] prompt for player %d still up: the Toy Box opens\n", asked.player);
+            openOn(g_promptSeat);
+        }
+        break;
     }
     if (!model.open)
         g_openedByPrompt = false;
