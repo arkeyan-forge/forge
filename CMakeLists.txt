@@ -120,6 +120,9 @@ else()
         set(SDL_WAYLAND OFF CACHE BOOL "" FORCE)
     endif()
     add_subdirectory(thirdparty/SDL EXCLUDE_FROM_ALL)
+    # ccache cannot cache a compile that reads a precompiled header (the kits' KIT_CCACHE=1); the library is
+    # byte-identical without it.
+    set_target_properties(SDL3-static PROPERTIES DISABLE_PRECOMPILE_HEADERS ON)
 endif()
 # #72 step 2: the runtime reads the code layout from a record LoadXex checks (runtime/guest_layout.h), not from ppc/'s
 # constants. Translated code is unchanged. OFF builds the runtime exactly as before.
