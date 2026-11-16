@@ -96,6 +96,19 @@ int main()
     check(g_calls == std::vector<std::string>{ "focus add=1" });
     Pointer(5, 105, true);
     check(HoveredHit() == 0); // the toy whose versions show keeps its outline
+    // A click on none of the cards nor the versions panel closes the versions; the panel's own gaps keep them.
+    g_hits.clear();
+    g_hovered = -1;
+    g_calls.clear();
+    model.addVersions = true;
+    AddBackdropHit(model);
+    AddCardHit(model, 0, { 0, 100 }, { 20, 120 });
+    AddCardHit(model, 1, { 30, 100 }, { 50, 120 });
+    AddVersionsPanelHit({ 60, 100 }, { 90, 140 });
+    Click(model, 75, 130, 1, false);
+    check(model.addVersions && g_calls.empty());
+    Click(model, 25, 110, 1, false); // the gap between the cards
+    check(!model.addVersions && g_calls.empty());
     g_hits.clear();
     g_hovered = -1;
     g_calls.clear();
@@ -137,10 +150,10 @@ int main()
     g_calls.clear();
     Click(model, 5, 205, 1, true);
     check(g_calls == std::vector<std::string>{ "seat=0", accept });
-    printf("%d checks, %d failures\n", 24, failures);
+    printf("%d checks, %d failures\n", 26, failures);
     puts(failures
              ? "FAIL: menu pointer and click"
              : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus, Add "
-               "cards' hover while versions show, a seat's double click");
+               "cards' hover and a click beside them while versions show, a seat's double click");
     return failures ? 1 : 0;
 }

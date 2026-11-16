@@ -1706,6 +1706,20 @@ namespace toybox
                 });
         }
 
+        // Add a figure's backdrop, under every other hit: a click on none of them (a gap, the header) closes the versions
+        // shown, so the cards light up under the pointer again. The versions panel keeps them: its own area is over this one.
+        void AddBackdropHit(Model& model)
+        {
+            AddHit(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), [&model] { model.addVersions = false; });
+            g_hits.back().hover = false;
+        }
+
+        void AddVersionsPanelHit(ImVec2 min, ImVec2 max)
+        {
+            AddHit(min, max, [] {});
+            g_hits.back().hover = false;
+        }
+
         // An Add a figure card's pointer area: a click focuses it (on the focused one: its versions), the pointer moving
         // onto it focuses it. While a toy's versions show, the other cards neither light up nor take the focus under the
         // pointer, so that it can reach the versions across them; a click still picks one.
@@ -2784,6 +2798,7 @@ namespace toybox
                 model.GameName().c_str(), int(model.addToys.size()));
             Header(L("ADD A FIGURE", "AJOUTER UNE FIGURINE"), subtitle);
             Hints(1248, 44, { { 'B', L("Back", "Retour") } });
+            AddBackdropHit(model);
             Grid& grid = model.add;
             ImVec2 min(32, 88), max(824, 664);
             SectionStrip(model, grid, min, max.x - min.x);
@@ -2844,6 +2859,7 @@ namespace toybox
             // Versions.
             ImVec2 pmin(844, 88), pmax(1248, 664);
             Panel(pmin, pmax);
+            AddVersionsPanelHit(pmin, pmax);
             if (!grid.cells.empty())
             {
                 const Toy* toy = model.addToys[grid.cells[grid.cursor].figure];
