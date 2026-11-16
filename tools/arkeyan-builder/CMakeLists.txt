@@ -5,9 +5,9 @@
 if(WIN32)
     # UTF-8 as the process code page, as for the game (SSARecomp.manifest); the kit's version in the exe's details.
     configure_file(arkeyan-builder.rc.in arkeyan-builder.rc @ONLY)
-    set(SKYBUILD_PLATFORM ${CMAKE_SOURCE_DIR}/runtime/platform/platform_win32.cpp ${CMAKE_CURRENT_BINARY_DIR}/arkeyan-builder.rc)
+    set(SKYBUILD_PLATFORM ${CMAKE_CURRENT_BINARY_DIR}/arkeyan-builder.rc)
 else()
-    set(SKYBUILD_PLATFORM ${CMAKE_SOURCE_DIR}/runtime/platform/platform_posix.cpp)
+    set(SKYBUILD_PLATFORM "")
 endif()
 # The HD texture step (hd_textures.h): the pack's DDS writer and content hash are the runtime's own.
 set(SKYBUILD_HD_SOURCES hd_upscale.cpp hd_textures.cpp ${CMAKE_SOURCE_DIR}/runtime/host/dds.cpp
@@ -19,23 +19,23 @@ target_compile_definitions(ArkeyanBuilderMiniz PRIVATE MINIZ_NO_STDIO MINIZ_NO_T
 target_include_directories(ArkeyanBuilderMiniz SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz)
 # runtime/guest_layout.cpp: the code layout record's checks, the runtime's own (#72).
 add_executable(Arkeyan-Builder main.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp
-    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
+    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
     ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
 target_include_directories(Arkeyan-Builder PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(Arkeyan-Builder SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(Arkeyan-Builder SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb) # stb's own warnings are not ours
-target_link_libraries(Arkeyan-Builder PRIVATE ArkeyanArtReader ArkeyanXenonUtils ArkeyanBuilderMiniz)
+target_link_libraries(Arkeyan-Builder PRIVATE ArkeyanHostFiles ArkeyanXenonUtils ArkeyanBuilderMiniz)
 if(WIN32)
     target_compile_definitions(Arkeyan-Builder PRIVATE _WIN32_WINNT=0x0A00) # Windows 10
     target_link_libraries(Arkeyan-Builder PRIVATE winmm winhttp)
 endif()
 add_executable(ArkeyanVersionResourceTest version_resource_test.cpp accents_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp
-    igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp
+    igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp ${SKYBUILD_HD_SOURCES}
     ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
 target_include_directories(ArkeyanVersionResourceTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(ArkeyanVersionResourceTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(ArkeyanVersionResourceTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
-target_link_libraries(ArkeyanVersionResourceTest PRIVATE ArkeyanArtReader ArkeyanXenonUtils ArkeyanBuilderMiniz)
+target_link_libraries(ArkeyanVersionResourceTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils ArkeyanBuilderMiniz)
 if(NOT WIN32 OR CMAKE_HOST_WIN32)
     target_compile_definitions(ArkeyanVersionResourceTest PRIVATE SKY_ACCENTS_COMPILER="${CMAKE_CXX_COMPILER}")
 else()
@@ -64,25 +64,19 @@ arkeyan_setup_ffmpeg(ArkeyanVersionResourceTest)
 
 # The menu music's readers on synthetic files; with SSA_ISO / GIANTS_ISO / SWAPFORCE_ISO, each game's theme found on its
 # disc and decoded (docs/runtime/host/game_music.md): ./ArkeyanBuilderMusicTest
-if(WIN32)
-    set(SKYBUILD_TEST_PLATFORM ${CMAKE_SOURCE_DIR}/runtime/platform/platform_win32.cpp)
-else()
-    set(SKYBUILD_TEST_PLATFORM ${CMAKE_SOURCE_DIR}/runtime/platform/platform_posix.cpp)
-endif()
-add_executable(ArkeyanBuilderMusicTest EXCLUDE_FROM_ALL menu_music_test.cpp menu_music.cpp
-    ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp ${SKYBUILD_TEST_PLATFORM})
+add_executable(ArkeyanBuilderMusicTest EXCLUDE_FROM_ALL menu_music_test.cpp menu_music.cpp)
 target_include_directories(ArkeyanBuilderMusicTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
-target_link_libraries(ArkeyanBuilderMusicTest PRIVATE ArkeyanArtReader)
+target_link_libraries(ArkeyanBuilderMusicTest PRIVATE ArkeyanHostFiles)
 arkeyan_setup_ffmpeg(ArkeyanBuilderMusicTest)
 
 # Real install steps with synthetic inputs and a fake child runner; never launches a game.
 add_executable(ArkeyanBuilderGuardTest install_guard_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp shader_cache_literals.cpp game_icon.cpp menu_music.cpp
-    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
+    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
     ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
 target_include_directories(ArkeyanBuilderGuardTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(ArkeyanBuilderGuardTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(ArkeyanBuilderGuardTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
-target_link_libraries(ArkeyanBuilderGuardTest PRIVATE ArkeyanArtReader ArkeyanXenonUtils ArkeyanBuilderMiniz)
+target_link_libraries(ArkeyanBuilderGuardTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils ArkeyanBuilderMiniz)
 if(WIN32)
     target_compile_definitions(ArkeyanBuilderGuardTest PRIVATE _WIN32_WINNT=0x0A00)
     target_link_libraries(ArkeyanBuilderGuardTest PRIVATE winmm winhttp)
@@ -108,10 +102,10 @@ foreach(target ArkeyanEditionTest ArkeyanEditionPrints)
         # Kit time (tools/make_kit.sh): the fingerprints of a game's addresses.h, from our disc, into the kit.
         add_executable(${target} edition_prints.cpp)
     endif()
-    target_sources(${target} PRIVATE edition.cpp fingerprint.cpp sha256.cpp ${CMAKE_SOURCE_DIR}/runtime/vfs.cpp
+    target_sources(${target} PRIVATE edition.cpp fingerprint.cpp sha256.cpp
         ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${SKYBUILD_PLATFORM})
     target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
-    target_link_libraries(${target} PRIVATE ArkeyanArtReader ArkeyanXenonUtils)
+    target_link_libraries(${target} PRIVATE ArkeyanHostFiles ArkeyanXenonUtils)
     if(WIN32)
         target_compile_definitions(${target} PRIVATE _WIN32_WINNT=0x0A00)
     endif()
