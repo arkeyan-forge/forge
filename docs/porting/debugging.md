@@ -75,6 +75,10 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_NETPLAY_HASH=<file>` | per-frame totals of allocated guest heaps and writable executable sections; at exit, a log line with the count and mean/max milliseconds |
 | `SKY_NETPLAY_HASH_BLOCKS=1` | address/heap/hash records in `<file>.blocks`; compare with `python3 -I tools/netplay/hash_diff.py <a> <b>` |
 | `SKY_NETPLAY_HASH_SKIP=<start>-<end>,...` | skip hex guest address ranges, end exclusive (e.g. `a0010000-a0020000`); invalid syntax refused |
+| `SKY_NETPLAY_HASH_EVERY=<n>` | hash only the frames that are a multiple of `n` (1 to 100000, default 1): a long replay at the game's own speed |
+| `SKY_NETPLAY_HASH_BLOCK=<bytes>` | block size of `<file>.blocks`, a power of two from 256 to 65536 (default 65536), to narrow a differing block |
+| `SKY_NETPLAY_EVENTS=<file>` | frame-stamped log: per frame the vblanks, other graphics interrupts, audio periods and timebase reads, and in order the threads created and files opened; compare with `hash_diff.py --events <a> <b>` |
+| `SKY_NETPLAY_DELIVERY=frame` | vblanks and audio periods granted per frame (the present interval's blanks, 3.125 audio periods per 1/60 s) instead of following the wall clock; the flip waits until their callbacks ran |
 
 ### Renderer, GPU, performance
 | Variable | Effect |

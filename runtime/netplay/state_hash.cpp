@@ -53,19 +53,36 @@ namespace netplay
     }
 
     void HashAllocation(std::span<const uint8_t> bytes, uint32_t address, Heap heap, std::span<const Range> skips,
-        std::vector<Block>& blocks)
+        std::vector<Block>& blocks, uint32_t blockBytes)
     {
         size_t offset = 0;
         while (offset < bytes.size())
         {
             const uint64_t at = uint64_t(address) + offset;
-            const size_t size = std::min(bytes.size() - offset, size_t(0x10000 - (at & 0xFFFF)));
+            const size_t size = std::min(bytes.size() - offset, size_t(blockBytes - (at & (blockBytes - 1))));
             const bool excluded = std::any_of(skips.begin(), skips.end(),
                 [=](const Range& range) { return range.begin <= at && range.end >= at + size; });
             if (!excluded)
                 blocks.push_back({ uint32_t(at), heap, HashBytes(bytes.subspan(offset, size), at, skips) });
             offset += size;
         }
+    }
+
+    bool ParseCount(std::string_view text, uint64_t min, uint64_t max, bool powerOfTwo, uint64_t& value)
+    {
+        if (text.empty() || text.size() > 12)
+            return false;
+        uint64_t parsed = 0;
+        for (const char c : text)
+        {
+            if (c < '0' || c > '9')
+                return false;
+            parsed = parsed * 10 + uint64_t(c - '0');
+        }
+        if (parsed < min || parsed > max || (powerOfTwo && (parsed & (parsed - 1)) != 0))
+            return false;
+        value = parsed;
+        return true;
     }
 
     bool ParseSkips(std::string_view text, std::vector<Range>& ranges, std::string& error)
@@ -147,10 +164,12 @@ namespace netplay
         {
             const size_t at = size_t(table + i * 40);
             const uint64_t size = get(at + 8, 4), rva = get(at + 12, 4);
-            if (rva + size > mappedSize || uint64_t(base) + rva + size > 0x100000000ull)
+            if (uint64_t(base) + rva + size > 0x100000000ull)
                 return fail();
-            if (size && (get(at + 36, 4) & 0x80000000u))
-                ranges.push_back({ uint64_t(base) + rva, uint64_t(base) + rva + size });
+            // A section may run past the mapped image (Giants' last, read-only one): only its mapped bytes exist.
+            const uint64_t end = std::min(rva + size, mappedSize);
+            if (rva < end && (get(at + 36, 4) & 0x80000000u))
+                ranges.push_back({ uint64_t(base) + rva, uint64_t(base) + end });
         }
         std::sort(ranges.begin(), ranges.end(), [](Range a, Range b) { return a.begin < b.begin; });
         for (size_t i = 1; i < ranges.size(); ++i)

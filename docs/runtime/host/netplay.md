@@ -1,6 +1,6 @@
 # Online play (0.10.0): netplay in input lockstep
 
-> **Purpose:** how two players, each on his own computer with his own portal and Skylanders, play one game together online, and what the runtime must change to make that possible? · **Status:** design; step 0a probe implemented, game validation pending · **Tags:** [Xbox] [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [TrapTeam] [SuperChargers] [Imaginators]
+> **Purpose:** how two players, each on his own computer with his own portal and Skylanders, play one game together online, and what the runtime must change to make that possible? · **Status:** design; step 0a and 0b probes implemented and measured on SSA and Giants (the guest scheduler is next) · **Tags:** [Xbox] [Lux] [Alchemy] [SSA] [Giants] [SwapForce] [TrapTeam] [SuperChargers] [Imaginators]
 
 The owner's decision of 2026-11-04 (free exploration) stays the long-term goal; 0.10.0 is its first step, with
 the game's shared camera.
@@ -205,6 +205,61 @@ has `MaxUsers` records: u8 connected, u16 buttons, u8 left/right trigger, four s
 The recorder updates the frame count and flushes after every complete frame. Blocks: `SKYBLK01` (8 bytes), u32 version;
 then per frame u64 frame, u32 block count, followed by `(u32 address, u32 heap, u64 hash)` records. Heap ids:
 1 virtual4K, 2 virtual64K, 3 physical, 4 executable image. Neither format stores guest bytes.
+
+## Step 0b: long replays and frame-counted deliveries [Xbox]
+
+[V] Three probe tools: `SKY_NETPLAY_HASH_EVERY=<n>` hashes one frame in `n` (a 10-minute replay at the game's own
+speed), `SKY_NETPLAY_HASH_BLOCK=<bytes>` narrows the blocks of `<file>.blocks` (256 to 65536), and
+`SKY_NETPLAY_EVENTS=<file>` writes a frame-stamped log: per frame the vblanks, other graphics interrupts, audio periods
+and timebase reads, and in order the guest threads created, the files opened and the kernel's allocations and frees
+(`NtAllocateVirtualMemory`, `MmAllocatePhysicalMemoryEx`). `hash_diff.py --events <a> <b>` compares two logs (the
+notes' order, then the frames each note moved by, then each counter per frame); `hash_diff.py --summary <a> <b>` gives
+the differing blocks per heap in every sidecar frame. Every variable is in
+[debugging.md](../../porting/debugging.md). A section that runs past the mapped image (Giants' last, read-only one) is
+cut at the image's end; 0a refused the hash for it.
+
+[V] `SKY_NETPLAY_DELIVERY=frame` counts two host-paced sources in frames instead of wall time
+(`runtime/netplay/delivery.cpp`): each flip grants its blanks (the present interval's, at least 1) and its audio
+periods (256 samples at 48 kHz: 3.125 per 1/60 s, the remainder carried), the interrupt and audio threads deliver one
+grant per tick of their own clock, and the flip returns once the grants' guest callbacks have run. The blanks keep their
+16.667 ms tick, which still paces the frames. A thread with no grant for about 500 ms outside a flip delivers anyway
+and logs `vblank fallback` or `audio fallback` (a game that waits for a blank without presenting); a flip whose
+callbacks have not run in 250 ms logs `late`. Off by default: deterministic mode alone keeps 0a's wall-clock deliveries.
+
+[V] [SSA] [Giants] Measured 2026-11-16 on an M1 Pro (Europe discs, a loaded machine), one 10-minute recording per game
+(SSA: the fast recipe, then walking, jumping and attacking in level_027; Giants: `tools/regress/giants_press.py 600`),
+then two replays per mode, hashing every 30th frame:
+
+| | SSA, wall clock | SSA, `frame` | Giants, wall clock | Giants, `frame` |
+|---|---|---|---|---|
+| frames compared | 10279 | 13557 | 19848 | 19179 |
+| frames whose vblank count differs | 7660 | 0 | 976 | 0 |
+| frames whose audio period count differs | 9646 | 0 | 9801 | 0 |
+| frames whose graphics interrupt count differs | 4179 | 5527 | 9428 | 9304 |
+| frames whose timebase read count differs | 10185 | 11915 | 19102 | 18486 |
+| threads created and files opened: same order, largest frame shift | yes, 37 | yes, 1 | yes, 1 | yes, 2 |
+| 64 KB blocks differing at the plateau | ~2360 of 10107 | ~2180 of 10110 | ~300 of 7307 | ~360 of 7307 |
+
+[V] Frame-counted deliveries are exact: 0 differing frames for both sources and both games, no fallback and no `late`
+in any of the four `frame` replays. They hold SSA's file opens within 1 frame of each other (37 with the wall clock) but do
+not shrink the heap divergence, so the blanks and the audio periods are not its main source. In both games the divergence settles and stops growing: SSA's jumps at the level load (frame ~600,
+from about 250 to about 1700 blocks) and holds about 2180 from frame ~2000 to 13557; Giants' holds about 300 to 360 from
+frame ~3000 to 19000, almost all in physical memory (2 to 3 blocks of the 64K heap, 6 to 7 of the executable).
+[?] A divergence that stops growing points to buffers rewritten every frame (GPU and audio data, job queues) rather
+than a simulation drifting apart; hashes cannot tell the two apart, and the owner's 2 min 45 s replay showed no visible
+drift.
+
+[V] [SSA] What still differs is guest thread timing. In `frame` mode the kernel receives the same allocation requests
+(3714 and 3709, the same sizes but for 7 and 2) in a different order from the 40th, at frame 2; only 25 and 22
+allocations land at an address the other replay never used, so the heap layout is nearly the same and the differing
+blocks are differing contents. The timebase read count per frame (each thread's reads of `mftb` and the system time)
+differs in 88 % of SSA's frames and 96 % of Giants': threads poll the clock as often as the host lets them run. The GPU's
+swap and fence interrupts follow the GPU thread, and their count differs in 40 to 49 % of the frames.
+
+[V] Verdict: the cooperative guest scheduler of section 3 is needed whole, with the GPU interrupts delivered at fixed
+points of the frame like the blanks and audio periods here. Per-thread clocks alone cannot help while the threads'
+order is free. The next step is the scheduler behind `SKY_NETPLAY_DETERMINISTIC`, with `SKY_NETPLAY_DELIVERY=frame`
+as its base, measured with these same recordings.
 
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one

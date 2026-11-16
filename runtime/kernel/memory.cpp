@@ -1,5 +1,6 @@
 #include "memory.h"
 #include "kernel/alloc_log.h"
+#include "netplay/events.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -11,6 +12,17 @@
 
 namespace
 {
+    // The probe's event log (SKY_NETPLAY_EVENTS): the order and addresses of the kernel's allocations, which follow
+    // the order in which the guest's threads ask.
+    void NoteAllocation(const char* what, uint32_t address, uint32_t size)
+    {
+        if (!netplay::g_events.load(std::memory_order_acquire))
+            return;
+        char detail[48];
+        snprintf(detail, sizeof(detail), "%s 0x%08X 0x%X", what, address, size);
+        netplay::NoteEvent("memory", detail);
+    }
+
     constexpr uint32_t StatusSuccess = 0;
     constexpr uint32_t StatusNoMemory = 0xC0000017;
 
@@ -140,6 +152,7 @@ PPC_FUNC(__imp__NtAllocateVirtualMemory)
     g_memory.Write<uint32_t>(baseAddressPointer, address);
     g_memory.Write<uint32_t>(regionSizePointer, size);
     AllocLog(ctx, "NtAllocateVirtualMemory (base, size, type; base)", requested, size, allocationType, address);
+    NoteAllocation("virtual", address, size);
     ctx.r3.u64 = StatusSuccess;
 }
 
@@ -156,6 +169,7 @@ PPC_FUNC(__imp__NtFreeVirtualMemory)
         GuestHeap& heap = VirtualHeapFor(address, 0);
         uint32_t size = heap.Free(heap.FindAllocation(address));
         g_memory.Write<uint32_t>(regionSizePointer, size);
+        NoteAllocation("free virtual", address, size);
     }
 
     ctx.r3.u64 = StatusSuccess;
@@ -198,6 +212,7 @@ PPC_FUNC(__imp__MmAllocatePhysicalMemoryEx)
             address & PhysicalMask, maxAddress);
 
     AllocLog(ctx, "MmAllocatePhysicalMemoryEx (size, protect, alignment)", size, protect, alignment, address);
+    NoteAllocation("physical", address, size);
     ctx.r3.u64 = address;
 }
 
@@ -210,6 +225,7 @@ PPC_FUNC(__imp__MmFreePhysicalMemory)
         g_windowGeneration.fetch_add(1, std::memory_order_release);
     }
     g_physicalHeap.Free(physical);
+    NoteAllocation("free physical", physical, 0);
 }
 
 // (type, physical address, size, protect): engine 1 of the title's XMA code maps its hardware contexts this way.
