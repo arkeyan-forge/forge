@@ -120,7 +120,8 @@ namespace
     // Alchemy does at interval 2. maxFpsLimit 60 until a rate above it is measured (games/trapteam/docs/research.md).
     const game::Adapter g_adapter = { g_gameInfo, nullptr, true, trapteam::SetVoiceLanguage, GlyphTextures, IntroMovies,
         true, trapteam::SetTextLanguage, { "\\level\\level_313_tutorial", std::string_view("\0.", 2) }, {}, true,
-        { 1280, 720 }, nullptr, game::LevelArcOfFile, 60, RippleSimulation, InputRows, MouseDefaults, MenuLevels };
+        { 1280, 720 }, AlchemySetNightmareFromStart, game::LevelArcOfFile, 60, RippleSimulation, InputRows,
+        MouseDefaults, MenuLevels };
 }
 
 const game::Adapter& game::Current() { return g_adapter; }

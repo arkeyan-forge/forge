@@ -6,10 +6,10 @@
 # Each game's section also runs the pad remapping and rumble check (tools/regress/pad_qol.sh) and the Toy Box's out-of-health check
 # (tools/regress/out_of_health.sh, ~1 min each), FSR 3 and its frame generation to the first level (tools/regress/fsr_all.sh,
 # fsr_framegen.sh, ~2 min each; Trap Team's,
-# SuperChargers' and Imaginators' through their routes, ~9 min, Trap Team's with --long, ~16 min); Swap Force's and Imaginators' also the Nightmare menu (tools/regress/nightmare_menu.sh, ~4 min).
+# SuperChargers' and Imaginators' through their routes, ~9 min, Trap Team's with --long, ~16 min); Swap Force's, Trap Team's and Imaginators' also the Nightmare menu (tools/regress/nightmare_menu.sh, ~4 min).
 # SuperChargers (SUPERCHARGERS_ISO: tools/regress/superchargers_lobby.sh, ~9 min) and Imaginators (IMAGINATORS_ISO: tools/regress/imaginators_hub.sh,
 # ~9 min) each build, run the host units and a new game plus a continue to the hub; a SKIP row without the disc.
-# Trap Team adds its build and host units when TRAPTEAM_ISO is set; runtime coverage remains an explicit SKIP.
+# Trap Team adds its build and host units when TRAPTEAM_ISO is set, and its Nightmare menu; the rest of its runtime coverage remains an explicit SKIP.
 # Needs SSA_ISO and GIANTS_ISO (the discs, read only). Builds SSA (build/) and Giants (build-giants/) and the unit
 # tests (every one in the first section, those that depend on the game in the others), runs them, then one isolated game run each (SSA to level_027, Giants from the title to Chapter 1) with the
 # checks of tools/regress/analyze.py. Swap Force (build-swapforce/, one run from the title to the tutorial level,
@@ -63,7 +63,7 @@ check() {
     return $status
 }
 
-all_tests="ArkeyanBuilderTest ArkeyanBuilderGuardTest ArkeyanEditionTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest ArkeyanGuestLayoutTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanToyboxLinkTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanSettingsTest ArkeyanDatadirTest ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanGameDataTest ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanRecompGpuTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanPresentRectTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanFloatScanTest ArkeyanAutoScaleTest ArkeyanCommandsTest ArkeyanPortablePackTest ArkeyanVfsTest ArkeyanMouseTest ArkeyanDebugScreenTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest ArkeyanToyboxKeyMaskTest ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanXenonRecompTest ArkeyanPpcDecoderTest ArkeyanGlyphModelsTest ArkeyanFileListTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest ArkeyanPortalUsbBackendTest ArkeyanFirstFrameTest ArkeyanVideoDriverTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanClockTest ArkeyanResolveWritebackTest ArkeyanResourceLockTest"
+all_tests="ArkeyanBuilderTest ArkeyanBuilderGuardTest ArkeyanEditionTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest ArkeyanGuestLayoutTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanToyboxLinkTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanSettingsTest ArkeyanDatadirTest ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanGameDataTest ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanRecompGpuTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanPresentRectTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanFloatScanTest ArkeyanAutoScaleTest ArkeyanCommandsTest ArkeyanPortablePackTest ArkeyanVfsTest ArkeyanMouseTest ArkeyanDebugScreenTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest ArkeyanToyboxKeyMaskTest ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanXenonRecompTest ArkeyanPpcDecoderTest ArkeyanGlyphModelsTest ArkeyanFileListTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest ArkeyanNightmareGateTest ArkeyanPortalUsbBackendTest ArkeyanFirstFrameTest ArkeyanVideoDriverTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanClockTest ArkeyanResolveWritebackTest ArkeyanResourceLockTest"
 # The units built and run in every section: their binaries hold the game's own code (its id, info.cpp, ppc/ headers) or
 # read its disc. The others build the same in every folder, so only the first section to build builds and runs them;
 # the later ones build the game, these units and ArkeyanFigureTest (the regress scripts' figure maker).
@@ -457,6 +457,12 @@ if [ -z "$only" ] || [ "$only" = trapteam ]; then
         if [ $quick -eq 0 ]; then
             row trapteam "runtime" SKIP "Trap Team game route and picture references await validation; see the Trap Team tours in docs/getting-started/testing.md"
             toybox_window trapteam
+            echo "== trapteam: Nightmare from the start (~4 min)"
+            if [ -x "$root/build-trapteam/ArkeyanRuntime/Skylanders Trap Team" ]; then
+                check trapteam "Nightmare is locked, and offered from the start with the option" nightmare_menu trapteam
+            else
+                row trapteam "Nightmare from the start" SKIP "no game executable in build-trapteam/ArkeyanRuntime"
+            fi
             if [ $long -eq 1 ]; then
                 echo "== trapteam: FSR 3 through the chapters (~16 min)"
                 check trapteam "FSR 3 through the chapters (no failure, no guard)" fsr_all trapteam

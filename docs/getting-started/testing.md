@@ -241,10 +241,12 @@ Other recipes:
   Toy Box's opening (it reads 81 portraits) can end just before it, and the shot reads back the last presented frame,
   still the game's (one full `test_all` at load ~20: `shots_out.png` the title screen, the log's `[toybox] open` before
   `shot=out`). The same build alone: 4 of 4 passes, 1892 red pixels then 0.
-- **Nightmare from the start** [SwapForce] [Imaginators]: `SWAPFORCE_ISO=<disc> tools/regress/nightmare_menu.sh` or
-  `IMAGINATORS_ISO=<disc> tools/regress/nightmare_menu.sh imaginators` (~4 min, `private/regress/nightmare/<game>/{off,on}`): the real
-  difficulty menu of a new game, Nightmare locked, then offered by `SKY_NIGHTMARE_FROM_START=1` and accepted (Swap Force's tutorial, Imaginators'
-  first level starts); `menu.ppm` of each run is the frame to look at. In `test_all.sh` (the Swap Force and Imaginators sections).
+- **Nightmare from the start** [SwapForce] [Imaginators] [TrapTeam]: `SWAPFORCE_ISO=<disc> tools/regress/nightmare_menu.sh`,
+  `IMAGINATORS_ISO=<disc> tools/regress/nightmare_menu.sh imaginators` or `TRAPTEAM_ISO=<disc> tools/regress/nightmare_menu.sh trapteam`
+  (~4 min, `private/regress/nightmare/<game>/{off,on}`): the real difficulty menu of a new game, Nightmare locked, then offered by
+  `SKY_NIGHTMARE_FROM_START=1` and accepted (Swap Force's tutorial, Imaginators' first level, Trap Team's tutorial after its "cannot be
+  changed" warning and the mode menu); `menu.ppm` of each run is the frame to look at (Trap Team: Hard highlighted with the option off, the
+  fourth portrait with it on). In `test_all.sh` (the Swap Force, Trap Team and Imaginators sections).
 - **The shelf and the player's wheel** [Giants]: `GIANTS_ISO=<disc> tools/regress/wheel_toybox.sh` (~1.5 min, `build-giants/`, isolated under
   `private/runs/wheel_toybox`; the figure tool comes from `build/`): Spyro, Whirlwind and a Swap Force Scratch (Giants does not read it:
   not on the shelf); Spyro is added to the wheel from its page, Whirlwind is put on Player 1, then Tab held, `1` and Tab released put Spyro

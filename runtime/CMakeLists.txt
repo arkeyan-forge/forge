@@ -463,6 +463,11 @@ target_include_directories(ArkeyanPortalScriptTest PRIVATE .)
 add_executable(ArkeyanZoneNameTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/zone_name_test.cpp)
 target_include_directories(ArkeyanZoneNameTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
 
+# The difficulty menu's Nightmare answer for a lock kept in a script variable, the save left alone
+# (engines/alchemy/nightmare_gate.h; no game data): ./ArkeyanNightmareGateTest
+add_executable(ArkeyanNightmareGateTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/nightmare_gate_test.cpp)
+target_include_directories(ArkeyanNightmareGateTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
+
 # Which TLSF blocks belong to their pool as it is now, the stale free of SuperChargers' race start dropped
 # (engines/alchemy/live_blocks.h; no game data): ./ArkeyanLiveBlocksTest
 add_executable(ArkeyanLiveBlocksTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/live_blocks_test.cpp)
