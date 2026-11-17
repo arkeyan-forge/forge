@@ -14,6 +14,8 @@
 # kill: the runs in progress stop their games). --play: seconds of play per entry (default 30; Swap Zone pieces and
 # lockpick puzzles 20; an entry that runs but cannot count as covered 15). COVERAGE_FIGURE_BATCH (20): figures per game
 # run, each COVERAGE_FIGURE_SECONDS (8) on the portal.
+# COVERAGE_PIPELINES=<dir>: each run's pipeline list kept as <dir>/<game>/<entry>.bin, the input of a game's
+# pipeline baseline (docs/runtime/gpu/pipeline_cache.md, tools/pipelines/merge_lists.py).
 #
 # Writes <work dir>/<game>/catalogue.tsv (area, kind, name, route, arg, cap, reason), <work dir>/<game>/coverage.tsv
 # (`# game <id>`, then kind, name, verdict, lowest_fps, detail, area, seconds; verdict ok, crash, hang, not_reached or
