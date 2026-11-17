@@ -79,6 +79,21 @@ its own (built with `ARKEYAN_EDITION`), picked by Arkeyan-Builder from the disc'
 addresses (function bounds, switch tables, mid-asm hooks in `games/<id>/config/*.toml`) re-found the same way. Until
 then such a disc stays refused; its report says what we need.
 
+## 4. Same functions, other data
+SuperChargers' Europe (Fr, Nl) disc (media ID `504D9445`, version 4) and its Europe disc (`74144F53`, version 7) have
+different loaded images, yet the same code layout. A release of that kind gets its own entry (its own xex and image
+hashes) in `info.cpp`, `game.txt` and the launcher's list, and shares the game's config, `addresses.h` and runtime. How
+it was shown, with both discs' images dumped by `tools/xexdump` into `private/`:
+- `.pdata` is identical and `.text` has the same size; of the 68143 `.text` words that differ, 68142 differ only in
+  their 16-bit immediate (references into `.rdata`, which is 0x60 bytes longer), the last one is a load in a function
+  no hook touches. Every differing `.data` word is a pointer into `.rdata`, so data addresses do not move.
+- `tools/find_switch_tables.py` gives the same switch tables and functions on both images (equal to the config's).
+- `ArkeyanEditionPrints` on the Europe disc, then `--edition-report` of the Fr/Nl disc with that `fingerprints.txt`:
+  42 of 42 addresses found at their own place (`sure`).
+- The constants of `games/<id>/` and `engines/alchemy/` outside `.text` point at the same data.
+
+`SUPERCHARGERS_ISO=<disc> ArkeyanEditionTest`: either disc is its own release.
+
 ## How to verify
 - Disc-free report checks: `cmake -S . -B build-check -G Ninja -DSKY_TESTS_ONLY=ON`, then
   `ninja -C build-check ArkeyanEditionTest`. Run `build-check/tools/arkeyan-builder/ArkeyanEditionTest . build-check/edition-test`
