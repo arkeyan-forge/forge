@@ -5,7 +5,7 @@ name=Skylanders Spyro's Adventure
 runtime=Skylanders Spyro's Adventure
 # The game's own version (1.0 = the game at 100 %): each fix bumps the last number. The kit carries it (kit.txt game_version.<id>),
 # the release says it (games.json), Skylauncher offers UPDATE when its release has a higher one.
-version=0.9.14
+version=0.9.15
 toml=SSA.toml
 xex_sha256=e195f5130c1e23fb4654baf7c383ef97d02c89aeb7d4389705ae31235646ef7b
 # The releases' loaded images (decrypted, decompressed; same order as xex_sha256), labels and title ID: a disc of

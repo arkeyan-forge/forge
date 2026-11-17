@@ -64,6 +64,9 @@ notes back; `DRY_RUN=1` only prints them. The launcher reads the line from the r
 for a game whose version there is higher than the one it built ([updates_release.md](updates_release.md)); it strips HTML comments
 wherever it shows the notes.
 **To publish a fix of one game: bump `version=` in `games/<id>/game.txt`, rebuild the kits, release with `release_kit.sh`.**
+The launcher rebuilds a game only when that version differs from the built one: a runtime, engine, patch or builder
+change needs a bump of every game it reaches. `tools/ci/game_versions.py` (run by `kits_local.sh --attach`) refuses a
+game changed since the previous `v*` tag with the same version; its test is `python3 -I tools/ci/game_versions_test.py`.
 
 ## Several games in one kit (0.5.0) [Xbox]
 

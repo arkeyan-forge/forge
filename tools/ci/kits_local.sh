@@ -33,6 +33,8 @@ export KIT_CCACHE=${KIT_CCACHE:-1}
 # The kits made on a Mac so far run on macOS 26 and later (LSMinimumSystemVersion 26.0).
 export MACOSX_DEPLOYMENT_TARGET=26.0
 [ -z "$tag" ] || python3 -I tools/ci/kits.py destination
+# A game that changed since the previous release must carry a new version, or the launcher never rebuilds it.
+[ -z "$tag" ] || python3 -I tools/ci/game_versions.py
 [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ] || { echo "error: needs an Apple Silicon Mac" >&2; exit 1; }
 xcrun --find metal >/dev/null
 for package in cmake ninja rsync nasm xz molten-vk ccache; do
