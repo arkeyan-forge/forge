@@ -37,8 +37,6 @@ scratch settings, saves and figures, never on your real data ([testing](docs/get
 ## Commits and pull requests
 - **One subject per pull request.** Its **title** becomes the merged commit's message: `area: what (#n)`, lower-case
   area, English, 72 characters at most, the issue number when there is one.
-- **Sign off every commit** (`git commit -s`): your statement that you wrote the change and can give it under the
-  project's license (the [Developer Certificate of Origin](https://developercertificate.org/)).
 - Pull requests are **squashed** when merged. The owner reviews and merges every pull request.
 
 ## AI tools
@@ -46,5 +44,5 @@ Welcome, under the rules of the [Code of Conduct](CODE_OF_CONDUCT.md#contributio
 what you send.
 
 ## License
-The project is under the [MIT license](LICENSE). By sending a pull request with signed-off commits, you agree that your
+The project is under the [MIT license](LICENSE). By sending a pull request, you agree that your
 contribution is published under it.

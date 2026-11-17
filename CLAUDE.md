@@ -22,7 +22,7 @@ Pages over 300 lines (`games/*/docs/{boot,status,history}.md`, `docs/porting/pro
   `tools/test_all.sh --quick` before a merge.
 - A new warning is a bug (`cmake/Quality.cmake`). Never touch `thirdparty/`, `ArkeyanRecompLib/`, generated code: use
   `patches/`.
-- Comments: why only. Commits: one line, `area: what (#n)`, under 72 characters, signed off (`git commit -s`), no
+- Comments: why only. Commits: one line, `area: what (#n)`, under 72 characters, no
   co-author lines.
 
 ## Hard rules

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# No co-author or tool lines (a sign-off is welcome), a short subject.
+# No co-author or tool lines, a short subject.
 msg="$1"
 grep -qiE '^(co-authored-by|generated with)' "$msg" \
     && { echo "commit-msg: co-author and tool lines are not allowed" >&2; exit 1; }
