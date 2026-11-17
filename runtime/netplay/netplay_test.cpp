@@ -65,6 +65,18 @@ namespace
         for (int i = 0; i < 60; ++i)
             second.Advance(1);
         Check(second.Elapsed() == 10000000, "no frame rounding drift");
+        // A host file's write time is the host's: two replays must still read the same one.
+        Check(netplay::HostFileTime(true, 5000, 1234) == netplay::EpochFileTime &&
+                  netplay::HostFileTime(true, 5000, 99) == netplay::EpochFileTime,
+            "host file times do not depend on the host clock");
+        Check(
+            netplay::HostFileTime(false, 5000, 1234) == 3766, "host file times follow the file's age outside netplay");
+        // A cooperative flip waits for its blanks' wall time; a late one shows at once and paces the next from now.
+        Check(netplay::FlipDue(0, 7000, 2, 100) == 7000, "the first cooperative flip is not held");
+        Check(netplay::FlipDue(1000, 1050, 2, 100) == 1200,
+            "a flip of two blanks is shown two blank periods after the last");
+        Check(netplay::FlipDue(1000, 1050, 0, 100) == 1100, "a flip without a blank still waits one");
+        Check(netplay::FlipDue(1000, 1300, 1, 100) == 1300, "a late flip is shown at once");
         std::array<std::array<uint64_t, 100>, 2> sequences{};
         std::thread a([&] {
             for (auto& tick : sequences[0])

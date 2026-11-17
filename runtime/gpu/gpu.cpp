@@ -2171,3 +2171,13 @@ bool gpu::ReadDebugSnapshot(DebugSnapshot& result, bool wait)
     ReadDebugDrawSnapshot(result);
     return true;
 }
+
+void gpu::SynchronizeGuestInterrupts()
+{
+    std::lock_guard producerLock(gpu::detail::g_producerMutex);
+    gpu::detail::RunAndWait([] {
+        std::lock_guard lock(g_mutex);
+        if (gpu::detail::g_context)
+            gpu::detail::WaitForGpu();
+    });
+}

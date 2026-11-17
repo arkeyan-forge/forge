@@ -1,5 +1,6 @@
 #include "kernel/objects.h"
 #include "netplay/clock.h"
+#include "netplay/scheduler.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -128,8 +129,9 @@ uint32_t WaitForObjects(const std::vector<std::shared_ptr<KernelObject>>& object
 {
     using Clock = std::chrono::steady_clock;
 
+    const bool scheduled = netplay::Cooperative() && netplay::GuestScheduler().Active();
     std::optional<Clock::time_point> deadline;
-    if (timeoutPointer != 0)
+    if (!scheduled && timeoutPointer != 0)
     {
         int64_t timeout = g_memory.Read<int64_t>(timeoutPointer);
         int64_t intervals = timeout < 0 ? -timeout : timeout - int64_t(GuestSystemTime());
@@ -183,6 +185,62 @@ uint32_t WaitForObjects(const std::vector<std::shared_ptr<KernelObject>>& object
             apcs->sleeper = nullptr;
         return result;
     };
+
+    if (scheduled)
+    {
+        auto& scheduler = netplay::GuestScheduler();
+        uint64_t virtualDeadline = UINT64_MAX;
+        if (timeoutPointer != 0)
+        {
+            const int64_t interval = g_memory.Read<int64_t>(timeoutPointer);
+            const uint64_t now = netplay::g_clock.Elapsed();
+            if (interval <= 0)
+            {
+                const uint64_t relative = 0 - uint64_t(interval);
+                virtualDeadline = relative < UINT64_MAX - now ? now + relative : UINT64_MAX - 1;
+            }
+            else
+                virtualDeadline =
+                    uint64_t(interval) > netplay::EpochFileTime ? uint64_t(interval) - netplay::EpochFileTime : 0;
+        }
+        uint32_t result = StatusTimeout;
+        auto complete = [&] {
+            if (apcs != nullptr && !apcs->empty())
+            {
+                result = StatusUserApc;
+                return true;
+            }
+            if (waitAll && !objects.empty())
+            {
+                for (size_t i = 0; i < objects.size(); ++i)
+                    if (!ready(i))
+                        return false;
+                for (size_t i = 0; i < objects.size(); ++i)
+                    take(i);
+                result = 0;
+                return true;
+            }
+            for (size_t i = 0; i < objects.size(); ++i)
+                if (ready(i))
+                {
+                    take(i);
+                    result = uint32_t(i);
+                    return true;
+                }
+            return false;
+        };
+        if (complete())
+            return finish(result);
+        lock.unlock();
+        scheduler.Block(
+            [&] {
+                std::lock_guard kernelLock(g_kernelLock);
+                return complete();
+            },
+            virtualDeadline);
+        lock.lock();
+        return finish(result);
+    }
 
     while (true)
     {

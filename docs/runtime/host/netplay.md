@@ -261,6 +261,96 @@ points of the frame like the blanks and audio periods here. Per-thread clocks al
 order is free. The next step is the scheduler behind `SKY_NETPLAY_DETERMINISTIC`, with `SKY_NETPLAY_DELIVERY=frame`
 as its base, measured with these same recordings.
 
+## Step 0c: cooperative guest scheduler [Xbox]
+
+[V] `SKY_NETPLAY_SCHEDULE=cooperative` runs one guest context at a time (`runtime/netplay/scheduler.{h,cpp}`).
+Startup refuses it unless `SKY_NETPLAY_DETERMINISTIC=1` and `SKY_NETPLAY_DELIVERY=frame` are set too; without it,
+threads keep the host scheduler and the deliveries of 0a and 0b.
+
+[V] One baton, one FIFO. Guest threads and the graphics and audio callback contexts register before their host thread
+starts, so the host's wake order never picks the next holder. The holder hands over only at fixed points: a kernel
+wait or delay, an explicit yield, a contended critical section or spin lock, thread start, resume and exit, the flip,
+a spin hint, and the poll quantum. At a signal and at each handover the blocked contexts are checked in creation order;
+a wait that succeeds takes its event, semaphore, mutant or lock before it joins the queue, and the signaller joins
+after the contexts it woke. APCs run on their target's context. A suspended thread waits for its resume; a thread
+that exits signals its object before it passes the baton.
+
+[V] Virtual deadlines. Waits and delays carry 100 ns deadlines on the virtual clock. When no context is runnable the
+clock jumps to the earliest deadline (ties in creation order), and the time-stamp bundle and the timebase follow; the
+events log notes each jump (`idle <100 ns units>`). Otherwise the scheduler waits for a host completion (the GPU, a
+file read).
+
+[V] Poll loops. A thread that polls a flag never blocks, so it would keep the baton for ever. `PollQuantum` (1024)
+counts its clock reads (`mftb`, the system time) and its entries into a free critical section, and yields once the
+count is reached; the count restarts only at a handover, not at a signal or a kernel call that did not block (Giants
+hung at boot until both changed: a thread took and left a free section in a loop). The translator patch also emits
+`PPC_SPIN_HINT()` for `db16cyc`, `cctpl` and `cctpm` (regenerated: 49 sites in SSA, 23 in Giants); code generated
+before the patch still builds and keeps the poll quantum.
+
+[V] The flip. A cooperative flip finishes the GPU commands already submitted (`gpu::SynchronizeGuestInterrupts`), then
+grants the pending graphics interrupts, the blanks and the audio periods; the graphics context runs that interrupt
+batch before its blanks. The flip returns once every granted callback has returned, with no host timeout and no
+wall-clock fallback. Since the blanks no longer wait for their tick, the flip then holds the baton until its blanks'
+wall time (`netplay::FlipDue`: two periods at 30 FPS, a late frame at once); the first measurements, without it, ran
+Giants at 60 with the limit at 30, twice its speed. GPU execution and host output stay on their own host threads.
+
+[V] Host file times. A host file's time (the save) was the host clock minus the file's age; in deterministic mode it
+is now the virtual clock's epoch (`netplay::HostFileTime`), the same in every replay.
+
+[V] The watchdog reports a holder that has not handed over for 2 s, with each context's state, deadline and the
+holder's guest location at its last handover, and a scheduler blocked with no deadline. It never makes up an
+interrupt to get out.
+
+[V] `ArkeyanSchedulerTest` failed first against a pass-through scheduler. It checks 200 identical switch orders with
+the host threads started in reverse, waits, a signal undone before the handover, spin hints, the poll quantum (polls
+short of a quantum keep the baton, a full one hands over), virtual deadlines and their ties, resume, and the
+pass-through when the option is off; then 200 frames of blank and audio grants with callbacks that yield, and flips that
+wait for them. The watchdog mode reports its stalled holder. `ArkeyanNetplayTest` checks the host file times and the flip's pacing.
+
+[V] [SSA] [Giants] Measured 2026-11-17 on an M1 Pro (Europe discs) with 0b's recordings, two 10-minute replays per
+game, hashing every 30th frame:
+
+| | SSA, 0b `frame` | SSA, 0c | Giants, 0b `frame` | Giants, 0c |
+|---|---|---|---|---|
+| frames compared | 13557 | 9233 | 19179 | 25479 |
+| frames whose vblank, audio, graphics interrupt or timebase count differs | up to 11915 | 0 | up to 18486 | 0 |
+| threads, files, allocations, idle jumps: same order and frame | from the 40th allocation, no | 4113 notes, yes | no | 45 notes, yes |
+| 64 KB blocks differing at the plateau | ~2180 of 10110 | 1 of 10108 | ~360 of 7307 | 3 of 7307 |
+| largest count | ~2180 | 29 (frame 2190, gone by 2400) | ~360 | 3 |
+
+[V] The scheduler makes both games' event logs identical: every count per frame, and the order and frame of every
+thread, file, allocation and idle jump. What still differs is a handful of blocks. SSA's first difference is at the
+level load (frame 630, two 1 KB ranges of the executable's data) or, in some pairs, at frame 30; Giants' at frame 30,
+1 block of the executable and 2 of physical memory, unchanged to the end. Ruled out by a run without each: the
+emulated portal, the GPU thread (`SKY_GPU_THREAD=0`) and the idle jumps (identical in both logs).
+
+[V] [SSA] A trace of every guest load and store, in order, with one chain hash (valid because one context runs at a
+time) finds the first differing access at a different place in each pair: once a 64-bit value loaded by
+`sub_828531B8` (two times about one frame apart), once a register saved by `__savegprlr_19` (0 against
+0xFFFFFFFFFFFFFB00). Neither value was stored by translated code before it differs, so each comes from the host side:
+a kernel import's result or a write by the runtime into guest memory.
+
+[V] Frame cost, the mean of the `[perf]` frame medians over 150 s (no hashing, each run alone, the same recordings):
+
+| | SSA at 30 | SSA at 60 | Giants at 30 | Giants at 60 |
+|---|---|---|---|---|
+| `frame` deliveries, host scheduler | 40.1 ms (24.8 FPS) | 39.9 ms (24.9 FPS) | 33.3 ms (30.0 FPS) | 19.5 ms (50.6 FPS) |
+| `frame` deliveries, cooperative | 59.5 ms (16.7 FPS) | 59.8 ms (16.7 FPS) | 33.5 ms (29.8 FPS) | 16.7 ms (58.6 FPS) |
+
+[V] [SSA] SSA's level is bound by the guest's CPU on this Mac in both modes (offscreen at the automatic scale), and one
+context at a time costs it about half again: its worker threads no longer run beside the main one. Giants holds 30 in both;
+at 60 the cooperative run is the faster one, for a reason not measured yet. Two 4-minute
+replays per game after the flip's pacing still give identical event logs, with 1 differing block in each game.
+
+[V] Verdict: the scheduler is the base lockstep needs: the guest's order of events is the same in every replay of both
+games. The residue is not one cause but several host values that reach the guest outside the scheduler's control. The
+next step (0d) logs every kernel import's result and every runtime write into guest memory, in the same chain, to name
+them, then fixes each, until two replays match for 10 minutes. SSA's cost (half again per frame) is the other open
+item before lockstep.
+
+[?] Not tested: the four other games, portal changes during a replay, a real portal, the fence-retirement stubs and the
+GPU-written ranges of section 3.
+
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one
    world, one shared camera, each player on his own PC). Free exploration (each player his own camera, the 2026-11-04

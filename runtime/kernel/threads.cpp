@@ -27,6 +27,11 @@ namespace
     // A guest yield, with the back-off of kernel/yield_backoff.h.
     void Yield()
     {
+        if (netplay::Cooperative())
+        {
+            netplay::GuestScheduler().Yield();
+            return;
+        }
         using Clock = std::chrono::steady_clock;
         constexpr auto BackOff = std::chrono::microseconds(200);
         thread_local kernel::YieldBackOff t_backOff;
@@ -78,6 +83,8 @@ PPC_FUNC(__imp__ExCreateThread)
     if (threadIdPointer != 0)
         g_memory.Write<uint32_t>(threadIdPointer, thread->id);
     ctx.r3.u64 = StatusSuccess;
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().Yield();
 }
 
 PPC_FUNC(__imp__ExTerminateThread) { ExitGuestThread(ctx.r3.u32); }
@@ -98,12 +105,16 @@ PPC_FUNC(__imp__NtResumeThread)
         if (thread->suspendCount != 0)
             thread->suspendCount--;
     }
+    if (netplay::Cooperative() && thread->suspendCount == 0)
+        netplay::GuestScheduler().Resume(thread->scheduleId);
     g_kernelSignal.notify_all();
     fprintf(stderr, "[thread] %u resumed\n", thread->id);
 
     if (ctx.r4.u32 != 0)
         g_memory.Write<uint32_t>(ctx.r4.u32, previous);
     ctx.r3.u64 = StatusSuccess;
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().Yield();
 }
 
 // Scheduling hints: the host scheduler decides.
@@ -123,6 +134,16 @@ PPC_FUNC(__imp__KeSetDisableBoostThread) { ctx.r3.u64 = 0; }
 // KeDelayExecutionThread(mode, alertable, interval): an alertable sleep ends early to run queued APCs.
 PPC_FUNC(__imp__KeDelayExecutionThread)
 {
+    if (netplay::Cooperative())
+    {
+        auto thread = ctx.r4.u32 != 0 ? CurrentGuestThread(ctx.r13.u32) : nullptr;
+        const auto status =
+            WaitForObjects({}, false, ctx.r5.u32, CurrentKThread(ctx.r13.u32), thread ? &thread->apcs : nullptr);
+        if (status == StatusUserApc)
+            DeliverUserApcs(ctx, *thread);
+        ctx.r3.u64 = status == StatusUserApc ? StatusUserApc : StatusSuccess;
+        return;
+    }
     if (ctx.r4.u32 != 0)
     {
         if (auto thread = CurrentGuestThread(ctx.r13.u32))
