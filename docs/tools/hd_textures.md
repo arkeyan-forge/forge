@@ -1,6 +1,6 @@
 # HD textures: the game's own textures doubled at install
 
-> **Purpose:** what does Arkeyan-Builder's `--hd-textures` do, what does it cost, and why our own pass rather than an upscaling model? · **Status:** current (2026-11-08) · **Tags:** [Xbox] [Alchemy] [Lux] [Giants] [SSA]
+> **Purpose:** what does Arkeyan-Builder's `--hd-textures` do, what does it cost, and why our own pass rather than an upscaling model? · **Status:** current (2026-11-17) · **Tags:** [Xbox] [Alchemy] [Lux] [Giants] [SSA]
 
 An optional install step. Arkeyan-Builder reads every texture of the player's own disc, doubles the ones that gain from
 it with our own classical pass, and writes them as a texture pack in the player's data folder,
@@ -18,7 +18,8 @@ player's machine, made from their disc.
 | `2x` | every texture that gains, up to 1024 texels a side (2048 after) |
 | `auto` | the same with 8 GB of memory or more; below, up to 512 a side |
 
-A rerun with the same disc, mode and dump is a no-op (`textures-hd/hd.txt`); anything else redoes the pack. The
+A rerun with the same disc, mode, dump and pass is a no-op (`textures-hd/hd.txt`, `recipe=`: 2 since 2026-11-17, so a
+pack made before is redone); anything else redoes the pack. The
 player's own `textures/` wins over `textures-hd/` for the same hash. `[<game>] hd_textures` (the launcher's "Use HD textures",
 offered for all six games, SSA 2.3 GB and Giants 4.8 GB shown) alone turns `textures-hd/` on or off; `texture_packs` has no
 say in it (0.9.4, [texture_packs.md](../runtime/gpu/texture_packs.md)).
@@ -89,12 +90,20 @@ Per texture, in premultiplied alpha (no dark fringes at cut-out edges), on float
    takes away the staircase without blurring across.
 4. **Warp sharpening**: near a clear edge each texel is resampled a little further from the edge (down the slope of the
    blurred edge map, at most one texel): the doubled ramp narrows, with no halo and no new value.
-5. **Unsharp mask** (amount 0.5), each result clamped to its 3x3 range: no halo.
-6. Alpha: a **cut-out** (alpha 0 or 255 but for 0.2 % of the texels) is thresholded again at 0.5 (crisp edge, the same
+5. **Back-projection** (2026-11-17): each 2x2 square of the result is made to average to the source texel it came from
+   (the difference, doubled with step 2, added back twice), each value then kept within the source's 3x3 range around
+   it. Interpolation blends neighbours: without it a doubled texture reduced back to its own size had 60 % of the
+   source's grain (`ArkeyanHdTexturesTest`, a rock-like picture: 9.9 against 16.4), with it 103 %.
+6. **Unsharp mask** (amount 0.5), each result clamped to its 3x3 range: no halo.
+7. Alpha: a **cut-out** (alpha 0 or 255 but for 0.2 % of the texels) is thresholded again at 0.5 (crisp edge, the same
    coverage); a blended alpha stays graded. Under alpha 0 the colour is the source texel's, so mips and filtering show no
    black edge.
-7. **Mips**: the full chain, 2x2 boxes in premultiplied alpha.
-8. **Encoding** (our own BC1/BC3 encoder: principal axis, then two least-squares refinements of the endpoints; BC3's
+8. **Mips** (`Levels`): the level of the source's own size is made from the source, deblocked and sharpened like the
+   2x (step 6), not from the 2x reduced; the levels below it are 2x2 boxes in premultiplied alpha. A texture drawn at
+   its own size (most of a frame at 1080p and below, "On screen") samples that level: before 2026-11-17 it was the
+   doubled picture's 2x2 box, softer than the game's texture (60 % of its detail), so the pack looked the same or
+   blurrier there; now 121 %.
+9. **Encoding** (our own BC1/BC3 encoder: principal axis, then two least-squares refinements of the endpoints; BC3's
    alpha the better of its two modes): opaque textures become **BC1** (a DXT5 that is opaque costs half its memory),
    DXT1 cut-outs BC1 with its transparent texel, the rest BC3.
 
@@ -151,6 +160,38 @@ pack run): the offscreen window is 1280x720, where a texture is rarely drawn lar
 little (slightly crisper wood, rings and walls); the 2x pays off at 1440p and above and close to the camera. The texture
 crops (`private/hdtex/compare/`) show the difference texel for texel.
 
+## On screen (2026-11-17)
+
+Why the first pack changed little (Arkeyan Launcher issue #148), measured on SSA `level_027`, frame 3000 of a recorded
+route replayed with `SKY_NETPLAY_DETERMINISTIC=1` and `SKY_NETPLAY_DELIVERY=frame`, the presented frame dumped
+(`SKY_DUMP_FRAME`), offscreen on an M1 Pro (Metal), fps limit 30.
+
+**Which level a frame samples**: three runs, the pack as is, its top level tinted (`SKY_TEXTURE_PACK_TINT=0`) and every
+level tinted (`=all`); a pixel's top-level weight is how far the first tint moves it towards the second. The scene's
+bloom spreads the tint, so the shares are rough.
+
+| Window | Anisotropy | Pixels mostly on the top level | Some of it |
+|---|---|---|---|
+| 1280x720 (scale 1) | 1 (the launcher's default, "Trilinear") | 11 % | 35 % |
+| 2560x1440 (scale 2) | 1 | 51 % | 81 % |
+| 2560x1440 | 16 | 74 % | 94 % |
+
+A negative LOD bias (`SKY_TEXTURE_PACK_LOD_BIAS`) changed nothing here: Metal has no sampler bias.
+
+**What it shows**: the mean distance of each pixel's luminance to its four neighbours over the presented frame (two
+identical runs differ by 0.01):
+
+| Window | Game's textures | Pack, recipe 1 | Pack, recipe 2 |
+|---|---|---|---|
+| 1280x720 | 1.22 | 1.18 | **1.30** |
+| 2560x1440 | 0.78 | 0.79 | **0.87** |
+| 2560x1440, anisotropy 16 | 0.83 | 0.85 | **0.95** |
+
+So the first pack added nothing visible: half the frame or more samples the level of the game texture's size, which
+was softer than the game's own, and the top level, made of interpolated texels, held less grain than the source. Recipe
+2 (steps 5 and 8) keeps the source's grain at both levels. Anisotropy brings more of the frame to the top level, ground
+seen at an angle above all. Frames: `private/runs/hdtex/shots/ssa-*.png` in the forge checkout used.
+
 ## An upscaling model instead (compared, not used)
 
 The owner allowed an outside upscaling model for this step (2026-11-05), on condition it wins clearly and runs on
@@ -180,7 +221,9 @@ SHA-256 and licences in `THIRD_PARTY_NOTICES.md`) stayed in `private/hdtex/ml/`.
 - `tools/arkeyan-builder/main.cpp`, `HdTextures`: the step (one job per archive or stream, each with its own disc reader).
 - `runtime/host/texture_pack.cpp`: `textures-hd/` indexed before `textures/`.
 - `ArkeyanHdTexturesTest` (no game data): the kinds, the 2x (exact flat halves, monotonic edge, no overshoot, cut-out
-  coverage within 3 %, no dark fringe, tiling seams), mips, BC1/BC3 round trips, the pack file, the dump reader and the
+  coverage within 3 %, no dark fringe, tiling seams), mips, the pack's levels (the source-sized one no softer than the
+  source, within its range, a cut-out's coverage unchanged; the 2x reduced back keeps 80 % of the grain or more), BC1/BC3 round trips, the pack file, the dump reader and the
   Lux reader (a level-like stream: a table, another record, two tiled 8-in-16 DXT1 packages, and a bare package: the
   textures untiled, swapped and named by the renderer's hash).
-  `ArkeyanTexturePackTest`: the player's file wins over `textures-hd/`.
+  `ArkeyanTexturePackTest`: the player's file wins over `textures-hd/`. `ArkeyanPackSamplingTest`: a replacement's mip
+  range and the debug tint (`runtime/d3d/pack_sampling.h`).

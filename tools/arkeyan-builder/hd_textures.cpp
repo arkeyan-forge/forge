@@ -247,14 +247,13 @@ namespace hdtex
         }
         UpscaleOptions used = options;
         used.deblock = used.deblock && IsBlock(source.format);
-        art::Image top = Upscale2x(image, outcome.analysis.alpha, used);
-        std::vector<art::Image> levels = MipChain(top);
-        levels.insert(levels.begin(), std::move(top));
+        std::vector<art::Image> levels = Levels(image, outcome.analysis.alpha, used);
 
         Alpha alpha = outcome.analysis.alpha;
         bool bc1 = alpha == Alpha::Opaque || (alpha == Alpha::Cutout && source.format == art::TextureFormat::Dxt1);
         dds::Format format = bc1 ? dds::Format::BC1 : dds::Format::BC3;
         std::vector<std::vector<uint8_t>> encoded;
+        encoded.reserve(levels.size());
         for (const art::Image& level : levels)
             encoded.push_back(bc1 ? EncodeBc1(level, alpha != Alpha::Opaque) : EncodeBc3(level));
         std::vector<std::span<const uint8_t>> spans(encoded.begin(), encoded.end());

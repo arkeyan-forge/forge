@@ -51,6 +51,10 @@ namespace hdtex
     // The levels below `top` down to 1x1, each half the one before (2x2 box in premultiplied alpha).
     std::vector<art::Image> MipChain(const art::Image& top);
 
+    // The whole chain a pack file holds for `image`: Upscale2x, then a level of the source's own size, then MipChain of
+    // that one.
+    std::vector<art::Image> Levels(const art::Image& image, Alpha alpha, const UpscaleOptions& options = {});
+
     // BC1 and BC3 blocks, rows of 4x4 blocks, as a DDS file holds them (edges padded by repeating the last texel). With
     // `alpha`, BC1 makes a texel under 128 transparent (its 3-colour mode).
     std::vector<uint8_t> EncodeBc1(const art::Image& image, bool alpha);

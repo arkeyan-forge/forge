@@ -1771,8 +1771,9 @@ namespace
                 if (entry.path().extension() == ".dds")
                     dumped.push_back(entry.path());
         std::sort(dumped.begin(), dumped.end());
-        // Recipe 1: hd_upscale.cpp's pass as first written. A new recipe (or mode, disc, dump) redoes the pack.
-        std::string stamp = DiscStamp(build) + "recipe=1\nmode=" + hdtex::ModeName(mode) +
+        // Recipe 1: hd_upscale.cpp's pass as first written; 2: the 2x back-projected onto its source and the level of
+        // the source's size made from the source (2026-11-17). A new recipe (or mode, disc, dump) redoes the pack.
+        std::string stamp = DiscStamp(build) + "recipe=2\nmode=" + hdtex::ModeName(mode) +
                             "\nmax=" + std::to_string(maxSide) + "\ndumped=" + std::to_string(dumped.size()) + "\n";
         if (ReadText(folder / "hd.txt") == stamp)
         {

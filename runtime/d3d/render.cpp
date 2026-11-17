@@ -9,6 +9,7 @@
 #include "d3d/render_stats.h"
 #include "d3d/depth_readback.h"
 #include "d3d/mrt_alias.h"
+#include "d3d/pack_sampling.h"
 #include "d3d/target_writes.h"
 #include "d3d/tiled_depth.h"
 #include "d3d/device.h"
@@ -278,6 +279,8 @@ namespace
         uint64_t glyphHash = 0; // the guest hash of the button glyph it holds (host/glyphs.h); 0: the game's texture
         // writewatch::Watch of the guestHash bytes before their last full hash: unwritten since, guestHash holds.
         uint64_t watchStamp = 0, watchBytes = 0;
+        uint8_t packLevels = 0; // a texture pack's replacement: its levels (0: the guest's own texture)
+        uint8_t packScale = 0; // PackScaleLog2 of the replacement
     };
     std::unordered_map<uint64_t, HostTexture> g_textures;
 
@@ -576,6 +579,20 @@ namespace
         churn.lastFrame = g_frame;
     }
 
+    // SKY_TEXTURE_PACK_TINT=<level>|all (debugging.md): that level of every replacement drawn in magenta.
+    const int g_packTint = [] {
+        const char* value = skyenv::Get("SKY_TEXTURE_PACK_TINT");
+        if (value == nullptr || *value == 0)
+            return -1;
+        return strcmp(value, "all") == 0 ? 99 : std::clamp(atoi(value), 0, 15);
+    }();
+
+    void TintPackLevel(dds::Format format, uint32_t level, std::vector<uint8_t>& data)
+    {
+        if (g_packTint == 99 || g_packTint == int(level))
+            d3d::TintLevel(format, data, 0xF81F, 0xFFFF00FFu);
+    }
+
     struct PackLookup
     {
         const texpack::Replacement* replacement = nullptr;
@@ -678,6 +695,7 @@ namespace
                 [&] { return GuestBaseRgba(fetch, info); }, host.texture, host.contentHash))
         {
             host.glyphHash = hash;
+            host.packLevels = 0;
             return host.texture; // a button glyph drawn for the device in use (host/glyphs.cpp)
         }
         if (host.texture != nullptr && hash == host.contentHash)
@@ -707,12 +725,15 @@ namespace
         gpu::Format hostFormat = info.host;
         NoteUpload(fetch);
         const texpack::Replacement* pack = LookUpPack(fetch, info, hash).replacement;
+        host.packLevels = 0;
         if (pack != nullptr)
         {
             width = pack->info.width;
             height = pack->info.height;
             levels = pack->info.levels;
             hostFormat = HostFormat(pack->info.format);
+            host.packLevels = uint8_t(levels);
+            host.packScale = uint8_t(d3d::PackScaleLog2(fetch.Width(), width));
         }
         if (host.texture != nullptr)
         {
@@ -734,6 +755,7 @@ namespace
                 gpu::UploadTextureAsync(host.texture, level, 0, [pack, level](uint8_t* destination, uint32_t pitch) {
                     std::vector<uint8_t> data;
                     texpack::ReadLevel(*pack, level, data);
+                    TintPackLevel(pack->info.format, level, data);
                     dds::LevelSize size =
                         dds::SizeOfLevel(pack->info.format, pack->info.width, pack->info.height, level);
                     for (uint32_t row = 0; row < size.rows; row++)
@@ -779,7 +801,13 @@ namespace
         return host.texture;
     }
 
-    gpu::SamplerState SamplerFor(const xenos::TextureFetch& fetch)
+    // SKY_TEXTURE_PACK_LOD_BIAS=<levels> (debugging.md): added to every replacement's mip level of detail.
+    const float g_packLodBias = [] {
+        const char* value = skyenv::Get("SKY_TEXTURE_PACK_LOD_BIAS");
+        return value != nullptr ? std::clamp(float(atof(value)), -4.0f, 4.0f) : 0.0f;
+    }();
+
+    gpu::SamplerState SamplerFor(const xenos::TextureFetch& fetch, const HostTexture* host)
     {
         gpu::SamplerState state{};
         state.minFilter = fetch.MinFilter() == 0 ? plume::RenderFilter::NEAREST : plume::RenderFilter::LINEAR;
@@ -799,6 +827,16 @@ namespace
                                   : 1;
         state.minLod = float(fetch.MipMinLevel());
         state.maxLod = float(fetch.MipMaxLevel());
+        if (host != nullptr && host->packLevels != 0)
+        {
+            // The fetch constant's range counts the guest's levels: a larger replacement has more, finer ones.
+            const uint32_t guestMax = xenos::TextureLevelCount(fetch) - 1;
+            const d3d::LodRange range =
+                d3d::PackLodRange(std::min(fetch.MipMinLevel(), guestMax), guestMax, host->packScale, host->packLevels);
+            state.minLod = range.minLod;
+            state.maxLod = range.maxLod;
+            state.mipLodBias = g_packLodBias;
+        }
         return state;
     }
 
@@ -1314,7 +1352,7 @@ namespace
             draw.swizzles[slot] = SwizzleFor(fetch, host != nullptr && host->swapRB);
             if (host != nullptr && host->resolved && gpu::Desc(host->texture).width != fetch.Width())
                 draw.scaledTextures |= 1u << slot; // a resolve: resolution-scale times its guest size
-            draw.samplers[slot] = SamplerFor(fetch);
+            draw.samplers[slot] = SamplerFor(fetch, host);
         }
         g_drawUvMatrix = glyphBound ? glyphs::UvMatrix(g_drawVertexShader, g_drawGlyphs) : -1;
 
@@ -1334,7 +1372,7 @@ namespace
                 HostTexture* host;
                 draw.vertexTextures[slot] = TextureFor(fetch, host);
                 draw.vertexSwizzles[slot] = SwizzleFor(fetch, host != nullptr && host->swapRB);
-                draw.vertexSamplers[slot] = SamplerFor(fetch);
+                draw.vertexSamplers[slot] = SamplerFor(fetch, host);
             }
         }
 

@@ -76,7 +76,11 @@ distance) and keep the aspect ratio: the game draws it with the same texture coo
 16-bit and float formats, cube maps, volume textures and texture arrays (the file is reported and skipped).
 Sizes up to 16384.
 
-The sampler, the swizzle and the alpha test/blend stay the game's. The alpha channel of a replacement of a texture that
+The swizzle, the filters, the addressing and the alpha test/blend stay the game's. The sampler's mip range moves to
+the replacement's levels (`d3d/pack_sampling.h`, `PackLodRange`; 2026-11-17): a file twice the size has one more level
+on top, and the range keeps it and the file's last level; a texture the game draws without mips may use the file's
+level of the game texture's size when drawn smaller, never coarser. Before, the guest's range was kept as it was, so a
+doubled texture lost its last level and one without mips shimmered on its top level. The alpha channel of a replacement of a texture that
 has alpha (cut-outs, glows) must be authored the same way.
 
 ## What is not replaced

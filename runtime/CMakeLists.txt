@@ -575,6 +575,10 @@ endif()
 
 add_executable(ArkeyanRenderScaleTest d3d/render_scale_test.cpp)
 
+# A texture pack replacement's mip range and the debug tint: ./ArkeyanPackSamplingTest
+add_executable(ArkeyanPackSamplingTest d3d/pack_sampling_test.cpp)
+target_include_directories(ArkeyanPackSamplingTest PRIVATE .)
+
 # The wide scene and frame sizes for a window's shape: ./ArkeyanUltrawideTest
 add_executable(ArkeyanUltrawideTest d3d/ultrawide_test.cpp d3d/ultrawide.cpp)
 target_include_directories(ArkeyanUltrawideTest PRIVATE . ${ARKEYAN_GAME_DIR})
