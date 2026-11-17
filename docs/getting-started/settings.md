@@ -168,8 +168,20 @@ Keyboard actions and their defaults: `a` Space, `b` X, `x` C, `y` V, `start` Ret
 `dpad_up/down/left/right` the arrow keys. (Before these settings: Space or Z for A and Escape for back, no camera keys
 or triggers on the keyboard.)
 
-- **The mouse** (off by default; [../runtime/xbox360/input.md](../runtime/xbox360/input.md), "Mouse"): `[<game id>.input] mouse=1` turns it
-  on for that game (only the game's section: `[input]` does not); `mouse_<action>=<mouse name>|none` puts an action on `Mouse Left`,
+- **The global layout**: `[input]` holds the keys, pad buttons (`pad_`), rumble and mouse lines every game inherits;
+  `[<game id>.input]` holds a game's own lines, which win. Arkeyan Launcher's Settings > Controls shows it:
+  "All games" for the actions every game names the same way (`left_up`, `left_down`, `left_left`, `left_right`, `back`,
+  `start`; `commands::SharedActions`), stored in `[input]`; every other action is set on its game's own tabs, stored in
+  `[<game id>.input]`.
+  Older launchers copied a game's keys into `[input]` at PLAY; the launcher's upgrade (`MigrateInput`, once, `[input]
+  global=1`) keeps everyone's keys: a game's line of a shared action equal to `[input]`'s goes
+  (a game that had none and played with the default gets the default as its own line), the other actions' keys leave
+  `[input]` (a game never seeded gets them as its own), `seeded` goes, and `[input]`'s mouse lines go. A
+  section an older version seeds again later is upgraded again, by the launcher or the game (`commands::Migrate`). Only the
+  launcher, which knows every game, does the first upgrade: a game started on a file without `global=1` reads it the old
+  way (`[input]`, then its own section) and F3 changes only its own section, so the other games keep `[input]`'s keys.
+- **The mouse** (off by default; [../runtime/xbox360/input.md](../runtime/xbox360/input.md), "Mouse"): `mouse=1` in `[input]` turns it
+  on for every game, in `[<game id>.input]` for that game (the game's line wins); `mouse_<action>=<mouse name>|none` puts an action on `Mouse Left`,
   `Mouse Right`, `Mouse Middle`, `Mouse 4`, `Mouse 5`, `Wheel Up` or `Wheel Down` (the names share the key list; any case). Once on and
   with no line, attack 1 is on the left button and attack 2 on the right (`game::Adapter::mouseDefaults`); a button stored for an action
   leaves the action that had it by default. A file without these lines reads as before.
@@ -177,7 +189,8 @@ or triggers on the keyboard.)
   Box while `key_toybox` is not set. Tap Tab to open it, hold for 0.25 s for the quick swap wheel, release to choose. Once
   `key_toybox` is set, that key takes both the tap and hold actions and Tab is free for the game. The add and clear keys
   place the next figure and remove all figures from the emulated portal. Saved keys apply on startup and immediately after
-  rebinding in F3 > Commands; Reset restores F6/F7/F8 and the Tab alias. Files without these lines keep the defaults.
+  rebinding in F3 > Commands; they are shared by every game, so a game's Reset leaves them. Files without these lines keep
+  the defaults.
 - **`glyphs`**: the button glyphs the game shows (SSA: its A, B, X, Y, START and right-stick textures; Giants: the
   buttons of its fonts, A, B, X, Y, START, BACK, LS, RS, and its title's A; in menus, dialogs and prompts). `xbox360` keeps the original ones (the Xbox 360 pad); `xboxone` draws the Xbox One / Series pad's:
   dark round buttons with the letters in their colours, Menu (three lines) for START, View for BACK, LS and RS for the sticks;

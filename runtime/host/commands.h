@@ -1,10 +1,10 @@
 #pragma once
 
 // The F3 menu's Commands page on launcher.ini (docs/runtime/host/gamemenu.md, "Commands"): a game's actions with their
-// keyboard key, pad button and mouse button, stored as Skylauncher stores them (its launcher/game_keys.cpp): [<game>.input]
-// key_<action>=<SDL scancode name>, pad_<button>=<button>|none, mouse=0|1 and mouse_<action>=<mouse name>|none, and the
-// Toy Box's keys of every game in [input] key_toybox, key_toybox_add, key_toybox_clear. The page itself is
-// host/toybox/menu.cpp.
+// keyboard key, pad button and mouse button, stored as Arkeyan Launcher stores them (its launcher/game_keys.cpp). [input]
+// is the layout every game inherits (key_<action>=<SDL scancode name>, pad_<button>=<button>|none, mouse=0|1,
+// mouse_<action>=<mouse name>|none, rumble_p1/p2) and the Toy Box's keys (key_toybox, key_toybox_add, key_toybox_clear);
+// [<game>.input] holds the game's own lines, which win. The page itself is host/toybox/menu.cpp.
 #include "host/launcher.h"
 #include "host/mouse.h"
 #include "host/pad_map.h"
@@ -27,11 +27,26 @@ namespace commands
     };
 
     std::string Section(std::string_view game); // "ssa.input"
-    // Starts the game's copy from the shared [input] keys once and marks it seeded=1 (Skylauncher's SeedGameInput).
-    void Seed(LauncherConfig& config, std::string_view game);
-    // A row's key: the game's copy, else the default (g_keyActions, Skylauncher's too).
+
+    // The actions every game names the same way (the launcher's "All games" keys: the moves, Back, Pause): [input] holds
+    // them for all games. Every other action is a game's own, in its [<game>.input].
+    inline constexpr const char* SharedActions[] = { "left_up", "left_down", "left_left", "left_right", "back",
+        "start" };
+    bool Shared(std::string_view action);
+
+    // True once Arkeyan Launcher's MigrateInput upgraded the file to the global layout ([input] global=1). Before it,
+    // PLAY copied a game's keys into [input], so [input] held the last game played, and a game without its own line
+    // reads [input]'s: the runtime reads and edits such a file that way and leaves the upgrade to the launcher, the
+    // only one that knows every game.
+    bool Global(const LauncherConfig& config);
+    // On an upgraded file, a section an older launcher seeded again (marked seeded) is upgraded again: its lines equal
+    // to the global layout go, [input] loses the keys of the actions that are not shared. Nobody's keys change. An old
+    // layout file is left as it is. Returns true when the file changed.
+    bool Migrate(LauncherConfig& config);
+
+    // A row's key: the game's line, else [input]'s, else the default (g_keyActions).
     std::string Key(const LauncherConfig& config, std::string_view game, const Row& row);
-    // The pad button whose job `button` does: its own when nothing is stored, -1 for none.
+    // The pad button whose job `button` does: the game's line, else [input]'s, else its own; -1 for none.
     int PadTarget(const LauncherConfig& config, std::string_view game, int button);
 
     // The Toy Box's keys (all games): open it, add the next figure, clear the portal; F6, F7, F8 when not set. While
@@ -48,8 +63,8 @@ namespace commands
     // A conflict notice names a direction even when the page abbreviates its action as "Same".
     std::string SlotLabel(std::span<const Row> rows, size_t slot, bool french);
 
-    // Each change seeds the game's copy first and then puts the game's keys in [input] (as Skylauncher's PLAY does), so
-    // that a start without the launcher has them too.
+    // Each change goes in the game's section (the Toy Box's keys in [input]); a line equal to [input]'s value goes, so the
+    // game follows the global layout again.
     // `key` for a slot; a slot that has it too (a row of the game or a Toy Box key) keeps it: both are flagged
     // (SlotConflict). Returns the first such slot, -1: none.
     int SetKey(
@@ -57,7 +72,8 @@ namespace commands
     // The physical `button` does the job `job` (g_padButtons' indexes); the button that did `job` takes `button`'s old
     // job, so no job is lost. Returns that button, -1: none.
     int SetPad(LauncherConfig& config, std::string_view game, std::span<const Row> rows, int job, int button);
-    // The mouse's switch (off by default) and the button each action is on (mouse::Effective: None everywhere when off).
+    // The mouse's switch (the game's, else [input]'s, off by default) and the button each action is on ([input]'s lines,
+    // then the game's; mouse::Effective: None everywhere when off).
     bool MouseOn(const LauncherConfig& config, std::string_view game);
     void SetMouseOn(LauncherConfig& config, std::string_view game, std::span<const Row> rows, bool on);
     mouse::Bindings MouseLines(const LauncherConfig& config, std::string_view game);
@@ -66,7 +82,9 @@ namespace commands
     int SetMouse(LauncherConfig& config, std::string_view game, std::span<const Row> rows,
         std::span<const mouse::Default> defaults, size_t action, mouse::Button button);
 
-    // Back to the defaults: the game's key_, pad_ and mouse_ lines and the Toy Box's keys go (the mouse switch stays).
+    // "Reset to defaults" for the game: its key_, pad_, mouse_ lines and its mouse switch go (the Toy Box's keys, shared
+    // by every game, stay); a shared row then has the global key, a game's own row its default. On an old layout file the
+    // game gets lines with its defaults where [input]'s keys or mouse switch differ, since the other games read them.
     void Reset(LauncherConfig& config, std::string_view game, std::span<const Row> rows);
 
     // The keys, pad map, mouse and Toy Box keys a start with `config` uses (as ParseSettings reads them: [input], then

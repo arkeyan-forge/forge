@@ -124,14 +124,14 @@ namespace toybox
             ExtraCount
         };
 
-        LauncherConfig g_commands; // launcher.ini as the page last read or wrote it (the game's copy seeded in memory)
+        LauncherConfig g_commands; // launcher.ini as the page last read or wrote it (commands::Migrate, in memory)
 
         std::span<const commands::Row> InputRows() { return ::game::Current().inputRows; }
 
         void LoadCommands()
         {
             g_commands = LoadLauncherConfig(LauncherConfigPath());
-            commands::Seed(g_commands, ARKEYAN_GAME_ID);
+            commands::Migrate(g_commands);
         }
 
         // Reads the file again, changes it, saves it, and hands the bindings to the running game (main.cpp takes them).
@@ -139,6 +139,7 @@ namespace toybox
         {
             std::string path = LauncherConfigPath();
             g_commands = LoadLauncherConfig(path);
+            commands::Migrate(g_commands);
             change(g_commands);
             commands::Bindings bindings = commands::Read(g_commands, ARKEYAN_GAME_ID);
             commands::Publish(bindings);

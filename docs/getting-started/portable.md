@@ -27,7 +27,8 @@ A short message says first that the copy holds the player's game, for personal u
   the first start of that exported copy on a machine, each dump is added to the shared collection when no file of that
   name is there; one that exists is never overwritten. The added dumps' entries of the file's `collection.json` (label,
   edition, a swapper's other half) join the machine's `collection.json`; its own entries stay (`portable::ImportCollection`).
-- **Keys**: the game's `[<game>.input]` section as the launcher would apply it (seeded from `[input]`) is in the file; at
+- **Keys**: the game's keys, pad buttons, mouse and rumble as it plays them (the global `[input]` layout with the game's own
+  lines over it) are in the file as one `[<game>.input]` section, every key written out; at
   that first start it goes into `launcher.ini` when the machine has no `[<game>.input]` yet. Changing keys later: the F3
   menu's Commands page ([gamemenu.md](../runtime/host/gamemenu.md)), which writes the same lines.
 - **Updates**: none. The portable never looks at the network; the F3 menu shows its version. To update it, export it again

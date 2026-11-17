@@ -278,7 +278,7 @@ namespace
         config["graphics"] = { { "resolution_scale", "4" } };
         config["sound"] = { { "volume", "25" } };
         config["controls"] = { { "device", "keyboard" } };
-        config["input"] = { { "mouse", "1" }, { "mouse_a", "Mouse Left" }, { "key_toybox_extra", "NotAKey" } };
+        config["input"] = { { "key_toybox_extra", "NotAKey" } };
         config["ssa.input"] = { { "device", "keyboard" }, { "gamepad", "ignored" }, { "glyphs", "keyboard" } };
         const auto run = Parse(config, { { "SSA_SCALE", "4" }, { "SKY_GPU_BACKEND", "vulkan" } }, {});
         CHECK(run.ok && run.warnings.empty() && run.error.empty());
@@ -624,6 +624,12 @@ int main()
           run.settings.keys[KeyIndex("x")] == "C");
     run = Parse({ { "input", { { "key_y", "G" } } }, { "giants.input", { { "key_y", "H" } } } }, {}, {});
     CHECK(run.ok && run.settings.keys[KeyIndex("y")] == "G");
+    // The global layout: a key in [input] alone reaches the game; the game's line wins (launcher's "All games" keys).
+    run = Parse({ { "input", { { "key_left_up", "Z" }, { "key_start", "P" }, { "global", "1" } } },
+                    { "ssa.input", { { "key_start", "O" } } } },
+        {}, {});
+    CHECK(run.ok && run.warnings.empty() && run.settings.keys[KeyIndex("left_up")] == "Z" &&
+          run.settings.keys[KeyIndex("start")] == "O");
 
     // aspect: auto by default; 16:9 from the file or the command line (the last wins); anything else warns.
     run = Parse({}, {}, {});
@@ -735,8 +741,8 @@ int main()
           run.settings.rumble[1] == "off");
     CHECK(!Parse({}, {}, { "--pad", "lb" }).ok);
 
-    // The mouse (host/mouse.h): off by default, a file without its lines reads as before; the switch and mouse_ lines in the
-    // game's section only; a bad name warns. The Toy Box keys in [input]; Tab opens it too until key_toybox is set.
+    // The mouse (host/mouse.h): off by default, a file without its lines reads as before; the switch and mouse_ lines in
+    // [input], then the game's section; a bad name warns. The Toy Box keys in [input]; Tab opens it too until key_toybox is set.
     {
         Run plain = Parse(pads, {}, {});
         CHECK(!plain.settings.mouse.enabled && plain.settings.toyboxKeys[0] == "F6" &&
@@ -758,9 +764,14 @@ int main()
         CHECK(run.settings.toyboxKeys[0] == "O" && !run.settings.toyboxTab && run.settings.toyboxKeys[1] == "F7" &&
               run.settings.toyboxKeys[2] == "P");
         LauncherConfig onlyShared;
-        onlyShared["input"] = { { "mouse", "1" } }; // the switch is per game: [input] does not turn it on
+        onlyShared["input"] = { { "mouse", "1" }, { "mouse_start", "Mouse Middle" } }; // the global layout's mouse
         run = Parse(onlyShared, {}, {});
-        CHECK(!run.settings.mouse.enabled);
+        CHECK(run.ok && run.warnings.empty() && run.settings.mouse.enabled &&
+              run.settings.mouse.set[KeyIndex("start")] &&
+              run.settings.mouse.stored[KeyIndex("start")] == mouse::Middle);
+        onlyShared["ssa.input"] = { { "mouse", "0" }, { "mouse_start", "none" } }; // the game's own lines win
+        run = Parse(onlyShared, {}, {});
+        CHECK(!run.settings.mouse.enabled && run.settings.mouse.stored[KeyIndex("start")] == mouse::None);
         LauncherConfig badMice;
         badMice["ssa.input"] = { { "mouse", "maybe" }, { "mouse_y", "Mouse 9" }, { "mouse_nothing", "Mouse Left" } };
         badMice["input"] = { { "key_toybox", "NotAKey" } };
