@@ -95,4 +95,4 @@ The Xenia-derived parts already in `runtime/` stay as they are, with their attri
 
 - Subject: `area: what changed`, imperative, under 72 characters (`gpu: anisotropy only for mipmapped textures`).
 - Body: why, in at most 3 lines, only when the subject is not enough.
-- One topic per commit. Identity `mflr0`. No sign-off lines (the `commit-msg` hook refuses them).
+- One topic per commit. Identity `mflr0`. No sign-off needed.
