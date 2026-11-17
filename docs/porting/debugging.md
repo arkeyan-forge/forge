@@ -110,6 +110,8 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_PRESENT_PROBE=<n>` | every nth swap, `[present]`: the texture the swap presents (address, fetch words: size and format) and a readback of it (pixels lit, mean); `NOT FOUND` when the texture is unknown and nothing is presented. Reads from the GPU: a test aid, slows the frame. Offscreen frames do not prove a window ([render_bugs.md](../runtime/gpu/render_bugs.md)) |
 | `SKY_AUDIO_DUMP=<path>` | the stereo float32 48 kHz output as a raw file |
 | `SKY_TEXTURE_DUMP=0\|1`, `SKY_TEXTURE_PACKS=0\|1` | settings (`[video] texture_dump`, `texture_packs`): write every texture once as DDS to the game folder's `textures-dump/`; use the pack in `textures/` ([texture_packs.md](../runtime/gpu/texture_packs.md)) |
+| `SKY_TEXTURE_PACK_TINT=<level>\|all` | every texture pack replacement's level `<level>` (or every level) uploaded in magenta, its alpha kept (BC1-BC3, RGBA8; BC4/BC5 stay): the share of a frame that samples a pack's top level, frame against frame with `SKY_DUMP_FRAME` ([hd_textures.md](../tools/hd_textures.md), "On screen") |
+| `SKY_TEXTURE_PACK_LOD_BIAS=<levels>` | added to every replacement's mip level of detail (-4 to 4). D3D12 and Vulkan only: Metal's samplers have no bias, so it does nothing on macOS |
 | `SKY_TEXTURE_DUMP_LOG=1` | with the dump on, logs `[texpack] dumped <file>: guest hash <hash>, WxH`: the hash the glyph tables use (finding a game's glyphs) |
 | `SKY_BINK_LOG=1` | once a second, `[bink] t=<s> frame <n> of <total>` for the last opened movie, to check its pace against the wall clock ([Giants] Bink 2, [bink.md](../engines/lux/bink.md)) |
 

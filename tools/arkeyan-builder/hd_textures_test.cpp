@@ -4,6 +4,7 @@
 #include "hd_textures.h"
 #include "host/dds.h"
 #include "host/texture_pack.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -186,6 +187,84 @@ namespace
         CHECK(level.size() == 1 && C(level[0].rgba[0], 0) == 200 && C(level[0].rgba[0], 3) == 128);
     }
 
+    // Detail: the mean distance of each texel's luminance to the mean of its four neighbours (edges clamped).
+    double Detail(const art::Image& image)
+    {
+        auto luma = [&](int x, int y) {
+            x = std::clamp(x, 0, int(image.width) - 1);
+            y = std::clamp(y, 0, int(image.height) - 1);
+            uint32_t t = image.rgba[size_t(y) * image.width + size_t(x)];
+            return 0.3 * C(t, 0) + 0.59 * C(t, 1) + 0.11 * C(t, 2);
+        };
+        double sum = 0;
+        for (int y = 0; y < int(image.height); y++)
+            for (int x = 0; x < int(image.width); x++)
+                sum +=
+                    std::fabs(luma(x, y) - 0.25 * (luma(x - 1, y) + luma(x + 1, y) + luma(x, y - 1) + luma(x, y + 1)));
+        return sum / double(image.width * image.height);
+    }
+
+    // A textured surface: fine grain over a few soft shapes, like rock or bark.
+    uint32_t Grain(uint32_t x, uint32_t y)
+    {
+        uint32_t h = (x * 73856093u) ^ (y * 19349663u);
+        h = (h ^ (h >> 13)) * 1274126177u;
+        uint32_t noise = (h >> 24) & 63;
+        uint32_t shape = uint32_t(90 + 60 * std::sin(float(x) * 0.21f) * std::cos(float(y) * 0.17f));
+        return Rgba(shape + noise, shape / 2 + noise, 40 + noise / 2);
+    }
+
+    void TestLevels()
+    {
+        art::Image image = Make(64, 64, Grain);
+        std::vector<art::Image> levels =
+            hdtex::Levels(image, hdtex::Alpha::Opaque, hdtex::UpscaleOptions{ .deblock = false });
+        CHECK(levels.size() == 8);
+        CHECK(levels[0].width == 128 && levels[1].width == 64 && levels[1].height == 64);
+        CHECK(levels.back().width == 1 && levels.back().height == 1);
+        // The level of the source's size is what a texture drawn at its own size shows: no softer than the game's
+        // (a 2x2 box of the doubled picture is: it blends each texel with its neighbours), nothing outside the range
+        // around each texel (no halo), the same colours on average.
+        const art::Image& same = levels[1];
+        CHECK(Detail(same) >= Detail(image));
+        CHECK(MeanError(same, image) < 8);
+        bool bounded = true;
+        for (int y = 1; y < 63; y++) // inside: a picture that tiles takes its edge texels' range across the edge
+            for (int x = 1; x < 63; x++)
+                for (int c = 0; c < 3; c++)
+                {
+                    uint32_t lo = 255, hi = 0;
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            uint32_t t = C(
+                                image.rgba[size_t(std::clamp(y + dy, 0, 63)) * 64 + size_t(std::clamp(x + dx, 0, 63))],
+                                c);
+                            lo = std::min(lo, t);
+                            hi = std::max(hi, t);
+                        }
+                    uint32_t v = C(same.rgba[size_t(y) * 64 + size_t(x)], c);
+                    bounded = bounded && v + 1 >= lo && v <= hi + 1;
+                }
+        CHECK(bounded);
+        // The doubled level keeps the grain too: reduced back to the source's size, at least as much detail as the
+        // source shows.
+        CHECK(Detail(hdtex::MipChain(levels[0])[0]) >= 0.8 * Detail(image));
+        printf("detail: source %.2f, level 1 %.2f, top reduced %.2f\n", Detail(image), Detail(same),
+            Detail(hdtex::MipChain(levels[0])[0]));
+
+        // A cut-out keeps its coverage at the source's size.
+        art::Image disc = Make(64, 64, [](uint32_t x, uint32_t y) {
+            bool in = (x - 32) * (x - 32) + (y - 32) * (y - 32) < 300;
+            return Rgba(230, 40, 30, in ? 255 : 0);
+        });
+        std::vector<art::Image> cut = hdtex::Levels(disc, hdtex::Alpha::Cutout);
+        bool sameAlpha = true;
+        for (size_t i = 0; i < disc.rgba.size(); i++)
+            sameAlpha = sameAlpha && C(cut[1].rgba[i], 3) == C(disc.rgba[i], 3);
+        CHECK(sameAlpha);
+    }
+
     void TestEncoders()
     {
         art::Image picture = Make(64, 64, Picture);
@@ -231,11 +310,11 @@ namespace
         std::vector<uint8_t> body(0x1000 + pixels.size());
         memcpy(body.data(), "APKF", 4);
         memcpy(&body[0x40], "\0XET", 4);
-        strcpy(reinterpret_cast<char*>(&body[0x70]), name);
+        memcpy(&body[0x70], name, std::min<size_t>(strlen(name), 0x4F)); // the rest of the name field stays 0
         static const uint8_t Flushes[8] = { 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00 };
         memcpy(&body[0xC0], Flushes, 8);
         Be32(body, 0xC8, 2u | 1u << 31 | (pitchBlocks * 4 / 32) << 22); // 2D, tiled, pitch in 32 texels
-        Be32(body, 0xCC, 18u | 1u << 6);                                // DXT1, 8-in-16
+        Be32(body, 0xCC, 18u | 1u << 6); // DXT1, 8-in-16
         Be32(body, 0xD0, (w - 1) | (h - 1) << 13);
         Be32(body, 0xDC, 1u << 9); // 2D
         memcpy(&body[0x100], "SYHP", 4);
@@ -342,6 +421,7 @@ int main(int argc, char** argv)
     TestAnalyse();
     TestUpscale();
     TestMips();
+    TestLevels();
     TestEncoders();
     TestPack(scratch);
     TestLux();

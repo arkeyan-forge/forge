@@ -23,7 +23,7 @@ namespace hdtex
 
         float Channel(uint32_t texel, int c) { return float((texel >> (8 * c)) & 0xFF) * (1.0f / 255.0f); }
 
-        uint32_t Byte(float value) { return uint32_t(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f); }
+        uint32_t Byte(float value) { return uint32_t(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f)); }
 
         Plane Premultiplied(const art::Image& image, bool opaque)
         {
@@ -325,6 +325,84 @@ namespace hdtex
                         o[c] = std::clamp(t[c] + amount * (t[c] - blur[c]), lo[c], hi[c]);
                 }
             p = std::move(out);
+        }
+
+        // The doubled picture made consistent with its source: each 2x2 square averages to the source texel it came
+        // from. Interpolation blends neighbours, so a doubled texture reduced back is softer than the game's own (its
+        // grain loses a third of its contrast); the difference, doubled, is added back (twice), and each result kept
+        // within the range of the source's 3x3 around it (no halo, no new value).
+        void BackProject(const Plane& source, Plane& doubled, bool wrapX, bool wrapY)
+        {
+            const uint32_t w = source.width, h = source.height;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                Plane residual(w, h);
+                for (uint32_t y = 0; y < h; y++)
+                    for (uint32_t x = 0; x < w; x++)
+                    {
+                        const float* a = doubled.At(2 * x, 2 * y);
+                        const float* b = doubled.At(2 * x + 1, 2 * y);
+                        const float* c = doubled.At(2 * x, 2 * y + 1);
+                        const float* d = doubled.At(2 * x + 1, 2 * y + 1);
+                        const float* t = source.At(x, y);
+                        float* r = residual.At(x, y);
+                        for (int k = 0; k < 4; k++)
+                            r[k] = t[k] - 0.25f * (a[k] + b[k] + c[k] + d[k]);
+                    }
+                Plane up = DoubleAxis(DoubleAxis(residual, true, wrapX), false, wrapY);
+                for (size_t i = 0; i < doubled.texels.size(); i++)
+                    doubled.texels[i] += up.texels[i];
+            }
+            for (uint32_t y = 0; y < doubled.height; y++)
+                for (uint32_t x = 0; x < doubled.width; x++)
+                {
+                    float lo[4] = { 1, 1, 1, 1 }, hi[4] = { 0, 0, 0, 0 };
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            const float* t = source.At(uint32_t(Address(int(x / 2) + dx, int(w), wrapX)),
+                                uint32_t(Address(int(y / 2) + dy, int(h), wrapY)));
+                            for (int k = 0; k < 4; k++)
+                            {
+                                lo[k] = std::min(lo[k], t[k]);
+                                hi[k] = std::max(hi[k], t[k]);
+                            }
+                        }
+                    float* t = doubled.At(x, y);
+                    for (int k = 0; k < 4; k++)
+                        t[k] = std::clamp(t[k], lo[k], hi[k]);
+                    for (int k = 0; k < 3; k++)
+                        t[k] = std::min(t[k], t[3]); // premultiplied: no colour above its alpha
+                }
+        }
+
+        // A plane back to straight alpha. `image` is the source, `shift` the plane's scale over it (1: doubled).
+        art::Image ToImage(const Plane& plane, const art::Image& image, Alpha alpha, uint32_t shift)
+        {
+            art::Image out;
+            out.width = plane.width;
+            out.height = plane.height;
+            out.rgba.resize(size_t(out.width) * out.height);
+            for (uint32_t y = 0; y < out.height; y++)
+                for (uint32_t x = 0; x < out.width; x++)
+                {
+                    const float* t = plane.At(x, y);
+                    float a = std::clamp(t[3], 0.0f, 1.0f);
+                    uint32_t rgb = 0;
+                    if (alpha == Alpha::Opaque)
+                        a = 1;
+                    if (a > 1.0f / 255.0f)
+                    {
+                        for (int c = 0; c < 3; c++)
+                            rgb |= Byte(t[c] / a) << (8 * c);
+                    }
+                    else // under nothing: the colour of the source texel, so filtering at a distance shows no black edge
+                        rgb = image.rgba[size_t(y >> shift) * image.width + (x >> shift)] & 0x00FFFFFFu;
+                    if (alpha == Alpha::Cutout)
+                        a = a >= 0.5f ? 1.0f : 0.0f;
+                    out.rgba[size_t(y) * out.width + x] = rgb | Byte(a) << 24;
+                }
+            return out;
         }
 
         // ---- BC1 / BC3 ----
@@ -701,32 +779,9 @@ namespace hdtex
         Plane doubled = DoubleAxis(DoubleAxis(source, true, wrapX), false, wrapY);
         SmoothAlongEdges(source, doubled, wrapX, wrapY);
         WarpSharpen(doubled, options.warp, wrapX, wrapY);
+        BackProject(source, doubled, wrapX, wrapY);
         Sharpen(doubled, options.sharpen, wrapX, wrapY);
-
-        art::Image out;
-        out.width = doubled.width;
-        out.height = doubled.height;
-        out.rgba.resize(size_t(out.width) * out.height);
-        for (uint32_t y = 0; y < out.height; y++)
-            for (uint32_t x = 0; x < out.width; x++)
-            {
-                float* t = doubled.At(x, y);
-                float a = std::clamp(t[3], 0.0f, 1.0f);
-                uint32_t rgb = 0;
-                if (alpha == Alpha::Opaque)
-                    a = 1;
-                if (a > 1.0f / 255.0f)
-                {
-                    for (int c = 0; c < 3; c++)
-                        rgb |= Byte(t[c] / a) << (8 * c);
-                }
-                else // under nothing: the colour of the source texel, so filtering at a distance shows no black edge
-                    rgb = image.rgba[size_t(y / 2) * image.width + x / 2] & 0x00FFFFFFu;
-                if (alpha == Alpha::Cutout)
-                    a = a >= 0.5f ? 1.0f : 0.0f;
-                out.rgba[size_t(y) * out.width + x] = rgb | Byte(a) << 24;
-            }
-        return out;
+        return ToImage(doubled, image, alpha, 1);
     }
 
     std::vector<art::Image> MipChain(const art::Image& top)
@@ -764,6 +819,23 @@ namespace hdtex
             levels.push_back(std::move(level));
             above = &levels.back();
         }
+        return levels;
+    }
+
+    std::vector<art::Image> Levels(const art::Image& image, Alpha alpha, const UpscaleOptions& options)
+    {
+        std::vector<art::Image> levels;
+        levels.push_back(Upscale2x(image, alpha, options));
+        // The source's own size, from the source (deblocked and sharpened like the 2x), not from the 2x reduced: what a
+        // texture drawn at its own size shows, as crisp as the game's or crisper.
+        Plane source = Premultiplied(image, alpha == Alpha::Opaque);
+        if (options.deblock)
+            Deblock(source);
+        Sharpen(source, options.sharpen, Tiles(source, true), Tiles(source, false));
+        levels.push_back(ToImage(source, image, alpha, 0));
+        std::vector<art::Image> below = MipChain(levels.back());
+        for (art::Image& level : below)
+            levels.push_back(std::move(level));
         return levels;
     }
 
