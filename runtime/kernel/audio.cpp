@@ -4,6 +4,7 @@
 #include "host/audio.h"
 #include "netplay/delivery.h"
 #include "netplay/events.h"
+#include "netplay/scheduler.h"
 #include "host/speakers.h"
 #include "gpu/frame_stats.h"
 #include "platform/platform.h"
@@ -33,10 +34,27 @@ namespace
         // Held while the callback runs: unregistering takes it, so no callback outlives XAudioUnregisterRenderDriverClient
         // (the console guarantees that). Recursive in case the client unregisters from its own callback.
         std::recursive_mutex mutex;
-        bool active = false;
+        std::atomic<bool> active{ false };
+        bool rendering = false;
+        std::thread::id renderer;
         std::chrono::steady_clock::time_point firstFrame;
         uint32_t callback = 0;
         uint32_t contextCell = 0; // the callback receives a pointer to a cell holding the client's context
+    };
+
+    class ClientLock
+    {
+    public:
+        explicit ClientLock(Client& client) : m_lock(client.mutex, std::defer_lock)
+        {
+            if (!netplay::Cooperative())
+                m_lock.lock();
+            else if (client.rendering && client.renderer != std::this_thread::get_id())
+                netplay::GuestScheduler().Block([&client] { return !client.rendering; });
+        }
+
+    private:
+        std::unique_lock<std::recursive_mutex> m_lock;
     };
 
     Client g_clients[MaxClients];
@@ -54,7 +72,8 @@ namespace
         gpu::framestats::RegisterThread(gpu::framestats::Thread::Audio, PlatformThreadCpuClock());
         auto next = std::chrono::steady_clock::now();
         const bool frameDelivery = netplay::FrameDelivery();
-        if (frameDelivery)
+        const bool cooperative = netplay::Cooperative();
+        if (frameDelivery && !cooperative)
         {
             netplay::g_audioDeliveries.Start();
             netplay::NoteEvent("audio", "start");
@@ -65,7 +84,12 @@ namespace
             std::fill(std::begin(g_mix), std::end(g_mix), 0.0f);
             // Netplay: the clients render a period only when a frame granted one; the device gets silence otherwise.
             bool granted = false, deliver = true;
-            if (frameDelivery)
+            if (cooperative)
+            {
+                netplay::GuestScheduler().Block([] { return netplay::g_audioDeliveries.TryTake(); });
+                granted = true;
+            }
+            else if (frameDelivery)
             {
                 granted = netplay::g_audioDeliveries.TryTake();
                 deliver = granted || (!netplay::g_flipping.load(std::memory_order_acquire) &&
@@ -80,17 +104,26 @@ namespace
             for (uint32_t index = 0; deliver && index < MaxClients; index++)
             {
                 Client& client = g_clients[index];
-                std::lock_guard lock(client.mutex);
-                if (!client.active || std::chrono::steady_clock::now() < client.firstFrame)
+                ClientLock lock(client);
+                if (!client.active || (!cooperative && std::chrono::steady_clock::now() < client.firstFrame))
                     continue;
 
                 netplay::CountEvent(netplay::Counter::AudioCallback);
                 ctx.r3.u64 = client.contextCell;
+                if (cooperative)
+                {
+                    client.rendering = true;
+                    client.renderer = std::this_thread::get_id();
+                }
                 CallGuest(ctx, client.callback);
+                if (cooperative)
+                    client.rendering = false;
             }
             if (granted)
                 netplay::g_audioDeliveries.Done();
             HostAudioSubmit(g_mix);
+            if (cooperative)
+                continue;
 
             // One frame per period, never a burst, like the hardware: a title may read XAudio2's SamplesPlayed as the
             // play cursor of a looping buffer (Giants mixes into a 1024-sample loop and reads SamplesPlayed mod 1024),
@@ -124,7 +157,7 @@ PPC_FUNC(__imp__XAudioRegisterRenderDriverClient)
     {
         Client& client = g_clients[index];
         {
-            std::lock_guard lock(client.mutex);
+            ClientLock lock(client);
             if (client.active)
                 continue;
 
@@ -140,7 +173,14 @@ PPC_FUNC(__imp__XAudioRegisterRenderDriverClient)
 
         g_memory.Write<uint32_t>(driverPointer, DriverHandleTag | index);
         static std::once_flag started;
-        std::call_once(started, [] { StartHostDrivenThread(DriverThread, 0); });
+        std::call_once(started, [] {
+            if (netplay::Cooperative())
+            {
+                netplay::g_audioDeliveries.Start();
+                netplay::NoteEvent("audio", "start");
+            }
+            StartHostDrivenThread(DriverThread, 0);
+        });
         ctx.r3.u64 = StatusSuccess;
         return;
     }
@@ -151,7 +191,7 @@ PPC_FUNC(__imp__XAudioRegisterRenderDriverClient)
 PPC_FUNC(__imp__XAudioUnregisterRenderDriverClient)
 {
     Client& client = g_clients[(ctx.r3.u32 & 0xFFFF) % MaxClients];
-    std::lock_guard lock(client.mutex);
+    ClientLock lock(client);
     client.active = false;
     ctx.r3.u64 = StatusSuccess;
 }
@@ -193,8 +233,13 @@ uint32_t AudioVoicesActive()
     uint32_t active = 0;
     for (Client& client : g_clients)
     {
-        std::lock_guard lock(client.mutex);
-        active += client.active;
+        if (netplay::Cooperative())
+            active += client.active.load(std::memory_order_relaxed);
+        else
+        {
+            std::lock_guard lock(client.mutex);
+            active += client.active.load(std::memory_order_relaxed);
+        }
     }
     return active;
 }

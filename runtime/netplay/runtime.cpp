@@ -1,4 +1,5 @@
 #include "netplay/clock.h"
+#include "netplay/scheduler.h"
 #include "netplay/events.h"
 #include "netplay/inputs.h"
 #include "netplay/state_hash.h"
@@ -274,6 +275,8 @@ namespace netplay
     void SetTimeStampBundle(uint32_t address)
     {
         g_bundle.store(address, std::memory_order_release);
+        if (Cooperative())
+            g_clock.SetAdvanceHook(WriteBundle);
         WriteBundle();
     }
 

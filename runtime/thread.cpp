@@ -94,9 +94,21 @@ namespace
         g_endedBlocks[context.stackSize].push_back({ context.pcr, context.kthread, context.tls, context.stack });
     }
 
+    void ScheduleContext(PPCContext& ctx, netplay::Scheduler::Id id)
+    {
+        if (!netplay::Cooperative())
+            return;
+        auto& scheduler = netplay::GuestScheduler();
+        scheduler.Enter(id);
+        // The watchdog reads only a copy captured by the holder at a handover, never live guest registers.
+        auto snapshot = std::make_shared<PPCContext>(ctx);
+        scheduler.Diagnose([snapshot] { PrintGuestLocation(snapshot.get()); }, [snapshot, &ctx] { *snapshot = ctx; });
+    }
+
     void HostThreadMain(const StartInfo* info)
     {
         GuestThread& thread = *info->thread;
+        if (!netplay::Cooperative())
         {
             std::unique_lock lock(g_kernelLock);
             g_kernelSignal.wait(lock, [&] { return thread.suspendCount == 0; });
@@ -104,6 +116,7 @@ namespace
 
         PPCContext& ctx = thread.context->ctx;
         t_guestContext = &ctx;
+        ScheduleContext(ctx, thread.scheduleId);
         ctx.fpscr.loadFromHost();
         g_threadsRunning.fetch_add(1, std::memory_order_relaxed);
 
@@ -142,6 +155,8 @@ namespace
             thread.header = 0;
             GiveBackBlocks(*thread.context);
         }
+        if (netplay::Cooperative())
+            netplay::GuestScheduler().Exit();
     }
 }
 
@@ -179,6 +194,8 @@ std::shared_ptr<GuestThread> CreateGuestThread(
     thread->id = g_nextThreadId++;
     thread->context = std::make_unique<GuestThreadContext>(stackSize, thread->id, cpu);
     thread->suspendCount = suspended ? 1 : 0;
+    if (netplay::Cooperative())
+        thread->scheduleId = netplay::GuestScheduler().Register(!suspended);
 
     // Waits on the KTHREAD (KeWaitForSingleObject) resolve to this object.
     g_memory.Write<uint8_t>(thread->context->kthread, ThreadObjectType);
@@ -207,6 +224,8 @@ void QueueUserApc(GuestThread& thread, const UserApc& apc)
         if (thread.apcs.sleeper != nullptr)
             thread.apcs.sleeper->notify_one();
     }
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().Signal();
 }
 
 void DeliverUserApcs(PPCContext& ctx, GuestThread& thread)
@@ -234,18 +253,23 @@ void DeliverUserApcs(PPCContext& ctx, GuestThread& thread)
 void StartHostDrivenThread(std::function<void(PPCContext&)> body, uint8_t cpu)
 {
     auto* context = new GuestThreadContext(0x10000, g_nextThreadId++, cpu);
-    PlatformStartThread(HostStackSize, [body = std::move(body), context] {
+    const auto id = netplay::Cooperative() ? netplay::GuestScheduler().Register() : netplay::Scheduler::None;
+    PlatformStartThread(HostStackSize, [body = std::move(body), context, id] {
         t_guestContext = &context->ctx;
+        ScheduleContext(context->ctx, id);
         context->ctx.fpscr.loadFromHost();
         body(context->ctx);
+        if (netplay::Cooperative())
+            netplay::GuestScheduler().Exit();
     });
 }
 
-void PrintGuestLocation()
+void PrintGuestLocation() { PrintGuestLocation(t_guestContext); }
+
+void PrintGuestLocation(const PPCContext* ctx)
 {
     // Called from the fault handler, on the thread that faulted. The registers are those the recompiled code last stored:
     // a value it kept in a host register is not here, so lr and ctr name the last call that went through the context.
-    const PPCContext* ctx = t_guestContext;
     if (ctx == nullptr)
     {
         fprintf(stderr, "[crash] where: not on a guest thread (a host thread: video, audio or the main loop)\n");

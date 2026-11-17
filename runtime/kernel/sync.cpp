@@ -45,6 +45,17 @@ namespace
 
     void AcquireSpinLock(uint32_t lock, uint32_t pcr)
     {
+        if (netplay::Cooperative())
+        {
+            uint32_t free = 0;
+            if (GuestAtomic(lock).compare_exchange_strong(free, ByteSwap(pcr)))
+                return;
+            netplay::GuestScheduler().Block([lock, pcr] {
+                uint32_t expected = 0;
+                return GuestAtomic(lock).compare_exchange_strong(expected, ByteSwap(pcr));
+            });
+            return;
+        }
         uint32_t expected = 0;
         while (!GuestAtomic(lock).compare_exchange_weak(expected, ByteSwap(pcr)))
         {
@@ -53,7 +64,12 @@ namespace
         }
     }
 
-    void ReleaseSpinLock(uint32_t lock) { GuestAtomic(lock).store(0); }
+    void ReleaseSpinLock(uint32_t lock)
+    {
+        GuestAtomic(lock).store(0);
+        if (netplay::Cooperative())
+            netplay::GuestScheduler().Signal();
+    }
 
     std::shared_ptr<KernelObject> ObjectFromHandle(uint32_t handle, uint32_t pcr)
     {
@@ -72,11 +88,15 @@ namespace
             event.SyncHeader();
             event.WakeSleepers();
         }
+        if (netplay::Cooperative())
+            netplay::GuestScheduler().Signal();
         return previous;
     }
 
     uint32_t ResetEvent(Event& event)
     {
+        if (netplay::Cooperative())
+            netplay::GuestScheduler().Signal();
         std::lock_guard lock(g_kernelLock);
         uint32_t previous = event.signaled;
         event.signaled = false;
@@ -111,8 +131,16 @@ PPC_FUNC(__imp__RtlEnterCriticalSection)
 {
     uint32_t cs = ctx.r3.u32;
     uint32_t thread = CurrentKThread(ctx.r13.u32);
+    // Cooperative: a loop that takes and leaves a free section to poll a flag must still let the other threads run.
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().Poll();
     while (!TryEnterCriticalSection(cs, thread))
     {
+        if (netplay::Cooperative())
+        {
+            netplay::GuestScheduler().Block([cs, thread] { return TryEnterCriticalSection(cs, thread); });
+            return;
+        }
         auto owner = GuestAtomic(cs + CsOwningThread);
         uint32_t current = owner.load();
         if (current != 0)
@@ -122,6 +150,8 @@ PPC_FUNC(__imp__RtlEnterCriticalSection)
 
 PPC_FUNC(__imp__RtlTryEnterCriticalSection)
 {
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().Poll();
     ctx.r3.u64 = TryEnterCriticalSection(ctx.r3.u32, CurrentKThread(ctx.r13.u32));
 }
 
@@ -135,6 +165,8 @@ PPC_FUNC(__imp__RtlLeaveCriticalSection)
         auto owner = GuestAtomic(cs + CsOwningThread);
         owner.store(0);
         owner.notify_all();
+        if (netplay::Cooperative())
+            netplay::GuestScheduler().Signal();
     }
 }
 
@@ -223,6 +255,8 @@ PPC_FUNC(__imp__NtPulseEvent)
         event->SyncHeader();
         event->WakeSleepers();
     }
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().Signal();
 
     if (ctx.r4.u32 != 0)
         g_memory.Write<uint32_t>(ctx.r4.u32, previous);
@@ -255,6 +289,8 @@ PPC_FUNC(__imp__NtReleaseSemaphore)
         semaphore->SyncHeader();
         semaphore->WakeSleepers();
     }
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().Signal();
 
     if (ctx.r5.u32 != 0)
         g_memory.Write<int32_t>(ctx.r5.u32, previous);
@@ -289,6 +325,8 @@ PPC_FUNC(__imp__NtReleaseMutant)
         mutant->SyncHeader();
         mutant->WakeSleepers();
     }
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().Signal();
     ctx.r3.u64 = StatusSuccess;
 }
 

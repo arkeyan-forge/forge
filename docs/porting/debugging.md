@@ -79,6 +79,7 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_NETPLAY_HASH_BLOCK=<bytes>` | block size of `<file>.blocks`, a power of two from 256 to 65536 (default 65536), to narrow a differing block |
 | `SKY_NETPLAY_EVENTS=<file>` | frame-stamped log: per frame the vblanks, other graphics interrupts, audio periods and timebase reads, and in order the threads created and files opened; compare with `hash_diff.py --events <a> <b>` |
 | `SKY_NETPLAY_DELIVERY=frame` | vblanks and audio periods granted per frame (the present interval's blanks, 3.125 audio periods per 1/60 s) instead of following the wall clock; the flip waits until their callbacks ran |
+| `SKY_NETPLAY_SCHEDULE=cooperative` | one FIFO baton for guest threads, APCs and graphics/audio callbacks; startup requires both `SKY_NETPLAY_DETERMINISTIC=1` and `SKY_NETPLAY_DELIVERY=frame`; virtual wait deadlines, yields at spin hints and every `PollQuantum` clock reads or free critical-section entries, a 2 s scheduler watchdog; step 0c of [netplay.md](../runtime/host/netplay.md) |
 
 ### Renderer, GPU, performance
 | Variable | Effect |

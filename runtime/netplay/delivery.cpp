@@ -63,6 +63,12 @@ namespace netplay
         m_doneSignal.notify_all();
     }
 
+    bool Deliveries::Complete(uint64_t granted)
+    {
+        std::lock_guard lock(m_mutex);
+        return !m_started || m_done >= granted;
+    }
+
     bool Deliveries::WaitDone(uint64_t granted, std::chrono::nanoseconds timeout)
     {
         std::unique_lock lock(m_mutex);

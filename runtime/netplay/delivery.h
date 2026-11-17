@@ -27,6 +27,7 @@ namespace netplay
         bool TryTake();
         void Done();
         // The flip: true once every delivery granted up to `granted` is done, false after `timeout`.
+        bool Complete(uint64_t granted);
         bool WaitDone(uint64_t granted, std::chrono::nanoseconds timeout);
 
     private:
@@ -36,6 +37,14 @@ namespace netplay
         bool m_started = false;
         uint64_t m_remainder = 0, m_granted = 0, m_taken = 0, m_done = 0;
     };
+
+    // The cooperative flip's wall-clock pacing, since its blanks no longer wait for their tick: a frame of `blanks`
+    // blanks (at least 1) is due that many periods after the previous frame was due; a late or first frame is due now.
+    inline uint64_t FlipDue(uint64_t previous, uint64_t now, uint32_t blanks, uint64_t period)
+    {
+        const uint64_t due = previous + uint64_t(blanks == 0 ? 1 : blanks) * period;
+        return previous == 0 || due < now ? now : due;
+    }
 
     // SKY_NETPLAY_DELIVERY=frame (deterministic mode only): vblanks and audio periods follow the frames.
     bool FrameDelivery();

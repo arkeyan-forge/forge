@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kernel/objects.h"
+#include "netplay/scheduler.h"
 #include <functional>
 #include <memory>
 #include <ppc_config.h>
@@ -26,6 +27,7 @@ struct GuestThread : KernelObject
 {
     std::unique_ptr<GuestThreadContext> context;
     uint32_t id{};
+    netplay::Scheduler::Id scheduleId{};
     uint32_t suspendCount{};
     bool exited{};
     uint32_t exitCode{};
@@ -68,3 +70,4 @@ void StartHostDrivenThread(std::function<void(PPCContext&)> body, uint8_t cpu);
 // The crash report's "[crash] where:" line for the calling thread: its guest thread id and last stored lr, ctr, r1, r3, r31
 // (the guest function itself is named by the host stack that follows, `sub_XXXXXXXX`). Safe to call from a fault handler.
 void PrintGuestLocation();
+void PrintGuestLocation(const PPCContext* ctx);

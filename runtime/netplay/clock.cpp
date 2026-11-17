@@ -1,5 +1,6 @@
 #include "netplay/clock.h"
 #include "netplay/events.h"
+#include "netplay/scheduler.h"
 #include <algorithm>
 #include <cstdlib>
 #include <string_view>
@@ -23,7 +24,18 @@ namespace netplay
     uint64_t Clock::Elapsed() const
     {
         const uint64_t steps = Steps();
-        return (steps / 60) * 10000000 + (steps % 60) * 10000000 / 60;
+        return (steps / 60) * 10000000 + (steps % 60) * 10000000 / 60 + Idle();
+    }
+
+    void Clock::AdvanceTo(uint64_t elapsed)
+    {
+        const uint64_t now = Elapsed();
+        if (elapsed > now)
+        {
+            m_idle.fetch_add(elapsed - now, std::memory_order_release);
+            if (const auto hook = m_advanceHook.load(std::memory_order_acquire))
+                hook();
+        }
     }
 
     uint64_t ReadCursor::Read(uint64_t steps)
@@ -40,8 +52,11 @@ namespace netplay
 
     uint64_t ReadTimeBase()
     {
+        if (Cooperative())
+            GuestScheduler().TimeBaseRead();
         thread_local ReadCursor cursor;
         CountEvent(Counter::TimeBase);
-        return cursor.Read(g_clock.Steps());
+        return cursor.Read(g_clock.Steps()) + g_clock.Idle() / 10000000 * TimeBaseFrequency +
+               g_clock.Idle() % 10000000 * TimeBaseFrequency / 10000000;
     }
 }

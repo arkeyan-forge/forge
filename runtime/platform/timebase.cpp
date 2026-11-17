@@ -1,5 +1,6 @@
 #include "platform/platform.h"
 #include "netplay/clock.h"
+#include "netplay/scheduler.h"
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <chrono>
@@ -48,4 +49,10 @@ extern "C" uint64_t ppc_mftb()
 #else
 #error "Unsupported host CPU"
 #endif
+}
+
+extern "C" void ppc_spin_hint()
+{
+    if (netplay::Cooperative())
+        netplay::GuestScheduler().SpinHint();
 }

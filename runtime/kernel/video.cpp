@@ -1,6 +1,8 @@
 #include "netplay/clock.h"
 #include "netplay/delivery.h"
 #include "netplay/events.h"
+#include "netplay/scheduler.h"
+#include "gpu/gpu.h"
 #include "kernel/video.h"
 #include "d3d/ultrawide.h"
 #include "game.h"
@@ -35,6 +37,7 @@ namespace
     std::mutex g_mutex;
     std::condition_variable g_wake;
     std::deque<std::pair<uint32_t, std::function<void()>>> g_pending;
+    uint64_t g_graphicsGranted = 0;
     uint32_t g_callback;
     uint32_t g_callbackContext;
 
@@ -95,7 +98,8 @@ namespace
         VBlankLog log;
         auto nextVBlank = std::chrono::steady_clock::now() + VBlankPeriod;
         const bool frameDelivery = netplay::FrameDelivery();
-        if (frameDelivery)
+        const bool cooperative = netplay::Cooperative();
+        if (frameDelivery && !cooperative)
             netplay::g_vblankDeliveries.Start();
         uint32_t ungranted = 0;
         while (true)
@@ -104,6 +108,38 @@ namespace
             uint32_t callback, callbackContext;
             std::chrono::steady_clock::time_point due{};
             bool granted = false;
+            if (cooperative)
+            {
+                struct Delivery
+                {
+                    std::pair<uint32_t, std::function<void()>>& interrupt;
+                    uint32_t& callback;
+                    uint32_t& context;
+                    bool& granted;
+                } delivery{ interrupt, callback, callbackContext, granted };
+                netplay::GuestScheduler().Block([&delivery] {
+                    std::lock_guard lock(g_mutex);
+                    if (g_graphicsGranted != 0)
+                    {
+                        --g_graphicsGranted;
+                        delivery.interrupt = std::move(g_pending.front());
+                        g_pending.pop_front();
+                    }
+                    else if (netplay::g_vblankDeliveries.TryTake())
+                    {
+                        delivery.granted = true;
+                        ++g_vblanks;
+                        delivery.interrupt = { VBlankInterrupt,
+                            [] { g_memory.Write<uint32_t>(VBlankStatusRegister, 1); } };
+                    }
+                    else
+                        return false;
+                    delivery.callback = g_callback;
+                    delivery.context = g_callbackContext;
+                    return true;
+                });
+            }
+            else
             {
                 std::unique_lock lock(g_mutex);
                 if (g_wake.wait_until(lock, nextVBlank, [] { return !g_pending.empty(); }))
@@ -217,8 +253,40 @@ namespace
     void FrameDeliveryFlip(uint32_t presentInterval, uint32_t vblanks)
     {
         const uint32_t steps = presentInterval == 0 || (presentInterval & 0x80000000u) ? 1 : presentInterval;
+        if (netplay::Cooperative())
+        {
+            std::lock_guard lock(g_mutex);
+            g_graphicsGranted = g_vblanksRunning ? g_pending.size() : 0;
+        }
         const uint64_t audio = netplay::g_audioDeliveries.GrantSteps(steps);
         const uint64_t blanks = netplay::g_vblankDeliveries.Grant(std::max(vblanks, 1u));
+        if (netplay::Cooperative())
+        {
+            struct Completion
+            {
+                uint64_t blanks, audio;
+            } completion{ blanks, audio };
+            netplay::GuestScheduler().Block([&completion] {
+                std::lock_guard lock(g_mutex);
+                return g_graphicsGranted == 0 && netplay::g_vblankDeliveries.Complete(completion.blanks) &&
+                       netplay::g_audioDeliveries.Complete(completion.audio);
+            });
+            // The frame keeps the baton while it waits: no other guest context runs at a wall-clock moment, so the
+            // order stays the replay's.
+            if (!FasterThanBlanks(g_fpsLimit))
+            {
+                static uint64_t due = 0;
+                const uint64_t now = SteadyNs();
+                due = netplay::FlipDue(due, now, vblanks, uint64_t(std::chrono::nanoseconds(VBlankPeriod).count()));
+                FrameLimiter::WaitUntil(due, SpinNanoseconds, SteadyNs,
+                    [](uint64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); });
+            }
+            netplay::g_flipping.store(false, std::memory_order_release);
+            std::lock_guard lock(g_mutex);
+            g_lastFlip = g_vblanks;
+            g_lastFlipNs = SteadyNs();
+            return;
+        }
         constexpr auto Late = std::chrono::milliseconds(250);
         if (!netplay::g_vblankDeliveries.WaitDone(blanks, Late))
             netplay::NoteEvent("vblank", "late");
@@ -233,6 +301,8 @@ namespace
 
 void WaitForFlip(uint32_t presentInterval)
 {
+    if (netplay::Cooperative())
+        gpu::SynchronizeGuestInterrupts();
     if (netplay::FrameDelivery())
         netplay::g_flipping.store(true, std::memory_order_release);
     if (netplay::Enabled())
@@ -344,6 +414,14 @@ uint64_t InterruptsHandled()
 
 void WaitForInterruptHandled(uint64_t since)
 {
+    if (netplay::Cooperative())
+    {
+        netplay::GuestScheduler().Block([since] {
+            std::lock_guard lock(g_mutex);
+            return !g_vblanksRunning || g_interruptsHandled != since;
+        });
+        return;
+    }
     std::unique_lock lock(g_mutex);
     if (!g_vblanksRunning)
         return;
@@ -389,7 +467,11 @@ PPC_FUNC(__imp__VdSetGraphicsInterruptCallback)
 
     static std::once_flag started;
     if (start)
-        std::call_once(started, [] { StartHostDrivenThread(InterruptThread, 0); });
+        std::call_once(started, [] {
+            if (netplay::Cooperative())
+                netplay::g_vblankDeliveries.Start();
+            StartHostDrivenThread(InterruptThread, 0);
+        });
 }
 
 PPC_FUNC(__imp__VdQueryVideoMode) { WriteVideoMode(ctx.r3.u32); }

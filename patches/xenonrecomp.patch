@@ -198,6 +198,21 @@ index fa91527..2e37d69 100644
          break;
  
      case PPC_INST_BLT:
+@@ -741,3 +790,3 @@ bool Recompiler::Recompile(
+     case PPC_INST_CCTPL:
+-        // no op
++        println("\tPPC_SPIN_HINT();");
+         break;
+@@ -745,3 +794,3 @@ bool Recompiler::Recompile(
+     case PPC_INST_CCTPM:
+-        // no op
++        println("\tPPC_SPIN_HINT();");
+         break;
+@@ -799,3 +848,3 @@ bool Recompiler::Recompile(
+     case PPC_INST_DB16CYC:
+-        // no op
++        println("\tPPC_SPIN_HINT();");
+         break;
 @@ -804,6 +853,10 @@ bool Recompiler::Recompile(
          // no op
          break;
@@ -1377,12 +1392,14 @@ index 31a86cd..ae311f2 100644
  inline simde__m128i simde_mm_vsr(simde__m128i a, simde__m128i b)
  {
      b = simde_mm_srli_epi64(simde_mm_slli_epi64(b, 61), 61);
-@@ -700,4 +699,7 @@ inline uint64_t __rdtsc()
+@@ -700,4 +699,9 @@ inline uint64_t __rdtsc()
  #   error "Missing implementation for __rdtsc()"
  #endif
  
 +extern "C" uint64_t ppc_mftb();
 +#define PPC_MFTB() ppc_mftb()
++extern "C" void ppc_spin_hint();
++#define PPC_SPIN_HINT() ppc_spin_hint()
 +
  #endif
 diff --git a/XenonUtils/xex.cpp b/XenonUtils/xex.cpp

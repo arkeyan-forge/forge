@@ -172,7 +172,7 @@ endif()
 add_subdirectory(runtime ArkeyanRuntime)
 
 add_library(ArkeyanNetplay STATIC runtime/netplay/clock.cpp runtime/netplay/delivery.cpp runtime/netplay/events.cpp runtime/netplay/inputs.cpp
-    runtime/netplay/state_hash.cpp)
+    runtime/netplay/state_hash.cpp runtime/netplay/scheduler.cpp)
 target_include_directories(ArkeyanNetplay PUBLIC ${CMAKE_SOURCE_DIR}/runtime)
 sky_quality(ArkeyanNetplay)
 target_sources(ArkeyanRuntime PRIVATE runtime/netplay/runtime.cpp)
@@ -183,6 +183,9 @@ foreach(target ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
     endif()
 endforeach()
 add_executable(ArkeyanNetplayTest runtime/netplay/netplay_test.cpp)
+add_executable(ArkeyanSchedulerTest runtime/netplay/scheduler_test.cpp)
+target_link_libraries(ArkeyanSchedulerTest PRIVATE ArkeyanNetplay)
+set_target_properties(ArkeyanSchedulerTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/ArkeyanRuntime)
 target_link_libraries(ArkeyanNetplayTest PRIVATE ArkeyanNetplay)
 set_target_properties(ArkeyanNetplayTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/ArkeyanRuntime)
 
@@ -195,7 +198,7 @@ foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi Ar
     endif()
 endforeach()
 # The tests that build by default and need no argument (the others run from tools/test_all.sh with a disc or a scratch folder).
-sky_add_tests(ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanDatadirTest
+sky_add_tests(ArkeyanSchedulerTest ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanDatadirTest
     ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanPresentRectTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanClockTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
     ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanFrameAnchorTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest ArkeyanToyboxKeyMaskTest
     ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanGlyphModelsTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanToyboxLinkTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest

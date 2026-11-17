@@ -1,4 +1,5 @@
 #include "kernel/files.h"
+#include "netplay/clock.h"
 #include "netplay/events.h"
 #include "kernel/level_redirect.h"
 #include "game.h"
@@ -352,7 +353,7 @@ namespace
         if (!error)
         {
             auto age = std::chrono::duration_cast<std::chrono::nanoseconds>(fs::file_time_type::clock::now() - written);
-            attributes.time = GuestSystemTime() - age.count() / 100;
+            attributes.time = netplay::HostFileTime(netplay::Enabled(), GuestSystemTime(), uint64_t(age.count() / 100));
         }
         return attributes;
     }

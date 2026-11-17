@@ -109,6 +109,8 @@ namespace gpu
     // with Settings::fill, scaled up to cover a narrower output, its sides cut: gpu/present_rect.h), presents. Paced by vsync, or at 60 Hz for an offscreen output. Queued: the caller waits only while the GPU thread
     // is still on the frame before.
     void Present(const Texture* image);
+    // Before the scheduler grants the frame's graphics interrupts, finish the commands already submitted.
+    void SynchronizeGuestInterrupts();
 
     // The perf log's split of a frame (LogPerf, every 10 s): time the renderer (d3d/) spent on the game's render thread
     // in its hooks (without the guest's own D3D code, the vblank wait and the present), of which the ring translation and
