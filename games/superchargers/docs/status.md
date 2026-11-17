@@ -12,9 +12,10 @@
 ## Disc
 | | |
 |---|---|
-| Release | 2015, Vicarious Visions; Redump "Skylanders - SuperChargers (Europe)", 8738846720 bytes (the only disc tried) |
-| Title ID, media ID, version | `4156091F`, `74144F53`, `0x00000007` [V] (the XEX execution info) |
-| `default.xex` SHA-256 | `02ff6672...` (full value in `game.txt` and `info.cpp`), 24985600 bytes |
+| Release | 2015, Vicarious Visions; Redump "Skylanders - SuperChargers (Europe)" and "(Europe) (Fr,Nl)", 8738846720 bytes each |
+| Title ID, media ID, version | `4156091F`; `74144F53`, `0x00000007` (Europe), `504D9445`, `0x00000004` (Europe (Fr, Nl)) [V] (the XEX execution info) |
+| `default.xex` SHA-256 | `02ff6672...` and `c6b1d7a3...` (full values in `game.txt` and `info.cpp`), 24985600 bytes each |
+| Editions | the Fr/Nl disc is an earlier build with other strings in `.rdata` (0x60 bytes longer), so its loaded image differs; `.pdata`, `.text` layout, the functions, the 485 switch tables and the 42 hooked addresses are the same [V], so both run the same config and runtime ([edition_finder.md](../../../docs/tools/edition_finder.md#4-same-functions-other-data)) |
 | Engine | **Alchemy**, Swap Force's line on the game side, Trap Team's XDK **2.0.21256** [V] ([research.md](research.md)) |
 
 The disc stays outside git; everything derived from it is in `private/superchargers/` (day 1: `private/superchargers/day1/`).

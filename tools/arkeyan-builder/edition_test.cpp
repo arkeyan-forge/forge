@@ -1,5 +1,5 @@
 // The edition finder (edition.h): the report's text on invented editions, every game.txt's release hashes against its
-// info.cpp, and with the discs (SWAPFORCE_ISO, TRAPTEAM_ISO, SSA_ISO, each optional) the loaded image of a real disc, a
+// info.cpp, and with the discs (SWAPFORCE_ISO, TRAPTEAM_ISO, SSA_ISO, SUPERCHARGERS_ISO, each optional) the loaded image of a real disc, a
 // header-only edition made from it (another media ID, version and region) and a disc whose code differs.
 //   ArkeyanEditionTest <repo> <scratch dir>
 #include "edition.h"
@@ -283,10 +283,16 @@ static void TestReferenceReports(const fs::path& scratch)
     CHECK(EditionReport(edition, games, "test").ends_with("Result: not a game of this kit\n"));
 }
 
+// The disc image a variable names, or nullptr. The test is single-threaded and sets no variable.
+static const char* DiscPath(const char* variable)
+{
+    return std::getenv(variable); // NOLINT(concurrency-mt-unsafe)
+}
+
 // Reads `variable`'s disc: its default.xex, or empty (and a note) when the variable is unset.
 static std::vector<uint8_t> DiscXex(const char* variable)
 {
-    const char* path = std::getenv(variable);
+    const char* path = DiscPath(variable);
     DiscFileSystem disc;
     if (path == nullptr || !disc.Open(path))
     {
@@ -345,7 +351,7 @@ static void TestDiscs(const std::vector<Game>& games, const fs::path& scratch)
     }
 
     // A real disc's report: its languages from the disc, its own release.
-    if (const char* path = std::getenv("SSA_ISO"))
+    if (const char* path = DiscPath("SSA_ISO"))
     {
         DiscFileSystem disc;
         std::string error;
@@ -354,6 +360,23 @@ static void TestDiscs(const std::vector<Game>& games, const fs::path& scratch)
         const std::string report = edition ? EditionReport(*edition, games, "t") : "";
         CHECK(report.find("- USA, Europe: this very disc\nResult: supported (USA, Europe)\n") != std::string::npos);
         CHECK(report.find(fs::path(path).filename().string()) == std::string::npos);
+    }
+
+    // Each SuperChargers disc we know is a release of its own: the European ones differ in their .rdata (strings and
+    // data moved), so their loaded images differ, yet their functions, switch tables and addresses are the same.
+    if (const char* path = DiscPath("SUPERCHARGERS_ISO"))
+    {
+        DiscFileSystem disc;
+        std::string error;
+        auto edition = disc.Open(path) ? ReadDiscEdition(disc, games, error) : std::nullopt;
+        const EditionMatch match = edition ? MatchEdition(*edition, games) : EditionMatch{};
+        CHECK(match.game == &games[4] && match.sameXex >= 0);
+        const std::string report = edition ? EditionReport(*edition, games, "t") : "";
+        const std::string label = match.sameXex >= 0 ? games[4].releases[size_t(match.sameXex)] : "";
+        CHECK(report.find("- " + label + ": this very disc\n") != std::string::npos &&
+              report.ends_with("Result: supported (" + label + ")\n"));
+        if (edition && !label.empty())
+            printf("SuperChargers: media ID %08X is the release %s\n", edition->mediaId, label.c_str());
     }
 }
 
