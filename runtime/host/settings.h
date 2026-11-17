@@ -70,7 +70,7 @@ struct RuntimeSettings
     std::string keys[22]; // SDL key name per g_keyActions entry
     PadMap padMap; // [input] / [<game>.input] pad_<button>=<button>: what each pad button does
     mouse::Bindings
-        mouse; // [<game>.input] mouse=0|1 (off by default) and mouse_<action>=<mouse name>|none (host/mouse.h)
+        mouse; // [input], then [<game>.input]: mouse=0|1 (off by default), mouse_<action>=<mouse name>|none (host/mouse.h)
     // [input] key_toybox, key_toybox_add, key_toybox_clear: open the Toy Box, add the next figure, clear the portal (F6, F7,
     // F8); Tab also opens it while key_toybox is not set (toyboxTab).
     std::string toyboxKeys[3] = { "F6", "F7", "F8" };

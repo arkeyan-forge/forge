@@ -4,7 +4,8 @@
 # Spyro's Adventure's "Special Power / Back" (B, key X), Enter waits for a key, K is taken (K is "Same", the right stick down:
 # both rows keep it, flagged red); Right, Enter waits for a pad button, the pad's A is taken (A does B's job, B takes A's); Escape, F3.
 # A key held by the script ("hold=K") before and after shows what the game gets from it.
-# Checks: the log lines, [ssa.input] key_b=K (no key_right_down line), pad_a=b, pad_b=a, seeded=1, [input] key_b=K, the bindings
+# The scratch launcher.ini starts upgraded ([input] global=1, as the launcher leaves it; the runtime never upgrades a file).
+# Checks: the log lines, [ssa.input] key_b=K (no key_right_down line), pad_a=b, pad_b=a, [input] global=1 kept and no key_b, the bindings
 # taken by the running game, and K giving the game the right stick before the change and B (0x2000) with it after.
 #
 #   tools/regress/f3commands.sh <disc image>        (Spyro's Adventure; SKY_LANGUAGE=fr for the French page)
@@ -20,6 +21,7 @@ exe=${EXE:-"$root/build/ArkeyanRuntime/Skylanders Spyro's Adventure"}
 [ -x "$exe" ] || { echo "no game executable: $exe" >&2; exit 2; }
 r=$root/private/runs/commands/ssa
 rm -rf "${r:?}"; mkdir -p "$r/home"
+printf '[input]\nglobal=1\n' > "$r/launcher.ini"
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 
@@ -56,11 +58,12 @@ grep -q '^\[gamemenu\] pad_a = b (swapped: pad_b = a)' "$log" || bad "the pad's 
 grep -q '^\[input\] bindings in use now: .*key_b=K' "$log" || bad "the running game did not take the new key"
 grep -q '^\[input\] bindings in use now: .*pad_a=b, pad_b=a' "$log" || bad "the running game did not take the new pad buttons"
 grep -q '^\[toybox\] closed' "$log" || bad "F3 did not close the menu"
-for line in seeded=1 key_b=K pad_a=b pad_b=a; do
+for line in key_b=K pad_a=b pad_b=a; do
     section ssa.input | grep -qx "$line" || bad "[ssa.input] $line is not in launcher.ini"
 done
 section ssa.input | grep -q '^key_right_down=' && bad "[ssa.input] key_right_down changed (no swap)"
-section input | grep -qx key_b=K || bad "[input] key_b=K is not in launcher.ini"
+section input | grep -qx global=1 || bad "[input] global=1 left launcher.ini"
+section input | grep -q '^key_b=' && bad "[input] got key_b (the game's own key)"
 held=$(grep '^\[toybox\] script: K held: ' "$log")
 echo "$held" | head -1 | grep -q 'right stick 0/-32767' || bad "before: K did not give the game the right stick down"
 echo "$held" | tail -1 | grep -q 'buttons 0x2000' || bad "after: K does not give the game B"

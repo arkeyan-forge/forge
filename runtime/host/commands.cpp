@@ -30,33 +30,86 @@ namespace
         return SDL_GetScancodeFromName(a.c_str()) == SDL_GetScancodeFromName(b.c_str());
     }
 
+    const std::string* FindLine(const LauncherConfig& config, std::string_view game, const std::string& key)
+    {
+        if (const std::string* value = Find(config, commands::Section(game), key))
+            return value;
+        return Find(config, "input", key);
+    }
+
+    // The value a game inherits for a key_ line: [input]'s, else the default.
+    std::string GlobalKey(const LauncherConfig& config, const char* action)
+    {
+        if (const std::string* value = Find(config, "input", KeyLine(action)))
+            return *value;
+        return DefaultKey(action);
+    }
+
+    int GlobalPad(const LauncherConfig& config, int button)
+    {
+        const std::string* value = Find(config, "input", PadLine(button));
+        if (value == nullptr)
+            return button;
+        if (*value == "none")
+            return -1;
+        const int target = PadButtonIndex(*value);
+        return target < 0 ? button : target;
+    }
+
+    bool On(const std::string& value) { return value == "1" || value == "true" || value == "on" || value == "yes"; }
+
+    void Erase(LauncherConfig& config, const std::string& section, const std::string& key)
+    {
+        if (auto entry = config.find(section); entry != config.end())
+            entry->second.erase(key);
+    }
+
+    // The game's pad line; none when the button does what the global layout gives it.
     void StorePad(LauncherConfig& config, std::string_view game, int button, int target)
     {
         const std::string section = commands::Section(game);
-        if (target == button)
-            config[section].erase(PadLine(button));
+        if (target == GlobalPad(config, button))
+            Erase(config, section, PadLine(button));
         else
             config[section][PadLine(button)] = target < 0 ? "none" : g_padButtons[target];
     }
 
-    // Skylauncher's ApplyGameInput (PLAY): the game's keys replace the key_ lines of [input]; an action the game does not
-    // list keeps the runtime's default.
-    void ShareKeys(LauncherConfig& config, std::string_view game, std::span<const commands::Row> rows)
+    // A section an older launcher seeded (its copy of [input]; key lines it lacked were the defaults) becomes its own
+    // lines over the global layout `shared`.
+    void MigrateSeeded(std::map<std::string, std::string>& section, const std::map<std::string, std::string>& shared)
     {
-        const std::string section = commands::Section(game);
+        auto sharedValue = [&](const std::string& key) -> const std::string* {
+            auto value = shared.find(key);
+            return value == shared.end() || value->second.empty() ? nullptr : &value->second;
+        };
         for (const KeyAction& entry : g_keyActions)
         {
             const std::string line = KeyLine(entry.name);
-            bool listed = false;
-            for (const commands::Row& row : rows)
-                listed = listed || std::string_view(row.action) == entry.name;
-            if (const std::string* value = Find(config, section, line))
-                config["input"][line] = *value;
-            else if (listed)
-                config["input"][line] = entry.defaultKey;
-            else if (auto shared = config.find("input"); shared != config.end())
-                shared->second.erase(line);
+            if (!commands::Shared(entry.name))
+                continue;
+            auto own = section.find(line);
+            const bool has = own != section.end() && !own->second.empty();
+            const std::string* global = sharedValue(line);
+            const std::string globalKey = global != nullptr ? *global : entry.defaultKey;
+            if (has && SameKey(own->second, globalKey))
+                section.erase(own);
+            else if (!has && !SameKey(entry.defaultKey, globalKey))
+                section[line] = entry.defaultKey;
         }
+        for (auto line = section.begin(); line != section.end();)
+        {
+            const std::string& key = line->first;
+            const std::string* global = sharedValue(key);
+            bool drop = false;
+            if (key.starts_with("pad_"))
+                drop = global != nullptr ? *global == line->second : line->second == key.substr(4);
+            else if (key == "rumble_p1" || key == "rumble_p2")
+                drop = line->second == (global != nullptr ? *global : "normal");
+            else if (key == "mouse")
+                drop = On(line->second) == (global != nullptr && On(*global));
+            line = drop ? section.erase(line) : std::next(line);
+        }
+        section.erase("seeded");
     }
 
     constexpr const char* ToyboxDefaults[commands::ToyboxKeyCount] = { "F6", "F7", "F8" };
@@ -72,10 +125,16 @@ namespace
     void StoreSlot(LauncherConfig& config, std::string_view game, std::span<const commands::Row> rows, size_t slot,
         const std::string& key)
     {
-        if (slot < rows.size())
-            config[commands::Section(game)][KeyLine(rows[slot].action)] = key;
-        else
+        if (slot >= rows.size())
+        {
             config["input"][commands::ToyboxLines[slot - rows.size()]] = key;
+            return;
+        }
+        const std::string line = KeyLine(rows[slot].action);
+        if (SameKey(key, GlobalKey(config, rows[slot].action)))
+            Erase(config, commands::Section(game), line);
+        else
+            config[commands::Section(game)][line] = key;
     }
 
     commands::Bindings g_published;
@@ -84,28 +143,52 @@ namespace
 
 std::string commands::Section(std::string_view game) { return std::string(game) + ".input"; }
 
-void commands::Seed(LauncherConfig& config, std::string_view game)
+bool commands::Shared(std::string_view action)
 {
-    const std::string section = Section(game);
-    if (config.count(section) != 0 && config[section].count("seeded") != 0)
-        return;
-    if (auto shared = config.find("input"); shared != config.end())
-        for (const KeyAction& entry : g_keyActions)
-            if (auto value = shared->second.find(KeyLine(entry.name)); value != shared->second.end())
-                config[section].emplace(KeyLine(entry.name), value->second); // a key the game already has stays
-    config[section]["seeded"] = "1";
+    for (const char* shared : SharedActions)
+        if (action == shared)
+            return true;
+    return false;
 }
+
+bool commands::Migrate(LauncherConfig& config)
+{
+    // The first upgrade needs every game's section (a game without one reads [input]'s keys), which only the launcher
+    // knows: until then the file stays as it is and is read the old way.
+    if (!Global(config))
+        return false;
+    const std::map<std::string, std::string> shared = config["input"];
+    bool changed = false;
+    for (auto& [name, section] : config)
+        if (name.size() > 6 && name.ends_with(".input") && section.count("seeded") != 0)
+        {
+            MigrateSeeded(section, shared);
+            changed = true;
+        }
+    if (!changed)
+        return false;
+    // The other actions are each game's own now: an older version's PLAY may have put them back.
+    for (const KeyAction& entry : g_keyActions)
+        if (!Shared(entry.name))
+            Erase(config, "input", KeyLine(entry.name));
+    for (auto section = config.begin(); section != config.end();)
+        section =
+            section->first.ends_with(".input") && section->second.empty() ? config.erase(section) : std::next(section);
+    return true;
+}
+
+bool commands::Global(const LauncherConfig& config) { return Find(config, "input", "global") != nullptr; }
 
 std::string commands::Key(const LauncherConfig& config, std::string_view game, const Row& row)
 {
-    if (const std::string* value = Find(config, Section(game), KeyLine(row.action)))
+    if (const std::string* value = FindLine(config, game, KeyLine(row.action)))
         return *value;
     return DefaultKey(row.action);
 }
 
 int commands::PadTarget(const LauncherConfig& config, std::string_view game, int button)
 {
-    const std::string* value = Find(config, Section(game), PadLine(button));
+    const std::string* value = FindLine(config, game, PadLine(button));
     if (value == nullptr)
         return button;
     if (*value == "none")
@@ -141,9 +224,7 @@ bool commands::SlotConflict(const LauncherConfig& config, std::string_view game,
 int commands::SetKey(
     LauncherConfig& config, std::string_view game, std::span<const Row> rows, size_t slot, const std::string& key)
 {
-    Seed(config, game);
     StoreSlot(config, game, rows, slot, key);
-    ShareKeys(config, game, rows);
     for (size_t i = 0; i < rows.size() + ToyboxKeyCount; i++)
         if (i != slot && SameKey(SlotKey(config, game, rows, i), key))
             return int(i);
@@ -174,42 +255,46 @@ std::string commands::SlotLabel(std::span<const Row> rows, size_t slot, bool fre
 
 bool commands::MouseOn(const LauncherConfig& config, std::string_view game)
 {
-    const std::string* value = Find(config, Section(game), "mouse");
-    return value != nullptr && (*value == "1" || *value == "true" || *value == "on" || *value == "yes");
+    const std::string* value = FindLine(config, game, "mouse");
+    return value != nullptr && On(*value);
 }
 
-void commands::SetMouseOn(LauncherConfig& config, std::string_view game, std::span<const Row> rows, bool on)
+void commands::SetMouseOn(LauncherConfig& config, std::string_view game, std::span<const Row>, bool on)
 {
-    Seed(config, game);
-    config[Section(game)]["mouse"] = on ? "1" : "0";
-    ShareKeys(config, game, rows);
+    const std::string* global = Find(config, "input", "mouse");
+    if (on == (global != nullptr && On(*global)))
+        Erase(config, Section(game), "mouse");
+    else
+        config[Section(game)]["mouse"] = on ? "1" : "0";
 }
 
 mouse::Bindings commands::MouseLines(const LauncherConfig& config, std::string_view game)
 {
     mouse::Bindings bindings;
     bindings.enabled = MouseOn(config, game);
-    auto section = config.find(Section(game));
-    if (section == config.end())
-        return bindings;
-    for (const auto& [key, value] : section->second)
+    for (const std::string& name : { std::string("input"), Section(game) })
     {
-        mouse::Button button;
-        size_t action =
-            key.starts_with("mouse_") ? ActionIndex(std::string_view(key).substr(6)) : std::size(g_keyActions);
-        if (action < std::size(g_keyActions) && mouse::FromName(value, button))
+        auto section = config.find(name);
+        if (section == config.end())
+            continue;
+        for (const auto& [key, value] : section->second)
         {
-            bindings.stored[action] = button;
-            bindings.set[action] = true;
+            mouse::Button button;
+            size_t action =
+                key.starts_with("mouse_") ? ActionIndex(std::string_view(key).substr(6)) : std::size(g_keyActions);
+            if (action < std::size(g_keyActions) && mouse::FromName(value, button))
+            {
+                bindings.stored[action] = button;
+                bindings.set[action] = true;
+            }
         }
     }
     return bindings;
 }
 
-int commands::SetMouse(LauncherConfig& config, std::string_view game, std::span<const Row> rows,
+int commands::SetMouse(LauncherConfig& config, std::string_view game, std::span<const Row>,
     std::span<const mouse::Default> defaults, size_t action, mouse::Button button)
 {
-    Seed(config, game);
     mouse::Button now[mouse::ActionCount];
     mouse::Effective(MouseLines(config, game), defaults, now);
     int other = -1;
@@ -221,13 +306,11 @@ int commands::SetMouse(LauncherConfig& config, std::string_view game, std::span<
         button == mouse::None ? "none" : mouse::Name(button);
     if (other >= 0)
         config[section][std::string("mouse_") + g_keyActions[other].name] = "none";
-    ShareKeys(config, game, rows);
     return other;
 }
 
-int commands::SetPad(LauncherConfig& config, std::string_view game, std::span<const Row> rows, int job, int button)
+int commands::SetPad(LauncherConfig& config, std::string_view game, std::span<const Row>, int job, int button)
 {
-    Seed(config, game);
     const int old = PadTarget(config, game, button);
     int other = -1;
     if (old != job)
@@ -239,13 +322,11 @@ int commands::SetPad(LauncherConfig& config, std::string_view game, std::span<co
         if (other >= 0)
             StorePad(config, game, other, old);
     }
-    ShareKeys(config, game, rows);
     return other;
 }
 
-void commands::Reset(LauncherConfig& config, std::string_view game, std::span<const Row> rows)
+void commands::Reset(LauncherConfig& config, std::string_view game, std::span<const Row>)
 {
-    Seed(config, game);
     std::map<std::string, std::string>& section = config[Section(game)];
     for (const KeyAction& entry : g_keyActions)
         section.erase(KeyLine(entry.name));
@@ -253,9 +334,17 @@ void commands::Reset(LauncherConfig& config, std::string_view game, std::span<co
         section.erase(PadLine(button));
     for (const KeyAction& entry : g_keyActions)
         section.erase(std::string("mouse_") + entry.name);
-    for (const char* line : ToyboxLines)
-        config["input"].erase(line);
-    ShareKeys(config, game, rows);
+    section.erase("mouse");
+    if (Global(config))
+        return;
+    // Old layout: [input] still holds the last played game's keys and mouse, which the other games read.
+    for (const KeyAction& entry : g_keyActions)
+        if (!Shared(entry.name))
+            if (const std::string* value = Find(config, "input", KeyLine(entry.name));
+                value != nullptr && !SameKey(*value, entry.defaultKey))
+                section[KeyLine(entry.name)] = entry.defaultKey;
+    if (const std::string* value = Find(config, "input", "mouse"); value != nullptr && On(*value))
+        section["mouse"] = "0";
 }
 
 commands::Bindings commands::Read(const LauncherConfig& config, std::string_view game)

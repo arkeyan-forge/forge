@@ -338,6 +338,10 @@ namespace
                 s.gamepad = value;
             else if (key == "glyphs")
                 set.Glyphs(file, value);
+            else if (key == "mouse")
+                set.Bool(file, "mouse", value, s.mouse.enabled);
+            else if (key.starts_with("mouse_"))
+                set.Mouse(file, key.substr(6), value);
             else if (key.starts_with("key_toybox"))
                 set.ToyboxKey(file, key, value);
             else if (key.starts_with("key_"))
