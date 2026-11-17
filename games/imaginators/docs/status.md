@@ -68,6 +68,9 @@ without a fault, but a race starts from the racing menus (not scripted), so they
 (`credits.bk2`) follow the final battle won. Results: [STATUS.md](../../../docs/status/STATUS.md), what is left:
 [COVERAGE.md](../../../docs/status/COVERAGE.md).
 
+**Pipeline baseline** (2026-11-17): `pipelines/baseline.zst`, 1631 pipelines from the coverage run; draw-time builds
+once a zone opens 245-315 -> 0-1 ([pipeline_cache.md](../../../docs/runtime/gpu/pipeline_cache.md#imaginators-alchemy-imaginators-v)).
+
 ## Next
 1. The hub test in `tools/test_all.sh`.
 2. The hub at a locked 60 with the full-resolution scene (the GPU's cost, stream P); player 2's prompts; the parts' names in the

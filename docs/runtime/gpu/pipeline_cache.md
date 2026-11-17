@@ -1,6 +1,6 @@
 # Pipeline list, `pipelines.bin`, the baseline, loading waits, the D3D12 library
 
-> **Purpose:** how are host pipelines keyed, listed, precompiled and waited for (`pipelines.bin`, the baseline, the D3D12 library)? · **Status:** current (2026-11-02) · **Tags:** [Xbox] [SSA] [Giants] [SwapForce] [TrapTeam]
+> **Purpose:** how are host pipelines keyed, listed, precompiled and waited for (`pipelines.bin`, the baseline, the D3D12 library)? · **Status:** current (2026-11-17) · **Tags:** [Xbox] [SSA] [Giants] [SwapForce] [TrapTeam] [Imaginators]
 
 Code: [`gpu/draw.cpp`](../../../runtime/gpu/draw.cpp) (`PipelineKey`, `PipelineRecord`, `LoadPipelineList`, `PrecompilePipelines`, `WaitForPipelineList`),
 [`gpu/d3d12_pipeline_cache.cpp`](../../../runtime/gpu/d3d12_pipeline_cache.cpp), [`games/ssa/pipelines/baseline.zst`](../../../games/ssa/pipelines/),
@@ -59,6 +59,9 @@ Log: `[gpu] D3D12 pipeline cache <state>: N loaded, M built; saved X MB`.
 
 ## Rules for a new game
 
+The tours below are per game; a game the coverage harness runs can instead keep each entry's list with
+`COVERAGE_PIPELINES=<dir>` (Imaginators, below).
+
 1. Start with an empty baseline (the SSA one hashes SSA's shaders); the list works from the first run. Tour with several figures (one of each kind the game sells).
 2. Re-run the tour (needs `SKY_LEVEL` working: the first level's file paths) and ship the merged baseline; bump `PipelineListVersion` when the key changes.
 3. Never ship `pipelines.bin` from a player's machine (it holds hashes of their disc's shaders: same as the baseline in principle, but only the baseline was approved).
@@ -113,3 +116,19 @@ Log: `[gpu] D3D12 pipeline cache <state>: N loaded, M built; saved X MB`.
 - Not covered: the arenas (`arena_challenge_*` stay on a 126-draw screen with `SKY_LEVEL`; 309, 311 and 361 fault there,
   the redirect's artefact), the later parts of each level (130 s runs), the other villains and Kaos Traps, the older
   games' figures but Crusher and Blast Zone: built at draw time once and appended to the player's list.
+
+## Imaginators [Alchemy] [Imaginators] [V]
+- The baseline is `games/imaginators/pipelines/baseline.zst`: **1631 pipelines** (29 KB; 2026-11-17), from one run of
+  `tools/regress/coverage_all.sh --games imaginators` with `COVERAGE_PIPELINES=<dir>` (each run's `pipelines.bin` kept
+  as `<dir>/<game>/<entry>.bin`), merged with `merge_lists.py`, the zones first: the 10 story levels, the final battle,
+  the Crash level, the 10 Sensei Realms, the hub, the overland map, five `pu_*` zones and the 12 race tracks (30 s each,
+  185-315 keys each), then the 15 figure batches (every toy type of the accept list, 20 a batch, 8 s each on the
+  portal): +0 to +52 each. 318 of 336 entries ok, no fault; the race tracks count as not reached (loaded alone, they
+  still ran and were listed), and Wolfgang, Kaos, Golden Queen and Chompy Mage (villain and Sensei) were not placed in
+  that run: placed in the check below, they built nothing at draw time.
+- No loading wait (no `LevelOfFile`): the list is built at start, while the intro plays. `[gpu] pipeline list: 1631
+  pipelines ready after 88 ms` (M1 Pro, warm Metal cache; a cold cache not measured).
+- Draw-time builds, empty list -> baseline (the same coverage entries run again, M1 Pro): the hub 292 -> **0**,
+  `level_508` 279 -> 0, `level_509` 315 -> 0, `level_crash` 307 -> 1, the first Sensei Realm `ea_01` 245 -> 0, the race
+  track `apa1` 277 -> 1; the 13 villains on the portal: 0.
+- SuperChargers has no baseline yet: the coverage needs a disc of the supported edition (`games/superchargers/game.txt`).

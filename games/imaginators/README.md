@@ -13,6 +13,7 @@ Status: day 1 ([status](docs/status.md)). Not in the kit.
 | `info.cpp` | id, name and the supported disc release (title ID, media ID, SHA-256 of `default.xex`) |
 | `game.txt` | what the player kit's Arkeyan-Builder knows about the game |
 | `config/` | XenonRecomp input: `Imaginators.toml`, `Imaginators_switch_tables.toml` |
+| `pipelines/baseline.zst` | the built-in pipeline list (1631 pipelines from the coverage run; render states and shader hashes, no game content) |
 
 Build: `cmake -S . -B build-imaginators -G Ninja -DARKEYAN_GAME=imaginators`. The generated code is `private/imaginators/ppc/` and
 the game's derived data `private/imaginators/`. The engine's hooks are in `engines/alchemy/`.

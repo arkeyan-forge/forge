@@ -19,6 +19,7 @@ ISO_VARS = {g: g.upper() + "_ISO" for g in ORDER}
 HEADER = "kind\tname\tverdict\tlowest_fps\tdetail\tarea\tseconds\n"
 BATCH = int(os.environ.get("COVERAGE_FIGURE_BATCH", 20))
 LEASE = float(os.environ.get("COVERAGE_LEASE", 600))  # seconds of runs per game slot taken
+PIPELINES = os.environ.get("COVERAGE_PIPELINES", "")  # where each run's pipeline list is kept (the baseline's input)
 PER_LEASE = 8
 # The seconds of play once an entry is reached (--play overrides): 30 with the hero moving, so that the ~500 entry runs
 # and ~1100 figures of the six games fit in about 7 hours on two game slots; Swap Force's 84 Swap Zone pieces and 24
@@ -164,9 +165,19 @@ def scan(rundir, kind, hint, prefix=""):
     return out[0] or hint, out[1] or "0.0", out[2]
 
 
+def keep_pipelines(rundir, game, safe):
+    """With COVERAGE_PIPELINES, the run's pipelines.bin as <dir>/<game>/<entry>.bin, for tools/pipelines/merge_lists.py."""
+    source = os.path.join(rundir, "save", "pipelines.bin")
+    if not PIPELINES or not os.path.isfile(source):
+        return
+    os.makedirs(os.path.join(PIPELINES, game), exist_ok=True)
+    shutil.copyfile(source, os.path.join(PIPELINES, game, safe + ".bin"))
+
+
 def keep(rundir, gamedir, name, shot, crashed=False):
     """What stays of a run: the log lines that matter, one frame; the rest is deleted."""
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
+    keep_pipelines(rundir, os.path.basename(gamedir), safe)
     os.makedirs(os.path.join(gamedir, "logs"), exist_ok=True)
     os.makedirs(os.path.join(gamedir, "shots"), exist_ok=True)
     try:
