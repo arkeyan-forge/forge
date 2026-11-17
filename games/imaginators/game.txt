@@ -3,7 +3,7 @@
 id=imaginators
 name=Skylanders Imaginators
 runtime=Skylanders Imaginators
-version=0.1.7
+version=0.1.8
 toml=Imaginators.toml
 # Disc shaders: one archive, IGA v11 big-endian like SuperChargers' (games/imaginators/docs/research.md).
 shaders=igz:/archives/shaders_xenon.pak

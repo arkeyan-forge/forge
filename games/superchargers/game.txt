@@ -3,7 +3,7 @@
 id=superchargers
 name=Skylanders SuperChargers
 runtime=Skylanders SuperChargers
-version=0.1.7
+version=0.1.8
 toml=SuperChargers.toml
 # Disc shaders: one archive, IGA v11 big-endian / IGZ v9 (games/superchargers/docs/shaders.md).
 shaders=igz:/archives/shaders_xenon.pak
