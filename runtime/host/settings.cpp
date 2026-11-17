@@ -739,7 +739,7 @@ std::string SettingsHelp(const char* program)
         "  --language <code>           text language: en fr de es it nl sv no da fi\n"
         "  --voice-language <code>     voice language, same codes\n"
         "  --nightmare-from-start <0|1>\n"
-        "                              Swap Force, Imaginators: Nightmare offered before the story is beaten\n"
+        "                              Swap Force, Trap Team, Imaginators: Nightmare before the story's end\n"
         "  --select-iso                choose the disc image again\n"
         "  --launcher                  open the launcher window\n"
         "  --list-gamepads             print the connected gamepads and their GUID, then quit\n"

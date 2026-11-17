@@ -70,6 +70,12 @@
 
 #include <cstdint>
 
+// The script VM's variable read (engines/alchemy/nightmare.cpp, nightmare_gate.h): r3 holds a reference to a variable's record;
+// it looks the variable's slot up among the running script's values (game::ScriptContext, +20), puts that value in the
+// reference and calls the value's getter. Found from the difficulty menu's runs (games/trapteam/docs/status.md, "Nightmare"):
+// the records of the menu's "allow nightmare" and the title's "allow nightmare difficulty" both name it as their getter (+0x0C).
+#define GAME_HOOK_ScriptVariable_Get sub_82279198
+
 namespace game
 {
     // D3D: the offsets the runtime reads, Giants' (the strict matches above carry them); the vertex declaration's 0x2FD0 is
@@ -104,4 +110,6 @@ namespace game
     constexpr uint32_t HostKernelThreshold = 12; // the threshold (c3) and the minimum (c4), after c2 (sharpness)
     // The three bytes sub_823ED808 sets from "Gfx/@enableVramCopy" (the three stb after its config read, at offsets -11263..-11261 from 0x82860000; sub_823F0128 reads the last).
     constexpr uint32_t VramCopyFlags[] = { 0x8285D401, 0x8285D402, 0x8285D403 };
+    // The running script (ScriptVariable_Get's lis 0x8285 / lwz -8768): its values' list at +20.
+    constexpr uint32_t ScriptContext = 0x8284DDC0;
 }

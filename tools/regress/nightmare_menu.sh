@@ -1,19 +1,21 @@
 #!/bin/bash
 # Proves "Nightmare from the start" in a game's real difficulty menu (engines/alchemy/nightmare.cpp; Swap Force:
-# games/swapforce/docs/history.md, "Nightmare difficulty"; Imaginators: games/imaginators/docs/status.md, "Nightmare"): a new
+# games/swapforce/docs/history.md, "Nightmare difficulty"; Imaginators and Trap Team: their status.md, "Nightmare"): a new
 # game reaches the difficulty menu and highlights Nightmare; the game asks the hook (Swap Force when the row is highlighted,
-# Imaginators when the menu opens). Run 1, the option off: the game's own answer, locked ("the save says locked, the option
+# Imaginators and Trap Team when the menu opens; Trap Team's menu then has a fourth portrait, or none). Run 1, the option off: the game's own answer, locked ("the save says locked, the option
 # is off: locked"). Run 2, SKY_NIGHTMARE_FROM_START=1, the same new save: offered ("the option is on: offered"), Nightmare
 # accepted with A, the first level starts; the game still read the save as "locked": nothing was written to it. The frame of
 # each menu with Nightmare selected is kept (private/regress/nightmare/<game>/off|on/menu.ppm: the padlock, or none).
 #
 #   SWAPFORCE_ISO=<disc> tools/regress/nightmare_menu.sh [swapforce] [seconds per run, default 150]
 #   IMAGINATORS_ISO=<disc> tools/regress/nightmare_menu.sh imaginators [seconds per run, default 150]
+#   TRAPTEAM_ISO=<disc> tools/regress/nightmare_menu.sh trapteam [seconds per run, default 150]
 #   EXE=<game executable>   default build-<game>/ArkeyanRuntime/Skylanders <Name>
 #
 # Isolated like every run (scratch settings, saves, data), through ../gamelock.sh when it exists; a press file steers it:
 #   swapforce    A three times from the front end (title, Story Mode, the NEW slot), Down to the fourth row;
-#   imaginators  Start to the licence, Y, then A (the slot, New Game) until the menu asks, two Right to the fourth portrait.
+#   imaginators  Start to the licence, Y, then A (the slot, New Game) until the menu asks, two Right to the fourth portrait;
+#   trapteam     A (the title, the first slot's New Game) until the menu asks, three Right (Hard, then Nightmare if offered).
 # Then the frame, and (option on) A. Exit code 0: PASS (the reason is the last line).
 set -u
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -50,17 +52,35 @@ if [ "${1:-}" = "--drive" ]; then
             sleep 4; frame
             if [ "$option" = 1 ]; then press a 0; waitlog 'level_508.pak' 60; sleep 3; fi
         fi ;;
+    trapteam)
+        # The title is up some 15 s after title.bld opens; A takes it, then the first slot, whose new game opens the
+        # difficulty menu with Medium highlighted. The menu asks the hook as it opens: no A after that (A would choose).
+        if waitlog 'title.bld' "$seconds"; then
+            sleep 15
+            for _ in $(seq 12); do grep -aq '\[nightmare\] the menu asked' "$r/game.log" && break; press a 4; done
+            sleep 6
+            for _ in 1 2 3; do press right 2; done
+            sleep 4; frame
+            # Nightmare asks first ("this setting cannot be changed once chosen"), Back highlighted: Left, Continue; the
+            # slot is saved and the mode menu follows (Story highlighted), then the tutorial.
+            if [ "$option" = 1 ]; then
+                press a 4; press left 2; press a 8
+                for _ in 1 2 3; do grep -aq 'level_313_tutorial' "$r/game.log" && break; press a 6; done
+                waitlog 'level_313_tutorial' 60; sleep 3
+            fi
+        fi ;;
     esac
     kill "$pid" 2>/dev/null; sleep 3; kill -9 "$pid" 2>/dev/null
     exit 0
 fi
 
 game=swapforce
-case ${1:-} in swapforce | imaginators) game=$1; shift ;; esac
+case ${1:-} in swapforce | imaginators | trapteam) game=$1; shift ;; esac
 seconds=${1:-150}
 case $game in
 swapforce) iso=${SWAPFORCE_ISO:-} name="Swap Force" level='tutorial' movies=SKY_SKIP_MOVIES=1 ;;
 imaginators) iso=${IMAGINATORS_ISO:-} name="Imaginators" level='level_508.pak' movies= ;; # Start skips its logos
+trapteam) iso=${TRAPTEAM_ISO:-} name="Trap Team" level='level_313_tutorial' movies=SKY_SKIP_MOVIES=1 ;;
 esac
 upper=$(echo "$game" | tr a-z A-Z)
 [ -f "$iso" ] || { echo "usage: ${upper}_ISO=<disc> $0 $game [seconds]" >&2; exit 2; }

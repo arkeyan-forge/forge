@@ -203,20 +203,29 @@ Imaginators bind cube maps (Giants' `level_203` none): a level of each, before a
 not report the old view on MoltenVK (bindless heaps). The owner's check: [test_095_windows.md](../../../docs/release/test_095_windows.md),
 "The title logo".
 
-## Nightmare (2026-11-05) [TrapTeam] [V]
-**Hidden until the story is beaten; `nightmare_from_start` is not hooked yet** (the runtime ignores it with a line in the log, so the
-launcher shows no toggle until it is).
-- A new save's "Select a difficulty" (after the slot's New Game) has three choices, Easy, **Medium** (highlighted) and Hard; Right at
-  Hard stays on Hard, Left at Easy on Easy: no fourth, no padlock (run `nm-tt-explore3`, the frames under `private/runs/`).
-- The fourth exists: the title level's scripts (`level/Title.bld`, read with the IGA v11 reader; names only) hold `Menu Diff Button
-  Name 003 Nightmare`, `Menu - 3d - Diff - Nightmare Button Action`, the save slot's `allow nightmare difficulty` (in `Title - Save
-  Slot Load/Save`) and the difficulty menu's parameter `disallow nightmare setting` (in `Menu - 3d - Diff - Create`); `global.bld`
-  has `adventure mode complete - nightmare`, and the achievements "Complete Story Mode on the Nightmare difficulty setting".
-- Why no hook yet: unlike Swap Force and Imaginators, the executable has no `nightmare_difficulty_unlocked` and no native check (no
-  shape match of Swap Force's `sub_829CC788` or of its menu's `sub_82C12BC0`); the decision is a script variable of the title
-  level. The lead: script variables are `ScriptReference` objects, as Giants' portal prompt reads them ([Giants' boot.md](../../giants/docs/boot.md),
-  "Portal prompt"); answering `allow nightmare difficulty` (or clearing `disallow nightmare setting`) where the script reads it
-  needs the script VM's variable read, not found yet.
+## Nightmare (2026-11-17) [TrapTeam] [V]
+**Locked until the story is beaten; `[trapteam] nightmare_from_start=1` offers it on a new save, the save unchanged.**
+- A new save's "Select a difficulty" (after the slot's New Game) has three portraits, Easy, **Medium** (highlighted) and Hard;
+  Right at Hard stays on Hard. Once the story is beaten a fourth, Nightmare (Kaos), follows; choosing it asks first ("this
+  setting cannot be changed once chosen", Back highlighted), then the mode menu (Story) comes as for the others.
+- **The lock is script, not code** (`level/title.bld`, read with the IGA v11 and IGZ v8 readers; names only): the menu's macros
+  (`MenuDiffMacros.ai`) call `System - Save - Get/Set System Flag` with setting ID **3**, which reads bit 3 of the save
+  header's `header - options flags` (`SaveGame_Init.ai`: `Get Save Param`, a bit test in script), copy the answer into their
+  variable **`allow nightmare`** and add the fourth button when it is 1. The title's own copy (`allow nightmare difficulty`,
+  `Title_Mein.ai`) is only written; its call to `Menu - 3d - Diff - Create` passes `disallow nightmare setting` = false. The
+  story's end most likely sets the flag (`Global - Game Completed Set Save Flags`, not read in full) [?].
+- **At run time** the script objects are not the file's: a variable is a record (+0x0C its getter, +0x1C a pointer one
+  character into its name, +0x28 its slot) and its value lives in the running script's list (`0x8284DDC0`, +20), an integer
+  at +0x20 of the value. Every read goes through the getter `sub_82279198` (`GAME_HOOK_ScriptVariable_Get`).
+- **The option** (`engines/alchemy/nightmare.cpp`, `nightmare_gate.h`): when the variable read is `allow nightmare` and holds
+  0, the hook gives it 1 just before the read; nothing writes the header's flag, and a save whose story is beaten keeps its
+  own 1. The log: `[nightmare] offered from the start`, then `[nightmare] the menu asked: the save says locked, the option is
+  on: offered` (off: `... the option is off: locked`). The pause menu's difficulty
+  (Options) is not checked [?].
+- **Proof** [V]: `TRAPTEAM_ISO=<disc> tools/regress/nightmare_menu.sh trapteam` PASS (`private/regress/nightmare/trapteam/`):
+  option off, three Right end on Hard; option on, the fourth portrait, its warning, Continue, Story, the tutorial
+  (`level_313_tutorial`). The header written after the Nightmare run has the same option bits as a Medium run's. Unit:
+  `ArkeyanNightmareGateTest`.
 
 ## Where to start
 - Build: `cmake -S . -B build-trapteam -G Ninja -DCMAKE_BUILD_TYPE=Release -DARKEYAN_GAME=trapteam`, then

@@ -2,6 +2,10 @@
 
 #include <string_view>
 
+// [trapteam] nightmare_from_start (engines/alchemy/nightmare.cpp): the difficulty menu offers Nightmare before the story
+// is beaten; the save is not changed.
+void AlchemySetNightmareFromStart(bool on);
+
 // Trap Team's own code, shared by the files of games/trapteam/.
 namespace trapteam
 {
