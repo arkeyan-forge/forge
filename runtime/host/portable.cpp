@@ -62,31 +62,38 @@ namespace portable
         const int added = ImportCollection(
             datadir::FromText(own.path), own.entries, datadir::FromText(collectionFolder), &skipped, &failed);
 
-        // The keys: the exported [<game>.input] section, when this machine's launcher.ini has none for the game.
+        // The keys (keys.ini) and the other settings (settings.ini): each exported section this machine's launcher.ini
+        // has none for. A section it has stays whole: this machine's settings win.
         const std::string section = std::string(game.id) + ".input";
         const std::string configPath = LauncherConfigPath();
         LauncherConfig config = LoadLauncherConfig(configPath);
-        const char* keys = "kept (the game already has its own)";
-        if (config[section].empty())
+        const IniSections exportedKeys = ParseIni(Text(ReadOwn(KeysName)));
+        IniSections keysOnly;
+        if (auto it = exportedKeys.find(section); it != exportedKeys.end())
+            keysOnly.insert(*it);
+        IniSections settings = ParseIni(Text(ReadOwn(SettingsName)));
+        settings.erase(section); // keys.ini alone holds them
+        const auto ownKeys = config.find(section);
+        const bool hadKeys = ownKeys != config.end() && !ownKeys->second.empty();
+        const bool keysAdded = !AddMissingSections(config, keysOnly).empty();
+        const std::vector<std::string> settingsAdded = AddMissingSections(config, settings);
+        bool saved = true;
+        if (keysAdded || !settingsAdded.empty())
         {
-            const std::string text = Text(ReadOwn(KeysName));
-            std::string current;
-            for (size_t begin = 0; begin < text.size();)
-            {
-                size_t end = std::min(text.find('\n', begin), text.size());
-                std::string line = text.substr(begin, end - begin);
-                begin = end + 1;
-                if (!line.empty() && line.back() == '\r')
-                    line.pop_back();
-                if (line.size() > 2 && line.front() == '[' && line.back() == ']')
-                    current = line.substr(1, line.size() - 2);
-                else if (size_t equals = line.find('='); current == section && equals != std::string::npos)
-                    config[section][line.substr(0, equals)] = line.substr(equals + 1);
-            }
             fs::create_directories(datadir::FromText(configPath).parent_path(), error);
-            keys = config[section].empty()                  ? "none exported"
-                   : SaveLauncherConfig(configPath, config) ? "added"
-                                                            : "not saved (launcher.ini cannot be written)";
+            saved = SaveLauncherConfig(configPath, config);
+        }
+        const std::string notSaved = "not saved (launcher.ini cannot be written)";
+        const std::string keys = hadKeys      ? "kept (the game already has its own)"
+                                 : !keysAdded ? "none exported"
+                                 : saved      ? "added"
+                                              : notSaved;
+        std::string settingsLine = settings.empty() ? "none exported" : "kept (this computer has its own)";
+        if (!settingsAdded.empty())
+        {
+            settingsLine = saved ? "added:" : notSaved + ":";
+            for (const std::string& name : settingsAdded)
+                settingsLine += " [" + name + "]";
         }
         // Done once every figure is here; a figure that could not be written (a full disk, a read-only folder) is tried
         // again at the next start.
@@ -97,6 +104,6 @@ namespace portable
         }
         return "portable: first start of the copy exported " + info.exported + " (v" + info.version +
                "): " + std::to_string(added) + " figures added, " + std::to_string(skipped) + " already there, " +
-               std::to_string(failed) + " not written; keys " + keys;
+               std::to_string(failed) + " not written; keys " + keys + "; settings " + settingsLine;
     }
 }

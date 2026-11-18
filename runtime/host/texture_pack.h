@@ -6,6 +6,8 @@
 //   <game folder>/textures-dump/<hash>.dds   written when the dump is on, one file per distinct texture
 //   <game folder>/textures/<hash>.dds        read at start-up (subfolders allowed): any size, mip count, BC1-BC5 or RGBA8
 //   <game folder>/textures-hd/<hash>.dds     the same, made by Arkeyan-Builder's HD texture step; textures/ wins over it
+//   textures-hd/<hash>.dds in a portable copy's pack (host/collection/portable_pack.h): in place of that folder, when the
+//                                            copy holds them
 //
 // <hash> is 16 lowercase hex digits: ContentHash() of the texture as the renderer uploads it. The renderer looks files up
 // by hash in an index made at start-up (only the headers are read, so nothing blocks the render thread); the texture
@@ -30,16 +32,21 @@ namespace texpack
     {
         dds::Info info;
         std::filesystem::path path;
+        uint64_t offset =
+            0; // where the DDS starts in `path`: a portable copy's pack holds many; 0 for a file of its own
     };
 
     // Turns the dump on and/or indexes `generated` (when not empty), then `packs` (when `replacing`): a missing folder is
-    // no pack; a hash in both is the file in `packs`. `dump` is created when the first texture is written. Logs one line
-    // per folder with the counts, and one line per file it can't use.
+    // no pack; a hash in both is the file in `packs`. With `generated`, a `portablePack` that holds textures-hd/ entries
+    // is indexed in its place. `dump` is created when the first texture is written. Logs one line per folder with the
+    // counts, and one line per file it can't use. Replaces what an earlier call indexed.
     void Configure(const std::filesystem::path& dump, bool dumping, const std::filesystem::path& packs, bool replacing,
-        const std::filesystem::path& generated = {});
+        const std::filesystem::path& generated = {}, const std::filesystem::path& portablePack = {});
     // The same for a game's folders: datadir::Game(gameId) / "textures-dump", / "textures" (`replacing`: texture_packs)
-    // and datadir::GameFiles(gameId) / "textures-hd" (`hd`: hd_textures, on its own).
-    void ConfigureForGame(std::string_view gameId, bool dumping, bool replacing, bool hd);
+    // and datadir::GameFiles(gameId) / "textures-hd" (`hd`: hd_textures, on its own), or the HD textures of this program's
+    // `portablePack` (portable::OwnPack()) when it holds them.
+    void ConfigureForGame(
+        std::string_view gameId, bool dumping, bool replacing, bool hd, const std::filesystem::path& portablePack = {});
 
     bool Dumping();
     // Anything to do per texture: the dump is on or the index holds a file.

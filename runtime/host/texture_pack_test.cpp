@@ -3,7 +3,9 @@
 // folder. No game data. Run with no arguments; exit code 0 = pass.
 #include "host/dds.h"
 #include "host/texture_pack.h"
+#include "host/collection/portable_pack.h"
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 
@@ -39,6 +41,7 @@ namespace
         for (uint32_t level = 0; level < levels; level++)
             storage.push_back(
                 Pattern(dds::SizeOfLevel(format, width, height, level).Bytes(), uint8_t(level * 31 + uint8_t(format))));
+        spans.reserve(storage.size());
         for (const auto& level : storage)
             spans.push_back(level);
         return dds::Write(format, width, height, spans);
@@ -223,6 +226,49 @@ namespace
             files += entry.is_regular_file();
         CHECK(files == 1); // no .tmp left behind
     }
+
+    // A portable copy's HD textures: textures-hd/<hash>.dds entries of its pack, read from the pack's bytes. They take the
+    // place of the textures-hd folder; the player's own textures/ still wins over them.
+    void TestPortablePack(const std::filesystem::path& root)
+    {
+        std::filesystem::path dump = root / "textures-dump", packs = root / "textures",
+                              generated = root / "textures-hd";
+        std::vector<std::vector<uint8_t>> storage, small;
+        const std::vector<uint8_t> hd = WriteChain(dds::Format::BC1, 256, 128, 9, storage);
+        std::string error;
+        auto write = [&](const std::filesystem::path& file, bool withTextures) {
+            portable::Writer writer;
+            bool ok = writer.Open(file, false, error) && writer.AddText("game/default.xex", "xex", error);
+            if (withTextures)
+                ok = ok && writer.AddBytes("textures-hd/00000000000000ee.dds", hd, error) &&
+                     writer.AddBytes(
+                         "textures-hd/00000000000000aa.dds", WriteChain(dds::Format::BC1, 32, 16, 6, small), error) &&
+                     writer.AddText("textures-hd/00000000000000ff.dds", "not a dds", error) &&
+                     writer.AddBytes("textures-hd/sub/not-a-hash.dds", hd, error) &&
+                     writer.AddBytes("collection/00000000000000ab.dds", hd, error);
+            return ok && writer.Finish(error);
+        };
+        const std::filesystem::path pack = root / "game.skypack", bare = root / "bare.skypack";
+        CHECK(write(pack, true));
+        CHECK(write(bare, false));
+
+        texpack::Configure(dump, false, packs, true, generated, pack);
+        const texpack::Replacement* found = texpack::Find(0xee);
+        CHECK(found != nullptr && found->path == pack && found->offset != 0 && found->info.width == 256);
+        CHECK(texpack::Find(0xdd) == nullptr); // the textures-hd folder: not read, the pack holds the HD textures
+        CHECK(texpack::Find(0xff) == nullptr && texpack::Find(0xab) == nullptr);
+        CHECK(texpack::Find(0xaa) != nullptr && texpack::Find(0xaa)->info.width == 128); // the player's textures/
+        for (uint32_t level = 0; found != nullptr && level < 9; level++)
+        {
+            std::vector<uint8_t> data;
+            CHECK(texpack::ReadLevel(*found, level, data));
+            CHECK(data == storage[level]);
+        }
+
+        // A copy exported without them: the textures-hd folder, as for the installed game.
+        texpack::Configure(dump, false, packs, false, generated, bare);
+        CHECK(texpack::Find(0xee) == nullptr && texpack::Find(0xdd) != nullptr && texpack::Files() == 2);
+    }
 }
 
 int main()
@@ -232,6 +278,7 @@ int main()
     std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("ssa-texpack-test-" + std::to_string(uintmax_t(time(nullptr))));
     TestPackFolder(root);
+    TestPortablePack(root);
     std::error_code error;
     std::filesystem::remove_all(root, error);
     printf("%d checks, %d failures\n", g_checks, g_failures);
