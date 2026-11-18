@@ -1,3 +1,6 @@
 add_executable(IMGTagSignatureTest tag_signature_test.cpp)
 target_include_directories(IMGTagSignatureTest PRIVATE ..)
 sky_add_tests(IMGTagSignatureTest)
+add_executable(IMGChestKindsTest chest_kinds_test.cpp)
+target_include_directories(IMGChestKindsTest PRIVATE ..)
+sky_add_tests(IMGChestKindsTest)

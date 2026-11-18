@@ -74,12 +74,24 @@ PPC_FUNC(GAME_HOOK(Zone_Enter))
     GAME_IMP(Zone_Enter)(ctx, base);
 }
 
+#ifdef GAME_ZONE_ENTERED
+// The game's own work when a zone is entered, on the game's thread (Imaginators: games/imaginators/chests.cpp).
+void GAME_ZONE_ENTERED(PPCContext& ctx, uint8_t* base, std::string_view zone);
+#endif
 PPC_FUNC_IMPL(GAME_IMP(Zone_Find));
 // (zone list, const char* zone name) -> the zone, 0 if there is none.
 PPC_FUNC(GAME_HOOK(Zone_Find))
 {
     if (uint32_t(ctx.lr) == game::ZoneEnterReturn && ctx.r4.u32 != 0)
-        game::LevelStarted(static_cast<const char*>(g_memory.Translate(ctx.r4.u32)));
+    {
+        const char* zone = static_cast<const char*>(g_memory.Translate(ctx.r4.u32));
+        game::LevelStarted(zone);
+#ifdef GAME_ZONE_ENTERED
+        const PPCContext saved = ctx;
+        GAME_ZONE_ENTERED(ctx, base, std::string_view(zone, strnlen(zone, 160)));
+        ctx = saved;
+#endif
+    }
     GAME_IMP(Zone_Find)(ctx, base);
 }
 #endif

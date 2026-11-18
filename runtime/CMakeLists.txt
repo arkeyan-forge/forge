@@ -74,6 +74,7 @@ add_executable(ArkeyanRuntime
     host/xex_title.cpp
     host/collection/achievements.cpp
     host/collection/presence.cpp
+    host/collection/chests.cpp
     host/log.cpp
     host/gamemenu.cpp
     host/gamemenu_debug.cpp
@@ -766,6 +767,11 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 add_executable(ArkeyanPortablePackTest host/collection/portable_pack_test.cpp)
 target_include_directories(ArkeyanPortablePackTest PRIVATE .)
 target_link_libraries(ArkeyanPortablePackTest PRIVATE ArkeyanHostFiles)
+
+# Chests added from the launcher: its request and status files (synthetic kinds, a scratch folder).
+add_executable(ArkeyanChestsTest host/collection/chests_test.cpp host/collection/chests.cpp)
+target_include_directories(ArkeyanChestsTest PRIVATE .)
+target_link_libraries(ArkeyanChestsTest PRIVATE ArkeyanArtReader)
 
 # The launcher's presence snapshot and the worker with the link disabled (synthetic states only).
 add_executable(ArkeyanPresenceTest game.cpp host/collection/presence_test.cpp host/collection/presence.cpp

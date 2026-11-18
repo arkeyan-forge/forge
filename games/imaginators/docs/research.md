@@ -64,6 +64,34 @@ mapping the lock's address to the allocation's window (`GAME_HOOK_D3D_LockResour
 MoltenVK, and with a texture pack active (`[render] resolve at 0x... (1280x720) written back to guest memory` once in the
 log). The write-back is one read-back of the frame (a few ms) each time a portrait is made.
 
+## The chest pile (launcher #152, 2026-11-18) [V]
+The Imaginite chests waiting in front of the Academy, and how the port adds some (`games/imaginators/chests.cpp`). Read from the
+code, then checked in runs (a new game to the hub, then a continue from its save).
+- **The pile**: the collectible manager (the global `0x837E8C68`, set by `sub_82AB4EF8`) holds the slot's tracker system at
+  +0x20, whose list at +0x30 is the pile (a list: count +8, items +0x14). A chest: its toy id (64 bits) at +8, opened (a byte) at
+  +0x18. The script's `getAvailableVaultChestCount` (`sub_82D21000`, through `sub_829C62F0`) counts the chests not opened. A new
+  game's pile is empty; the hub reads it only once the story has opened the vault (a new game sent to the hub by `SKY_LEVEL` never
+  does).
+- **A chest's id**: `sub_82D181F8(type, variant, serial)` = bit 63 | type << 48 | variant << 32 | serial. Three toy types:
+  236 (`kTfbSpyroTag_ToyType_Imaginite_Chest_In_Game`, earned in the levels: variant 0), 237 (`..._From_MTX`, purchased: variant
+  0x5000 with the tier in its low byte, 4 Copper, 7 Bronze, 8 Silver, 9 Gold, 6 Platinum) and 235 (`..._Chest`, the Mystery
+  Chest portal toy: 1 Bronze, 2 Silver, 3 Gold). `sub_8315BA98` gives a chest's `EVaultChestType` for the vault's screens: Empty 0,
+  Purple 1 (236), Copper 2, Bronze 3, Silver 4, Gold 5, Platinum 6; a toy's Bronze, Silver and Gold are 3, 4, 5 too.
+- **Adding one**: `sub_829F3288(system, type, tier, group, bit 9, bit 10, bit 11)` rolls a new chest's loot; the purchased path
+  (`sub_82BC6B40`) gives it the variant's fields (low byte, bits 12-15, bits 9, 10, 11; `sub_82D18230`-`sub_82D18250`), the
+  in-game award `sub_82E47920(show, f1, f2)` gives (236, 0, 5, 0, 0, 0). Each path then makes the chest (`sub_8296CD88`,
+  `sub_829E27D0(chest, id, loot)`), appends it to the pile (`sub_824E9028`) and marks the save to write (`sub_82F5BCD0`, its
+  +0x38). The portal's path (`sub_82A3B218`) also refuses a toy id already in the pile.
+- **The port's addition**: `sub_82E47920` called with no popup, its loot roll's and id's type and variant swapped for the kind's
+  while it runs (`GAME_HOOK_Chests_LootRoll`, `GAME_HOOK_Chests_ToyId`), when the slot enters the Academy (`2016/hub_2016/hub_2016`,
+  before the zone loads). Each of the nine kinds gave a loot and the right vault type in a run; the save written after it holds them
+  (a continue reads the same pile). The slot: `sub_829BE628(storage, slot)` sets the options save's `most_recent_save_slot` when a
+  game starts or continues in a slot (0 for the first).
+- **Proof**: `IMAGINATORS_ISO=<disc> tools/regress/imaginators_chests.sh` PASS: `[chests] added 4 (imaginite=2 gold=1 toy_bronze=1)
+  to slot 0`, `chests.txt` says so, the request is gone; the continue's `chests.txt` shows the same pile from the save, nothing added
+  again, no fault. Not seen here: the chests on screen and opened (the worktree's build has no shader cache; the vault's screens are
+  reached later in the story).
+
 ## Public background (2026-10-25)
 
 These source notes predate the port. They preserve release, hardware and toy references;

@@ -73,6 +73,18 @@
 // difficulty menu's (sub_8317D680, sub_8317D888): the fourth portrait is locked while it answers 0.
 #define GAME_HOOK_NightmareUnlocked sub_829BE430
 
+// Imaginite chests added from the launcher (games/imaginators/chests.cpp; games/imaginators/docs/research.md, "The
+// chest pile"). The in-game chest award, (show a popup, two floats for it): it rolls a loot with Chests_LootRoll
+// (system, 236, 0, 5, 0, 0, 0), makes the chest's id with Chests_ToyId (236, 0, 0), adds the chest to the pile and
+// marks it to be saved; the purchased chests' path (sub_82BC6B40) and the portal's (sub_82A3B218) do the same with
+// their type and variant. The slot the player starts or continues: (options storage, slot), the setter of
+// "most_recent_save_slot". A zone entered: engines/alchemy/zone_request.cpp calls ChestsZoneEntered.
+#define GAME_FUNC_Chests_AwardInGame sub_82E47920
+#define GAME_HOOK_Chests_LootRoll sub_829F3288
+#define GAME_HOOK_Chests_ToyId sub_82D181F8
+#define GAME_HOOK_Chests_SlotSet sub_829BE628
+#define GAME_ZONE_ENTERED ChestsZoneEntered
+
 // "Press Start" with the Start button's picture (engines/alchemy/prompt_text.cpp, games/imaginators/docs/art.md,
 // "Button pictures"). The string table's intern (r3 the table, *0x83884D98; r4 a C string; returns the shared copy):
 // the IGZ loader's TSTR helper sub_824E3180 is Swap Force's sub_82433D90 (shape 1.00) and calls it; the intern itself
@@ -120,6 +132,12 @@ namespace game
     constexpr std::string_view ZoneAfterIntro = "2016/level_508/level_508"; // the first level, its opening inside
     constexpr std::string_view ZonePrefix =
         "2016/"; // zones are 2016/<map>/<map>: 2016/hub_2016/hub_2016, 2016/level_508/level_508
+    // The chest pile (games/imaginators/chests.cpp): the collectible manager's global, its slot's tracker system at
+    // +0x20, the pile's list at +0x30 (a list: count +8, items +0x14); a chest's id at +8, opened at +0x18. The Academy,
+    // where the chests are added.
+    constexpr uint32_t ChestManager = 0x837E8C68, ChestSystem = 0x20, ChestPile = 0x30, ListCount = 8, ListItems = 0x14;
+    constexpr uint32_t ChestId = 8, ChestOpened = 0x18;
+    constexpr std::string_view ChestZone = "2016/hub_2016/hub_2016";
 }
 
 // The portal library's signature check (games/imaginators/docs/toybox.md, "Signature"): sub_831FD948(work, data, 96, key)
