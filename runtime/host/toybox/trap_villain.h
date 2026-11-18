@@ -1,7 +1,7 @@
 #pragma once
 
 // A trap's villain on its Figure page (docs/runtime/host/toybox_ux.md, "A trap's villain"): the villains its element
-// can hold, as Skylauncher's Edit offers them, and the step through them. The write is collection::SetTrapVillain; the
+// can hold, as Arkeyan Launcher's Edit offers them, and the step through them. The write is collection::SetTrapVillain; the
 // model lifts the trap off the emulated portal around it. No drawing, no portal here.
 #include "host/collection/catalogue.h"
 #include "host/collection/collection.h"

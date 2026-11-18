@@ -28,7 +28,7 @@ struct GameInfo
     const char* name; // display name
     std::span<const GameRelease> releases;
     const char* runtime; // executable that runs this game
-    // The game's colour (0xRRGGBB): Skylauncher's StyleOf(game).glow, taken from the title's logo. The in-game interface
+    // The game's colour (0xRRGGBB): Arkeyan Launcher's StyleOf(game).glow, taken from the title's logo. The in-game interface
     // makes it readable on its panels and uses it as its one accent (host/toybox/look.h, ReadableAccent).
     uint32_t glow = 0x6BBAFF;
 };

@@ -16,12 +16,12 @@ struct RuntimeSettings;
 
 namespace commands
 {
-    // One action of a game (game::Adapter::inputRows), in Skylauncher's order and words.
+    // One action of a game (game::Adapter::inputRows), in Arkeyan Launcher's order and words.
     struct Row
     {
         const char* action; // key_<action>: one of g_keyActions ("a", "left_up")
-        const char* label;  // English, as Skylauncher words it
-        const char* french; // its French (Skylauncher's lang/fr.txt)
+        const char* label;  // English, as Arkeyan Launcher words it
+        const char* french; // its French (Arkeyan Launcher's lang/fr.txt)
         const char*
             pad; // the pad button whose job it is (g_padButtons: "a", "lb"); nullptr: a stick direction (no pad cell)
     };

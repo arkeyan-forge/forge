@@ -94,7 +94,7 @@ namespace
 #ifdef _WIN32
         _putenv_s(name, value.c_str());
 #else
-        setenv(name, value.c_str(), 1);
+        setenv(name, value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
 #endif
     }
 
@@ -103,7 +103,7 @@ namespace
 #ifdef _WIN32
         _putenv_s(name, "");
 #else
-        unsetenv(name);
+        unsetenv(name); // NOLINT(concurrency-mt-unsafe)
 #endif
     }
 
@@ -658,7 +658,7 @@ namespace
             WriteStats(lightcore, stats) && Read(lightcore, figure) && figure.level == 11 && figure.variant == 0x1206);
         CHECK(Duplicate(lightcore) != "" && Read(lightcore, figure) && figure.level == 11);
 
-        // Every variant Giants knows, created as the Toy Box and Skylauncher create it: the tag carries the toy type
+        // Every variant Giants knows, created as the Toy Box and Arkeyan Launcher create it: the tag carries the toy type
         // and the variant id the catalogue gives, the collection names it, and Giants reads the subtype it shows
         // (Spyro's Adventure reads the toy type only: the same character, docs/runtime/host/figures.md).
         int made = 0;
@@ -987,6 +987,7 @@ namespace
         // Every category, then the badges, on the menus' element disc and on a tile.
         const int cell = 112, columns = 8;
         std::vector<std::pair<const Toy*, VariantKind>> cells;
+        cells.reserve(samples.size() + size_t(VariantKind::Count));
         for (const Toy* toy : samples)
             cells.push_back({ toy, VariantKind::Base });
         for (int kind = 1; kind < int(VariantKind::Count); kind++)
@@ -1551,7 +1552,8 @@ namespace
     void TestPictureRule()
     {
         const std::string data = g_scratch + "/picture-rule";
-        const std::string oldData = getenv("SKYLANDERS_DATA") != nullptr ? getenv("SKYLANDERS_DATA") : "";
+        const char* current = getenv("SKYLANDERS_DATA"); // NOLINT(concurrency-mt-unsafe)
+        const std::string oldData = current != nullptr ? current : "";
         const std::string oldPortraits = skyenv::Get("SKY_PORTRAITS");
         SetVariable("SKYLANDERS_DATA", data);
         UnsetVariable("SKY_PORTRAITS");
@@ -1882,7 +1884,7 @@ namespace
         if (char** found = SDL_GlobDirectory(Folder().c_str(), "collection.json.bad-*", 0, &count))
         {
             copies = count;
-            SDL_free(found);
+            SDL_free(reinterpret_cast<void*>(found));
         }
         CHECK(copies == 1);
 
@@ -1904,7 +1906,7 @@ int main(int argc, char** argv)
 
     // A scratch collection, set before the library first reads its folder: in SKYLANDERS_DATA (the harness sets a
     // scratch one), else the temporary folder. Never under the player's application data.
-    const char* data = getenv("SKYLANDERS_DATA");
+    const char* data = getenv("SKYLANDERS_DATA"); // NOLINT(concurrency-mt-unsafe)
     g_scratch = (data != nullptr && *data ? std::string(data) : std::filesystem::temp_directory_path().string()) +
                 "/ArkeyanCollectionTest";
     RemoveTree(g_scratch);
@@ -1915,8 +1917,8 @@ int main(int argc, char** argv)
     _putenv_s("SKY_MIGRATE_FROM", "");
     _putenv_s("SKY_FIGURES", "");
 #else
-    unsetenv("SKY_MIGRATE_FROM");
-    unsetenv("SKY_FIGURES");
+    unsetenv("SKY_MIGRATE_FROM"); // NOLINT(concurrency-mt-unsafe)
+    unsetenv("SKY_FIGURES");      // NOLINT(concurrency-mt-unsafe)
 #endif
 
     TestJson();

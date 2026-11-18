@@ -13,7 +13,7 @@
 #include <iterator>
 
 namespace fs = std::filesystem;
-using namespace skybuild;
+using namespace arkeyan_builder;
 static int checks = 0, failures = 0;
 #define CHECK(condition)                                                                                               \
     do                                                                                                                 \

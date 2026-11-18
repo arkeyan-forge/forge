@@ -7,7 +7,7 @@ Detail in Arkeyan Launcher's own `docs/updates.md`; the checks before a tag: [..
 ## The updater (`src/launcher/updater.{h,cpp}`, window side `ui/update_page.cpp`)
 No telemetry: the only request is `GET https://api.github.com/repos/<repo>/releases/latest`, then the asset. HTTPS goes through **`curl`** (`curl.exe` ships with Windows 10/11; macOS and most Linux have it): `--proto =https --tlsv1.2`, 15 s connect timeout, no redirect to plain http.
 1. **Check** at **every** start (`[update] last_check` keeps the time), unless `[update] auto_check=0` or `SKY_LAUNCHER_NO_UPDATE_CHECK`; and on demand in Settings > About > Check for updates. Offline: silent.
-2. The tag (`vX.Y.Z`) is compared as semver with the built version (`SKYLAUNCHER_VERSION`, the CMake cache variable the release build sets from the tag). Pre-releases and tags that are not versions are never offered.
+2. The tag (`vX.Y.Z`) is compared as semver with the built version (`LAUNCHER_VERSION`, the CMake cache variable the release build sets from the tag). Pre-releases and tags that are not versions are never offered.
 3. A **banner** pushes the page down 56 px: "Update available: vX.Y.Z", **Update now**, **What's new** (the release's notes), **Later**.
 4. **Update now**: the asset for this OS is downloaded next to the running program (`.skylauncher-update/`), its SHA-256 checked against the release's **`SHA256SUMS`** asset, then swapped in. **A release without `SHA256SUMS`, or a wrong hash, is refused and deleted.**
 5. Then **Restart now**.
@@ -23,7 +23,7 @@ If the second move fails the first is undone (`ReplaceInPlace`); a copy that is 
 `[update] kit_repo=owner/name` (default `Arkeyan-Launcher`). **First install**: with no kit, INSTALL downloads the release tagged `v<launcher version>`, else the latest; the zip is verified against that release's `SHA256SUMS` (a mismatch or missing line refuses it), unpacked into `kit/<release tag>/`. **Game updates** (2026-10-27, Arkeyan Launcher 0.4.3): each game has its own version (`version=` in `games/<id>/game.txt`: SSA 0.9.0, Giants 0.8.0, Swap Force 0.4.0; 1.0 = the game at 100 %, each fix bumps the last number), carried by the kit (`kit.txt` `game_version.<id>`) and said by one hidden line of the release's notes, `<!-- games: ssa=0.9.1 giants=0.8.1 -->` ([kit_contract.md](kit_contract.md)). A game whose version there is higher than the built one shows **UPDATE** (with its download and time) in place of PLAY and a small link **Play without updating**; one click fetches the kit of the release the notes belong to if needed and rebuilds the game (incremental). **No tools are ever downloaded in the background** (the old sidebar "Downloading tools" line is gone); the launcher's own update stays offered at start.
 
 ## Releasing
-1. Bump `SKYLAUNCHER_VERSION` in `CMakeLists.txt`, commit.
+1. Bump `LAUNCHER_VERSION` in `CMakeLists.txt`, commit.
 2. Tag `vX.Y.Z`, **push the tag** and check it out: **only a pushed tag matching the version publishes**.
 3. In the launcher, on a Mac with Docker: `tools/release_local.sh vX.Y.Z --kits <this checkout>`. It runs every check
    of the launcher's `tools/ci/run.sh` with that version, builds `ArkeyanLauncher.exe`, `ArkeyanLauncher-x86_64.AppImage`,

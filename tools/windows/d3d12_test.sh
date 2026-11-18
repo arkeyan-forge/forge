@@ -27,7 +27,7 @@ iso=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 out=$2
 seconds=${3:-120}
 backend=${4:-d3d12}
-image=ssarecomp-d3d12-test
+image=arkeyan-d3d12-test
 vkd3d_version=3.0.1
 vkd3d_sha256=3cf2315522af5e43605ef6d3c41dad91387040bf97199934f3f7ab76caaa2f0c
 

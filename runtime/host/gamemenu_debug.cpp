@@ -173,8 +173,7 @@ namespace
                     g_logStopped = std::exchange(g_log, nullptr);
                     return;
                 }
-                fwrite(line, 1, length, g_log);
-                g_logBytes += length;
+                g_logBytes += fwrite(line, 1, length, g_log);
             }
         }
     }
@@ -825,7 +824,7 @@ void gamemenu::DrawDebugScreen(const DebugFonts& fonts)
     ImFont* heading = fonts.heading != nullptr ? fonts.heading : fonts.text;
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
     const float width = ImGui::GetIO().DisplaySize.x, height = ImGui::GetIO().DisplaySize.y;
-    // The look approved for it (Skylauncher's): greys 15171C, 1E1E24, 26262C, 3A3A42, and the game's glow as the accent.
+    // The look approved for it (Arkeyan Launcher's): greys 15171C, 1E1E24, 26262C, 3A3A42, and the game's glow as the accent.
     auto rgb = [](uint32_t c, int alpha = 255) {
         return IM_COL32(int(c >> 16 & 0xFF), int(c >> 8 & 0xFF), int(c & 0xFF), alpha);
     };

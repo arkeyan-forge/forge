@@ -1,6 +1,6 @@
 #pragma once
 
-// A portable game (docs/getting-started/portable.md): one file exported by Skylauncher that holds the built game and its data
+// A portable game (docs/getting-started/portable.md): one file exported by Arkeyan Launcher that holds the built game and its data
 // (host/collection/portable_pack.h). The game finds that data itself (ResolveGameSource) and keeps its saves and settings in
 // the player's folder, the same ones as the installed game.
 #include "launcher.h"

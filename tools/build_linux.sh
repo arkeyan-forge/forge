@@ -38,7 +38,7 @@ jobs=${JOBS:-4}
 # The kit's Linux baseline (tools/make_kit.sh): without it the compiler's x86-64 is SSE2 and simde emulates SSSE3/SSE4.1.
 march=
 [ "$arch" = amd64 ] && march=-march=x86-64-v2
-image=ssarecomp-linux-$arch
+image=arkeyan-linux-$arch
 build=build-linux-$arch
 game=${GAME:-ssa}
 

@@ -1,6 +1,6 @@
 # Project and product names
 
-> **Purpose:** current names, their history and the identifiers retained for compatibility · **Status:** current (2026-11-12) · **Tags:** none
+> **Purpose:** current names, their history and the identifiers retained for compatibility · **Status:** current (2026-11-18) · **Tags:** none
 
 The project is **Arkeyan**. Its runtime is **ArkeyanRuntime**, its player application is **Arkeyan Launcher**,
 and its kit build driver is **Arkeyan-Builder**. **SSA** means Spyro's Adventure, one of the six games.
@@ -28,7 +28,11 @@ These names remain because installed files, settings or package identities depen
 | Catalogue runtime field `"SSARecomp"`, `libSSARecompLib.a` | Older recorded installs and locally built game libraries |
 | `SSAP`, `SSAK` | On-disk pipeline magic and guest binding marker |
 | `SSA_symbols`, `SSA_switch_tables`, `private/ssa/` | Spyro's Adventure-specific inputs, not shared product names |
-| `tools/sync_skylauncher.sh`, `namespace skybuild`, `SKYBUILD_*`, `SkylauncherCore`, `SKYLAUNCHER_VERSION` | Existing source filenames and internal identifiers |
+| `skylauncher` as a figure lock's holder | Lock files written by launchers before the rename (`runtime/host/toybox/model.cpp`) |
+| `SKYLAUNCHER_VERSION` | Arkeyan Launcher's CMake still reads it when `LAUNCHER_VERSION` is unset |
+| Arkeyan Launcher's icon `skylauncher-128.png`, `io.github.mflr0.skylauncher` | Released launchers load that icon by its address on `main` (Discord); the bundle id keeps macOS permissions and preferences |
+| `tsapZ/SSARecomp` | Another project's name, in its attribution |
 
-Names of other projects in source attribution remain their published names.
+Names of other projects in source attribution remain their published names. `tools/ci/check_names.py` (a job of
+`tools/ci/run.sh`) fails on a former name outside `tools/ci/naming_allow.txt`, which says where each of these may appear.
 `tools/rename_arkeyan.py` maintains the source-identifier migration; new prose uses the current product names.

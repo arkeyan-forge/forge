@@ -3,7 +3,12 @@ project(ArkeyanRuntime VERSION 0.1.0 LANGUAGES CXX C)
 if(WIN32)
     enable_language(RC)
     set(ARKEYAN_KIT_VERSION "0.0.0" CACHE STRING "The Windows kit executables' version (tools/make_kit.sh)")
-    string(REPLACE "." "," SKYBUILD_VERSION_PARTS "${ARKEYAN_KIT_VERSION}.0")
+    # A Windows version resource takes four numbers: a beta or a test kit (0.9.9b3-4-gabc1234) keeps its first three.
+    string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" kit_version_numbers "${ARKEYAN_KIT_VERSION}")
+    if(NOT kit_version_numbers)
+        set(kit_version_numbers 0.0.0)
+    endif()
+    string(REPLACE "." "," ARKEYAN_KIT_VERSION_PARTS "${kit_version_numbers}.0")
 endif()
 
 set(CMAKE_CXX_STANDARD 20)

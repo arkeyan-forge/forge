@@ -3,7 +3,7 @@
 > **Purpose:** what Arkeyan Launcher's "Export for <system>" makes, how the game finds its own data in it, what it does at its first start, and how to check it · **Status:** current (2026-11-01) · **Tags:** [Xbox]
 
 Code: [`host/collection/portable_pack.{h,cpp}`](../../runtime/host/collection/portable_pack.h) (the pack: its format, the
-writer, the reader, the first-start import of the figures; shared with Arkeyan Launcher by `tools/sync_skylauncher.sh`),
+writer, the reader, the first-start import of the figures; shared with Arkeyan Launcher by `tools/sync_launcher.sh`),
 [`host/portable.{h,cpp}`](../../runtime/host/portable.h) (the game's side: its own pack, the first start),
 [`vfs.{h,cpp}`](../../runtime/vfs.cpp) (pack mode of the disc reader), `ResolveGameSource` in
 [`host/launcher.cpp`](../../runtime/host/launcher.cpp), `main.cpp` (the first start, the one-copy lock, the window icon).
@@ -83,7 +83,7 @@ time, each deleted after its check [V]:
 
 | | macOS (SSA) | Windows (Giants, under Wine) | Linux (SSA, arm64 container) |
 |---|---|---|---|
-| exported by | `ArkeyanLauncherTest --export-portable` (macOS build) | the same, Windows build under Wine | the same, Linux build in `ssarecomp-linux-arm64` |
+| exported by | `ArkeyanLauncherTest --export-portable` (macOS build) | the same, Windows build under Wine | the same, Linux build in `arkeyan-linux-arm64` |
 | file | 8,166,821,125 bytes (`.app`), 53 s; `codesign --verify --deep --strict` ok | 8,406,542,295 bytes (`.exe`, above 4 GiB), 17 s; its first 51 MB are the game's exe unchanged | 8,278,720,020 bytes (`.AppImage`), 17 s; executable, the game's bytes first |
 | game | the build of this tree | `SGRecomp.exe` linked by Arkeyan-Builder with this tree's Windows kit (`KIT_GAMES=giants tools/make_kit.sh windows`) | `build-linux-arm64` of this tree |
 | started | moved to another folder, no argument, no `launcher.ini`, no disc path | moved, no argument | moved, no argument |

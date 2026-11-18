@@ -65,7 +65,7 @@ namespace toybox
         std::string LockOwner(const LockInfo& lock)
         {
             if (lock.game == "launcher" || lock.game == "skylauncher")
-                return "Skylauncher";
+                return "Arkeyan Launcher";
             const Game* game = Catalogue::Get().FindGame(lock.game);
             return game != nullptr ? game->name : lock.game;
         }
@@ -1347,7 +1347,7 @@ namespace toybox
         for (size_t i = 0; i < figures.size(); i++)
         {
             const Figure& f = figures[i];
-            // A toy this game cannot read is not on its shelf (Skylauncher keeps the whole collection).
+            // A toy this game cannot read is not on its shelf (Arkeyan Launcher keeps the whole collection).
             if (!Accepts(s, f) || (f.toy != nullptr && !Catalogue::Get().Accepts(game, f.type)))
                 continue;
             int other = f.partner.empty() ? -1 : FindFigure(PathOf(f.partner));
@@ -1358,7 +1358,7 @@ namespace toybox
             shown.push_back(f);
             map.push_back(int(i));
         }
-        // The shelf, as in Skylauncher: every figure once; favourites first, then the ones this game took, newest first
+        // The shelf, as in Arkeyan Launcher: every figure once; favourites first, then the ones this game took, newest first
         // (Recent), or in the player's sort.
         std::vector<Section> sections = Shelf(shown, sort, game);
         shownCount = 0;
@@ -2326,7 +2326,7 @@ namespace toybox
 
     namespace
     {
-        // Three main actions (put on, edit, favourite), as Skylauncher's figure sheet; the rest behind More.
+        // Three main actions (put on, edit, favourite), as Arkeyan Launcher's figure sheet; the rest behind More.
         std::vector<Action> ActionsFor(const Model& model, const Figure& f)
         {
             std::vector<Action> actions;
@@ -2513,7 +2513,7 @@ namespace toybox
 
     // The trap's villain written (collection::SetTrapVillain). On the emulated portal the trap is lifted and put back
     // around the write, so that the game reads the new villain (it keeps what it read when the trap arrived). A real
-    // portal's trap cannot be: the player takes it off first, as Skylauncher's Edit asks.
+    // portal's trap cannot be: the player takes it off first, as Arkeyan Launcher's Edit asks.
     void Model::PutVillain(uint8_t id, bool evolved)
     {
         std::string path = figures[figure].path;

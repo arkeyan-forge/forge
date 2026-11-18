@@ -51,7 +51,7 @@ shapes are "Shape N"; the game's table gives no shape names. The villains' eleme
 - The collection screen's artworks: Trap Team shows no large picture of a toy (`Game::artworks` is empty).
 
 ## The launcher's Collection
-Arkeyan Launcher reads the same `art.json` and catalogue (`tools/sync_skylauncher.sh`), so for Trap Team it needs: the new `art.json` and `catalogue.json`; the **provider files**
+Arkeyan Launcher reads the same `art.json` and catalogue (`tools/sync_launcher.sh`), so for Trap Team it needs: the new `art.json` and `catalogue.json`; the **provider files**
 (`alchemy_archive.cpp`: the v8 layout and the name padding; `game_art.cpp`: `streams`; `icons.{h,cpp}`: `VillainPicturePath`; `catalogue.{h,cpp}`: `Game::villains`);
 the catalogue id **`trapteam`** (it was `trap_team`; the folder is `TrapTeam`, `datadir.cpp`); a Trap Team disc check at start-up (its XEX hash is in `games/trapteam/game.txt`);
 and a sheet for a trap and a villain list the way the Toy Box draws it (`DrawTrapVillains`). Not changed here.

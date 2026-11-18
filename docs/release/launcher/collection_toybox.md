@@ -15,7 +15,7 @@ shared with the launcher:
 
 ## The shared library in Arkeyan Launcher
 `src/shared/collection/`, `src/shared/figures/`, `src/shared/art/`, `resources/collection/catalogue.json` and
-each game's art manifest (a copy of `games/<id>/art.json`, under Arkeyan Launcher's resources folder) are copies of this repo's `runtime/host/` library, made by `tools/sync_skylauncher.sh`
+each game's art manifest (a copy of `games/<id>/art.json`, under Arkeyan Launcher's resources folder) are copies of this repo's `runtime/host/` library, made by `tools/sync_launcher.sh`
 (the file list: [README.md](README.md), "What passes between the two repos"). **Change them in this repo, where the
 tests are** (`ArkeyanCollectionTest`, `ArkeyanFigureTest`, `ArkeyanArtTest`, `ArkeyanSavesTest`), then sync. The launcher must not write a
 figure whose lock is held by a live game (`LockInfo::Busy()`): the library refuses it.

@@ -32,11 +32,11 @@ as they are.
 
 Arkeyan Launcher's `src/figures/figure_catalog.*` is a copy of ours (only the include path differed). To use the library:
 
-1. Copy the files: `tools/sync_skylauncher.sh <skylauncher checkout>` copies `host/figures/` (without the portrait
+1. Copy the files: `tools/sync_launcher.sh <launcher checkout>` copies `host/figures/` (without the portrait
    decoder and the test, which need the game's disc code) to `src/figures/`, `host/collection/` (without the test) to
    `src/collection/`, the catalogue to `resources/collection/` and `cmake/embed_file.cmake`; `--check` only lists the
    differences. Edit the files here, in ArkeyanRuntime, and copy them over: this repo has the tests.
-2. In Arkeyan Launcher's `CMakeLists.txt`, add the `.cpp` files to `SkylauncherCore`, plus the generated catalogue:
+2. In Arkeyan Launcher's `CMakeLists.txt`, add the `.cpp` files to `ArkeyanLauncherCore`, plus the generated catalogue:
 
    ```cmake
    add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/embedded_catalogue.cpp

@@ -14,7 +14,7 @@
 
 int main(int argc, char** argv)
 {
-    using namespace skybuild;
+    using namespace arkeyan_builder;
     if (argc != 5)
     {
         fprintf(stderr, "usage: ArkeyanEditionPrints <disc> <functions> <addresses.h> <out fingerprints.txt>\n");

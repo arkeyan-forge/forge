@@ -232,7 +232,7 @@ or triggers on the keyboard.)
 ## Where everything is: one folder, "Skylanders"
 
 Everything the game, the launcher and Arkeyan-Builder keep for the player is under **one root per OS** (code:
-`runtime/host/collection/datadir.{h,cpp}`, shared with the launcher through `tools/sync_skylauncher.sh`):
+`runtime/host/collection/datadir.{h,cpp}`, shared with the launcher through `tools/sync_launcher.sh`):
 
 | OS | Root |
 |---|---|
@@ -307,7 +307,7 @@ deleted when a new backup is made.
 While the game runs it holds `<saves>-backup/game.lock` with its process id. Arkeyan Launcher refuses to restore a backup
 over a running game; a marker a crash left behind is dropped once its process is gone. The backup, restore and atomic
 write code is `host/collection/save_backup.{h,cpp}`, shared with Arkeyan Launcher (Settings > Game data, its
-`docs/install.md`) through `tools/sync_skylauncher.sh`.
+`docs/install.md`) through `tools/sync_launcher.sh`.
 
 ## The game log
 

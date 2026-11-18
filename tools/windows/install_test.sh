@@ -3,7 +3,7 @@
 # Usage: tools/windows/install_test.sh <ssa|giants|swapforce|trapteam> <iso> <out below .scratch/>
 # WINDOWS_KIT defaults to dist/skylanders-kit-windows-x64; WINDOWS_TOOLCHAIN must name an already extracted
 # Windows llvm-mingw toolchain. No image, compiler or dependency is downloaded. All writes stay below <out>.
-# INSTALL_SECONDS=3600, RUN_SECONDS=180 (minimum 120), WINDOWS_TEST_IMAGE=ssarecomp-d3d12-test.
+# INSTALL_SECONDS=3600, RUN_SECONDS=180 (minimum 120), WINDOWS_TEST_IMAGE=arkeyan-d3d12-test.
 set -euo pipefail
 [ "$#" -eq 3 ] || { echo "usage: $0 <game> <iso> <out below .scratch/>" >&2; exit 2; }
 case $1 in ssa|giants|swapforce|trapteam) game=$1 ;; *) echo "error: unknown game" >&2; exit 2 ;; esac
@@ -18,7 +18,7 @@ kit=$(cd "${WINDOWS_KIT:-$root/dist/skylanders-kit-windows-x64}" && pwd)
 [ -n "${WINDOWS_TOOLCHAIN:-}" ] || { echo "error: set WINDOWS_TOOLCHAIN to an extracted Windows llvm-mingw toolchain" >&2; exit 2; }
 toolchain=$(cd "$WINDOWS_TOOLCHAIN" && pwd)
 [ -f "$toolchain/bin/x86_64-w64-mingw32-clang++.exe" ] || { echo "error: Windows compiler is missing" >&2; exit 2; }
-image=${WINDOWS_TEST_IMAGE:-ssarecomp-d3d12-test}
+image=${WINDOWS_TEST_IMAGE:-arkeyan-d3d12-test}
 install_seconds=${INSTALL_SECONDS:-3600}
 run_seconds=${RUN_SECONDS:-180}
 case $install_seconds:$run_seconds in *[!0-9:]*|:*|*:) echo "error: durations must be positive integers" >&2; exit 2 ;; esac

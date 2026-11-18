@@ -1,0 +1,35 @@
+# Where the former names stay on purpose (docs/naming.md says why). One `<path glob> <regex>` per line: a file matching
+# the glob may hold a line the regex finds (`.` for any line). Checked by tools/ci/check_names.py (tools/ci/run.sh).
+
+# The rename itself, its history and the other projects of the same name
+docs/naming.md .
+docs/old_paths.md .
+tools/rename_arkeyan.py .
+tools/ci/check_names.py .
+CHANGELOG.md .
+docs/releases/* .
+games/*/docs/history.md .
+games/giants/docs/research.md GiantsRecomp, SSARecomp
+docs/porting/prior_art.md .
+* tsapZ/SSARecomp|SSARecomp contributors
+
+# Data folders, logs and work files that installs, the migration and the tests' isolation depend on
+runtime/host/collection/datadir* .
+docs/getting-started/platforms/data_folders.md .
+* skylauncher-game(\.prev)?\.log|\.skylauncher-update|SSARecomp(\.prev)?\.log|ssabuild-work|ssabuild-ready\.txt
+* Skylanders,SSARecomp,Skylauncher|Skylanders SSARecomp Skylauncher|`Skylanders`, `SSARecomp`,? (and )?`Skylauncher`
+* Application Support/SSARecomp/|from SSARecomp/figures|<application data>/SSARecomp/
+docs/release/launcher/install_flow.md Before 0\.3\.1: `Skylauncher/
+docs/release/launcher/README.md g_launcherName = "SSARecomp"
+
+# Executable, runtime and builder names older installs and kits still carry
+* "SSARecomp"|`SSARecomp`, `SGRecomp`|`SkyBuild`|`SSABuild`|SkyBuild(\[?\.exe\]?)
+runtime/host/toybox/model.cpp lock\.game == "skylauncher"
+* libSSARecomp(Lib|Gpu)\.a
+
+# Environment variables: the older spelling is still read
+* SKYLAUNCHER_(\*|X\b|ENVTEST)|"SKYLAUNCHER_"
+
+# Package and bundle identities, Windows resources
+tools/xbox/* .
+* org\.ssarecomp\.|CN=SSARecomp|SSARecomp(-<version>)?\.msix|SSARecomp\.(rc|manifest|exe)\b|ARKEYAN_BUNDLE_ID SSARecomp
