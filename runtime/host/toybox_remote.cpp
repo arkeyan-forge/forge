@@ -14,8 +14,8 @@
 #include <thread>
 
 #if defined(_WIN32)
-#include <process.h>
-#define SKY_GETPID _getpid
+#include <windows.h> // GetCurrentProcessId: the UWP API family has no _getpid
+#define SKY_GETPID GetCurrentProcessId
 #else
 #include <unistd.h>
 #define SKY_GETPID getpid

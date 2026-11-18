@@ -26,7 +26,12 @@ tools/xbox/package.sh --exe "build-uwp/ArkeyanRuntime/Skylanders Spyro's Adventu
 - `AppxManifest.xml.in`: capabilities incl. `humaninterfacedevice`, publisher cache folder `Skylanders` (shared collection), `broadFileSystemAccess` for a user-chosen ISO (`CreateFile2FromAppW`). All Skylanders apps of the same publisher must use the same `Publisher` and folder name.
 
 ## Console settings (`LocalState\launcher.ini`, written at first start)
-`resolution_scale` 2 on Series, 1 on One (`AnalyticsInfo.DeviceForm`); glyphs `xboxone`; `[portal] mode` auto/real/emulated; `[gpu]` safe-mode keys: `thread=off` (default; `on` = GPU thread), `pipeline_library=off` (default on UWP). The first 40 D3D12 steps are logged `[gpu] step N: <what> (thread T)` (device, queue, present pipelines, swap chain, worker, command lists executed, presents, shader cache, pipeline library), with "device REMOVED" after a removal: **the first such line names the culprit**.
+The same keys and sections as on a computer, with the game's own section (`[ssa]`, `[giants]`...: the game the runtime
+was built for); `[video] fps_limit`, the game's FPS cap, the languages and `nightmare_from_start` apply as on a computer
+(`host/game_options.cpp`, shared with `runtime/main.cpp`). Not yet on the console: texture packs, the portable copy's
+settings and figures. The game's data folder (`SKYLANDERS_DATA`: art, portraits) is LocalState. `LocalState\environment.txt`, one
+`NAME=value` line each, sets environment variables at start (the console has none): test aids such as
+`SKY_TOYBOX_SCRIPT`. The F3 menu opens with View + Start (no keyboard); the Toy Box with View + Y, the wheel with View held. `resolution_scale` 2 on Series, 1 on One (`AnalyticsInfo.DeviceForm`); glyphs `xboxone`; `[portal] mode` auto/real/emulated; `[gpu]` safe-mode keys: `thread=off` (default; `on` = GPU thread), `pipeline_library=off` (default on UWP). The first 40 D3D12 steps are logged `[gpu] step N: <what> (thread T)` (device, queue, present pipelines, swap chain, worker, command lists executed, presents, shader cache, pipeline library), with "device REMOVED" after a removal: **the first such line names the culprit**.
 Log lines to look for in `Arkeyan.log`: `[gpu] D3D12 on ...`, `[gpu] shader cache: 1118 shaders`, `[gpu] first present WxH`, `[uwp] view activated (kind N)`, `[uwp] window visible/hidden`, `[gpu] presents: N in the last 5 s (last from thread X)`, no `CreateGraphicsPipelineState failed`, no `Fault`, `[perf]` every 10 s.
 
 ## The device-removal and presentation history (9 console runs; avoid repeating it)

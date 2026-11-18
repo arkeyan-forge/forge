@@ -8,12 +8,16 @@
 // rejects as a redefinition. Nothing here uses IReference<boolean>, so skip that declaration.
 #define ____FIReference_1_boolean_INTERFACE_DEFINED__
 
+#include "game.h"
 #include "netplay/clock.h"
 #include "host/audio.h"
 #include "host/display.h"
+#include "host/gamemenu.h"
 #include "host/input.h"
 #include "host/portal.h"
+#include "host/settings.h"
 #include "host/toybox.h"
+#include "host/uwp/settings_file.h"
 #include "host/uwp/uwp.h"
 #include "loader.h"
 #include "memory.h"
@@ -432,8 +436,8 @@ namespace
 
             // The swap chain first, and a black frame at once: the system's splash screen stays up until the app
             // presents (the disc image and the game take a few seconds more).
-            UwpApplySettings(Utf8(LocalStatePath()) + "\\", DefaultScale());
-            SDL_Window* window = CreateDisplayWindow("Skylanders: Spyro's Adventure", 1280, 720);
+            UwpApplySettings(Utf8(LocalStatePath()) + "\\", DefaultScale(), m_settings);
+            SDL_Window* window = CreateDisplayWindow(g_gameInfo.name, 1280, 720);
             ServiceGamePresents(0); // this (UI) thread issues every Present from now on: the console shows no other
             PresentDisplayFrame();
 
@@ -470,7 +474,9 @@ namespace
                 fprintf(stderr, "[uwp] figure collection %s\n", skyenv::Get("SKY_COLLECTION"));
             }
             PortalInit();
+            gamemenu::Init(m_settings, window, ARKEYAN_GAME_VERSION);
             ToyboxInit(window);
+            ToyboxSetAutoOpen(m_settings.toyboxAutoOpen);
             auto mainThread = CreateGuestThread(g_module.entryPoint, 0, 0, g_module.stackSize, false, 0);
 
             Ref<Gaming::Input::IGamepadStatics> gamepads;
@@ -487,7 +493,8 @@ namespace
                 dispatcher->ProcessEvents(UI::Core::CoreProcessEventsOption_ProcessAllIfPresent);
                 // The title gets no input while the Toy Box (View + Y) or the wheel (View held) is open.
                 GamepadState state = ReadGamepad(gamepads.Get());
-                ToyboxFilterGamepad(state);
+                const GamepadState physical = state;
+                ToyboxFilterGamepad(state, &physical, &m_settings);
                 SetHostGamepad(state);
                 ToyboxUpdate();
                 // Movies and the first frames are presented here; once the game renders, its frames are presented
@@ -529,6 +536,7 @@ namespace
         }
 
         ICoreWindow* m_window = nullptr;
+        RuntimeSettings m_settings;
     };
 
     class ViewSource final : public Inspectable<IFrameworkViewSource>
@@ -553,6 +561,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         _wfreopen((localState + L"\\Arkeyan.log").c_str(), L"w", stderr);
         setvbuf(stderr, nullptr, _IONBF, 0); // complete at all times: the log can be downloaded while the game runs
         UwpSetPreferencePath(Utf8(localState) + "\\");
+        // The game's data folder (datadir.h: art, portraits, saves) is LocalState: the app cannot write the
+        // computer's %APPDATA%, and the console has none.
+        if (skyenv::Get("SKYLANDERS_DATA") == nullptr)
+            _putenv_s("SKYLANDERS_DATA", Utf8(localState).c_str());
+        for (const auto& [name, value] : UwpReadEnvironmentFile(Utf8(localState) + "\\environment.txt"))
+        {
+            _putenv_s(name.c_str(), value.c_str());
+            fprintf(stderr, "[uwp] environment.txt: %s=%s\n", name.c_str(), value.c_str());
+        }
     }
 
     Ref<ICoreApplication> application;
