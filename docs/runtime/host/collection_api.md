@@ -171,15 +171,22 @@ collection::Image swapper = collection::SwapperPicture(*top.toy, top.variant, *b
 // fromDisc: the player's disc picture (cached by the game); else drawn. Show "drawn" icons over the element colour,
 // or ask GeneratedIcon(toy, size, true) for an opaque tile.
 collection::SavePng(icon, path);
-collection::PortraitPath("ssa", *toy, variant);      // newest cached variant, else plain art, else family; "" = draw it
+collection::PortraitPath("ssa", *toy, variant);      // the figure's original game first (game_art.md); "" = draw it
+// The player's choices (pictures/ in the collection folder): every figure, one card, an own picture.
+collection::SetPicturesDefault(collection::PicturesNewest);   // or PicturesOrigin, or a game id
+collection::SetPictureChoice(toy->type, variant, "giants");  // "" = the default
+collection::PictureGames(*toy, variant);                      // the games with a picture of that card, to choose from
+collection::SetOwnPicture(toy->type, variant, image, &error); // decoded by the caller; RemoveOwnPicture undoes it
+collection::PictureGeneration();                              // changed: drop the decoded pictures
 collection::GameKindPicturePath("ssa", Category::MagicItem); // SSA's potion icon, when cached
 collection::KindGlyph(Category::Adventure, x, y);    // the drawn mark (potion, compass, paw), a signed distance in [-1, 1]
 ```
 
 The disc pictures exist once the game's Toy Box opened with the disc, or Arkeyan Launcher checked it (both cache them in
 `<data>/<Game>/portraits`, or `SKY_PORTRAITS`: `art::Extract`, [game_art.md](game_art.md)). `collection::PortraitPath(game,
-toy, variant, large)` and `BestPicturePath` share one newest-first selector: reverse catalogue order, independent of the
-viewed game, variant art before plain art. A half first uses its own half image, then whole-figure art (including its
+toy, variant, large)` and `BestPicturePath` share one selector: the player's own picture, the card's chosen game, then
+the choice for every figure and the figure's original game, the later games, the earlier ones
+([game_art.md](game_art.md#the-rule-for-a-toys-picture)), independent of the viewed game, variant art before plain art. A half first uses its own half image, then whole-figure art (including its
 matching top for a bottom), then a generated icon. `SwapperPicture` still requires two genuine half images. Existing
 caches need no re-extraction or version change.
 

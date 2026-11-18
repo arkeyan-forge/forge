@@ -1,8 +1,11 @@
-// Unit test of the picture lookups' memory of the portraits folders (icons.h): a folder is read once, a picture written
-// here is found at once, one written by another process within the folder's next look, a deleted one never. Synthetic
+// Unit test of the picture lookups (icons.h): the memory of the portraits folders (a folder is read once, a picture
+// written here is found at once, one written by another process within the folder's next look, a deleted one never), and
+// which game's picture a figure shows (its original game by default, the player's choices, own pictures). Synthetic
 // pictures in a scratch folder only.
 //   ArkeyanPictureLookupTest        Exit code 0 = pass.
 #include "host/collection/catalogue.h"
+#include "host/collection/collection.h"
+#include "host/collection/datadir.h"
 #include "host/collection/icons.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
@@ -39,7 +42,27 @@ namespace
 #endif
     }
 
+    void UnsetEnv(const char* name)
+    {
+#ifdef _WIN32
+        _putenv_s(name, "");
+#else
+        unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+#endif
+    }
+
     std::string FileOf(const std::string& path) { return fs::path(path).filename().string(); }
+
+    // "<game id>/<file>" for a picture in a game's portraits folder: which game the rule picked.
+    std::string GameFileOf(const std::string& path)
+    {
+        if (path.empty())
+            return {};
+        for (const Game& game : Catalogue::Get().Games())
+            if (fs::path(path).parent_path() == datadir::Game(game.id) / "portraits")
+                return game.id + "/" + FileOf(path);
+        return "?/" + FileOf(path);
+    }
 
     void TestLookups(const fs::path& folder)
     {
@@ -57,7 +80,8 @@ namespace
         const std::string found = PortraitPath("ssa", *eruptor);
         CHECK(FileOf(found) == "eruptor.png");
 
-        // Asked again and again (every visible card, every frame): no folder read again.
+        // Asked again and again (every visible card, every frame): no folder read again once each was read.
+        CHECK(BestPicturePath("ssa", *eruptor) == found && HalfPicturePath(*top).empty());
         const size_t listed = PictureFolderListings();
         for (int i = 0; i < 100; i++)
         {
@@ -99,6 +123,139 @@ namespace
         SetEnv("SKY_PORTRAITS", folder.string());
         CHECK(FileOf(PortraitPath("ssa", *eruptor)) == "ToY_ErUpToR_HuD.png");
     }
+
+    void TestOrigins()
+    {
+        const Catalogue& catalogue = Catalogue::Get();
+        const Toy* spyro = catalogue.Find(16);
+        CHECK(spyro != nullptr && spyro->game == "ssa");
+        if (spyro == nullptr)
+            return;
+        auto originOf = [&](uint16_t variant) {
+            const Game* game = catalogue.Origin(*spyro, variant);
+            return game != nullptr ? game->id : std::string();
+        };
+        CHECK(originOf(0) == "ssa");
+        CHECK(originOf(0x1801) == "giants"); // Series 2
+        CHECK(originOf(0x2C02) == "swapforce"); // Dark Mega Ram
+        CHECK(originOf(0x3810) == "trapteam"); // Eon's Elite
+        // No variant of the catalogue is older than its toy's own game.
+        for (const Toy& toy : catalogue.Toys())
+        {
+            const Game* own = catalogue.FindGame(toy.game);
+            CHECK(own != nullptr);
+            for (const Variant& variant : toy.variants)
+                if (own != nullptr && catalogue.Origin(toy, variant.id) != nullptr)
+                    CHECK(catalogue.Origin(toy, variant.id)->year >= own->year);
+        }
+    }
+
+    // Spyro (Spyro's Adventure) and Series 2 Spyro (Giants) with pictures cached by several games.
+    void TestChoices(const fs::path& data)
+    {
+        UnsetEnv("SKY_PORTRAITS");
+        SetEnv("SKYLANDERS_DATA", data.string());
+        ForgetPictureFolders();
+        const Toy* spyro = Catalogue::Get().Find(16);
+        CHECK(spyro != nullptr);
+        if (spyro == nullptr)
+            return;
+        const Image square{ 4, 4, std::vector<uint32_t>(16, 0xFF336699u) };
+        auto put = [&](const char* game, const char* name) {
+            fs::path folder = datadir::Game(game) / "portraits";
+            fs::create_directories(folder);
+            CHECK(SavePng(square, (folder / (std::string(name) + ".png")).string()));
+        };
+        put("ssa", "toy_spyrojr_hud");
+        put("superchargers", "collection_spyro_normal");
+        put("superchargers", "collection_spyro_reposed"); // Series 2
+
+        // The original game's picture, not the newest one's.
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "ssa/toy_spyrojr_hud.png");
+        CHECK(GameFileOf(BestPicturePath("ssa", *spyro)) == "ssa/toy_spyrojr_hud.png");
+        // Series 2 came with Giants: without Giants, the first game after it (its variant picture).
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro, 0x1801)) == "superchargers/collection_spyro_reposed.png");
+        // A variant's own picture from a later game over the original game's plain one.
+        put("giants", "spyrojr");
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro, 0x1801)) == "superchargers/collection_spyro_reposed.png");
+        put("giants", "spyro_series2");
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro, 0x1801)) == "giants/spyro_series2.png");
+        CHECK((PictureGames(*spyro, 0) == std::vector<std::string>{ "ssa", "giants", "superchargers" }));
+
+        // The choice for every figure.
+        CHECK(PicturesDefault() == PicturesOrigin);
+        uint64_t generation = PictureGeneration();
+        ForgetPictureFolders(); // dropping the caches is no change (the launcher forgets the folders as it drops them)
+        CHECK(PictureGeneration() == generation);
+        CHECK(SetPicturesDefault(PicturesNewest));
+        CHECK(PictureGeneration() != generation);
+        CHECK(PicturesDefault() == PicturesNewest);
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "superchargers/collection_spyro_normal.png");
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro, 0x1801)) == "superchargers/collection_spyro_reposed.png");
+        CHECK(SetPicturesDefault("giants"));
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "giants/spyrojr.png");
+        CHECK(SetPicturesDefault("trapteam")); // no picture there: the original game's
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "ssa/toy_spyrojr_hud.png");
+        CHECK(SetPicturesDefault(PicturesOrigin));
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "ssa/toy_spyrojr_hud.png");
+
+        // One card's choice: Spyro and Series 2 Spyro apart.
+        CHECK(SetPictureChoice(16, 0, "superchargers"));
+        CHECK(PictureChoice(16, 0) == "superchargers");
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "superchargers/collection_spyro_normal.png");
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro, 0x1801)) == "giants/spyro_series2.png");
+        CHECK(SetPictureChoice(16, 0, "trapteam")); // no picture there: the default rule
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "ssa/toy_spyrojr_hud.png");
+        CHECK(SetPictureChoice(16, 0x1801, "ssa")); // the chosen game's plain picture over another's variant one
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro, 0x1801)) == "ssa/toy_spyrojr_hud.png");
+        CHECK(SetPictureChoice(16, 0x1801, ""));
+        CHECK(PictureChoice(16, 0x1801).empty());
+        CHECK(!SetPictureChoice(16, 0, PictureOwn)); // only with a picture
+
+        // The player's own picture: over everything, square, gone once removed.
+        const Image wide{ 600, 300, std::vector<uint32_t>(size_t(600) * 300, 0xFF00FF00u) };
+        generation = PictureGeneration();
+        std::string why;
+        CHECK(SetOwnPicture(16, 0, wide, &why));
+        CHECK(why.empty());
+        CHECK(PictureGeneration() != generation);
+        CHECK(PictureChoice(16, 0) == PictureOwn);
+        const std::string own = OwnPicturePath(16, 0);
+        CHECK(!own.empty() && PortraitPath("ssa", *spyro) == own && BestPicturePath("ssa", *spyro) == own);
+        Image saved = LoadPng(own);
+        CHECK(saved.width == OwnPictureSize && saved.height == OwnPictureSize);
+        CHECK(!saved.Empty() && saved.rgba[0] >> 24 == 0 &&
+              saved.rgba[size_t(256) * OwnPictureSize + 256] == 0xFF00FF00u);
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro, 0x1801)) == "giants/spyro_series2.png"); // that card only
+        CHECK(!SetOwnPicture(16, 0x1801, Image{}, &why) && !why.empty());
+        CHECK(RemoveOwnPicture(16, 0));
+        CHECK(OwnPicturePath(16, 0).empty() && !fs::exists(own));
+        CHECK(PictureChoice(16, 0).empty()); // back to the default
+        CHECK(SetPictureChoice(16, 0, ""));
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "ssa/toy_spyrojr_hud.png");
+
+        // Written by another process (the launcher while a game runs): seen within the next look.
+        const fs::path settings = fs::path(datadir::FromText(collection::Folder())) / "pictures" / "pictures.json";
+        generation = PictureGeneration();
+        {
+            FILE* file = fopen(settings.string().c_str(), "wb");
+            CHECK(file != nullptr);
+            if (file != nullptr)
+            {
+                fputs(R"({"format": 1, "revision": 99, "default": "newest", "cards": {}})", file);
+                fclose(file);
+            }
+        }
+        bool seen = false;
+        for (uint64_t start = SDL_GetTicks(); !seen && SDL_GetTicks() - start < 5000;)
+        {
+            seen = PictureGeneration() != generation;
+            if (!seen)
+                SDL_Delay(50);
+        }
+        CHECK(seen);
+        CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "superchargers/collection_spyro_normal.png");
+    }
 }
 
 int main()
@@ -109,7 +266,10 @@ int main()
         fs::path(data != nullptr && *data ? data : fs::temp_directory_path().string()) / "ArkeyanPictureLookupTest";
     std::error_code error;
     fs::remove_all(scratch, error);
+    SetEnv("SKY_COLLECTION", (scratch / "collection").string()); // before the catalogue reads the folder's own
     TestLookups(scratch / "portraits");
+    TestOrigins();
+    TestChoices(scratch / "data");
     fs::remove_all(scratch, error);
     printf("picture lookup test: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

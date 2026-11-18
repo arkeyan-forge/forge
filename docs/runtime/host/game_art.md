@@ -139,20 +139,38 @@ its 32-bit picture.
 `collection::PortraitPath(gameId, toy, variant, large)` (`host/collection/icons.h`), and `collection::Portrait(...)` for
 the picture itself (resized, with the variant's badge):
 
-1. **the variant's own picture**, searching games in reverse catalogue order (newest last in the catalogue);
-2. **else the plain toy's picture**, in the same newest-first order;
-3. **else the toy family's picture**, again newest first (`collection::GameKindPicturePath`, catalogue
-   `games[].kind_pictures`): SSA's potion for magic items, compass for adventure packs and paw for minis;
-4. **else the generated icon**, through `collection::GeneratedIcon` or Arkeyan Launcher's `figures::GenerateIcon`.
+The games are searched in one order per card (toy type and variant id): the card's own choice, then the choice for
+every figure, then **the figure's original game** (`Catalogue::Origin`: the toy's game, or for a variant the later game
+whose year the id's high nibble gives, 1: Giants, 2: Swap Force...), the games released after it (nearest first) and
+the ones before it (nearest first). The choice for every figure is "origin" (the default), "newest" (the newest game
+first, the rule before 2026-11-18) or one game. In that order:
 
-Only existing files in the player's caches count. The viewed `gameId` does not affect selection; it remains in the
-API for caller compatibility. A variant's older dedicated picture wins over newer plain art: its appearance identifies
-that version. When no dedicated picture exists, it uses the newest plain picture. Known figure records pass their
-actual variant id through the UI and its image caches; the kind alone is used only when the id is unavailable.
+0. **the player's own picture** of the card, when they chose one, before everything;
+1. **the card's chosen game**, its variant picture then its plain one (the player asked for that game's picture);
+2. **the variant's own picture**, in the order above;
+3. **else the plain toy's picture**, in the same order;
+4. **else the toy family's picture**, in the same order (`collection::GameKindPicturePath`, catalogue
+   `games[].kind_pictures`): SSA's potion for magic items, compass for adventure packs and paw for minis;
+5. **else the generated icon**, through `collection::GeneratedIcon` or Arkeyan Launcher's `figures::GenerateIcon`.
+
+Only existing files in the player's caches count; a chosen game without a picture of the card falls back to the next
+in the order. The viewed `gameId` does not affect selection; it remains in the API for caller compatibility. A
+variant's dedicated picture from any game wins over plain art: its appearance identifies that version. Known figure
+records pass their actual variant id through the UI and its image caches; the kind alone is used only when the id is
+unavailable.
+
+**The choices** live in the collection folder, so they travel with it (a portable pack copies the folder's files):
+`pictures/pictures.json` (`{"default": "newest" | "<game id>", "cards": {"<type>:<variant>": "<game id>" | "own"},
+"revision": n}`, no `default` for the original game) and the own pictures `pictures/<type>-<variant>.png`, made square
+(transparent margins) and at most 512 px (`SetOwnPicture`, from an image the caller decoded). The launcher and the
+game read the same file: it is looked at again at most once a second, and `collection::PictureGeneration()` changes
+when a choice or an own picture changes, so a cache of decoded pictures (the Toy Box's, the launcher's) is dropped
+and a choice made in the launcher shows in a running game's Toy Box within a second. A swapper with an own picture
+on either half is not joined: the top's picture with the bottom small in a corner.
 
 **The best picture** (`collection::BestPicturePath`) uses the same selector as `PortraitPath`: within each game it
 prefers artwork to a portrait. `PortraitPath` prefers a portrait (SSA's larger versus portrait when `large`), with artwork
-as a fallback. Game recency takes precedence over size: an older plain artwork never beats a newer plain portrait.
+as a fallback. The game order takes precedence over size: a later game's plain artwork never beats an earlier game's plain portrait.
 Both icon sizes therefore choose the same game and version. This changes lookup only: existing PNG names, extraction
 and `CacheVersion` stay unchanged; no re-extraction is needed. Missing art can be added by the normal disc check.
 

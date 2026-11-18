@@ -36,7 +36,7 @@ namespace
 #ifdef _WIN32
         _putenv_s(name, value.c_str());
 #else
-        setenv(name, value.c_str(), 1);
+        setenv(name, value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
 #endif
     }
 
@@ -643,7 +643,7 @@ namespace
         CHECK(art::lux::UnpackStream(strm, unpacked) && unpacked == stream);
     }
 
-    // --- The rule: the newest cached picture, independent of the viewed game ------------------------------------------------------
+    // --- The rule: the figure's original game first, independent of the viewed game ---------------------------------------------
 
     void TestPortraitRule(const std::filesystem::path& scratch)
     {
@@ -660,8 +660,9 @@ namespace
         if (eruptor == nullptr || jetVac == nullptr)
             return;
         auto file = [](const std::string& path) { return std::filesystem::path(path).filename().string(); };
-        CHECK(file(collection::PortraitPath("giants", *eruptor)) == "eruptor.png");
-        CHECK(file(collection::PortraitPath("ssa", *eruptor)) == "eruptor.png");
+        // One folder for every game (SKY_PORTRAITS): Spyro's Adventure's name for Eruptor first, its game.
+        CHECK(file(collection::PortraitPath("giants", *eruptor)) == "toy_eruptor_hud.png");
+        CHECK(file(collection::PortraitPath("ssa", *eruptor)) == "toy_eruptor_hud.png");
         CHECK(file(collection::PortraitPath("giants", *eruptor, 0x1206)) == "eruptor_lightcore.png");
         CHECK(
             file(collection::PortraitPath("ssa", *eruptor, 0x1206)) == "eruptor_lightcore.png"); // variant before plain
@@ -880,7 +881,8 @@ namespace
                                          : collection::Image{};
             CHECK(!boom.Empty() && boom.width > 200 && boom.height > boom.width / 2 && boom.height < boom.width * 2);
             // SWAPPER_PICTURES=<folder> writes every matched swapper's picture, the variants and a few mixed ones, to look at.
-            if (const char* sheet = getenv("SWAPPER_PICTURES"); sheet != nullptr && *sheet)
+            const char* sheet = getenv("SWAPPER_PICTURES"); // NOLINT(concurrency-mt-unsafe)
+            if (sheet != nullptr && *sheet)
             {
                 std::filesystem::create_directories(sheet);
                 auto write = [&](uint16_t top, uint16_t topVariant, uint16_t bottom, uint16_t bottomVariant,
@@ -1111,7 +1113,7 @@ int main(int argc, char** argv)
     TestDxt();
     TestArgbAndL8();
     TestAlchemy();
-    if (const char* arc = getenv("TRAPTEAM_ARC"); arc != nullptr && *arc)
+    if (const char* arc = getenv("TRAPTEAM_ARC"); arc != nullptr && *arc) // NOLINT(concurrency-mt-unsafe)
         TestRealIga(arc);
     TestLux();
     TestIco();
@@ -1126,7 +1128,7 @@ int main(int argc, char** argv)
     // Scratch data folder: SKYLANDERS_DATA if set (the harness sets one), else a temporary one.
     std::filesystem::path scratch;
     bool temporary = false;
-    if (const char* data = getenv("SKYLANDERS_DATA"))
+    if (const char* data = getenv("SKYLANDERS_DATA")) // NOLINT(concurrency-mt-unsafe)
         scratch = datadir::FromText(data);
     else
     {
@@ -1146,17 +1148,17 @@ int main(int argc, char** argv)
     }
 #endif
     TestPortraitRule(scratch);
-    if (const char* iso = getenv("SSA_ISO"); iso != nullptr && *iso)
+    if (const char* iso = getenv("SSA_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
         TestDisc("ssa", iso, 70);
-    if (const char* iso = getenv("GIANTS_ISO"); iso != nullptr && *iso)
+    if (const char* iso = getenv("GIANTS_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
         TestDisc("giants", iso, 123);
-    if (const char* iso = getenv("SWAPFORCE_ISO"); iso != nullptr && *iso)
+    if (const char* iso = getenv("SWAPFORCE_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
         TestDisc("swapforce", iso, 208);
-    if (const char* iso = getenv("TRAPTEAM_ISO"); iso != nullptr && *iso)
+    if (const char* iso = getenv("TRAPTEAM_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
         TestDisc("trapteam", iso, 347);
-    if (const char* iso = getenv("SUPERCHARGERS_ISO"); iso != nullptr && *iso)
+    if (const char* iso = getenv("SUPERCHARGERS_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
         TestDisc("superchargers", iso, 469);
-    if (const char* iso = getenv("IMAGINATORS_ISO"); iso != nullptr && *iso)
+    if (const char* iso = getenv("IMAGINATORS_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
         TestDisc("imaginators", iso, 565);
     if (keep)
         printf("kept in %s\n", datadir::Text(scratch).c_str());

@@ -1548,7 +1548,8 @@ namespace
         CHECK(Catalogue::Get().Find(0) != nullptr && HalfPicturePath(*Catalogue::Get().Find(0), 0).empty());
     }
 
-    // Synthetic, separate per-game caches: viewing a game or changing icon size never picks older art.
+    // Synthetic, separate per-game caches: the figure's original game first, the newest with the "newest" choice; viewing
+    // a game or changing icon size never picks another game's art.
     void TestPictureRule()
     {
         const std::string data = g_scratch + "/picture-rule";
@@ -1595,30 +1596,45 @@ namespace
                 CHECK(same(BestPicturePath(viewed, toy, variant), best));
             }
         };
+        auto icons = [&](const std::string& expected, uint32_t color) {
+            CHECK(same(DiscImagePath(*eruptor), expected));
+            for (int size : { 32, 128, 256 })
+            {
+                bool fromDisc = false;
+                Image icon = Icon(eruptor, VariantKind::Base, size, &fromDisc);
+                CHECK(fromDisc && icon.width == size && icon.height == size && icon.rgba[size * size / 2] == color);
+            }
+        };
+        allViews(*eruptor, 0, oldest, oldest); // Eruptor came with Spyro's Adventure
+        icons(oldest, 0xFF0000FFu);
+        CHECK(SetPicturesDefault(PicturesNewest));
         allViews(*eruptor, 0, newest, newest); // a newer portrait beats older large artwork
-        CHECK(same(DiscImagePath(*eruptor), newest));
-        for (int size : { 32, 128, 256 })
-        {
-            bool fromDisc = false;
-            Image icon = Icon(eruptor, VariantKind::Base, size, &fromDisc);
-            CHECK(fromDisc && icon.width == size && icon.height == size && icon.rgba[size * size / 2] == 0xFFFF0000u);
-        }
-        // A variant's own older portrait beats a newer plain portrait or artwork, at every size and in every view.
+        icons(newest, 0xFFFF0000u);
+        CHECK(SetPicturesDefault(PicturesOrigin));
+        // A variant's own portrait from its original game (LightCore Eruptor: Giants) beats any plain portrait or
+        // artwork, at every size and in every view; a later game's comes after it.
         std::string variant = write(giants, giants.portraits.at(key | 0x1206), 0xFF00FFFFu);
         allViews(*eruptor, 0x1206, variant, variant);
         CHECK(VariantFor(*eruptor, VariantKind::LightCore) == 0x1206);
         bool fromDisc = false;
         CHECK(!Icon(eruptor, VariantKind::LightCore, 64, &fromDisc).Empty() && fromDisc);
         std::string latestVariant = write(trap, trap.portraits.at(key | 0x1206), 0xFFFFFF00u);
+        allViews(*eruptor, 0x1206, variant, variant);
+        CHECK(SetPicturesDefault(PicturesNewest));
         allViews(*eruptor, 0x1206, latestVariant, latestVariant);
-        std::filesystem::remove(latestVariant);
+        CHECK(SetPicturesDefault(PicturesOrigin));
         std::filesystem::remove(variant);
+        allViews(*eruptor, 0x1206, latestVariant, latestVariant); // the only variant art: a later game's
+        std::filesystem::remove(latestVariant);
         std::string variantArtwork = write(giants, "artworks/" + giants.artworks.at(key | 0x1206), 0xFF00FFFFu);
         allViews(*eruptor, 0x1206, variantArtwork, variantArtwork); // artwork alone still identifies the variant
         std::filesystem::remove(variantArtwork);
-        allViews(*eruptor, 0x1206, newest, newest); // no variant art anywhere: the newest plain art
+        allViews(*eruptor, 0x1206, newer, oldArtwork); // no variant art anywhere: its original game's plain art
         std::filesystem::remove(newest);
+        allViews(*eruptor, 0, oldest, oldest);
+        CHECK(SetPicturesDefault("giants"));
         allViews(*eruptor, 0, newer, oldArtwork);
+        CHECK(SetPicturesDefault(PicturesOrigin));
         std::filesystem::remove(newer);
         std::filesystem::remove(oldArtwork);
         allViews(*eruptor, 0, oldest, oldest);
@@ -1672,6 +1688,9 @@ namespace
             std::filesystem::remove(own);
         }
         CHECK(HalfPicturePath(*eruptor).empty());
+        std::error_code removed;
+        std::filesystem::remove_all(datadir::FromText(Folder()) / "pictures", removed); // the choices made here
+        ForgetPictureFolders();
         SetVariable("SKY_PORTRAITS", oldPortraits);
         if (oldData.empty())
             UnsetVariable("SKYLANDERS_DATA");
