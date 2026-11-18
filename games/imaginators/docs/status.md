@@ -58,6 +58,13 @@ The difficulty menu (a new game's first empty slot, after the licence) has four 
   option off, the padlock and `the save says locked, the option is off: locked`; option on, no padlock, the text "Tu ne peux pas
   changer la difficulté dans ce mode. +50% de récompenses", A takes it and the first level opens (`level_508.pak`). In `test_all.sh`.
 
+## Imaginite chests from the launcher (launcher #152, 2026-11-18) [Imaginators] [V]
+The launcher's Chests page asks for chests of nine kinds (the in-game one, the five purchased tiers, the three Mystery Chest
+tiers) for the save slot played last; the game adds them through its own award the next time that slot enters the Academy, and
+saves them (`games/imaginators/chests.cpp`; the files: [settings.md](../../../docs/getting-started/settings.md), "chests.txt";
+how: [research.md](research.md#the-chest-pile-launcher-152-2026-11-18-v)). At most 99 in the pile. `[chests]` lines in the log.
+Proof: `tools/regress/imaginators_chests.sh` PASS (in `test_all.sh`'s Imaginators section).
+
 ## Coverage (2026-11-07) [Imaginators] [V]
 `tools/regress/coverage_all.sh` runs the whole catalogue (313 entries: the 44 zones of `zoneinfos.pak` less the menu
 background, and the 284 toy types of the accept list): the 10 story levels, the final battle, both adventure packs, the

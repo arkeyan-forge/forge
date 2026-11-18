@@ -500,6 +500,9 @@ for g in superchargers imaginators; do
                 echo "== imaginators: Nightmare from the start (~4 min)"
                 export IMAGINATORS_ISO="$disc"
                 check $g "Nightmare is locked, and offered from the start with the option" nightmare_menu imaginators
+                echo "== imaginators: chests from the launcher, added at the Academy and saved (~8 min)"
+                chests_test() { out=$("$root/tools/regress/imaginators_chests.sh" "imaginators_chests_$$" 2>&1); status=$?; echo "$out" | tail -1; return $status; }
+                check $g "chests asked for are added at the Academy and saved" chests_test
             fi
         fi
     fi

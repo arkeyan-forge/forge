@@ -247,6 +247,10 @@ Other recipes:
   `SKY_NIGHTMARE_FROM_START=1` and accepted (Swap Force's tutorial, Imaginators' first level, Trap Team's tutorial after its "cannot be
   changed" warning and the mode menu); `menu.ppm` of each run is the frame to look at (Trap Team: Hard highlighted with the option off, the
   fourth portrait with it on). In `test_all.sh` (the Swap Force, Trap Team and Imaginators sections).
+- **Imaginite chests from the launcher** [Imaginators]: `IMAGINATORS_ISO=<disc> tools/regress/imaginators_chests.sh` (~8 min,
+  `build-imaginators/`, isolated under `private/runs/<name>-new` and `-continue`): a new game to the Academy with `chests_add.txt`
+  already asking for four chests for slot 0, then a continue from its save: `[chests] added 4 (...) to slot 0`, the request gone, and
+  `chests.txt` with the same pile both times. In `test_all.sh` (the Imaginators section).
 - **The shelf and the player's wheel** [Giants]: `GIANTS_ISO=<disc> tools/regress/wheel_toybox.sh` (~1.5 min, `build-giants/`, isolated under
   `private/runs/wheel_toybox`; the figure tool comes from `build/`): Spyro, Whirlwind and a Swap Force Scratch (Giants does not read it:
   not on the shelf); Spyro is added to the wheel from its page, Whirlwind is put on Player 1, then Tab held, `1` and Tab released put Spyro
