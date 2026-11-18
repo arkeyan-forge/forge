@@ -120,8 +120,16 @@ namespace ultrawide
     // game's composite primitive (game::UltrawideCompositeVertices, in its slot). The composite (it reads the scene)
     // fills the frame; so does a pass of that shape that reads the wide frame back over the guest's whole frame (Giants'
     // menus blur the frame and draw it back): centred, it squeezed the picture into the middle 16:9 between black sides
-    // on every frame it ran, and the menu jumped between the two pictures.
-    bool FillsFrame(bool compositeShape, bool readsScene, bool readsFrame, bool coversFrame);
+    // on every frame it ran, and the menu jumped between the two pictures. `backdrop`: the game's backdrop shader
+    // (game::UltrawideBackdropPixelShader, SSA's pause menu: a 3D sheet that shows the paused scene); over the guest's
+    // whole frame it fills too, else the paused scene is squeezed into the middle beside the last frame.
+    bool FillsFrame(bool compositeShape, bool readsScene, bool readsFrame, bool coversFrame, bool backdrop);
+
+    // The backdrop's constants for the wide frame: its sheet, laid out for a 16:9 view, is projected by the widened
+    // camera (`matrix`: the position matrix, row vectors), so it covered only the middle 16:9 and the scene showed
+    // undimmed at the sides; its x is widened back to the window's aspect. `vpos`: VposParams (pixel position x .xy +
+    // .zw, set for 1280 pixels across): the same picture over the wider frame, else it reads past the copy's right edge.
+    void FitBackdrop(float* matrix, float* vpos);
 
     // Movies keep 16:9 with black bars: while one is open (the Bink hooks count them, d3d/bink_display.cpp), the scene
     // the game may still draw behind it stays 16:9 too and the sides are cleared to black.
