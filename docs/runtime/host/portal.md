@@ -38,8 +38,13 @@ A trap's voice uses the portal's speaker: `M 01` on, sound blocks, `M 00` off. *
   portal is said to take [?] (Dolphin and Cemu as leads); on Windows 16 samples per write (0.9.9, launcher #113): its HID driver sends
   reports of the descriptor's output length, 33 bytes, so a 65-byte write likely reached the portal cut (a player heard it choppy)
   [?] (`portal_hid::SoundSamplesPerWrite`; logged once, `[portal] hid: the speaker's sound goes in 33-byte writes (16 samples
-  each)`). A portal that refuses a block
-  logs `[portal] hid: the portal refused a sound block (...)` and the computer plays the rest. Xbox One (GIP): its sound message is not
+  each)`). On Windows the blocks go through an overlapped `WriteFile` of our own, cancelled when not taken within 20 ms
+  (hidapi's write waited 1 s and then said only `ERROR_IO_PENDING`, launcher #166). A block refused or not taken is dropped
+  (`[portal] hid: a sound block was dropped (...)`, the first 20 logged) and the next one tried; 10 in a row in 33-byte
+  writes, none ever taken, try one 65-byte write of 32 samples (as before 0.9.9), 10 more leave the sound to the computer
+  until the portal is reopened (`portal_hid::SpeakerWrites`, `ArkeyanPortalHidReportTest`; `[portal] hid: the portal refused
+  10 sound blocks in a row (...)`). `M 01` starts the count again. The framing that works is logged once (`[portal] hid:
+  the portal takes the speaker's sound in N-byte writes`) [?] (no Windows HID Traptanium portal here yet). Xbox One (GIP): its sound message is not
   known, so the computer plays it [?]. `AsyncPortal` queues the blocks with the commands, in order; a refused block never drops the portal.
 - **The computer's stream** (`SpeakerStream`, one producer, one consumer, no allocation, no lock): the title's portal thread decodes
   each block into a ring of 8192 samples (`M 01` resets the decoder; `M 00` lets the queue play out; the trap leaving the portal, a toy

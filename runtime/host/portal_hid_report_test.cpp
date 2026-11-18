@@ -180,6 +180,44 @@ namespace
         CHECK(portal_hid::SoundSamplesPerWrite(33) == 16);
         CHECK(portal_hid::SoundSamplesPerWrite(65) == 32 && portal_hid::SoundSamplesPerWrite(129) == 32);
         CHECK(portal_hid::SoundSamplesPerWrite(0) == 32 && portal_hid::SoundSamplesPerWrite(2) == 32);
+
+        // One refused or timed-out block keeps the portal's speaker; a run of them tries the next framing, then the
+        // computer. A block that goes through resets the run, and so does the speaker turning on.
+        using Speaker = portal_hid::SpeakerWrites;
+        constexpr size_t Run = Speaker::FailuresInARow;
+        Speaker onWindows;
+        onWindows.Opened(33);
+        CHECK(onWindows.Samples() == 16 && !onWindows.Refused());
+        CHECK(onWindows.Failed() == Speaker::Next::Retry && !onWindows.Refused() && onWindows.Samples() == 16);
+        for (size_t i = 1; i < Run - 1; i++)
+            onWindows.Failed();
+        onWindows.Started();
+        for (size_t i = 0; i < Run - 1; i++)
+            CHECK(onWindows.Failed() == Speaker::Next::Retry);
+        CHECK(onWindows.Worked()); // the first that went through in this framing
+        CHECK(!onWindows.Worked());
+        for (size_t i = 0; i < Run - 1; i++)
+            onWindows.Failed();
+        CHECK(onWindows.Samples() == 16 && !onWindows.Refused());
+        // A framing that worked once is kept: a run of failures then leaves the sound to the computer.
+        CHECK(onWindows.Failed() == Speaker::Next::Computer && onWindows.Refused());
+        onWindows.Opened(33);
+        CHECK(onWindows.Samples() == 16 && !onWindows.Refused());
+
+        // 33-byte reports never taken: one 65-byte write of 32 samples, as before 0.9.9, then the computer.
+        for (size_t i = 0; i < Run - 1; i++)
+            onWindows.Failed();
+        CHECK(onWindows.Failed() == Speaker::Next::NewFraming && onWindows.Samples() == 32 && !onWindows.Refused());
+        for (size_t i = 0; i < Run - 1; i++)
+            CHECK(onWindows.Failed() == Speaker::Next::Retry);
+        CHECK(onWindows.Failed() == Speaker::Next::Computer && onWindows.Refused());
+
+        // Elsewhere there is one framing, 32 samples.
+        Speaker other;
+        other.Opened(0);
+        for (size_t i = 0; i < Run - 1; i++)
+            other.Failed();
+        CHECK(other.Failed() == Speaker::Next::Computer && other.Samples() == 32);
     }
 
     void ControlLinkChecks(const std::filesystem::path& scratch)

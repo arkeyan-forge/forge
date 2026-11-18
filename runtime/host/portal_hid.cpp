@@ -22,6 +22,7 @@
 #include <cstring>
 #include <iterator>
 #include <set>
+#include <string>
 #include <vector>
 #ifdef _WIN32
 #include "host/portal_hid_control.h"
@@ -129,11 +130,13 @@ namespace
         HANDLE handle = INVALID_HANDLE_VALUE;
         size_t length = 0;
         std::string error; // why it is not open
+        std::wstring wide; // the device's path
+        HANDLE sound = INVALID_HANDLE_VALUE, soundDone = nullptr; // WriteSound's, overlapped
 
         void Open(const char* path)
         {
             int size = MultiByteToWideChar(CP_UTF8, 0, path, -1, nullptr, 0);
-            std::wstring wide(size_t(std::max(size, 1)), L'\0');
+            wide.assign(size_t(std::max(size, 1)), L'\0');
             MultiByteToWideChar(CP_UTF8, 0, path, -1, wide.data(), size);
             const HidDll& hid = HidDll::Get();
             if (hid.SetOutputReport == nullptr)
@@ -165,8 +168,49 @@ namespace
         {
             if (handle != INVALID_HANDLE_VALUE)
                 CloseHandle(handle);
-            handle = INVALID_HANDLE_VALUE;
+            if (sound != INVALID_HANDLE_VALUE)
+                CloseHandle(sound);
+            if (soundDone != nullptr)
+                CloseHandle(soundDone);
+            handle = sound = INVALID_HANDLE_VALUE;
+            soundDone = nullptr;
             link.Release();
+        }
+
+        // One speaker report on the interrupt OUT endpoint, cancelled when not taken within SoundTimeoutMs: hidapi's
+        // write waits 1 s, then leaves the write pending and says only ERROR_IO_PENDING. Empty when it all went.
+        static constexpr DWORD SoundTimeoutMs = 20;
+        std::string WriteSound(const uint8_t* data, size_t size)
+        {
+            if (sound == INVALID_HANDLE_VALUE)
+            {
+                sound = CreateFileW(wide.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+                if (sound == INVALID_HANDLE_VALUE)
+                    return LastError("CreateFile");
+            }
+            if (soundDone == nullptr && (soundDone = CreateEventW(nullptr, TRUE, FALSE, nullptr)) == nullptr)
+                return LastError("CreateEvent");
+            OVERLAPPED pending{};
+            pending.hEvent = soundDone;
+            if (!WriteFile(sound, data, DWORD(size), nullptr, &pending))
+            {
+                if (GetLastError() != ERROR_IO_PENDING)
+                    return LastError("WriteFile");
+                if (WaitForSingleObject(soundDone, SoundTimeoutMs) != WAIT_OBJECT_0)
+                    CancelIoEx(sound, &pending);
+            }
+            // Waits for a cancelled write to end too: Windows writes into `pending` until then.
+            DWORD written = 0;
+            if (!GetOverlappedResult(sound, &pending, &written, TRUE))
+            {
+                if (GetLastError() == ERROR_OPERATION_ABORTED)
+                    return "not taken within " + std::to_string(SoundTimeoutMs) + " ms";
+                return LastError("WriteFile");
+            }
+            if (written != size)
+                return std::to_string(written) + " of " + std::to_string(size) + " bytes written";
+            return {};
         }
 
         // A portal on WinUSB (no HID device): the commands as SET_REPORT and the reports from the IN endpoint.
@@ -331,9 +375,17 @@ namespace
 #ifdef _WIN32
     constexpr bool SpeakerAvoidsHidWrite = true;
     size_t SoundReportLength(const OutputHandle& output) { return output.length; }
+    std::string WriteSoundReport(SDL_hid_device*, OutputHandle& output, const uint8_t* data, size_t size)
+    {
+        return output.WriteSound(data, size);
+    }
 #else
     constexpr bool SpeakerAvoidsHidWrite = false;
     size_t SoundReportLength(const OutputHandle&) { return 0; }
+    std::string WriteSoundReport(SDL_hid_device* device, OutputHandle&, const uint8_t* data, size_t size)
+    {
+        return SDL_hid_write(device, data, size) < 0 ? SDL_GetError() : std::string();
+    }
 #endif
 
     // Report id 0 first, then the command zero-padded: 1 + 32 bytes, the output report's exact length that Windows wants.
@@ -450,6 +502,7 @@ namespace
             {
                 m_decoder.Reset();
                 m_samples = 0;
+                m_speaker.Started();
             }
             std::string errors;
             bool tried = false;
@@ -489,9 +542,9 @@ namespace
 
         // HID portals take the speaker's sound as 16-bit PCM at 8 kHz (little-endian) on the interrupt OUT endpoint,
         // where the console's ADPCM is decoded first: 32 samples (64 bytes) per write, 16 on Windows, whose writes are
-        // the descriptor's 33-byte reports (portal_hid::SoundSamplesPerWrite). A portal that refuses it leaves the
-        // sound to the computer.
-        bool TakesSound() override { return m_device != nullptr && !m_soundRefused && !Linked(m_output); }
+        // the descriptor's 33-byte reports (portal_hid::SoundSamplesPerWrite). A portal that keeps refusing it leaves
+        // the sound to the computer (portal_hid::SpeakerWrites).
+        bool TakesSound() override { return m_device != nullptr && !m_speaker.Refused() && !Linked(m_output); }
 
         bool WriteSound(const uint8_t* block, size_t size) override
         {
@@ -504,22 +557,43 @@ namespace
                 const int16_t sample = m_decoder.Decode(low ? byte & 15 : byte >> 4);
                 m_pcm[1 + m_samples * 2] = uint8_t(sample);
                 m_pcm[2 + m_samples * 2] = uint8_t(uint16_t(sample) >> 8);
-                if (++m_samples < m_soundSamples)
+                const size_t samples = m_speaker.Samples();
+                if (++m_samples < samples)
                     continue;
                 m_samples = 0;
-                const size_t bytes = 1 + m_soundSamples * 2;
+                const size_t bytes = 1 + samples * 2;
                 if (!m_soundWritten)
                 {
                     fprintf(stderr, "[portal] hid: the speaker's sound goes in %zu-byte writes (%zu samples each)\n",
-                        bytes, m_soundSamples);
+                        bytes, samples);
                     m_soundWritten = true;
                 }
-                if (SDL_hid_write(m_device, m_pcm, bytes) < 0)
+                const std::string error = WriteSoundReport(m_device, m_output, m_pcm, bytes);
+                if (error.empty())
+                {
+                    if (m_speaker.Worked())
+                        fprintf(
+                            stderr, "[portal] hid: the portal takes the speaker's sound in %zu-byte writes\n", bytes);
+                    continue;
+                }
+                const portal_hid::SpeakerWrites::Next next = m_speaker.Failed();
+                if (m_soundDropLines < MaxRecoveredLines)
+                    fprintf(stderr, "[portal] hid: a sound block was dropped (%zu-byte write: %s)%s\n", bytes,
+                        error.c_str(), ++m_soundDropLines == MaxRecoveredLines ? " (further ones not logged)" : "");
+                if (next == portal_hid::SpeakerWrites::Next::NewFraming)
                 {
                     fprintf(stderr,
-                        "[portal] hid: the portal refused a sound block (%s): the computer plays the sound\n",
-                        SDL_GetError());
-                    m_soundRefused = true;
+                        "[portal] hid: %zu sound blocks in a row not taken in %zu-byte writes: trying %zu-byte "
+                        "writes\n",
+                        portal_hid::SpeakerWrites::FailuresInARow, bytes, 1 + m_speaker.Samples() * 2);
+                    m_soundWritten = false;
+                }
+                else if (next == portal_hid::SpeakerWrites::Next::Computer)
+                {
+                    fprintf(stderr,
+                        "[portal] hid: the portal refused %zu sound blocks in a row (%s): the computer plays the "
+                        "sound\n",
+                        portal_hid::SpeakerWrites::FailuresInARow, error.c_str());
                     return false;
                 }
             }
@@ -625,12 +699,12 @@ namespace
             }
 #endif
             m_lastCount = count;
-            m_wrote = m_read = m_soundRefused = m_soundWritten = false;
+            m_wrote = m_read = m_soundWritten = false;
             m_samples = 0;
-            m_recovered = 0;
+            m_recovered = m_soundDropLines = 0;
             m_choice.Opened();
             m_method = Methods[0];
-            m_soundSamples = portal_hid::SoundSamplesPerWrite(SoundReportLength(m_output));
+            m_speaker.Opened(SoundReportLength(m_output));
             SDL_hid_free_enumeration(devices);
         }
 
@@ -657,8 +731,10 @@ namespace
         bool m_wrote = false, m_read = false;
         portal_adpcm::Decoder m_decoder;
         uint8_t m_pcm[1 + portal_hid::MaxSoundSamples * 2]{}; // report id 0, then the samples
-        size_t m_samples = 0, m_soundSamples = portal_hid::MaxSoundSamples;
-        bool m_soundRefused = false, m_soundWritten = false;
+        size_t m_samples = 0;
+        portal_hid::SpeakerWrites m_speaker;
+        bool m_soundWritten = false;
+        int m_soundDropLines = 0;
         std::set<std::string> m_said;
     };
 }

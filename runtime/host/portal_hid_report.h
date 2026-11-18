@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 namespace portal_hid
 {
@@ -137,6 +138,61 @@ namespace portal_hid
     {
         return outputReportLength < 3 ? MaxSoundSamples : std::min((outputReportLength - 1) / 2, MaxSoundSamples);
     }
+
+    // The speaker's writes on one open portal: how many samples each carries, and when the sound goes to the computer.
+    // A block the portal refuses or does not take in time is dropped and the next one tried: on Windows a Wii
+    // Traptanium portal left one 33-byte write pending for hidapi's whole second and, refused for good, the trap's
+    // voice played on the computer for the rest of the session (issue #60). A run of failures in the first framing
+    // tries the other (one 65-byte write of 32 samples, as before 0.9.9) unless the first has worked; a run in the
+    // last leaves the sound to the computer until the portal is reopened.
+    class SpeakerWrites
+    {
+    public:
+        static constexpr size_t FailuresInARow = 10;
+        enum class Next
+        {
+            Retry, // drop this block, send the next
+            NewFraming, // Samples() changed
+            Computer, // Refused()
+        };
+
+        // `outputReportLength` as in SoundSamplesPerWrite.
+        void Opened(size_t outputReportLength)
+        {
+            m_framings[0] = SoundSamplesPerWrite(outputReportLength);
+            m_count = m_framings[0] == MaxSoundSamples ? 1 : 2;
+            m_framing = m_failures = 0;
+            m_proven = m_refused = false;
+        }
+        size_t Samples() const { return m_framings[m_framing]; }
+        bool Refused() const { return m_refused; }
+        // The speaker turned on (`M 01`).
+        void Started() { m_failures = 0; }
+        // True for the first write of this framing that went through.
+        bool Worked()
+        {
+            m_failures = 0;
+            return !std::exchange(m_proven, true);
+        }
+        Next Failed()
+        {
+            if (++m_failures < FailuresInARow)
+                return Next::Retry;
+            m_failures = 0;
+            if (!m_proven && m_framing + 1 < m_count)
+            {
+                m_framing++;
+                return Next::NewFraming;
+            }
+            m_refused = true;
+            return Next::Computer;
+        }
+
+    private:
+        size_t m_framings[2] = { MaxSoundSamples, MaxSoundSamples };
+        size_t m_count = 1, m_framing = 0, m_failures = 0;
+        bool m_proven = false, m_refused = false;
+    };
 
     // `command` starts at the letter; zero-padded to 32 bytes, cut beyond.
     inline SetReport MakeSetReport(const uint8_t* command, size_t size, int interface)
