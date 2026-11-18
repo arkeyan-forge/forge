@@ -43,7 +43,10 @@ thumbnail viewer, or by replacing it with a solid colour and looking for the col
 
 `hd_textures` alone decides whether `textures-hd/` is read, `texture_packs` only `textures/` (0.9.4: before, a player with
 `texture_packs=0` got no HD textures either). It is the launcher's "Use HD textures" switch, which keeps it in the game's
-own section; on when not set, as the folder only exists once made. Tested in `ArkeyanTexturePackTest` (the HD folder alone) and
+own section; on when not set, as the folder only exists once made. A portable copy exported with its HD textures
+([portable.md](../../getting-started/portable.md)) holds them as `textures-hd/<hash>.dds` entries of its own file: with
+`hd_textures` on they are indexed in place of the folder and read from the file's bytes (`Replacement::offset`); the
+log line names the file. Tested in `ArkeyanTexturePackTest` (the HD folder alone, a portable's pack) and
 `ArkeyanSettingsTest`. The launcher greys "Custom texture packs", its folder and "Dump textures" ("Coming later", 0.9.4) and
 starts the game with `texture_packs=0` and `texture_dump=0`; a run without the launcher keeps the defaults above.
 

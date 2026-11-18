@@ -539,7 +539,8 @@ int main(int argc, char** argv)
 
     SetFrameRateLimit(settings.fpsLimit);
     glyphs::Init(settings);
-    texpack::ConfigureForGame(game.id, settings.textureDump, settings.texturePacks, settings.hdTextures);
+    texpack::ConfigureForGame(game.id, settings.textureDump, settings.texturePacks, settings.hdTextures,
+        datadir::FromText(portable::OwnPack()));
     presence::Begin(progress::Folder(game.id));
     PortalInit();
     gamemenu::Init(settings, window, ARKEYAN_GAME_VERSION);

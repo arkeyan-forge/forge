@@ -215,6 +215,28 @@ int main(int argc, char** argv)
             EXPECT(item.path().extension() != ".part");
     }
 
+    // First launch, settings: each section of the copy's settings.ini goes into this machine's launcher.ini when it has
+    // none (or an empty one) for it; a section this machine has stays as it is, whole.
+    {
+        const IniSections exported = ParseIni("[ssa.video]\r\nfps_limit=60\r\nresolution_scale=2\r\n# note\r\n"
+                                              "[ssa]\nlanguage=fr\nhd_textures=1\n[input]\ndevice=pad\nglyphs=ps\n");
+        EXPECT(exported.size() == 3 && exported.at("ssa.video").at("fps_limit") == "60" &&
+               exported.at("ssa.video").size() == 2 && exported.at("input").at("glyphs") == "ps");
+        IniSections empty;
+        EXPECT(AddMissingSections(empty, exported).size() == 3 && empty == exported);
+
+        IniSections config;
+        config["ssa"]; // empty: filled
+        config["input"]["device"] = "keyboard"; // this machine's own: kept, without the copy's glyphs
+        config["video"]["fps_limit"] = "30"; // another game's: untouched
+        const std::vector<std::string> added = AddMissingSections(config, exported);
+        EXPECT((added == std::vector<std::string>{ "ssa", "ssa.video" }));
+        EXPECT(config["ssa.video"]["fps_limit"] == "60" && config["ssa"]["language"] == "fr");
+        EXPECT(config["input"].size() == 1 && config["input"]["device"] == "keyboard");
+        EXPECT(config["video"]["fps_limit"] == "30");
+        EXPECT(AddMissingSections(config, exported).empty());
+    }
+
     fs::remove_all(root);
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

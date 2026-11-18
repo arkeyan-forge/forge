@@ -17,8 +17,9 @@ namespace portable
     const std::string& OwnPack();
     // An entry of that pack (icon.png, portable.txt), empty when there is none.
     std::vector<uint8_t> ReadOwn(std::string_view name);
-    // The first start of this exported copy on this machine: its figures are added to the shared collection (collection::Folder())
-    // and its keys to launcher.ini ([<game>.input]), never over the player's own, once (portable_pack.h, FirstLaunchMarker).
+    // The first start of this exported copy on this machine: its figures are added to the shared collection (collection::Folder()),
+    // its keys ([<game>.input]) and settings (settings.ini: video, audio, language, HD textures) to launcher.ini, each section
+    // only when this machine has none for it, never over the player's own, once (portable_pack.h, FirstLaunchMarker).
     // Before the settings are read (and so before the log): returns the line to log, empty when there was nothing to do.
     std::string FirstLaunch(const GameInfo& game, const std::string& collectionFolder);
 }

@@ -1,6 +1,6 @@
 # A portable game: one file, no disc image, no launcher
 
-> **Purpose:** what Arkeyan Launcher's "Export for <system>" makes, how the game finds its own data in it, what it does at its first start, and how to check it · **Status:** current (2026-11-01) · **Tags:** [Xbox]
+> **Purpose:** what Arkeyan Launcher's "Export for <system>" makes, how the game finds its own data in it, what it does at its first start, and how to check it · **Status:** current (2026-11-18) · **Tags:** [Xbox]
 
 Code: [`host/collection/portable_pack.{h,cpp}`](../../runtime/host/collection/portable_pack.h) (the pack: its format, the
 writer, the reader, the first-start import of the figures; shared with Arkeyan Launcher by `tools/sync_launcher.sh`),
@@ -15,8 +15,8 @@ job) is the portable page in Arkeyan Launcher's documentation.
 On an installed game's settings page (Game tab), **Export for macOS / Windows / Linux** writes the game for the system the
 launcher runs on, as one file: `Skylanders Spyro's Adventure.app` (macOS: a bundle, as every app), `.exe` (Windows),
 `.AppImage` (Linux). It holds the built game (its shaders are in the executable), the disc's files as they are (no
-padding, no compression: start-up stays as fast as from the copied game data), the game's icon, the player's keys and
-figures. It plays with no disc image and no launcher: started with no argument, the game finds its data in itself.
+padding, no compression: start-up stays as fast as from the copied game data), the game's icon, the player's keys,
+settings and figures, and the HD textures when the player chose them. It plays with no disc image and no launcher: started with no argument, the game finds its data in itself.
 A short message says first that the copy holds the player's game, for personal use, not to be shared.
 
 - **Saves and settings** stay in the player's data folder (`<data root>/<Game>/`, `launcher.ini`): the same ones as the
@@ -31,20 +31,29 @@ A short message says first that the copy holds the player's game, for personal u
   lines over it) are in the file as one `[<game>.input]` section, every key written out; at
   that first start it goes into `launcher.ini` when the machine has no `[<game>.input]` yet. Changing keys later: the F3
   menu's Commands page ([gamemenu.md](../runtime/host/gamemenu.md)), which writes the same lines.
+- **Settings**: the game's other `launcher.ini` sections as it played them, in `settings.ini`: `[<game>.video]` (the
+  shared `[video]` with the game's own over it, every key written, `fps_limit` included), `[<game>.audio]`, `[<game>]`
+  (the text and voice languages the launcher would pass, `hd_textures`, `nightmare_from_start`) and the shared `[input]`.
+  At that first start each section goes into `launcher.ini` when the machine has none (or an empty one) for it; a
+  section the machine has stays whole: its own settings win (`portable::AddMissingSections`).
+- **HD textures**: with "Include HD textures" in the export dialog, every `textures-hd/<hash>.dds` of the game is in the
+  file under the same name, and `settings.ini` says `hd_textures=1` (`0` without them). With `hd_textures` on, the game
+  indexes those entries in place of the `textures-hd/` folder and reads each texture from the file's bytes
+  ([texture_packs.md](../runtime/gpu/texture_packs.md)); a copy without them reads the folder, as the installed game.
 - **Updates**: none. The portable never looks at the network; the F3 menu shows its version. To update it, export it again
   (the new file replaces the old one of the same name).
 - The first start is done once per exported copy: `<data root>/<Game>/portable-<export stamp>.done`, written only when
   every figure was added or already there (a full disk or a read-only collection: tried again at the next start), and one
   log line, `portable: first start of the copy exported <stamp> (v<version>): <n> figures added, <m> already there, <k>
-  not written; keys added|kept`.
+  not written; keys added|kept; settings added: [<section>]...|kept`.
 
 ## The file
 
 A pack ([`portable_pack.h`](../../runtime/host/collection/portable_pack.h)): the files back to back, then a text index, then
 a 32-byte trailer at the very end (`skypack1`, the index's offset and size as little-endian u64, `SKYPACK!`). Index lines are
 `<offset>\t<size>\t<name>`, offsets from the start of the whole file. Names: `game/<disc path, lowercase>`, `portable.txt`
-(game id, version, kit, the disc's `default.xex` SHA-256, the export's UTC stamp), `keys.ini`, `collection/<file>`,
-`icon.png`, and on Windows and Linux `THIRD_PARTY_NOTICES.md` (the .app keeps its own in `Resources`).
+(game id, version, kit, the disc's `default.xex` SHA-256, the export's UTC stamp), `keys.ini`, `settings.ini`,
+`collection/<file>`, `icon.png`, `textures-hd/<hash>.dds` (when chosen), and on Windows and Linux `THIRD_PARTY_NOTICES.md` (the .app keeps its own in `Resources`).
 
 | System | Where the pack is | Why |
 |---|---|---|
