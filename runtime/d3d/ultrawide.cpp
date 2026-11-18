@@ -191,9 +191,19 @@ bool ultrawide::FrameEnd()
     return true;
 }
 
-bool ultrawide::FillsFrame(bool compositeShape, bool readsScene, bool readsFrame, bool coversFrame)
+bool ultrawide::FillsFrame(bool compositeShape, bool readsScene, bool readsFrame, bool coversFrame, bool backdrop)
 {
-    return compositeShape && (readsScene || (readsFrame && coversFrame));
+    return (compositeShape && (readsScene || (readsFrame && coversFrame))) || (backdrop && coversFrame);
+}
+
+void ultrawide::FitBackdrop(float* matrix, float* vpos)
+{
+    const float widen = g_aspect * float(FrameHeight) / float(FrameWidth16x9);
+    for (uint32_t row = 0; row < 4; row++)
+        matrix[row * 4] *= widen;
+    const float ratio = float(FrameWidth16x9) / float(g_frameWidth);
+    vpos[0] *= ratio;
+    vpos[2] *= ratio;
 }
 
 void ultrawide::SetFill(bool fill) { g_fill = fill; }

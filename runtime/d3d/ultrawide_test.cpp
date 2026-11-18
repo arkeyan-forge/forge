@@ -1,6 +1,7 @@
 // Checks the wide scene and frame sizes, the scene's width bound, the layout a window's shape gives, the settling of a
 // resize, the scene made for a wider display and the draws that fill the frame (d3d/ultrawide.h). usage: ArkeyanUltrawideTest
 #include "d3d/ultrawide.h"
+#include <cmath>
 #include <cstdio>
 
 namespace
@@ -91,6 +92,18 @@ int main()
         CHECK(ultrawide::Active() && ultrawide::FrameWidth() == 1707 && ultrawide::Aspect() > 2.36f);
         CHECK(!ultrawide::SceneWide() && ultrawide::SceneWidth() == 1120 && ultrawide::SceneHeight() == 704);
         CHECK(!ultrawide::FrameEnd());
+        {
+            // The backdrop (SSA's pause menu): its x back to the 16:9 projection's over the window, its pixel lookup
+            // over 1707 pixels instead of 1280.
+            const float x16x9 = 1.071f, wide = x16x9 * (16.0f / 9.0f) / ultrawide::Aspect();
+            float matrix[16] = { wide, 0, 0, 0, 0, 1.904f, 0, 0, 0, 0, 0.5f, 1, 0, 0, -0.5f, 0 };
+            float vpos[4] = { 1 / 1280.0f, 1 / 720.0f, 0.5f / 1280, 0.5f / 720 };
+            ultrawide::FitBackdrop(matrix, vpos);
+            CHECK(std::fabs(matrix[0] - x16x9) < 1e-5f && matrix[5] == 1.904f && matrix[10] == 0.5f &&
+                  matrix[14] == -0.5f);
+            CHECK(std::fabs(vpos[0] * 1707 - 1) < 1e-5f && std::fabs(vpos[2] * 1707 - 0.5f) < 1e-5f &&
+                  vpos[1] == 1 / 720.0f && vpos[3] == 0.5f / 720);
+        }
         // Minimised: nothing changes.
         ultrawide::WindowSize(0, 0, true, 20000);
         ultrawide::WindowSize(1280, 720, true, 20000);
@@ -207,13 +220,16 @@ int main()
         CHECK(!ultrawide::SceneWide() && ultrawide::SceneWidth() == 1000 && ultrawide::SceneHeight() == 600);
     }
 
-    // Which draws fill the wide frame: the composite, and a full-frame pass that reads the frame back (Giants' menu
-    // blur); a HUD quad, a partial pass over the frame, or a quad of another shape stay centred.
-    CHECK(ultrawide::FillsFrame(true, true, false, true));
-    CHECK(ultrawide::FillsFrame(true, false, true, true));
-    CHECK(!ultrawide::FillsFrame(true, false, false, true));
-    CHECK(!ultrawide::FillsFrame(true, false, true, false));
-    CHECK(!ultrawide::FillsFrame(false, false, true, true));
+    // Which draws fill the wide frame: the composite, a full-frame pass that reads the frame back (Giants' menu blur),
+    // and the game's backdrop over the whole frame (SSA's pause menu); a HUD quad, a partial pass over the frame, or a
+    // quad of another shape stay centred.
+    CHECK(ultrawide::FillsFrame(true, true, false, true, false));
+    CHECK(ultrawide::FillsFrame(true, false, true, true, false));
+    CHECK(!ultrawide::FillsFrame(true, false, false, true, false));
+    CHECK(!ultrawide::FillsFrame(true, false, true, false, false));
+    CHECK(!ultrawide::FillsFrame(false, false, true, true, false));
+    CHECK(ultrawide::FillsFrame(false, false, false, true, true));
+    CHECK(!ultrawide::FillsFrame(false, false, false, false, true));
 
     printf("ultrawide test: %s\n", g_failures == 0 ? "ok" : "FAILED");
     return g_failures == 0 ? 0 : 1;

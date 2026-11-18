@@ -991,7 +991,8 @@ namespace
     std::vector<uint8_t> g_indexData;
     std::vector<float> g_constants(2 * 256 * 4);
     // What PrepareDraw saw of the draw it built, for BuildDraw: it draws into the wide frame, may read the scene, VTE_CNTL.
-    bool g_frameDraw, g_frameSceneRead, g_frameFrameRead, g_frameComposite;
+    bool g_frameDraw, g_frameSceneRead, g_frameFrameRead, g_frameComposite, g_frameBackdrop;
+    uint64_t g_backdropFrame; // g_frame + 1 of the last frame that drew game::UltrawideBackdropPixelShader
     // Fill's smaller HUD (ultrawide::HudInset): the draw reads a copy of a render target (a resolve), not a texture of the
     // game's files; a screen-covering pass that does is a picture of the scene, not HUD.
     bool g_frameTargetRead;
@@ -1100,7 +1101,7 @@ namespace
     bool PrepareDraw(uint32_t device, uint32_t primitive, gpu::DrawDesc& draw)
     {
         memset(&draw, 0, sizeof(draw));
-        g_frameDraw = g_frameSceneRead = g_frameFrameRead = g_frameComposite = false;
+        g_frameDraw = g_frameSceneRead = g_frameFrameRead = g_frameComposite = g_frameBackdrop = false;
 
         // No pixel shader is allowed: depth-only passes.
         uint32_t pixelShaderObject = Read32(device + Device::PixelShader);
@@ -1700,13 +1701,14 @@ namespace
         draw.first = 0;
     }
 
-    // The wide frame: where a HUD draw of game::UltrawideHudVertexShader goes (d3d/frame_anchor.h), from its positions in
-    // guest memory and the position matrix in vertex constants c0-c3. Small non-indexed draws only (a quad's 4 vertices).
-    d3d::FramePlace HudPlace(uint32_t device, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride)
+    // The wide frame: where a draw goes (d3d/frame_anchor.h), from its positions in guest memory and the position matrix
+    // in vertex constants c<matrix>-c<matrix + 3>. Small draws only (a quad's 4 vertices); `count` 0: every vertex of the
+    // stream (an indexed quad).
+    d3d::FramePlace PlaceByVertices(
+        uint32_t device, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride, uint32_t matrix)
     {
         constexpr uint32_t MaxVertices = 6;
-        if (game::UltrawideHudVertexShader == 0 || g_drawVertexShader != game::UltrawideHudVertexShader || count < 3 ||
-            count > MaxVertices)
+        if (count != 0 && (count < 3 || count > MaxVertices))
             return d3d::FramePlace::Centre;
         const uint32_t declaration = Read32(device + Device::VertexDeclaration);
         if (declaration == 0)
@@ -1731,6 +1733,10 @@ namespace
                 guest = PhysicalToGuest(GpuRegister(device, fetch) & ~3u);
                 bytes = ((GpuRegister(device, fetch + 1) >> 2) & 0xFFFFFF) * 4;
             }
+            if (count == 0 && stride != 0)
+                count = bytes / stride;
+            if (count < 3 || count > MaxVertices)
+                return d3d::FramePlace::Centre;
             if (components < 2 || guest == 0 || stride == 0 ||
                 (first + count - 1) * stride + offset + components * 4 > bytes)
                 return d3d::FramePlace::Centre;
@@ -1741,10 +1747,18 @@ namespace
             const auto* words = static_cast<const uint32_t*>(GpuFloatConstants(device));
             float rows[16];
             for (uint32_t r = 0; r < 16; r++)
-                rows[r] = std::bit_cast<float>(ByteSwap(words[r]));
+                rows[r] = std::bit_cast<float>(ByteSwap(words[matrix * 4 + r]));
             return d3d::PlaceFrameDraw(positions, count, components, rows);
         }
         return d3d::FramePlace::Centre;
+    }
+
+    // Where a HUD draw of game::UltrawideHudVertexShader goes: its position matrix is in c0-c3.
+    d3d::FramePlace HudPlace(uint32_t device, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride)
+    {
+        if (game::UltrawideHudVertexShader == 0 || g_drawVertexShader != game::UltrawideHudVertexShader)
+            return d3d::FramePlace::Centre;
+        return PlaceByVertices(device, first, count, upData, upStride, 0);
     }
 
     // Builds the host draw from the device state now. The data it points to (g_streamData, g_indexData, g_constants)
@@ -1773,9 +1787,21 @@ namespace
                 draw.viewport.x + draw.viewport.width >= float(ultrawide::FrameWidth16x9 * uint32_t(FrameScale()));
             // Fill's smaller HUD: any screen-covering pass of the composite's shape that reads a resolve also covers the
             // frame (Trap Team's title draws its 3D backdrop through passes that read smaller copies, not the scene).
-            const bool fills = ultrawide::FillsFrame(compositeShape, g_frameSceneRead, g_frameFrameRead, coversFrame) ||
-                               (ultrawide::HudInset() < 1.0f && !ultrawide::Active() && compositeShape && coversFrame &&
-                                   g_frameTargetRead);
+            const bool backdrop =
+                game::UltrawideBackdropPixelShader != 0 && g_drawPixelShader == game::UltrawideBackdropPixelShader;
+            g_frameBackdrop = backdrop && coversFrame && ultrawide::Active() && !ultrawide::MoviePlaying();
+            if (g_frameBackdrop)
+                g_backdropFrame = g_frame + 1;
+            // The backdrop's dimming (SSA's pause menu): a HUD quad over the guest's whole frame, drawn after it.
+            const bool backdropDim = g_backdropFrame == g_frame + 1 && game::UltrawideBackdropDimVertexShader != 0 &&
+                                     g_drawVertexShader == game::UltrawideBackdropDimVertexShader && coversFrame &&
+                                     PlaceByVertices(device, indexed ? 0 : first, indexed ? 0 : count, upData, upStride,
+                                         game::UltrawideBackdropDimMatrix) == d3d::FramePlace::Whole;
+            const bool fills =
+                ultrawide::FillsFrame(compositeShape, g_frameSceneRead, g_frameFrameRead, coversFrame, backdrop) ||
+                (backdropDim && !ultrawide::MoviePlaying()) ||
+                (ultrawide::HudInset() < 1.0f && !ultrawide::Active() && compositeShape && coversFrame &&
+                    g_frameTargetRead);
             if (g_frameComposite && ultrawide::MoviePlaying())
             {
                 // A movie is on: the scene behind it stays 16:9 (centred below) and the sides are black bars.
@@ -1911,8 +1937,8 @@ namespace
         // The "Edge smoothing" setting: Game leaves the pass's contrast thresholds, Light and Off raise them (gpu/edge_smoothing.h).
         const edgesmoothing::Mode smoothing = fxaaPass ? EdgeSmoothing() : edgesmoothing::Game;
         if (upData != 0 || g_dump.active || g_promptFaceHash != 0 ||
-            (g_frameComposite && game::UltrawideCompositeVpos) || hostKernel || smoothing != edgesmoothing::Game ||
-            g_drawUvMatrix >= 0)
+            (g_frameComposite && game::UltrawideCompositeVpos) || g_frameBackdrop || hostKernel ||
+            smoothing != edgesmoothing::Game || g_drawUvMatrix >= 0)
         {
             // A BeginVertices draw captures the constants when the buffer is requested, before the game fills the
             // vertices (and may change state); the debug dump wants the same host-order copy.
@@ -1945,6 +1971,9 @@ namespace
                     constants[4 + i] = off ? edgesmoothing::OffMinimum : edgesmoothing::LightMinimum;
                 }
             }
+            if (g_frameBackdrop)
+                ultrawide::FitBackdrop(g_constants.data() + game::UpscalePositionMatrix * 4,
+                    g_constants.data() + 256 * 4 + game::UltrawideBackdropVposParams * 4);
             if (g_frameComposite && game::UltrawideCompositeVpos)
             {
                 // The composite reads the scene at (pixel position) x VposParams.xy + VposParams.zw (pixel constant c0),

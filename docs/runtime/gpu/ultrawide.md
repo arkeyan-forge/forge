@@ -161,6 +161,19 @@ Host render targets are `scale` times these (`resolution_scale`), as before.
   scaled by 1280 / frame width. Every other draw into the frame gets its viewport and scissor moved right by
   `(frame width - 1280) / 2`; screen-space draws (viewport transform off) still convert guest pixels with 1280. Clears of
   the guest's whole frame clear the whole wide frame; smaller ones are moved like the draws.
+- **The pause menu's backdrop (2026-11-18, launcher #170) [V].** The pause menu (Objectives and the pages under it too)
+  draws the paused scene through a 3D sheet in front of the camera: pixel shader `game::UltrawideBackdropPixelShader`, a
+  refraction that projects each pixel's bent view ray with a fixed orthographic map (`mViewToScreen`, 3/1280 across) and
+  falls back to the unbent pixel (`VposParams`, pixel constant c12, set for 1280 pixels). The sheet is laid out for a
+  16:9 view and projected by the widened camera, so it covered only the middle 16:9; centred like the HUD it was smaller
+  still, its fallback read past the copy's right edge (smeared streaks) and the sides kept the scene of the last frame
+  (a house drawn twice). It now fills the frame (`ultrawide::FillsFrame`, `backdrop`), its position matrix's x is
+  widened back to the window's aspect and its `VposParams` scaled by 1280 / frame width (`ultrawide::FitBackdrop`). The
+  menu's dimming that follows it, a quad of the HUD's vertex shader (`game::UltrawideBackdropDimVertexShader`, position
+  matrix in c8-c11) over the whole 16:9 frame (`d3d/frame_anchor.h`, `Whole`), fills the frame in a frame that drew the
+  backdrop. Checked offscreen on Metal in level_027: a 2560x1080 start and a 16:9 start widened to 2560x1351, the paused
+  picture as at 16:9 and no step at the 16:9 edges (column brightness 109.7 / 110.4 across the left edge, 66.6 / 66.1
+  across the right; 168 / 110 and 66 / 101 before).
 
 ## Giants [Alchemy] [Giants] [V] (2026-10-26)
 
@@ -319,8 +332,8 @@ frame 2560x720, 118.4 degrees, plays on in the hub.
   shows a stretched (softer) scene until the next start; Giants (and `original_resolution=1`) keep the window's shape; a
   full-resolution scene started at 16:9 with no wider display does not widen live at all (above). A real display's shape
   is untested (the runs set `SKY_DISPLAY_SIZE`) [?].
-- Menus (title, slots), the pause dimming and anything the game draws to fill the 16:9 frame stay 16:9: the sides are
-  black (menus) or show the 3D scene undimmed (anything dimming over it). Movies keep 16:9 with bars.
+- Menus (title, slots) and anything the game draws to fill the 16:9 frame stay 16:9 (SSA's pause menu fills it, above):
+  the sides are black (menus) or show the 3D scene undimmed (anything dimming over it). Movies keep 16:9 with bars.
   A HUD piece in a corner of the 16:9 frame goes to that corner of the window instead (`d3d/frame_anchor.h`): the draws
   of `game::UltrawideHudVertexShader` (Trap Team's; `0` in the other games, not looked for) are placed from their
   vertices and the position matrix in c0-c3; a piece that reaches one side's corner moves to that side, the rest (a
@@ -329,5 +342,5 @@ frame 2560x720, 118.4 degrees, plays on in the hub.
   Anchoring to the edges would mean giving the UI a wider screen (`0x82BB45DC`), which brings parked off-screen notices
   into view.
 - The sun's light tile pass has more points (the grid grows with the width): more GPU work at very wide windows.
-- Tested on Metal at 2560x1080 and 3440x1440 only; the pause menu was not captured; Windows and Linux are untested.
+- Tested on Metal at 2560x1080 and 3440x1440 only (the pause menu at 2560x1080 and 2560x1351); Windows and Linux are untested.
 - Aspects above 4:1 are clamped to 4:1.

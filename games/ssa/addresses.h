@@ -93,6 +93,12 @@ namespace game
     constexpr int UltrawideCompositeSlot = -1;
     constexpr bool UltrawideCompositeVpos = true;
     constexpr uint64_t UltrawideHudVertexShader = 0; // not looked for (d3d/frame_anchor.h)
+    // The pause menu's backdrop: a 3D sheet that shows the paused scene (d3d/ultrawide.h, FillsFrame).
+    constexpr uint64_t UltrawideBackdropPixelShader = 0x0185D30A5599D079ull;
+    constexpr uint32_t UltrawideBackdropVposParams = 12; // its pixel constant VposParams
+    // Its dimming: a quad of the HUD's vertex shader over the whole frame, position matrix in c8-c11 (mLocalToScreen).
+    constexpr uint64_t UltrawideBackdropDimVertexShader = 0xCDEA3CD041CF5CFAull;
+    constexpr uint32_t UltrawideBackdropDimMatrix = 8;
     // Upscaling (d3d/upscale.h): the vertex constant where the position matrix starts: c0-c3, row vectors (Lux), checked
     // by the camera vote agreeing in 900 of 900 frames of level_008.
     constexpr int32_t UpscalePositionMatrix = 0;
