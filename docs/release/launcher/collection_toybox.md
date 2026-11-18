@@ -31,8 +31,9 @@ Design: [toybox_ux.md](../../runtime/host/toybox_ux.md) (one model for both apps
 
 ## Picture selection
 
-The launcher and Toy Box use one shared selector: reverse catalogue order, newest cached game first, independent of
-the viewed game. Dedicated variant art wins over newer plain art. Both icon sizes follow that order; large pictures
+The launcher and Toy Box use one shared selector: the figure's original game first by default, else the player's
+choice (the newest game, one game, a game or an own picture per card), independent of the viewed game
+([game_art.md](../../runtime/host/game_art.md#the-rule-for-a-toys-picture)). Dedicated variant art wins over plain art. Both icon sizes follow that order; large pictures
 prefer artwork within the chosen game. Individual swapper halves use their own half image, then whole-figure art
 (a bottom can use its matching top's entry), then a generated icon. Only two genuine half images are composited at
 the waist, and plain halves never replace a dedicated variant picture. Existing caches need no re-extraction or version change. The full path audit and synthetic test coverage

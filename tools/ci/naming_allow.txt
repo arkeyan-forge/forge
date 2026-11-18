@@ -6,6 +6,7 @@ docs/naming.md .
 docs/old_paths.md .
 tools/rename_arkeyan.py .
 tools/ci/check_names.py .
+tools/ci/check_names_test.py .
 CHANGELOG.md .
 docs/releases/* .
 games/*/docs/history.md .

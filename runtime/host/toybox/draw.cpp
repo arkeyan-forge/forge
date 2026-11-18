@@ -620,7 +620,7 @@ namespace toybox
             if (backing)
                 RoundRect(ImVec2(center.x - box / 2.0f, center.y - box / 2.0f),
                     ImVec2(center.x + box / 2.0f, center.y + box / 2.0f), Look::Field, 18);
-            std::string key = path + " " + std::to_string(box);
+            std::string key = "picture " + path + " " + std::to_string(box);
             collection::Image fitted;
             if (!g_baked.count(key))
                 fitted = collection::Resize(source, w, h);
@@ -637,6 +637,30 @@ namespace toybox
 
         std::map<std::string, collection::Image>
             g_stacks; // swappers' joined pictures (an empty one: the halves have none)
+        uint64_t g_pictureGeneration; // collection::PictureGeneration when the pictures above were decoded
+
+        // The player chose other pictures (here or in the launcher): the figures' pictures are decoded again.
+        void ForgetChangedPictures()
+        {
+            const uint64_t generation = collection::PictureGeneration();
+            if (generation == g_pictureGeneration)
+                return;
+            g_pictureGeneration = generation;
+            g_icons.clear();
+            g_artworks.clear();
+            g_stacks.clear();
+            for (auto baked = g_baked.begin(); baked != g_baked.end();)
+            {
+                const std::string& key = baked->first;
+                if (key.starts_with("portrait ") || key.starts_with("picture ") || key.starts_with("swapper "))
+                {
+                    delete baked->second;
+                    baked = g_baked.erase(baked);
+                }
+                else
+                    ++baked;
+            }
+        }
 
         // A swapper's two halves joined at the waist, as the game's swap screen (collection::SwapperPicture, the same
         // picture as Arkeyan Launcher's), fitted into a square of `box` pixels at `center`. False when a half has no such picture
@@ -3988,6 +4012,7 @@ namespace toybox
         io.DeltaTime =
             g_frameTime != 0 && now > g_frameTime ? std::max(float(now - g_frameTime) / 1e9f, 1e-4f) : 1.0f / 30;
         g_frameTime = now;
+        ForgetChangedPictures();
         ImGui::NewFrame();
         g_draw = ImGui::GetBackgroundDrawList();
         g_hits.clear();
