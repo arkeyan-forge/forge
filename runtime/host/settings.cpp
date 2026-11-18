@@ -346,6 +346,8 @@ namespace
                 set.ToyboxKey(file, key, value);
             else if (key.starts_with("key_"))
                 set.Key(file, key.substr(4), value);
+            else if (int action = toybox::pad::Line(key); action >= 0)
+                s.toyboxPad.buttons[size_t(action)] = toybox::pad::Parse(action, value);
             else if (key.starts_with("pad_"))
                 set.Pad(file, key.substr(4), value);
             else if (key == "rumble_p1")
@@ -367,7 +369,7 @@ namespace
                 set.Mouse(file, key.substr(6), value);
             else if (key.starts_with("key_"))
                 set.Key(file, key.substr(4), value);
-            else if (key.starts_with("pad_"))
+            else if (key.starts_with("pad_") && toybox::pad::Line(key) < 0)
                 set.Pad(file, key.substr(4), value);
             else if (key == "rumble_p1")
                 set.Rumble(file, 0, value);

@@ -64,7 +64,7 @@ add_executable(ArkeyanRuntime
     ${ARKEYAN_COLLECTION_SOURCES}
     ${ARKEYAN_ART_SOURCES}
     host/input.cpp
-    host/pad_map.cpp
+    host/pad_map.cpp host/toybox/pad_bindings.cpp
     host/mouse.cpp
     host/mouse_input.cpp
     host/sdl_hints.cpp
@@ -312,7 +312,7 @@ endif()
 # The launcher.ini reader and writer come with ArkeyanRuntimeLauncherTest's sources (its test file aside).
 get_target_property(ARKEYAN_COMMANDS_TEST_SOURCES ArkeyanRuntimeLauncherTest SOURCES)
 list(REMOVE_ITEM ARKEYAN_COMMANDS_TEST_SOURCES host/launcher_test.cpp)
-add_executable(ArkeyanCommandsTest host/commands_test.cpp host/commands.cpp host/settings.cpp host/pad_map.cpp host/mouse.cpp
+add_executable(ArkeyanCommandsTest host/commands_test.cpp host/commands.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp
     ${ARKEYAN_COMMANDS_TEST_SOURCES})
 target_include_directories(ArkeyanCommandsTest PRIVATE .)
 target_link_libraries(ArkeyanCommandsTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
@@ -329,6 +329,10 @@ target_link_libraries(ArkeyanTexturePackTest PRIVATE ArkeyanArtReader)
 add_executable(ArkeyanGuestFormatTest kernel/guest_format_test.cpp kernel/guest_format.cpp)
 target_include_directories(ArkeyanGuestFormatTest PRIVATE .)
 target_link_libraries(ArkeyanGuestFormatTest PRIVATE ArkeyanXenonUtils)
+
+# Physical pad shortcuts, deterministic timing and remap targets (no game data).
+add_executable(ArkeyanToyboxPadBindingsTest host/toybox/pad_bindings_test.cpp host/toybox/pad_bindings.cpp host/pad_map.cpp)
+target_include_directories(ArkeyanToyboxPadBindingsTest PRIVATE .)
 
 # The in-game interface's toast motion and F3 menu layout (host/toybox/look.h): ./ArkeyanToyboxLookTest
 add_executable(ArkeyanToyboxLookTest host/toybox/look_test.cpp)
@@ -491,7 +495,7 @@ add_executable(ArkeyanMouseTest host/mouse_test.cpp host/mouse.cpp)
 target_include_directories(ArkeyanMouseTest PRIVATE .)
 
 # Settings parser test (launcher.ini, environment, command line; no game data needed): ./ArkeyanSettingsTest
-add_executable(ArkeyanSettingsTest host/settings_test.cpp host/settings.cpp host/pad_map.cpp host/mouse.cpp)
+add_executable(ArkeyanSettingsTest host/settings_test.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp)
 target_include_directories(ArkeyanSettingsTest PRIVATE .)
 target_link_libraries(ArkeyanSettingsTest PRIVATE fmt::fmt SDL3::SDL3-static)
 
@@ -711,7 +715,7 @@ target_include_directories(ArkeyanArtTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thi
 target_link_libraries(ArkeyanArtTest PRIVATE ArkeyanHostFiles)
 if(NOT ARKEYAN_UWP)
     target_sources(ArkeyanArtTest PRIVATE host/accents_test.cpp host/launcher.cpp host/launcher_games.cpp host/xex_title.cpp
-        host/portal_emulated.cpp host/texture_pack.cpp host/dds.cpp host/log.cpp host/settings.cpp host/pad_map.cpp host/mouse.cpp host/portable.cpp
+        host/portal_emulated.cpp host/texture_pack.cpp host/dds.cpp host/log.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp host/portable.cpp
         ${CMAKE_SOURCE_DIR}/tools/arkeyan-builder/process.cpp ${ARKEYAN_GAME_DIR}/info.cpp)
     target_compile_definitions(ArkeyanArtTest PRIVATE ARKEYAN_VERSION="test" SKY_ACCENTS_TEST)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

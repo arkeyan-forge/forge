@@ -293,7 +293,9 @@ figure while player 2 plays, then place another). A swap is lift + place in the 
 
 ## 5. In-game quick swap: the wheel
 
-Hold **View** (Back on a 360 pad; Tab on the keyboard) for 0.25 s; a short tap still reaches the game as View.
+By default, hold **View** (Back on a 360 pad; Tab on the keyboard) for 0.25 s; a short tap still reaches the game as View.
+F3 > Commands changes the physical pad button through shared `[input] pad_wheel`; its unused tap reaches the game
+on its remap target, and releasing it confirms the wheel.
 
 ```
             [pin 1]
@@ -423,6 +425,23 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 - **The Toy Box's keys are editable** (F3 > Commands, and Arkeyan Launcher's key page): `[input] key_toybox` (F6; while it is not set Tab
   also opens it, tap, and opens the wheel, hold; once set, that key does both), `key_toybox_add` (F7), `key_toybox_clear` (F8), every
   game (`ToyboxSetKeys`, `PortalSetHotkeys`).
+
+The pad shortcuts are editable in **F3 > Commands** too: `[input] pad_wheel=back`,
+`pad_toybox=back+y`, `pad_menu=back+start` are the defaults. Each uses physical buttons, so a game's
+`pad_<button>` remapping does not move a shortcut. Hold the wheel button for 0.25 s and release to choose;
+an unused tap reaches the game on release for 0.12 s, on that physical button's remap target. For a
+combination, hold its first button and then press its second. The first stays hidden while held, and
+its unused tap is returned on release; the second stays hidden while the first is down. Opening any
+shortcut consumes the tap. The Toy Box combination closes it too; the F3 combination closes a menu
+screen. Y and Start still do their usual jobs inside the Toy Box.
+
+The wheel row captures one button; the Toy Box and F3 rows capture two in order, with a release between
+presses. All sixteen pad button names are accepted, including triggers pressed past 30 of 255.
+Missing or invalid lines use the defaults. These settings are shared by every game, ignore per-game
+overrides, apply immediately and survive a game's Reset. A red row with an "Also used by" notice means
+one of its buttons also does a job in the game (the D-pad and stick clicks too); both keep working. View for the wheel
+or first button, Y in View+Y and Start in View+Start are exempt. The timed logic is independent of SDL
+and covered by `ArkeyanToyboxPadBindingsTest`; shared settings and warnings by `ArkeyanCommandsTest`.
 
 ## 9. Mapping to the collection API (`collection_api.md`)
 

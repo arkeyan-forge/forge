@@ -80,13 +80,72 @@ namespace
         for (int i = 0; i < commands::ToyboxKeyCount; i++)
             if (read.toyboxKeys[i] != settings.toyboxKeys[i])
                 return false;
-        return read.mouse.enabled == settings.mouse.enabled && read.toyboxTab == settings.toyboxTab;
+        return read.mouse.enabled == settings.mouse.enabled && read.toyboxTab == settings.toyboxTab &&
+               read.toyboxPad == settings.toyboxPad;
     }
 }
 
 int main(int argc, char** argv)
 {
     const std::string section = "game.input";
+    // Shared physical shortcuts survive live publication, ignore game overrides and reserve no remap lines.
+    {
+        using namespace toybox::pad;
+        LauncherConfig config;
+        CHECK(commands::Read(config, "game").toyboxPad == Bindings{});
+        config["input"] = { { "pad_wheel", "lb" }, { "pad_toybox", "lb+a" }, { "pad_menu", "lt+rt" } };
+        config[section] = { { "pad_wheel", "rb" }, { "pad_toybox", "rb+b" }, { "pad_menu", "a+b" } };
+        auto read = commands::Read(config, "game");
+        CHECK(read.toyboxPad.buttons[Wheel] == (Binding{ 4, -1 }));
+        CHECK(read.toyboxPad.buttons[Toybox] == (Binding{ 4, 0 }));
+        CHECK(read.toyboxPad.buttons[Menu] == (Binding{ 6, 7 }));
+        CHECK(read.padMap.Identity());
+        RuntimeSettings settings;
+        std::vector<std::string> warnings;
+        std::string error;
+        CHECK(ParseSettings(
+            config, "game", [](const char*) -> const char* { return nullptr; }, 0, nullptr, settings, warnings, error));
+        CHECK(warnings.empty());
+        CHECK(settings.toyboxPad == read.toyboxPad);
+        CHECK(settings.toyboxPad.buttons[Wheel].first == PadButtonIndex("lb"));
+        commands::Publish(read);
+        settings.toyboxPad = {};
+        CHECK(commands::Take(settings));
+        CHECK(settings.toyboxPad == read.toyboxPad);
+        CHECK(!commands::Take(settings));
+        CHECK(commands::Read(config, "other").toyboxPad == read.toyboxPad);
+        commands::Reset(config, "game", Rows);
+        CHECK(commands::Read(config, "game").toyboxPad == read.toyboxPad);
+        config["input"] = { { "pad_wheel", "none" }, { "pad_toybox", "lb" }, { "pad_menu", "a+a" } };
+        CHECK(commands::Read(config, "game").toyboxPad == Bindings{});
+        CHECK(SameAsParse(config));
+        // Defaults are exempt even when a game's rows use View, Y and Start.
+        constexpr commands::Row rows[] = { { "back", "Stats", "Stats", "back" }, { "y", "Attack", "Attaque", "y" },
+            { "start", "Pause", "Pause", "start" }, { "a", "Jump", "Sauter", "a" }, { "lb", "Attack", "Attaque", "lb" },
+            { "lt", "Attack", "Attaque", "lt" } };
+        config.clear();
+        for (int action = 0; action < Count; ++action)
+            CHECK(commands::PadConflict(config, "game", rows, action) == -1);
+        config["input"]["pad_wheel"] = "lb";
+        config["input"]["pad_toybox"] = "lb+a";
+        CHECK(commands::PadConflict(config, "game", rows, Wheel) == 4);
+        CHECK(commands::PadConflict(config, "game", rows, Toybox) >= 0);
+        config["input"]["pad_toybox"] = "back+a";
+        CHECK(commands::PadConflict(config, "game", rows, Toybox) == 3);
+        config["input"]["pad_menu"] = "back+y";
+        CHECK(commands::PadConflict(config, "game", rows, Menu) == 1); // Y exempt only for Toy Box
+        config[section]["pad_rt"] = "none"; // RT turned off: only View is left to check
+        config["input"]["pad_menu"] = "rt+back";
+        CHECK(commands::PadConflict(config, "game", rows, Menu) == 0); // View as a second is not exempt
+        config[section].erase("pad_rt");
+        config["input"]["pad_wheel"] = "rt";
+        config[section]["pad_rt"] = "a";
+        CHECK(commands::PadConflict(config, "game", rows, Wheel) == 3); // physical button's game job
+        config[section]["pad_rt"] = "none";
+        CHECK(commands::PadConflict(config, "game", rows, Wheel) == -1);
+        config["input"]["pad_wheel"] = "dpad_up"; // no row names the D-pad, yet the game reads it
+        CHECK(commands::PadConflict(config, "game", rows, Wheel) == int(std::size(rows)));
+    }
     // The exact key classification used by ToyboxHandleEvent, both at startup and after a live rebind.
     {
         toybox::Keys keys;

@@ -19,7 +19,7 @@ behaviour of the old single menu is kept: the same settings, keys, saved values,
 | Open | Close |
 |---|---|
 | **F3** (released alone) | F3, Esc or B on the panel; F3 on any of its pages |
-| **View + Start** on a pad (the chord does not clash: View alone is the wheel, View + Y the Toy Box; Start is kept from the game while View is down) | View + Start again, or B |
+| **View + Start** on a pad by default (`[input] pad_menu`; View alone is the default wheel, View + Y the Toy Box; Start is kept from the game while View is down) | The configured combination again, or B |
 
 Inside the Toy Box F3 stays its "View" key (the search); the menu opens from the game, not from the Toy Box's screens. While
 the menu is open no input reaches the game from that pad (as for the Toy Box and the wheel; the game keeps running behind it:
@@ -117,7 +117,8 @@ label, the pad button whose job it is). Columns (`menu.cpp` `Column`, `Model::Co
 there are): the action, the **keyboard** key (the letter its place has on the keyboard's layout, the named keys in French when the
 game's text is), the **pad** button (Xbox 360 names; the button or buttons that do the row's job now), the **mouse** button
 ("Left click", "Wheel up"...; "-": none). Below the actions: the **Mouse** switch (On / Off), the Toy Box's three keys (**Open the
-Toy Box**, **Add a figure**, **Clear the figures**: keyboard only, every game), **Reset to defaults** and **Back** (Escape or B goes
+Toy Box**, **Add a figure**, **Clear the figures**: keyboard only, every game), three pad shortcuts
+(**Quick swap wheel**, **Open the Toy Box (pad)**, **Open the F3 menu**), **Reset to defaults** and **Back** (Escape or B goes
 back to the panel).
 
 It is the **Controls** page beside the rail (`Screen::Commands`), opened from Settings' Commands row or the rail; LB / RB go to
@@ -131,23 +132,26 @@ the mouse, and keyboard/pad navigation reveals the selected row. A notice reserv
 | Pad of a stick direction (the moves, Spyro's Adventure's right stick) | nothing to choose: it says the stick stays | |
 | Mouse (only with the switch on, else it says so) | waits for the next mouse button or wheel tick ("Click or scroll"; Escape cancels); that click does nothing else (`ToyboxWaitsForMouseButton`) | `mouse_<action>=<mouse name>` (`host/mouse.h`); the action that had the button gets `none` |
 | Mouse row | flips the switch | `mouse=1` / `0` |
+| A pad shortcut | waits for one physical button for the wheel, or two buttons in order for a combination (release between presses; Escape cancels) | `[input] pad_wheel=back`, `pad_toybox=back+y`, `pad_menu=back+start` by default; shared by every game |
 | A Toy Box key | waits for the next key | `[input] key_toybox`, `key_toybox_add`, `key_toybox_clear` (F6, F7, F8 when not set; Tab opens the Toy Box too while `key_toybox` is not set, and is listed beside F6) |
 
 - **Same file and rules as Arkeyan Launcher** (`host/commands.cpp`). `[input]` is the global layout every game inherits; a change
   here is the running game's own line in `[<game>.input]` (a key equal to the global one removes the line, so the game follows the
-  global layout again); the Toy Box's keys stay in `[input]` for every game. Nothing is copied into `[input]`. The page
+  global layout again); the Toy Box's keys and the three pad shortcuts stay in `[input]` for every game. Nothing is copied into `[input]`. The page
   upgrades again a section an older launcher seeded (`commands::Migrate`); a file the launcher has not upgraded yet (no
   `[input] global=1`, see [settings.md](../../getting-started/settings.md), "The global layout") stays as it is, read the
   old way, since only the launcher knows every game's keys. A key another row of the game or a Toy Box key has: both
   **keep** it (both act on that key) and both keys are drawn **red** (`commands::SlotConflict`), with an "Also used by" toast
   naming the other row. A pad button: it takes the row's job and the button that did that job takes its old one, so **no job is lost**
-  (pressing the row's own button gives every button its own job back). A mouse button: one action per button, the one that had it
+  (pressing the row's own button gives every button its own job back). A shortcut row also turns **red** and shows
+  "Also used by" when one of its physical buttons does a job in the game (the D-pad and stick clicks too; turned off with `none`, it is free). Both bindings keep working.
+  The default View wheel/first button, Y in View+Y, and Start in View+Start never warn. A mouse button: one action per button, the one that had it
   (by its line or the game's default, `game::Adapter::mouseDefaults`) gets `none`. **Reset to defaults** removes the running game's
-  `key_`, `pad_` and `mouse_` lines and its mouse switch (the Toy Box's keys, every game's, stay): the shared rows (moves,
+  `key_`, `pad_` and `mouse_` lines and its mouse switch (the Toy Box's keys and physical pad shortcuts, every game's, stay): the shared rows (moves,
   Back, Pause) take the global keys again, the game's own rows their defaults (on a file not upgraded yet, as lines where
   `[input]`'s differ).
 - **At once**: the page hands the bindings it saved to the main loop (`commands::Publish` / `Take`, read as `ParseSettings` reads them:
-  `[input]`, then `[<game>.input]`: keys, pad, mouse, Toy Box keys), which rebuilds its input the same frame:
+  `[input]`, then `[<game>.input]`: keys, pad and mouse; Toy Box keys and pad shortcuts from `[input]` only), which rebuilds its input the same frame:
   `[input] bindings in use now: key_b=K, ...` in the log; the Toy Box's keys apply at once too (`ToyboxSetKeys`, which also gives
   the portal its add and clear keys, `PortalSetHotkeys`). Every change is a line: `[gamemenu] key_b = K (also on: key_right_down)`,
   `[gamemenu] pad_a = b (swapped: pad_b = a)`, `[gamemenu] mouse = 1`, `[gamemenu] mouse_b = Mouse Right (mouse_x = none)`.
@@ -243,6 +247,9 @@ LB / RB are the tabs' keys and step no page); Performance stepped Compact, Full,
 the log: the `[gamemenu] opened`, `achievements opened`, `settings opened`, `commands opened` lines, `debug_screen = 1, 2, 0`, `[report]
 written`, `[toybox] closed`. The script starts at 100 s (`PAD_START`): the game's own vehicle prompt opens the Toy Box around 70 s on a
 cold start (no shader cache), and the panel does not open over it. SuperChargers and Imaginators: PASS (2026-11-06, the 0.9.0 builds).
+
+The physical pad shortcut parser and timed input are checked by `ArkeyanToyboxPadBindingsTest`;
+`ArkeyanCommandsTest` also checks their shared settings, live updates, reset and conflict exemptions.
 
 The Commands page: `ArkeyanCommandsTest` (in `sky_add_tests`; a scratch `launcher.ini` in the temporary folder or `argv[1]`): an old-layout file left as it
 is and edited the old way, a section an older version seeded upgraded again, the key written over `[input]`'s, a shared key kept and flagged, the pad

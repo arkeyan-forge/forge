@@ -127,9 +127,12 @@ static HostInput MakeHostInput(const RuntimeSettings& settings)
 }
 
 // `mouse`: the actions the mouse holds (Player 1's, host/mouse_input.h), else nullptr.
-static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad, const bool* mouse = nullptr)
+static GamepadState ReadHostGamepad(
+    const HostInput& input, SDL_Gamepad* gamepad, const bool* mouse = nullptr, GamepadState* physical = nullptr)
 {
     GamepadState state;
+    if (physical != nullptr)
+        *physical = {};
     if ((input.keyboard || mouse != nullptr) && !input.raw)
     {
         const bool* keys = ToyboxKeyboardState();
@@ -188,6 +191,8 @@ static GamepadState ReadHostGamepad(const HostInput& input, SDL_Gamepad* gamepad
         pad.thumbRY = int16_t(-std::max(-32767, int(axis(SDL_GAMEPAD_AXIS_RIGHTY))));
         pad.leftTrigger = uint8_t(axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) >> 7);
         pad.rightTrigger = uint8_t(axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) >> 7);
+        if (physical != nullptr)
+            *physical = pad;
         if (!input.raw)
             pad = RemapPad(pad, input.padMap);
         state.buttons |= pad.buttons;
@@ -653,10 +658,11 @@ int main(int argc, char** argv)
             mouseinput::Configure(settings, ::game::Current().mouseDefaults);
         }
         input.raw = ToyboxWaitsForPadButton();
-        // The title gets no input while the Toy Box or the wheel is open; View may become the wheel.
+        // The title gets no input while an overlay is open; physical pad shortcuts reserve their remap targets.
         mouseinput::Frame(window, ToyboxOverlayOpen(), ::game::InMenuLevel());
-        GamepadState state = ReadHostGamepad(input, gamepad, mouseinput::HeldActions());
-        ToyboxFilterGamepad(state);
+        GamepadState physical;
+        GamepadState state = ReadHostGamepad(input, gamepad, mouseinput::HeldActions(), &physical);
+        ToyboxFilterGamepad(state, &physical, &settings);
         SetHostGamepad(state);
         SetHostGamepad(ReadHostGamepad(secondInput, secondGamepad), 1, secondGamepad != nullptr);
         SendRumble(0, gamepad, input.rumble[0]);

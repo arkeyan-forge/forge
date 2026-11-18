@@ -101,7 +101,7 @@ namespace
             const std::string& key = line->first;
             const std::string* global = sharedValue(key);
             bool drop = false;
-            if (key.starts_with("pad_"))
+            if (key.starts_with("pad_") && toybox::pad::Line(key) < 0)
                 drop = global != nullptr ? *global == line->second : line->second == key.substr(4);
             else if (key == "rumble_p1" || key == "rumble_p2")
                 drop = line->second == (global != nullptr ? *global : "normal");
@@ -205,6 +205,28 @@ std::string commands::ToyboxKey(const LauncherConfig& config, int which)
 }
 
 bool commands::ToyboxTab(const LauncherConfig& config) { return Find(config, "input", ToyboxLines[0]) == nullptr; }
+
+int commands::PadConflict(const LauncherConfig& config, std::string_view game, std::span<const Row> rows, int action)
+{
+    const auto binding = Read(config, game).toyboxPad.buttons[size_t(action)];
+    for (int button : { binding.first, binding.second })
+    {
+        if (button < 0 || (button == binding.first && button == 9))
+            continue; // View is the default wheel/first button, never a warning.
+        if (binding.first == 9 && button == binding.second &&
+            ((action == toybox::pad::Toybox && button == 3) || (action == toybox::pad::Menu && button == 8)))
+            continue;
+        // Every button reaches the game (menus read the D-pad and the stick clicks too), so any job counts, named or not.
+        const int target = PadTarget(config, game, button);
+        if (target < 0)
+            continue;
+        for (size_t row = 0; row < rows.size(); ++row)
+            if (rows[row].pad != nullptr && PadButtonIndex(rows[row].pad) == target)
+                return int(row);
+        return int(rows.size());
+    }
+    return -1;
+}
 
 std::string commands::SlotKey(
     const LauncherConfig& config, std::string_view game, std::span<const Row> rows, size_t slot)
@@ -365,7 +387,7 @@ commands::Bindings commands::Read(const LauncherConfig& config, std::string_view
                     if (key.compare(4, std::string::npos, g_keyActions[i].name) == 0)
                         bindings.keys[i] = value;
             }
-            else if (key.starts_with("pad_"))
+            else if (key.starts_with("pad_") && toybox::pad::Line(key) < 0)
             {
                 const int from = PadButtonIndex(std::string_view(key).substr(4)), to = PadButtonIndex(value);
                 if (from >= 0 && (to >= 0 || value == "none"))
@@ -373,6 +395,9 @@ commands::Bindings commands::Read(const LauncherConfig& config, std::string_view
             }
         }
     }
+    for (int action = 0; action < toybox::pad::Count; ++action)
+        if (const std::string* value = Find(config, "input", toybox::pad::Lines[action]))
+            bindings.toyboxPad.buttons[size_t(action)] = toybox::pad::Parse(action, *value);
     bindings.mouse = MouseLines(config, game);
     for (int i = 0; i < ToyboxKeyCount; i++)
         if (const std::string* value = Find(config, "input", ToyboxLines[i]);
@@ -426,6 +451,11 @@ bool commands::Take(RuntimeSettings& settings)
         settings.toyboxKeys[i] = g_published.toyboxKeys[i];
     }
     settings.toyboxTab = g_published.toyboxTab;
+    for (int action = 0; action < toybox::pad::Count; ++action)
+        if (settings.toyboxPad.buttons[size_t(action)] != g_published.toyboxPad.buttons[size_t(action)])
+            changed += std::string(changed.empty() ? "" : ", ") + toybox::pad::Lines[action] + "=" +
+                       toybox::pad::Format(g_published.toyboxPad.buttons[size_t(action)]);
+    settings.toyboxPad = g_published.toyboxPad;
     fprintf(stderr, "[input] bindings in use now: %s\n", changed.empty() ? "unchanged" : changed.c_str());
     return true;
 }
