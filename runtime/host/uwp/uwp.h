@@ -18,4 +18,5 @@ constexpr const char* UwpCoreWindowProperty = "SDL.window.winrt.window";
 
 // Reads LocalState\launcher.ini (`localState` with its trailing backslash; written with the console defaults when
 // missing) and applies it: resolution scale, anisotropy, vsync, languages (host/uwp/settings_uwp.cpp).
-void UwpApplySettings(const std::string& localState, uint32_t defaultScale);
+struct RuntimeSettings;
+void UwpApplySettings(const std::string& localState, uint32_t defaultScale, RuntimeSettings& settings);

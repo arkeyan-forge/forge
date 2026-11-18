@@ -363,6 +363,7 @@ where a frame's time goes, the GPU thread's busy share; `gpu/gpu.cpp`, `LogPerf`
 
 - `[portal] mode` and `place` are still passed through `SKY_PORTAL` / `SKY_PORTAL_PLACE` by the launcher; the runtime
   does not read them from `launcher.ini` itself.
-- The UWP (Xbox) build has no command line: it reads `LocalState\launcher.ini` (`[video]`, `[input]`, `[ssa]` and
-  `[portal] mode`, written with console defaults at the first start; `settings_uwp.cpp`,
+- The UWP (Xbox) build has no command line: it reads `LocalState\launcher.ini` (`[video]`, `[input]`, the game's own
+  section (`[giants]`, `[<game id>.video]`...) and `[portal] mode`, written with console defaults at the first start;
+  `settings_file.cpp`, `settings_uwp.cpp`; the FPS cap, languages and Nightmare as on a computer, `game_options.cpp`,
   [platforms/xbox_uwp.md](platforms/xbox_uwp.md)).

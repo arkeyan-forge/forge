@@ -1,6 +1,7 @@
 // SDL 3 has no UWP support, but the shared runtime code calls SDL for a few utilities: the preference folder, small
 // file reads and writes, window properties, timing and RGBA PNG files (gpu/, host/display.cpp, host/portal*.cpp,
-// kernel/xam_content.cpp, host/glyphs.cpp, host/toybox.cpp, host/art/game_art.cpp). This file implements exactly those calls for the UWP host, against SDL's own headers;
+// kernel/xam_content.cpp, host/glyphs.cpp, host/toybox.cpp, host/art/game_art.cpp, host/collection/, host/machine_state.cpp,
+// host/gamemenu_debug.cpp). This file implements exactly those calls for the UWP host, against SDL's own headers;
 // anything else fails to link. The files that include SDL are compiled for the desktop API family, since SDL's
 // headers refuse WINAPI_FAMILY_APP (see runtime/CMakeLists.txt); the imports stay within the UWP surface
 // (tools/xbox/check_uwp_imports.sh).
@@ -33,9 +34,13 @@ struct SDL_Window
     int height;
 };
 
+// A file, or a read-only block of memory (SDL_IOFromConstMem: the Toy Box's built-in pictures).
 struct SDL_IOStream
 {
     FILE* file;
+    const uint8_t* memory = nullptr;
+    size_t size = 0;
+    size_t position = 0;
 };
 
 namespace
@@ -202,15 +207,58 @@ SDL_IOStream* SDL_IOFromFile(const char* file, const char* mode)
     return handle != nullptr ? new SDL_IOStream{ handle } : nullptr;
 }
 
-size_t SDL_WriteIO(SDL_IOStream* stream, const void* data, size_t size) { return fwrite(data, 1, size, stream->file); }
+SDL_IOStream* SDL_IOFromConstMem(const void* memory, size_t size)
+{
+    if (memory == nullptr)
+        return nullptr;
+    return new SDL_IOStream{ nullptr, static_cast<const uint8_t*>(memory), size, 0 };
+}
+
+size_t SDL_WriteIO(SDL_IOStream* stream, const void* data, size_t size)
+{
+    return stream->file != nullptr ? fwrite(data, 1, size, stream->file) : 0;
+}
+
+size_t SDL_ReadIO(SDL_IOStream* stream, void* data, size_t size)
+{
+    if (stream->file != nullptr)
+        return fread(data, 1, size, stream->file);
+    const size_t count = std::min(size, stream->size - stream->position);
+    memcpy(data, stream->memory + stream->position, count);
+    stream->position += count;
+    return count;
+}
 
 bool SDL_CloseIO(SDL_IOStream* stream)
 {
     if (stream == nullptr)
         return false;
-    bool closed = fclose(stream->file) == 0;
+    bool closed = stream->file == nullptr || fclose(stream->file) == 0;
     delete stream;
     return closed;
+}
+
+// The entries of the directory itself, as SDL gives them: the folder with a trailing separator, then the name.
+bool SDL_EnumerateDirectory(const char* path, SDL_EnumerateDirectoryCallback callback, void* userdata)
+{
+    std::error_code error;
+    fs::directory_iterator entries(Utf8Path(path), error);
+    if (error)
+        return false;
+    std::string folder = path;
+    if (!folder.empty() && folder.back() != '/' && folder.back() != '\\')
+        folder += '\\';
+    for (const fs::directory_entry& entry : entries)
+    {
+        const std::u8string name = entry.path().filename().u8string();
+        const SDL_EnumerationResult result =
+            callback(userdata, folder.c_str(), reinterpret_cast<const char*>(name.c_str()));
+        if (result == SDL_ENUM_SUCCESS)
+            return true;
+        if (result == SDL_ENUM_FAILURE)
+            return false;
+    }
+    return true;
 }
 
 // --- Surfaces (RGBA32 only: the Toy Box's portraits and their PNG cache) -----------------------------------------
@@ -283,6 +331,26 @@ SDL_Surface* SDL_LoadPNG(const char* file)
     return surface;
 }
 
+SDL_Surface* SDL_LoadPNG_IO(SDL_IOStream* stream, bool closeio)
+{
+    if (stream == nullptr)
+        return nullptr;
+    std::vector<uint8_t> data;
+    uint8_t chunk[4096];
+    for (size_t read; (read = SDL_ReadIO(stream, chunk, sizeof(chunk))) != 0;)
+        data.insert(data.end(), chunk, chunk + read);
+    if (closeio)
+        SDL_CloseIO(stream);
+    int width = 0, height = 0;
+    stbi_uc* pixels = stbi_load_from_memory(data.data(), int(data.size()), &width, &height, nullptr, 4);
+    if (pixels == nullptr)
+        return nullptr;
+    SDL_Surface* surface = NewSurface(width, height, nullptr, 0);
+    memcpy(surface->pixels, pixels, size_t(width) * size_t(height) * 4);
+    stbi_image_free(pixels);
+    return surface;
+}
+
 bool SDL_SavePNG(SDL_Surface* surface, const char* file)
 {
     if (surface == nullptr || surface->format != SDL_PIXELFORMAT_RGBA32)
@@ -299,6 +367,13 @@ bool SDL_SavePNG(SDL_Surface* surface, const char* file)
 const char* SDL_GetError() { return ""; }
 
 // --- Events --------------------------------------------------------------------------------------------------------
+
+// No event queue: the host reads the view's events itself (host/uwp/main.cpp). The F3 menu's "quit to the launcher"
+// and the glyph test script's events go nowhere; there is no launcher on the console.
+bool SDL_PushEvent(SDL_Event*) { return false; }
+
+// The console's text is never copied anywhere.
+bool SDL_SetClipboardText(const char*) { return false; }
 
 // The UWP host has no keyboard hotkeys: watchers are never called.
 bool SDL_AddEventWatch(SDL_EventFilter, void*) { return true; }
@@ -398,6 +473,27 @@ bool SDL_GetWindowSize(SDL_Window* window, int* width, int* height)
 
 void SDL_Metal_DestroyView(SDL_MetalView) {}
 
+// One display, the TV, at the swap chain's size: the console presents at 60 Hz.
+SDL_DisplayID SDL_GetDisplayForWindow(SDL_Window*) { return 1; }
+
+const SDL_DisplayMode* SDL_GetCurrentDisplayMode(SDL_DisplayID)
+{
+    static SDL_DisplayMode mode{};
+    mode.displayID = 1;
+    mode.format = SDL_PIXELFORMAT_XRGB8888;
+    mode.w = int(g_windowWidth);
+    mode.h = int(g_windowHeight);
+    mode.pixel_density = 1.0f;
+    mode.refresh_rate = 60.0f;
+    return &mode;
+}
+
+float SDL_GetWindowDisplayScale(SDL_Window*) { return 1.0f; }
+
+const char* SDL_GetPlatform() { return "Xbox (UWP)"; }
+
+int SDL_GetNumLogicalCPUCores() { return int(std::max(1u, std::thread::hardware_concurrency())); }
+
 // --- Button glyphs -------------------------------------------------------------------------------------------------
 
 // The UWP host calls glyphs::Init (the [input] glyphs setting, xboxone by default) but never glyphs::OnEvent: there is
@@ -407,6 +503,35 @@ SDL_Scancode SDL_GetScancodeFromName(const char*) { return SDL_SCANCODE_UNKNOWN;
 SDL_Keycode SDL_GetKeyFromScancode(SDL_Scancode, SDL_Keymod, bool) { return SDLK_UNKNOWN; }
 
 const char* SDL_GetKeyName(SDL_Keycode) { return ""; }
+
+const char* SDL_GetScancodeName(SDL_Scancode) { return ""; }
+
+SDL_Scancode SDL_GetScancodeFromKey(SDL_Keycode, SDL_Keymod*) { return SDL_SCANCODE_UNKNOWN; }
+
+// No SDL gamepads either (the debug screen's list is empty), and no virtual joystick (SKY_GLYPH_SCRIPT is a desktop
+// test aid).
+SDL_JoystickID* SDL_GetGamepads(int* count)
+{
+    if (count != nullptr)
+        *count = 0;
+    return static_cast<SDL_JoystickID*>(calloc(1, sizeof(SDL_JoystickID)));
+}
+
+SDL_GamepadType SDL_GetGamepadTypeForID(SDL_JoystickID) { return SDL_GAMEPAD_TYPE_XBOXONE; }
+
+const char* SDL_GetGamepadStringForType(SDL_GamepadType) { return "xboxone"; }
+
+SDL_JoystickID SDL_AttachVirtualJoystick(const SDL_VirtualJoystickDesc*) { return 0; }
+
+bool SDL_DetachVirtualJoystick(SDL_JoystickID) { return false; }
+
+SDL_Joystick* SDL_OpenJoystick(SDL_JoystickID) { return nullptr; }
+
+void SDL_CloseJoystick(SDL_Joystick*) {}
+
+bool SDL_SetJoystickVirtualButton(SDL_Joystick*, int, bool) { return false; }
+
+bool SDL_SetJoystickVirtualAxis(SDL_Joystick*, int, Sint16) { return false; }
 
 SDL_JoystickID SDL_GetGamepadID(SDL_Gamepad*) { return 0; }
 
@@ -418,6 +543,19 @@ Uint64 SDL_GetTicksNS()
 {
     return Uint64(
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - g_start).count());
+}
+
+Uint64 SDL_GetTicks() { return SDL_GetTicksNS() / 1000000; }
+
+// Nanoseconds since 1970 (UTC), as SDL_Time.
+bool SDL_GetCurrentTime(SDL_Time* ticks)
+{
+    if (ticks == nullptr)
+        return false;
+    *ticks = SDL_Time(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    return true;
 }
 
 void SDL_Delay(Uint32 milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }

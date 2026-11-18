@@ -64,6 +64,8 @@ bool gamemenu::SetDebugScreen(uint32_t level)
 bool gamemenu::CycleDebugScreen() { return SetDebugScreen(g_values.debugScreen + 1); }
 // No logs folder to write to on this target.
 bool gamemenu::SetPerfLog(bool) { return false; }
+bool gamemenu::RecordPerfLogFor(uint64_t) { return false; }
+std::string gamemenu::FinishedPerfLog() { return {}; }
 bool gamemenu::SetFullscreen(bool on)
 {
     g_values.fullscreen = on;
@@ -116,6 +118,9 @@ bool gamemenu::SetFsrQuality(uint32_t quality)
     g_values.fsrQuality = quality;
     return true;
 }
+// FSR 3's frame generation needs the desktop backends: the row stays greyed.
+bool gamemenu::SetFrameGeneration(bool) { return false; }
+gamemenu::FrameGenerationBlock gamemenu::FrameGenerationBlocked() { return FrameGenerationBlock::Device; }
 uint32_t gamemenu::EdgeSmoothingNow() { return g_values.edgeSmoothing; }
 bool gamemenu::RestartNeeded() { return false; }
 std::string gamemenu::FpsText() { return {}; }

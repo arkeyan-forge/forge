@@ -7,6 +7,7 @@
 #include "host/collection/save_backup.h"
 #include "host/display.h"
 #include "host/env.h"
+#include "host/game_options.h"
 #include "host/gamemenu.h"
 #include "host/glyphs.h"
 #include "host/input.h"
@@ -28,7 +29,6 @@
 #include "d3d/upscale.h"
 #include "kernel/video.h"
 #include "game.h"
-#include "language.h"
 #include "loader.h"
 #include "memory.h"
 #include "platform/platform.h"
@@ -398,38 +398,7 @@ int main(int argc, char** argv)
         return 1;
 
     // SKY_NO_FPS_CAP=1 (test aid): the game's cap is not applied, to measure above it (docs/porting/debugging.md).
-    if (skyenv::Get("SKY_NO_FPS_CAP") == nullptr)
-        if (uint32_t capped = gamemenu::CapFrameRate(settings.fpsLimit, ::game::Current().maxFpsLimit);
-            capped != settings.fpsLimit)
-        {
-            fprintf(stderr, "[settings] fps_limit=%u: this game is capped at %u FPS, using %u\n", settings.fpsLimit,
-                ::game::Current().maxFpsLimit, capped);
-            settings.fpsLimit = capped;
-        }
-    if (!settings.language.empty())
-    {
-        bool known = SetTextLanguage(settings.language);
-        if (::game::Current().SetTextLanguage != nullptr)
-            known = ::game::Current().SetTextLanguage(settings.language) || known;
-        if (!known)
-            fprintf(stderr, "unknown text language \"%s\", using French\n", settings.language.c_str());
-    }
-    if (!settings.voiceLanguage.empty())
-    {
-        if (::game::Current().SetVoiceLanguage == nullptr)
-            fprintf(stderr, "%s has no voice language setting yet, ignoring \"%s\"\n", game.name,
-                settings.voiceLanguage.c_str());
-        else if (!::game::Current().SetVoiceLanguage(settings.voiceLanguage))
-            fprintf(stderr, "unknown voice language \"%s\", using English\n", settings.voiceLanguage.c_str());
-    }
-
-    if (settings.nightmareFromStart)
-    {
-        if (::game::Current().SetNightmareFromStart == nullptr)
-            fprintf(stderr, "%s has no locked difficulty, ignoring nightmare_from_start\n", game.name);
-        else
-            ::game::Current().SetNightmareFromStart(true);
-    }
+    gameoptions::Apply(::game::Current(), settings, skyenv::Get("SKY_NO_FPS_CAP") == nullptr);
 
     PlatformInit();
     PlatformInstallFaultHandler(OnFault);

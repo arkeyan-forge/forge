@@ -61,6 +61,7 @@ add_executable(ArkeyanRuntime
     host/glyph_models.cpp
     host/glyph_assets.cpp
     host/texture_pack.cpp
+    host/game_options.cpp
     ${ARKEYAN_COLLECTION_SOURCES}
     ${ARKEYAN_ART_SOURCES}
     host/input.cpp
@@ -499,6 +500,14 @@ target_include_directories(ArkeyanMouseTest PRIVATE .)
 add_executable(ArkeyanSettingsTest host/settings_test.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp)
 target_include_directories(ArkeyanSettingsTest PRIVATE .)
 target_link_libraries(ArkeyanSettingsTest PRIVATE fmt::fmt SDL3::SDL3-static)
+# The console's settings file (host/uwp/settings_file.cpp): defaults, the game's own section. ./ArkeyanUwpSettingsTest
+add_executable(ArkeyanUwpSettingsTest host/uwp/settings_file_test.cpp host/uwp/settings_file.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp)
+target_include_directories(ArkeyanUwpSettingsTest PRIVATE .)
+target_link_libraries(ArkeyanUwpSettingsTest PRIVATE fmt::fmt SDL3::SDL3-static)
+# The game's options both hosts apply (host/game_options.cpp): FPS cap, languages, Nightmare. ./ArkeyanGameOptionsTest
+add_executable(ArkeyanGameOptionsTest host/game_options_test.cpp host/game_options.cpp)
+target_include_directories(ArkeyanGameOptionsTest PRIVATE .)
+target_link_libraries(ArkeyanGameOptionsTest PRIVATE fmt::fmt SDL3::SDL3-static)
 
 # Fonts are data, not game content: Outfit and Bungee (SIL Open Font License, licence files next to them). On macOS
 # they live in the app bundle's Resources/fonts (SDL_GetBasePath returns that directory); elsewhere they are copied
@@ -839,10 +848,10 @@ if(ARKEYAN_UWP)
     # Xbox Dev Mode (UWP app, packaged by tools/xbox/package.sh): host/uwp replaces main.cpp and the SDL host
     # (window and events, audio, launcher, real portals).
     get_target_property(ARKEYAN_SOURCES ArkeyanRuntime SOURCES)
-    list(REMOVE_ITEM ARKEYAN_SOURCES main.cpp host/sdl_hints.cpp host/mouse_input.cpp host/audio.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp host/log.cpp host/portal_hid.cpp
+    list(REMOVE_ITEM ARKEYAN_SOURCES main.cpp host/sdl_hints.cpp host/mouse_input.cpp host/audio.cpp host/launcher.cpp host/portable.cpp host/xex_title.cpp host/log.cpp host/portal_hid.cpp
         host/portal_usb.cpp host/windows_devices.cpp host/gamemenu.cpp host/report.cpp)
     set_property(TARGET ArkeyanRuntime PROPERTY SOURCES ${ARKEYAN_SOURCES} host/audio_xaudio2.cpp host/uwp/main.cpp
-        host/uwp/portal_backends.cpp host/uwp/settings_uwp.cpp host/uwp/uwp_compat.cpp host/uwp/cpu_check.cpp host/uwp/gamemenu_uwp.cpp)
+        host/uwp/portal_backends.cpp host/uwp/settings_uwp.cpp host/uwp/settings_file.cpp host/uwp/uwp_compat.cpp host/uwp/cpu_check.cpp host/uwp/gamemenu_uwp.cpp)
     # The CPU check runs before any other code, so it stays on the baseline whatever ARKEYAN_UWP_MARCH (toolchain file).
     set_source_files_properties(host/uwp/cpu_check.cpp PROPERTIES COMPILE_OPTIONS "-march=btver2")
     if(NOT ARKEYAN_UWP_MARCH STREQUAL "btver2")
@@ -852,17 +861,17 @@ if(ARKEYAN_UWP)
     target_link_options(ArkeyanRuntime PRIVATE -municode)
     # Shared files that include SDL's headers (see ARKEYAN_UWP_DESKTOP_FAMILY in the root CMakeLists.txt).
     set_source_files_properties(host/display.cpp host/portal.cpp host/portal_emulated.cpp kernel/xam_content.cpp
-        host/settings.cpp host/uwp/settings_uwp.cpp host/gamemenu_debug.cpp host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp host/toybox/trap_villain.cpp host/uwp/gamemenu_uwp.cpp
+        host/settings.cpp host/uwp/settings_uwp.cpp host/uwp/settings_file.cpp host/game_options.cpp host/gamemenu_debug.cpp host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp host/toybox/trap_villain.cpp host/uwp/gamemenu_uwp.cpp
         host/art/game_art.cpp host/art/game_text.cpp
         host/collection/catalogue.cpp host/collection/collection.cpp host/collection/icons.cpp
         PROPERTIES COMPILE_OPTIONS "${ARKEYAN_UWP_DESKTOP_FAMILY}")
     set_source_files_properties(gpu/gpu.cpp DIRECTORY gpu PROPERTIES COMPILE_OPTIONS "${ARKEYAN_UWP_DESKTOP_FAMILY}")
-    set_target_properties(ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanSettingsTest ArkeyanCommandsTest ArkeyanDebugScreenTest ArkeyanRecompGpuTest PROPERTIES EXCLUDE_FROM_ALL ON)
+    set_target_properties(ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanSettingsTest ArkeyanUwpSettingsTest ArkeyanGameOptionsTest ArkeyanCommandsTest ArkeyanDebugScreenTest ArkeyanRecompGpuTest PROPERTIES EXCLUDE_FROM_ALL ON)
 endif()
 
 # The game's version in its window title (games/<id>/game.txt, read by the top CMakeLists.txt): main.cpp only, so a new
 # version leaves the other files' compile commands (and the kit's compile.args) unchanged.
-set_source_files_properties(main.cpp PROPERTIES COMPILE_DEFINITIONS ARKEYAN_GAME_VERSION="${ARKEYAN_GAME_VERSION}")
+set_source_files_properties(main.cpp host/uwp/main.cpp PROPERTIES COMPILE_DEFINITIONS ARKEYAN_GAME_VERSION="${ARKEYAN_GAME_VERSION}")
 # The game's id, for the same reason: only the files that read it (and toybox/model.h's includers) differ between games.
 set_property(SOURCE main.cpp host/log.cpp host/portal.cpp host/portal_mixed.cpp host/gamemenu.cpp host/gamemenu_debug.cpp
     host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp kernel/files.cpp
