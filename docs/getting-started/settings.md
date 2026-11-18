@@ -29,6 +29,7 @@ Options take their value as the next argument or after `=` (`--scale 3`, `--scal
 | `--aspect A` | auto, fill, 16:9 | auto | `[video] aspect` (the launcher's Settings > Graphics key): auto shows more to the sides on a window wider than 16:9 ([ultrawide.md](../runtime/gpu/ultrawide.md)); fill does the same and covers a narrower window (16:10) without bars, the sides cut; 16:9 keeps the game's picture, with bars |
 | `--vsync N` | 0, 1 | 1 | `[video] vsync` |
 | `--fullscreen`, `--windowed` | | windowed | `[video] fullscreen` (0, 1) |
+| (settings file only) | `<width>x<height>`, empty | empty | `[<game id>.video] window_size` (or `[video]`): the window's size at start, windowed; empty: the size it had when the game last quit (`window_last`), else 1280x720 |
 | `--anisotropy N` | 1, 2, 4, 8, 16 | 1 | `[video] anisotropy` |
 | `--fps-limit N` | 30, 60 (0.9.4: an older 120, 144, 240, 0 or `display` reads as 60, with a warning but for `display`); at 60: 30 while the frames do not fit in a 60 Hz blank, [video_vblank.md](../runtime/xbox360/video_vblank.md#pacing-waitforflippresentinterval-in-the-swap-hook)) | 30 | `[video] fps_limit` |
 | (settings file only) | 0, 1 | 0 | `[<game id>.video] show_fps` (or `[video]`): the FPS counter, a small readout in a corner; the F3 menu turns it on and off ([gamemenu.md](../runtime/host/gamemenu.md)) |
@@ -114,6 +115,7 @@ Example:
   their bars. The Toy Box and the F3 menu stay whole (letterboxed).
   ([ultrawide.md](../runtime/gpu/ultrawide.md), "Narrower than 16:9: fill").
 - **`fullscreen`**: the SDL window is created fullscreen on the desktop (no display mode change).
+- **`window_size`** and **`window_last`** (launcher issue #135): the window opens at `window_size` (`1600x900`; an `X` works too), else at `window_last`, else at 1280x720, never larger than the display's usable area (a size kept from a bigger screen) and never smaller than 640x360, its minimum by hand too (a smaller value is raised, a malformed one is warned about and ignored). At quit, a window neither fullscreen, maximised nor minimised writes its size to the game's `[<game id>.video] window_last` when it changed (`[gamemenu] window_last = 1600x900`); the log says the size made: `[display] window 1600x900`. `SKY_WINDOW_SIZE` (test runs) wins, is neither fitted nor held to the minimum, and nothing is remembered under it. The 3D scene's resolution stays `resolution_scale`: the present scales it to the window (`host/window_size.h`, `host/display.cpp`).
 - **`original_resolution`** [SwapForce] [TrapTeam]: Swap Force and Trap Team draw their 3D scene at 1040x620 and stretch it to the 1280x720
   frame (the console's 10 MB of EDRAM). By default the runtime asks the game for a 1280x720 scene (with a wide window, the
   scene at the window's shape, 720 high), so nothing is stretched; `1` keeps the console's picture. Read once at start

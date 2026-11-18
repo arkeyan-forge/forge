@@ -5,6 +5,7 @@
 #include "host/gamemenu.h"
 #include "host/pad_map.h"
 #include "host/settings.h"
+#include "host/window_size.h"
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -355,6 +356,28 @@ namespace
             CHECK(generation.settings.upscaler == upscalemode::Upscaler::Off);
         }
     }
+
+    // [video] window_size and the remembered window_last (host/window_size.h).
+    void CheckWindowSize()
+    {
+        using windowsize::Size;
+        Run none = Parse({}, {}, {});
+        CHECK(none.warnings.empty() && none.settings.windowSize == Size{} && none.settings.windowLast == Size{});
+        Run chosen = Parse({ { "video", { { "window_size", "1600x900" } } } }, {}, {});
+        CHECK(chosen.warnings.empty() && chosen.settings.windowSize == (Size{ 1600, 900 }));
+        Run game = Parse(
+            { { "video", { { "window_size", "1600x900" } } }, { "ssa.video", { { "window_size", "" } } } }, {}, {});
+        CHECK(game.warnings.empty() && game.settings.windowSize == Size{}); // the game's own section: the last size
+        Run small = Parse({ { "ssa.video", { { "window_size", "320x200" } } } }, {}, {});
+        CHECK(small.warnings.empty() && small.settings.windowSize == (Size{ 640, 360 }));
+        for (const char* bad : { "0x0", "abc", "1600", "1600x", "-5x400", "1600x900x2" })
+        {
+            Run wrong = Parse({ { "ssa.video", { { "window_size", bad } } } }, {}, {});
+            CHECK(wrong.warnings.size() == 1 && wrong.settings.windowSize == Size{});
+        }
+        Run last = Parse({ { "ssa.video", { { "window_last", "1920x1080" } } } }, {}, {});
+        CHECK(last.warnings.empty() && last.settings.windowLast == (Size{ 1920, 1080 }));
+    }
 }
 
 int main()
@@ -364,6 +387,7 @@ int main()
     CheckBindings();
     CheckIgnoredKeysAndErrors();
     CheckPublicationAndAliases();
+    CheckWindowSize();
 
     // The helper on the real environment: the current name, then SSA_*, and for the launcher SKYLAUNCHER_*.
     {

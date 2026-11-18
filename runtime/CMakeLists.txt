@@ -95,6 +95,7 @@ add_executable(ArkeyanRuntime
     host/windows_devices.cpp
     host/profiles.cpp
     host/settings.cpp
+    host/window_size.cpp
     host/toybox.cpp
     host/toybox/draw.cpp
     host/toybox/menu.cpp
@@ -314,7 +315,7 @@ endif()
 # The launcher.ini reader and writer come with ArkeyanRuntimeLauncherTest's sources (its test file aside).
 get_target_property(ARKEYAN_COMMANDS_TEST_SOURCES ArkeyanRuntimeLauncherTest SOURCES)
 list(REMOVE_ITEM ARKEYAN_COMMANDS_TEST_SOURCES host/launcher_test.cpp)
-add_executable(ArkeyanCommandsTest host/commands_test.cpp host/commands.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp
+add_executable(ArkeyanCommandsTest host/commands_test.cpp host/commands.cpp host/settings.cpp host/window_size.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp
     ${ARKEYAN_COMMANDS_TEST_SOURCES})
 target_include_directories(ArkeyanCommandsTest PRIVATE .)
 target_link_libraries(ArkeyanCommandsTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
@@ -496,12 +497,16 @@ target_include_directories(ArkeyanProfilesTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR
 add_executable(ArkeyanMouseTest host/mouse_test.cpp host/mouse.cpp)
 target_include_directories(ArkeyanMouseTest PRIVATE .)
 
+# The game window's size (host/window_size.h; no SDL, no game data): ./ArkeyanWindowSizeTest
+add_executable(ArkeyanWindowSizeTest host/window_size_test.cpp host/window_size.cpp)
+target_include_directories(ArkeyanWindowSizeTest PRIVATE .)
+
 # Settings parser test (launcher.ini, environment, command line; no game data needed): ./ArkeyanSettingsTest
-add_executable(ArkeyanSettingsTest host/settings_test.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp)
+add_executable(ArkeyanSettingsTest host/settings_test.cpp host/settings.cpp host/window_size.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp)
 target_include_directories(ArkeyanSettingsTest PRIVATE .)
 target_link_libraries(ArkeyanSettingsTest PRIVATE fmt::fmt SDL3::SDL3-static)
 # The console's settings file (host/uwp/settings_file.cpp): defaults, the game's own section. ./ArkeyanUwpSettingsTest
-add_executable(ArkeyanUwpSettingsTest host/uwp/settings_file_test.cpp host/uwp/settings_file.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp)
+add_executable(ArkeyanUwpSettingsTest host/uwp/settings_file_test.cpp host/uwp/settings_file.cpp host/settings.cpp host/window_size.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp)
 target_include_directories(ArkeyanUwpSettingsTest PRIVATE .)
 target_link_libraries(ArkeyanUwpSettingsTest PRIVATE fmt::fmt SDL3::SDL3-static)
 # The game's options both hosts apply (host/game_options.cpp): FPS cap, languages, Nightmare. ./ArkeyanGameOptionsTest
@@ -725,7 +730,7 @@ target_include_directories(ArkeyanArtTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thi
 target_link_libraries(ArkeyanArtTest PRIVATE ArkeyanHostFiles)
 if(NOT ARKEYAN_UWP)
     target_sources(ArkeyanArtTest PRIVATE host/accents_test.cpp host/launcher.cpp host/launcher_games.cpp host/xex_title.cpp
-        host/portal_emulated.cpp host/texture_pack.cpp host/dds.cpp host/log.cpp host/settings.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp host/portable.cpp
+        host/portal_emulated.cpp host/texture_pack.cpp host/dds.cpp host/log.cpp host/settings.cpp host/window_size.cpp host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp host/portable.cpp
         ${CMAKE_SOURCE_DIR}/tools/arkeyan-builder/process.cpp ${ARKEYAN_GAME_DIR}/info.cpp)
     target_compile_definitions(ArkeyanArtTest PRIVATE ARKEYAN_VERSION="test" SKY_ACCENTS_TEST)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

@@ -28,6 +28,7 @@ namespace
 {
     gamemenu::Values g_values;
     SDL_Window* g_window;
+    windowsize::Size g_windowLast;
     std::string g_version;
     bool g_restart;
 
@@ -68,6 +69,7 @@ namespace
 void gamemenu::Init(const RuntimeSettings& settings, SDL_Window* window, const char* gameVersion)
 {
     g_window = window;
+    g_windowLast = settings.windowLast;
     g_version = gameVersion != nullptr ? gameVersion : "";
     g_values = { settings.volume, settings.showFps, settings.fullscreen, settings.fpsLimit, settings.resolutionScale,
         settings.anisotropy, settings.vsync, settings.skipIntroMovies, settings.edgeSmoothing, settings.fpsAutoFallback,
@@ -204,6 +206,22 @@ bool gamemenu::SetFullscreen(bool on)
     if (g_window != nullptr)
         SDL_SetWindowFullscreen(g_window, on);
     return SaveVideo("fullscreen", on ? "1" : "0");
+}
+
+void gamemenu::RememberWindowSize()
+{
+    if (g_window == nullptr || skyenv::Get("SKY_WINDOW_SIZE") != nullptr)
+        return;
+    if ((SDL_GetWindowFlags(g_window) &
+            (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN)) != 0)
+        return;
+    windowsize::Size size;
+    if (!SDL_GetWindowSize(g_window, &size.width, &size.height) || size.width <= 0 || size.height <= 0 ||
+        size == g_windowLast)
+        return;
+    g_windowLast = size;
+    Logged("window_last", windowsize::Format(size));
+    SaveVideo("window_last", windowsize::Format(size));
 }
 
 bool gamemenu::SetFpsLimit(uint32_t fps)

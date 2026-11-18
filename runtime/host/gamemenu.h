@@ -99,6 +99,9 @@ namespace gamemenu
     // Time the overlay took to draw the screen (toybox.cpp), counted in the screen's cost while it measures.
     void AddDebugScreenCost(uint64_t ns);
     bool SetFullscreen(bool on);
+    // At quit: the size of a window neither fullscreen, maximised nor minimised, for the next start ([<game>.video]
+    // window_last); written only when it changed.
+    void RememberWindowSize();
     bool SetFpsLimit(uint32_t fps);
     bool SetFpsAutoFallback(bool on);
     bool SetScale(uint32_t scale);

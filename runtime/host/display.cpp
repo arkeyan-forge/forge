@@ -1,5 +1,6 @@
 #include "host/display.h"
 #include "host/video_driver.h"
+#include "host/window_size.h"
 #include "gpu/gpu.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -68,7 +69,8 @@ static void WritePpm(const std::string& path, const std::vector<uint32_t>& rgba,
         for (uint32_t pixel : rgba)
         {
             uint8_t rgb[3] = { uint8_t(pixel), uint8_t(pixel >> 8), uint8_t(pixel >> 16) };
-            fwrite(rgb, 1, 3, file);
+            if (fwrite(rgb, 1, 3, file) != 3)
+                break;
         }
         fclose(file);
     }
@@ -79,7 +81,10 @@ static void Snapshot(const std::vector<uint32_t>& rgba, int width, int height)
 {
     static const char* prefix = skyenv::Get("SKY_SNAPSHOT");
     static int frame;
-    if (prefix == nullptr || frame++ % 100 != 0 || frame > 2000)
+    if (prefix == nullptr)
+        return;
+    const int shown = frame++;
+    if (shown % 100 != 0 || frame > 2000)
         return;
     WritePpm(std::string(prefix) + "_" + std::to_string(frame / 100) + ".ppm", rgba, width, height);
 }
@@ -126,11 +131,14 @@ void SnapshotPresentedFrame()
     static const int from =
         skyenv::Get("SKY_GPU_SNAPSHOT_FROM") != nullptr ? atoi(skyenv::Get("SKY_GPU_SNAPSHOT_FROM")) : 0;
     static int frame = -from;
-    if (prefix == nullptr || frame < 0 || frame++ % every != 0 || frame > 36000)
+    if (prefix == nullptr || frame < 0)
     {
         frame += frame < 0;
         return;
     }
+    const int presented = frame++;
+    if (presented % every != 0 || frame > 36000)
+        return;
     std::vector<uint32_t> rgba;
     uint32_t width, height;
     if (gpu::ReadbackOutput(rgba, width, height))
@@ -150,12 +158,14 @@ void SubmitDisplayFrame(std::vector<uint32_t> rgba, int width, int height)
 SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool fullscreen)
 {
     // SKY_WINDOW_SIZE=<width>x<height>: the window at that size (test runs on a display of another shape, e.g.
-    // 2560x1080 offscreen); the settings decide the normal size.
+    // 2560x1080 offscreen), neither fitted to the display nor held to the minimum; the settings decide the normal size.
+    bool testSize = false;
     if (const char* size = skyenv::Get("SKY_WINDOW_SIZE"))
         if (int w = 0, h = 0; sscanf(size, "%dx%d", &w, &h) == 2 && w > 0 && h > 0)
         {
             width = w;
             height = h;
+            testSize = true;
         }
     SDL_WindowFlags flags =
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
@@ -217,6 +227,17 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
 #if !defined(PLUME_D3D12_COREWINDOW)
         SDL_ClearError();
 #endif
+        if (!testSize)
+        {
+            // A size remembered on a bigger screen must not open past this one's edges.
+            SDL_Rect usable{};
+            const windowsize::Size fit = SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable)
+                                             ? windowsize::Size{ usable.w, usable.h }
+                                             : windowsize::Size{};
+            const windowsize::Size size = windowsize::Choose({ width, height }, {}, fit);
+            width = size.width;
+            height = size.height;
+        }
         window = SDL_CreateWindow(title, width, height, flags | gpu::WindowFlags());
         if (window != nullptr)
             return true;
@@ -247,6 +268,12 @@ SDL_Window* CreateDisplayWindow(const char* title, int width, int height, bool f
         return window != nullptr;
     };
     videodriver::Start(linuxDesktop, requested, open);
+    if (window != nullptr)
+    {
+        if (!testSize)
+            SDL_SetWindowMinimumSize(window, windowsize::Minimum.width, windowsize::Minimum.height);
+        fprintf(stderr, "[display] window %dx%d%s\n", width, height, fullscreen ? " (fullscreen)" : "");
+    }
     g_gpuReady = window != nullptr && gpu::Init(window);
     if (!g_gpuReady)
         fprintf(stderr, "[gpu] not initialized: %s (SDL video driver %s); see startup errors above\n",
