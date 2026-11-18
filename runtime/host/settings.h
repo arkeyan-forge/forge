@@ -8,6 +8,7 @@
 #include "host/pad_map.h"
 #include "host/speakers.h"
 #include "host/toybox/pad_bindings.h"
+#include "host/window_size.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -29,11 +30,15 @@ struct RuntimeSettings
                                   // picks it from the GPU: 1 on integrated GPUs, 2 on discrete ones and Apple's)
     bool vsync = true;
     bool fullscreen = false;      // desktop fullscreen (no mode change)
-    uint32_t anisotropy = 1;      // 1, 2, 4, 8, 16
+    // [video] window_size=<width>x<height>: the windowed size at start; empty or not set (0x0): the size the window had
+    // when the game last quit (window_last, written by the runtime), else 1280x720 (host/window_size.h).
+    windowsize::Size windowSize;
+    windowsize::Size windowLast;
+    uint32_t anisotropy = 1; // 1, 2, 4, 8, 16
     bool fpsAutoFallback = true; // [<game>.video] fps_auto_fallback: allow the automatic 60 -> 30 drop
     bool fpsAutoFallbackSet =
         false; // the player set it; else main.cpp takes the GPU's default (gpu::DropTo30ByDefault)
-    uint32_t fpsLimit = 30;       // 30 or 60 (an older limit above 60, or none, reads as 60)
+    uint32_t fpsLimit = 30; // 30 or 60 (an older limit above 60, or none, reads as 60)
     bool aspectAuto = true; // [video] aspect: auto follows a window wider than 16:9 (Hor+ camera, wide scene and
     // frame, HUD centred); 16:9 keeps the game's 16:9 picture, with bars on a wider window
     bool aspectFill = false; // [video] aspect=fill: auto (aspectAuto stays on), and on a window narrower than 16:9 the

@@ -445,7 +445,8 @@ int main(int argc, char** argv)
         gpu::SetFirstFrameFallback(SwitchToVulkan);
         // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
         const std::string title = std::string(g_gameInfo.name) + " v" + ARKEYAN_GAME_VERSION;
-        window = CreateDisplayWindow(title.c_str(), 1280, 720, settings.fullscreen);
+        const windowsize::Size size = windowsize::Choose(settings.windowSize, settings.windowLast, {});
+        window = CreateDisplayWindow(title.c_str(), size.width, size.height, settings.fullscreen);
 #ifndef __APPLE__ // macOS: the bundle's icon (Arkeyan-Builder's BundleIcon)
         if (window !=
             nullptr) // game_icon.png beside the executable (Arkeyan-Builder's GameIcon: the disc's logo); else the icon of default.xex; else the system's
@@ -581,6 +582,7 @@ int main(int argc, char** argv)
             if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
                 (event.type == SDL_EVENT_WINDOW_HIDDEN && IsWindowGone()))
             {
+                gamemenu::RememberWindowSize();
                 savebackup::SetGameRunning(false);
                 progress::EndSession();
                 netplay::Finish();
@@ -643,6 +645,7 @@ int main(int argc, char** argv)
     // Not exit(): the title's other threads are still running, and atexit handlers and static destructors would run
     // under them (and could wait on them forever).
     fprintf(stderr, "Main thread exited with 0x%08X\n", mainThread->exitCode);
+    gamemenu::RememberWindowSize();
     savebackup::SetGameRunning(false);
     progress::EndSession();
     netplay::Finish();

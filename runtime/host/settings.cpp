@@ -63,6 +63,16 @@ namespace
             return true;
         }
 
+        // Empty: not chosen (window_size then means the last size).
+        bool WindowSize(const std::string& source, const char* key, const std::string& value, windowsize::Size& out)
+        {
+            windowsize::Size size;
+            if (!value.empty() && !windowsize::Parse(value, size))
+                return Warn(source, key, value, "<width>x<height> or empty");
+            out = size;
+            return true;
+        }
+
         bool Bool(const std::string& source, const char* key, const std::string& value, bool& out)
         {
             if (value != "0" && value != "1")
@@ -281,6 +291,10 @@ namespace
             set.Bool(file, "vsync", value, s.vsync);
         else if (key == "fullscreen")
             set.Bool(file, "fullscreen", value, s.fullscreen);
+        else if (key == "window_size")
+            set.WindowSize(file, "window_size", value, s.windowSize);
+        else if (key == "window_last")
+            set.WindowSize(file, "window_last", value, s.windowLast);
         else if (key == "anisotropy")
             set.Anisotropy(file, value);
         else if (key == "fps_auto_fallback")
