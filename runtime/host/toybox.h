@@ -1,9 +1,10 @@
 #pragma once
 
 // The Toy Box (docs/runtime/host/toybox_ux.md): the portal's seats, My Skylanders, figure management, and the quick swap wheel
-// over the game. Gamepad: hold View for the wheel (a tap still reaches the game), View + Y for the Toy Box; keyboard:
+// over the game. Configurable physical pad shortcuts: View held for the wheel (tap reaches the game), View + Y
+// for the Toy Box, View + Start for F3 by default; shared [input] pad_wheel/pad_toybox/pad_menu. Keyboard:
 // hold Tab for the wheel, tap Tab or F6 for the Toy Box. While either is open the title gets no input from that pad.
-// F3 (View + Start on a pad) opens the game menu: volume, FPS counter, the settings a player changes in play, Report a problem
+// F3 (View + Start on a pad by default) opens the game menu: volume, FPS counter, the settings a player changes in play, Report a problem
 // (host/gamemenu.h); it takes the input as the Toy Box does.
 // Drawn with Dear ImGui on the CPU (host/imgui_software.h) into one image that gpu::SetOverlay blends over the game.
 #include "host/input.h"
@@ -11,6 +12,7 @@
 #include <string>
 #include <vector>
 
+struct RuntimeSettings;
 struct SDL_Window;
 union SDL_Event; // no SDL header: the UWP host includes this file and SDL's headers refuse its API family
 
@@ -20,9 +22,10 @@ void ToyboxInit(SDL_Window* window);
 // Main thread, for every event: true when the menu used it (the title must not see it).
 bool ToyboxHandleEvent(const SDL_Event& event);
 
-// Main thread, with the physical gamepad state of each frame: takes what the Toy Box and the wheel use out of `state`
-// (everything while one is open, View while it may become the wheel) and gives back a tap of View.
-void ToyboxFilterGamepad(GamepadState& state);
+// Main thread: physical pad shortcuts reserve their remap targets in the game-side state and return unused taps.
+// Everything is hidden while an overlay is open. Hosts without separate physical/settings values use the defaults.
+void ToyboxFilterGamepad(
+    GamepadState& state, const GamepadState* physical = nullptr, const RuntimeSettings* settings = nullptr);
 
 // Main thread, once per frame: runs SKY_TOYBOX_SCRIPT and redraws the menu when it changed.
 void ToyboxUpdate();

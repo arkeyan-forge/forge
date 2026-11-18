@@ -6,6 +6,7 @@
 #include "host/gamemenu.h"
 #include "host/glyphs.h"
 #include "host/pad_map.h"
+#include "host/settings.h"
 #include "host/portal.h"
 #include "game.h"
 #include "host/portal_prompt.h"
@@ -32,15 +33,15 @@
 #include "env.h"
 
 // The Toy Box's input and frame (docs/runtime/host/toybox_ux.md): the logic is host/toybox/model.*, the look host/toybox/draw.*.
-// Gamepad: hold View 0.25 s for the quick swap wheel (a tap still reaches the game, sent on release), View + Y for the
-// Toy Box. Keyboard: hold Tab for the wheel, tap Tab or F6 for the Toy Box.
+// Physical pad shortcuts are shared [input] pad_wheel/pad_toybox/pad_menu (View, View+Y, View+Start by default).
+// host/toybox/pad_bindings.* reserves their game-side remap targets and returns unused taps on release.
+// Keyboard: hold Tab for the wheel, tap Tab or F6 for the Toy Box.
 using toybox::Command;
 using toybox::Screen;
 
 namespace
 {
-    constexpr uint64_t HoldForWheel = 250'000'000;  // View or Tab held this long opens the wheel
-    constexpr uint64_t TapLength = 120'000'000;     // a tap of View given back to the game
+    constexpr uint64_t HoldForWheel = toybox::pad::HoldForWheel;
     constexpr uint64_t RepeatDelay = 400'000'000, RepeatPeriod = 80'000'000;
     constexpr int StickAim = 16000;                 // stick tilt that aims the wheel
 
@@ -69,9 +70,7 @@ namespace
     uint16_t g_lastButtons;
     uint16_t g_heldDirection;
     uint64_t g_nextRepeat;
-    uint64_t g_backDown;       // View pressed at (0: not held, or already used)
-    bool g_backUsed;           // the press opened something: no tap for the game
-    uint64_t g_tapUntil;       // the game sees View until then
+    toybox::pad::State g_padBindings;
     bool g_wheelByPad;         // the wheel closes when View is released
     bool g_swallow;            // the game gets nothing until every button is released
 
@@ -786,10 +785,13 @@ bool ToyboxHandleEvent(const SDL_Event& event)
     }
 }
 
-void ToyboxFilterGamepad(GamepadState& state)
+void ToyboxFilterGamepad(GamepadState& state, const GamepadState* raw, const RuntimeSettings* settings)
 {
     if (!g_enabled)
         return;
+    static const RuntimeSettings defaults;
+    const RuntimeSettings& bindings = settings != nullptr ? *settings : defaults;
+    GamepadState physical = raw != nullptr ? *raw : state;
     toybox::Model& model = M();
     uint64_t now = SDL_GetTicksNS(), clock = ScriptClock();
     for (KeyHold& hold : g_keyHolds)
@@ -805,11 +807,12 @@ void ToyboxFilterGamepad(GamepadState& state)
         }
     }
     std::erase_if(g_keyHolds, [&](const KeyHold& hold) { return clock >= hold.to + 1'000'000'000; });
+    GamepadState scripted;
     for (const PadPress& press : g_padPresses)
     {
         if (clock >= press.from && clock < press.to)
         {
-            state.buttons |= press.buttons;
+            scripted.buttons |= press.buttons;
             if (press.lx != 0)
                 state.thumbLX = press.lx;
             if (press.ly != 0)
@@ -817,56 +820,44 @@ void ToyboxFilterGamepad(GamepadState& state)
         }
     }
     std::erase_if(g_padPresses, [&](const PadPress& press) { return clock >= press.to + 1'000'000'000; });
+    physical.buttons |= scripted.buttons;
+    const GamepadState mappedScript = RemapPad(scripted, bindings.padMap);
+    state.buttons |= mappedScript.buttons;
+    state.leftTrigger = std::max(state.leftTrigger, mappedScript.leftTrigger);
+    state.rightTrigger = std::max(state.rightTrigger, mappedScript.rightTrigger);
+    const auto context = !model.open                     ? toybox::pad::Context::Playing
+                         : model.screen == Screen::Wheel ? toybox::pad::Context::Wheel
+                                                         : toybox::pad::Context::Overlay;
+    const auto shortcut = g_padBindings.Step(bindings.toyboxPad, physical, bindings.padMap, now, context);
 
     uint16_t buttons = state.buttons;
-    uint16_t pressed = buttons & ~g_lastButtons, released = g_lastButtons & ~buttons;
+    uint16_t pressed = buttons & ~g_lastButtons;
     g_lastButtons = buttons;
 
-    // --- The game is playing: View held or tapped -----------------------------------------------------------------
+    // --- The game is playing: physical shortcuts held or tapped --------------------------------------------------
     if (!model.open)
     {
-        if (pressed & Button::Back)
+        if (shortcut.toybox)
+            OpenToybox();
+        else if (shortcut.menu)
+            model.OpenMenu();
+        else if (shortcut.wheel)
         {
-            g_backDown = now;
-            g_backUsed = false;
+            g_wheelByPad = true;
+            model.OpenWheel(0);
         }
-        if ((buttons & Button::Back) && g_backDown != 0)
-        {
-            if (pressed & Button::Y)
-            {
-                g_backDown = 0;
-                g_backUsed = true;
-                OpenToybox();
-            }
-            else if (pressed & Button::Start) // View + Start: the F3 menu
-            {
-                g_backDown = 0;
-                g_backUsed = true;
-                model.OpenMenu();
-            }
-            else if (now - g_backDown >= HoldForWheel)
-            {
-                g_backDown = 0;
-                g_backUsed = true;
-                g_wheelByPad = true;
-                model.OpenWheel(0);
-            }
-        }
-        if ((released & Button::Back) && !g_backUsed)
-            g_tapUntil = now + TapLength;
-        if (released & Button::Back)
-            g_backDown = 0;
         if (model.open)
         {
             state = {};
             return;
         }
-        // View is the wheel's until released or given back as a tap; Y too while View is down.
-        state.buttons &= uint16_t(~Button::Back);
-        if (buttons & Button::Back)
-            state.buttons &= uint16_t(~(Button::Y | Button::Start));
-        if (now < g_tapUntil)
-            state.buttons |= Button::Back;
+        state.buttons = (state.buttons & uint16_t(~shortcut.hide.buttons)) | shortcut.tap.buttons;
+        if (shortcut.hide.leftTrigger)
+            state.leftTrigger = 0;
+        if (shortcut.hide.rightTrigger)
+            state.rightTrigger = 0;
+        state.leftTrigger = std::max(state.leftTrigger, shortcut.tap.leftTrigger);
+        state.rightTrigger = std::max(state.rightTrigger, shortcut.tap.rightTrigger);
         // Buttons that closed a menu stay away from the game until released (sticks and triggers past a dead zone:
         // a stick at rest is rarely exactly centred).
         constexpr int StickDeadZone = 8000, TriggerDeadZone = 30;
@@ -894,7 +885,7 @@ void ToyboxFilterGamepad(GamepadState& state)
             model.AimWheel(PlaceOf(float((dpad & Button::DpadRight) != 0) - float((dpad & Button::DpadLeft) != 0),
                 float((dpad & Button::DpadUp) != 0) - float((dpad & Button::DpadDown) != 0)));
         model.PinFromWheel(now, (buttons & Button::X) != 0 || g_pinKey);
-        if ((released & Button::Back) && g_wheelByPad)
+        if (shortcut.confirm && g_wheelByPad)
         {
             g_wheelByPad = false;
             model.ConfirmWheel();
@@ -914,7 +905,7 @@ void ToyboxFilterGamepad(GamepadState& state)
         state = {};
         return;
     }
-    if (released & Button::Back)
+    if (shortcut.confirm)
         g_wheelByPad = false;
 
     // --- The F3 menu's Commands page: a pad button it waits for (the first pressed after all were released), then none
@@ -924,7 +915,8 @@ void ToyboxFilterGamepad(GamepadState& state)
     if (model.screen == Screen::Commands && (model.waiting == toybox::Model::Waiting::PadButton || model.settle))
     {
         constexpr uint8_t TriggerPressed = 30;
-        bool any = buttons != 0 || state.leftTrigger > TriggerPressed || state.rightTrigger > TriggerPressed;
+        bool any =
+            physical.buttons != 0 || physical.leftTrigger > TriggerPressed || physical.rightTrigger > TriggerPressed;
         if (model.settle)
             model.settle = any;
         else if (!any)
@@ -934,10 +926,11 @@ void ToyboxFilterGamepad(GamepadState& state)
             for (int button = 0; button < PadButtonCount; button++)
             {
                 uint16_t mask = PadButtonMask(button);
-                bool down = mask != 0 ? (buttons & mask) != 0
-                                      : (button == 6 ? state.leftTrigger : state.rightTrigger) > TriggerPressed;
+                bool down = mask != 0 ? (physical.buttons & mask) != 0
+                                      : (button == 6 ? physical.leftTrigger : physical.rightTrigger) > TriggerPressed;
                 if (down)
                 {
+                    g_padArmed = false;
                     model.TakePadButton(button);
                     break;
                 }
@@ -948,7 +941,7 @@ void ToyboxFilterGamepad(GamepadState& state)
     }
 
     // --- The Toy Box ---------------------------------------------------------------------------------------------------
-    if ((buttons & Button::Back) && ((pressed & Button::Y) || (MenuScreen(model) && (pressed & Button::Start))))
+    if (shortcut.toybox || (MenuScreen(model) && shortcut.menu))
     {
         model.Close();
         g_swallow = true;
@@ -994,7 +987,7 @@ void ToyboxFilterGamepad(GamepadState& state)
         model.Run(Command::Accept);
     if (model.open && (pressed & Button::X))
         model.Run(Command::Options);
-    if (model.open && (pressed & Button::Y) && !(buttons & Button::Back))
+    if (model.open && (pressed & Button::Y))
         model.Run(Command::View);
     if (model.open && (pressed & Button::Start))
         model.Run(Command::Start);

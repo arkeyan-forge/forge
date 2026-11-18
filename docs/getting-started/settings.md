@@ -191,6 +191,16 @@ or triggers on the keyboard.)
   place the next figure and remove all figures from the emulated portal. Saved keys apply on startup and immediately after
   rebinding in F3 > Commands; they are shared by every game, so a game's Reset leaves them. Files without these lines keep
   the defaults.
+- **Toy Box and menu pad shortcuts**: shared `[input] pad_wheel=back`, `pad_toybox=back+y`,
+  `pad_menu=back+start` by default. The wheel takes one physical button; the Toy Box and F3 menu take two,
+  first held and then second pressed. Choose any of `a b x y lb rb lt rt start back ls rs dpad_up dpad_down
+  dpad_left dpad_right`; triggers count past 30 of 255. Hold the wheel button for 0.25 s, release to choose.
+  An unused tap of the wheel button or a combination's first button is given to the game on release;
+  the second is hidden while the first is held. These shortcuts stay on the physical buttons when the
+  game's controller mapping changes. Missing or invalid lines use the defaults; per-game overrides are
+  ignored. F3 > Commands offers three controller rows for them and applies changes immediately; a game's
+  Reset leaves them. These are shortcut settings for the launcher configuration's shared `[input]` section,
+  separate from the Controller tab's `pad_<button>` remapping lines.
 - **`glyphs`**: the button glyphs the game shows (SSA: its A, B, X, Y, START and right-stick textures; Giants: the
   buttons of its fonts, A, B, X, Y, START, BACK, LS, RS, and its title's A; in menus, dialogs and prompts). `xbox360` keeps the original ones (the Xbox 360 pad); `xboxone` draws the Xbox One / Series pad's:
   dark round buttons with the letters in their colours, Menu (three lines) for START, View for BACK, LS and RS for the sticks;

@@ -112,18 +112,22 @@ namespace toybox
             MouseColumn,
             ColumnCount
         };
-        // Its lines after the game's rows: the mouse's switch, the Toy Box's three keys, Reset, Back.
+        // Extra shared controls follow the game rows: mouse switch, Toy Box keys, physical pad shortcuts, Reset, Back.
         enum Extra
         {
             MouseSwitch,
             ToyboxOpen,
             ToyboxAdd,
             ToyboxClear,
+            PadWheel,
+            PadToybox,
+            PadMenu,
             ResetLine,
             BackLine,
             ExtraCount
         };
 
+        int g_shortcutFirst = -1; // first captured button of a shared two-button shortcut
         LauncherConfig g_commands; // launcher.ini as the page last read or wrote it (commands::Migrate, in memory)
 
         std::span<const commands::Row> InputRows() { return ::game::Current().inputRows; }
@@ -898,6 +902,19 @@ namespace toybox
                 line.cells[KeyColumn].text += ", " + KeyName("Tab");
             lines.push_back(std::move(line));
         }
+        const auto shortcuts = commands::Read(g_commands, game).toyboxPad;
+        const char* english[] = { "Quick swap wheel", "Open the Toy Box (pad)", "Open the F3 menu" };
+        const char* french[] = { "Roue de sélection", "Ouvrir la Toy Box (manette)", "Ouvrir le menu F3" };
+        for (int action = 0; action < toybox::pad::Count; ++action)
+        {
+            const auto binding = shortcuts.buttons[size_t(action)];
+            std::string text = PadName(binding.first);
+            if (binding.second >= 0)
+                text += " + " + PadName(binding.second);
+            CommandLine line{ L(english[action], french[action]), std::vector<CommandLine::Cell>(ColumnCount), {} };
+            line.cells[PadColumn] = { text, true, commands::PadConflict(g_commands, game, rows, action) >= 0 };
+            lines.push_back(std::move(line));
+        }
         lines.push_back({ L("Reset to defaults", "Valeurs par défaut"), {}, {} });
         lines.push_back({ L("Back", "Retour"), {}, {} });
         if (waiting != Waiting::None && commandRow < int(lines.size()) && !lines[size_t(commandRow)].cells.empty())
@@ -905,6 +922,9 @@ namespace toybox
                 waiting == Waiting::Key         ? L("Press a key", "Appuyez sur une touche")
                 : waiting == Waiting::PadButton ? L("Press a button", "Appuyez sur un bouton")
                                                 : L("Click or scroll", "Cliquez ou tournez la molette");
+        if (waiting == Waiting::PadButton && commandRow >= int(rows.size()) + PadWheel && g_shortcutFirst >= 0)
+            lines[size_t(commandRow)].cells[PadColumn].text =
+                PadName(g_shortcutFirst) + " + " + L("Press a second button", "Appuyez sur un second bouton");
         return lines;
     }
 
@@ -979,6 +999,13 @@ namespace toybox
                 fprintf(stderr, "[gamemenu] commands: waiting for a key for %s\n",
                     commands::ToyboxLines[commandRow - rowCount - ToyboxOpen]);
                 break;
+            case PadWheel:
+            case PadToybox:
+            case PadMenu:
+                commandColumn = PadColumn;
+                g_shortcutFirst = -1;
+                waiting = Waiting::PadButton;
+                break;
             case ResetLine:
             {
                 bool saved =
@@ -1002,6 +1029,7 @@ namespace toybox
         if (scancode == 0 && waiting != Waiting::None)
         {
             waiting = Waiting::None;
+            g_shortcutFirst = -1;
             m_dirty = true;
             fprintf(stderr, "[gamemenu] commands: cancelled\n");
             return;
@@ -1049,6 +1077,42 @@ namespace toybox
     {
         if (waiting != Waiting::PadButton || button < 0 || button >= PadButtonCount)
             return;
+        const int action = commandRow - int(InputRows().size()) - PadWheel;
+        if (action >= 0 && action < toybox::pad::Count)
+        {
+            m_dirty = true;
+            if (action != toybox::pad::Wheel && g_shortcutFirst < 0)
+            {
+                g_shortcutFirst = button;
+                return;
+            }
+            if (button == g_shortcutFirst)
+            {
+                Toast(L("Choose a different second button", "Choisissez un autre second bouton"));
+                return;
+            }
+            const toybox::pad::Binding binding = action == toybox::pad::Wheel
+                                                     ? toybox::pad::Binding{ button, -1 }
+                                                     : toybox::pad::Binding{ g_shortcutFirst, button };
+            const std::string value = toybox::pad::Format(binding);
+            const bool saved =
+                ChangeCommands([&](LauncherConfig& config) { config["input"][toybox::pad::Lines[action]] = value; });
+            const int conflict = commands::PadConflict(g_commands, game, InputRows(), action);
+            if (conflict >= 0 && size_t(conflict) < InputRows().size())
+                Toast(std::string(L("Also used by ", "Aussi utilisé par ")) +
+                      commands::SlotLabel(InputRows(), size_t(conflict), French()));
+            else if (conflict >= 0)
+                Toast(L("Also used by the game", "Aussi utilisé par le jeu"));
+            else
+                toast.clear();
+            fprintf(stderr, "[gamemenu] %s = %s\n", toybox::pad::Lines[action], value.c_str());
+            if (!saved)
+                SaveFailed([this](const std::string& text) { Toast(text, 5); });
+            g_shortcutFirst = -1;
+            waiting = Waiting::None;
+            settle = true;
+            return;
+        }
         const commands::Row& row = InputRows()[size_t(commandRow)];
         const int job = PadButtonIndex(row.pad);
         int other = -1;

@@ -3,11 +3,13 @@
 // The F3 menu's Commands page on launcher.ini (docs/runtime/host/gamemenu.md, "Commands"): a game's actions with their
 // keyboard key, pad button and mouse button, stored as Arkeyan Launcher stores them (its launcher/game_keys.cpp). [input]
 // is the layout every game inherits (key_<action>=<SDL scancode name>, pad_<button>=<button>|none, mouse=0|1,
-// mouse_<action>=<mouse name>|none, rumble_p1/p2) and the Toy Box's keys (key_toybox, key_toybox_add, key_toybox_clear);
+// mouse_<action>=<mouse name>|none, rumble_p1/p2) and the Toy Box's keys (key_toybox, key_toybox_add, key_toybox_clear)
+// and physical pad shortcuts (pad_wheel, pad_toybox, pad_menu; shared only, never remapped);
 // [<game>.input] holds the game's own lines, which win. The page itself is host/toybox/menu.cpp.
 #include "host/launcher.h"
 #include "host/mouse.h"
 #include "host/pad_map.h"
+#include "host/toybox/pad_bindings.h"
 #include <span>
 #include <string>
 #include <string_view>
@@ -55,6 +57,9 @@ namespace commands
     inline constexpr const char* ToyboxLines[ToyboxKeyCount] = { "key_toybox", "key_toybox_add", "key_toybox_clear" };
     std::string ToyboxKey(const LauncherConfig& config, int which);
     bool ToyboxTab(const LauncherConfig& config);
+    // A shortcut button that does a job in the game: the row of that job, rows.size() for a job no row names (the D-pad),
+    // -1 for none. The defaults (View, and Y and Start after View) are never flagged.
+    int PadConflict(const LauncherConfig& config, std::string_view game, std::span<const Row> rows, int action);
 
     // A key slot of the page: [0, rows.size()) the game's rows, then the Toy Box's three keys.
     std::string SlotKey(const LauncherConfig& config, std::string_view game, std::span<const Row> rows, size_t slot);
@@ -63,7 +68,7 @@ namespace commands
     // A conflict notice names a direction even when the page abbreviates its action as "Same".
     std::string SlotLabel(std::span<const Row> rows, size_t slot, bool french);
 
-    // Each change goes in the game's section (the Toy Box's keys in [input]); a line equal to [input]'s value goes, so the
+    // Each change goes in the game's section (the Toy Box's keys and physical pad shortcuts in [input]); a line equal to [input]'s value goes, so the
     // game follows the global layout again.
     // `key` for a slot; a slot that has it too (a row of the game or a Toy Box key) keeps it: both are flagged
     // (SlotConflict). Returns the first such slot, -1: none.
@@ -83,11 +88,11 @@ namespace commands
         std::span<const mouse::Default> defaults, size_t action, mouse::Button button);
 
     // "Reset to defaults" for the game: its key_, pad_, mouse_ lines and its mouse switch go (the Toy Box's keys, shared
-    // by every game, stay); a shared row then has the global key, a game's own row its default. On an old layout file the
+    // by every game, stay, as do the shared physical pad shortcuts); a shared row then has the global key, a game's own row its default. On an old layout file the
     // game gets lines with its defaults where [input]'s keys or mouse switch differ, since the other games read them.
     void Reset(LauncherConfig& config, std::string_view game, std::span<const Row> rows);
 
-    // The keys, pad map, mouse and Toy Box keys a start with `config` uses (as ParseSettings reads them: [input], then
+    // The keys, pad map, mouse, Toy Box keys and shared physical pad shortcuts a start with `config` uses (as ParseSettings reads them: [input], then
     // [<game>.input]).
     struct Bindings
     {
@@ -96,6 +101,7 @@ namespace commands
         mouse::Bindings mouse;
         std::string toyboxKeys[ToyboxKeyCount] = { "F6", "F7", "F8" };
         bool toyboxTab = true;
+        toybox::pad::Bindings toyboxPad;
     };
     Bindings Read(const LauncherConfig& config, std::string_view game);
 

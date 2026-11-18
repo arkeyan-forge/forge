@@ -7,6 +7,7 @@
 #include "host/mouse.h"
 #include "host/pad_map.h"
 #include "host/speakers.h"
+#include "host/toybox/pad_bindings.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -69,6 +70,7 @@ struct RuntimeSettings
     std::string gamepad; // SDL GUID, empty: the first one connected
     std::string keys[22]; // SDL key name per g_keyActions entry
     PadMap padMap; // [input] / [<game>.input] pad_<button>=<button>: what each pad button does
+    toybox::pad::Bindings toyboxPad; // physical shortcuts, shared [input] only
     mouse::Bindings
         mouse; // [input], then [<game>.input]: mouse=0|1 (off by default), mouse_<action>=<mouse name>|none (host/mouse.h)
     // [input] key_toybox, key_toybox_add, key_toybox_clear: open the Toy Box, add the next figure, clear the portal (F6, F7,
