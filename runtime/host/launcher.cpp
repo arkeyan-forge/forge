@@ -365,9 +365,9 @@ bool SaveLauncherConfig(const std::string& path, const LauncherConfig& config)
         if (values.empty())
             continue;
         if (!section.empty())
-            text += "\n[" + section + "]\n";
+            text.append("\n[").append(section).append("]\n");
         for (const auto& [key, value] : values)
-            text += key + "=" + value + "\n";
+            text.append(key).append("=").append(value).append("\n");
     }
     return SDL_SaveFile(path.c_str(), text.data(), text.size());
 }
@@ -433,7 +433,7 @@ std::string ResolveGameSource(int argc, char** argv, const GameInfo& game, bool 
         return {};
     }
 
-    // The copy of the game data (Skylauncher's "Copy the game data") is read in preference to the disc image, and makes it
+    // The copy of the game data (Arkeyan Launcher's "Copy the game data") is read in preference to the disc image, and makes it
     // optional. --launcher and --select-iso still open the launcher window to choose one.
     if (!launcherRequested && !selectAgain)
     {

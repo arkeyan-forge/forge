@@ -3,7 +3,7 @@
 # from the disc's logo). Included by runtime/CMakeLists.txt, and by the root project in its tools-only configuration
 # (tools/make_kit.sh builds Arkeyan-Builder that way, without the runtime).
 set(ARKEYAN_RUNTIME_DIR ${CMAKE_SOURCE_DIR}/runtime)
-# The figure and collection library (host/figures without the portraits, host/collection), shared with Skylauncher
+# The figure and collection library (host/figures without the portraits, host/collection), shared with Arkeyan Launcher
 # (docs/runtime/host/collection_api.md). The catalogue (resources/collection/catalogue.json) is built in.
 set(ARKEYAN_CATALOGUE ${CMAKE_SOURCE_DIR}/resources/collection/catalogue.json)
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/embedded_catalogue.cpp

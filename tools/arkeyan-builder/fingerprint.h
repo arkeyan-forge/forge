@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace skybuild::fingerprint
+namespace arkeyan_builder::fingerprint
 {
     // A loaded image (big-endian PowerPC) and its code sections.
     struct Code

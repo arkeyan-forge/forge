@@ -1,8 +1,8 @@
 // Real install steps with invented inputs. Every child call is intercepted; no program or game is launched.
 #define Run GuardRun
 #define RunStartError GuardStartError
-#define main SkyBuildMain
-#include "main.cpp"
+#define main ArkeyanBuilderMain
+#include "main.cpp" // NOLINT(bugprone-suspicious-include): the real main, with its calls intercepted
 #undef main
 #undef RunStartError
 #undef Run
@@ -75,6 +75,7 @@ static std::string Failed(const std::function<void()>& action)
 static std::pair<int, std::string> CaptureMain(std::vector<std::string> args)
 {
     std::vector<char*> argv;
+    argv.reserve(args.size());
     for (auto& arg : args)
         argv.push_back(arg.data());
     FILE* capture = tmpfile();
@@ -84,11 +85,12 @@ static std::pair<int, std::string> CaptureMain(std::vector<std::string> args)
     int saved = dup(fileno(stdout));
     if (saved < 0 || dup2(fileno(capture), fileno(stdout)) < 0)
         throw std::runtime_error("cannot redirect test output");
-    int status = SkyBuildMain(int(argv.size()), argv.data());
+    int status = ArkeyanBuilderMain(int(argv.size()), argv.data());
     fflush(stdout);
     dup2(saved, fileno(stdout));
     close(saved);
-    rewind(capture);
+    if (fseek(capture, 0, SEEK_SET) != 0)
+        throw std::runtime_error("cannot read test output");
     std::string text;
     char buffer[4096];
     for (size_t n; (n = fread(buffer, 1, sizeof(buffer), capture)) != 0;)

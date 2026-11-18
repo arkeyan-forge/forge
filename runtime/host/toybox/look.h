@@ -1,6 +1,6 @@
 #pragma once
 
-// The in-game interface's design (docs/runtime/host/ingame_ui.md): Skylauncher's look over the game. The launcher's
+// The in-game interface's design (docs/runtime/host/ingame_ui.md): Arkeyan Launcher's look over the game. The launcher's
 // neutral greys, one accent (the running game's own colour, made readable on the panels), Bungee for page titles and the
 // game's name, Outfit for everything else, a 2 px focus ring in the accent; the layouts of the full screens (a left rail
 // shared by the Toy Box, Achievements, Settings and Controls), of the F3 menu's side panel and of the corner toasts. draw.cpp
@@ -18,7 +18,7 @@ namespace toybox::look
     // inside it; the full screens and the F3 menu's panel reach the edges, as the launcher's pages do.
     constexpr float SafeLeft = 64, SafeTop = 36, SafeRight = CanvasWidth - 64, SafeBottom = CanvasHeight - 36;
 
-    // Colours (0xRRGGBB): Skylauncher's greys and inks (its launcher_theme.h). The accent is not here: it is the game's.
+    // Colours (0xRRGGBB): Arkeyan Launcher's greys and inks (its launcher_theme.h). The accent is not here: it is the game's.
     namespace Colour
     {
         constexpr uint32_t Scrim = 0x0A0A0E;      // over the game beside the F3 menu's panel
@@ -84,8 +84,8 @@ namespace toybox::look
         return out;
     }
 
-    // The game's glow (Skylauncher's StyleOf(game).glow, GameInfo::glow) lightened toward white in tenths until it reads
-    // at 4.5:1 on the rail and the cards (Surface), as Skylauncher's ReadableAccent does for Trap Team's red.
+    // The game's glow (Arkeyan Launcher's StyleOf(game).glow, GameInfo::glow) lightened toward white in tenths until it reads
+    // at 4.5:1 on the rail and the cards (Surface), as Arkeyan Launcher's ReadableAccent does for Trap Team's red.
     inline uint32_t ReadableAccent(uint32_t glow, uint32_t background = Colour::Surface, double contrast = 4.5)
     {
         uint32_t accent = glow;

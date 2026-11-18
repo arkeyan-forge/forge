@@ -3,7 +3,7 @@
 > **Purpose:** where the player's data root lives on each OS, how the older folders (before 0.3.1) were laid out, and how `MigrateOnce()` moves them · **Status:** current (2026-10-26) · **Tags:** none (host platform)
 
 Code: [`runtime/host/collection/datadir.{h,cpp}`](../../../runtime/host/collection/datadir.cpp) (shared with Arkeyan-Builder
-and, through `tools/sync_skylauncher.sh`, with the launcher); test `ArkeyanDatadirTest`. The layout inside the root (what
+and, through `tools/sync_launcher.sh`, with the launcher); test `ArkeyanDatadirTest`. The layout inside the root (what
 each file and folder is, and which variable replaces which) is canonical in
 [../settings.md](../settings.md#where-everything-is-one-folder-skylanders). Landed with 0.3.1 (2026-10-25): older notes
 and logs show the folders of the table below.

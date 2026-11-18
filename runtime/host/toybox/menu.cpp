@@ -150,7 +150,7 @@ namespace toybox
             return false;
         }
 
-        // A stored key as the player reads it (Skylauncher's KeyDisplayName): the letter of its place on the keyboard's
+        // A stored key as the player reads it (Arkeyan Launcher's KeyDisplayName): the letter of its place on the keyboard's
         // layout, the named keys in the player's language.
         std::string KeyName(const std::string& sdlName)
         {
@@ -171,7 +171,7 @@ namespace toybox
             return shown;
         }
 
-        // A pad button as an Xbox 360 pad prints it (Skylauncher's words), in the order of g_padButtons.
+        // A pad button as an Xbox 360 pad prints it (Arkeyan Launcher's words), in the order of g_padButtons.
         std::string PadName(int button)
         {
             static const std::pair<const char*, const char*> Names[PadButtonCount] = { { "A", "A" }, { "B", "B" },
@@ -181,7 +181,7 @@ namespace toybox
             return button >= 0 && button < PadButtonCount ? L(Names[button].first, Names[button].second) : "-";
         }
 
-        // A stick direction's pad cell (not editable), as Skylauncher words it.
+        // A stick direction's pad cell (not editable), as Arkeyan Launcher words it.
         std::string StickName(std::string_view action)
         {
             if (action.starts_with("left_"))

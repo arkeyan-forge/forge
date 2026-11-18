@@ -110,8 +110,10 @@ for g in $games; do
     cmp -s "$(ppc_headers $g)/ppc_context.h" "$(ppc_headers $first)/ppc_context.h" ||
         { echo "error: $(ppc_headers $g)/ppc_context.h differs from $first's: translate the discs again with one XenonRecomp" >&2; exit 1; }
 done
-# The kit has its own version: the one Skylauncher expects (docs/release/launcher/kit_contract.md).
-version=0.9.8
+# The kit's version is the release it is built for (docs/release/launcher/kit_contract.md): the tag kits_local.sh
+# attaches it to, else the nearest release tag (a test kit: 0.9.9b3-4-gabc1234).
+version=${KIT_VERSION:-${LAUNCHER_TAG:-$(git describe --tags --match 'v[0-9]*' 2>/dev/null || echo 0.0.0)}}
+version=${version#v}
 # Static libraries are byte-identical between the games' builds only if archives carry no timestamps (Apple's ar).
 export ZERO_AR_DATE=1
 # Nothing of this machine in a kit: every compile maps the checkout's path to ".", so neither __FILE__ nor debug
@@ -232,7 +234,7 @@ assemble() { # <build dir> <kit dir> <platform>
     # libmspack is a submodule of XenonRecomp's: git archive leaves it out of the archive above, so it has its own (LGPL source).
     git -C thirdparty/XenonRecomp/thirdparty/libmspack archive --format=tar.gz --prefix=libmspack/ \
         -o "$kit/licenses/libmspack-source.tar.gz" HEAD
-    cp patches/xenonrecomp.patch "$kit/licenses/XenonRecomp-ssarecomp.patch"
+    cp patches/xenonrecomp.patch "$kit/licenses/XenonRecomp-arkeyan.patch"
 
     # One licence file per component (resources/kit-licenses/COMPONENTS.md is the table). A missing source file stops
     # the build: a component must not be added to a kit without its licence.
@@ -483,12 +485,12 @@ for platform in $platforms; do
             # times as fast as an emulated amd64 image, for the same kit.
             arch=$(docker version -f '{{.Server.Arch}}')
             case $arch in amd64 | arm64) ;; *) echo "error: no Linux kit image for a $arch Docker host" >&2; exit 1 ;; esac
-            image=ssarecomp-kit-linux-$arch
+            image=arkeyan-kit-linux-$arch
             docker build -q --platform "linux/$arch" -t "$image" -f tools/linux/kit.Dockerfile tools/linux > /dev/null
             # --init: the docker client passes on a SIGTERM, and a shell as PID 1 would ignore it.
             docker run --rm --init --platform "linux/$arch" --user "$(id -u):$(id -g)" -v "$root:$src" -w "$src" "$@" -e JOBS="$jobs" -e KIT_GAMES="$games" \
                 -e KIT_LAYOUT_RECORD="${KIT_LAYOUT_RECORD:-0}" -e KIT_HEADERS_FROM_PRIVATE="${KIT_HEADERS_FROM_PRIVATE:-0}" \
-                -e KIT_PREPARED="${KIT_PREPARED:-0}" \
+                -e KIT_PREPARED="${KIT_PREPARED:-0}" -e KIT_VERSION="$version" \
                 -e KIT_DEPS="$inner_deps" -e KIT_SCAN_USER="$(id -un)" "$image" tools/make_kit.sh linux
             continue
         fi

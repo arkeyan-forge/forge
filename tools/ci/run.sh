@@ -5,7 +5,7 @@
 #
 #   tools/ci/run.sh [--quick] [--only job,job] [--base REF] [--tidy-all] [--serial] [--force]
 #
-# Jobs: format, tidy, macos, linux, sanitizers, windows, run at the same time (--serial: one after the other). --quick
+# Jobs: names, format, tidy, macos, linux, sanitizers, windows, run at the same time (--serial: one after the other). --quick
 # runs format and macos (the pre-push hook). The changed files are those since --base (default: the merge base with
 # origin/main). --tidy-all lists clang-tidy's findings in every file, as a report. A job that passed on the same tree
 # (commits, uncommitted and untracked files but the docs, submodule commits, options) is skipped; --force runs it
@@ -28,7 +28,7 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-[ -n "$jobs" ] || jobs=format,tidy,macos,linux,sanitizers,windows
+[ -n "$jobs" ] || jobs=names,format,tidy,macos,linux,sanitizers,windows
 [ -n "$base" ] || base=$(git merge-base HEAD origin/main)
 renice -n 10 $$ >/dev/null
 logs=$root/.scratch/checks
@@ -66,6 +66,11 @@ container() { # job platform
         "$image" /repo/tools/ci/job.sh "$1"
 }
 
+# No former project name outside tools/ci/naming_allow.txt (docs/naming.md); its unit test with it.
+names() {
+    python3 -I tools/ci/check_names.py && python3 -I tools/ci/check_names_test.py
+}
+
 macos() {
     # No SKY_WERROR: plume's Metal header and Mac-only unused code still warn (2026-11-15); linux and windows keep it.
     cmake -S . -B build-ci-macos -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSKY_WERROR=OFF -DSKY_TESTS_ONLY=ON || return 1
@@ -96,12 +101,14 @@ names=(); runs=(); pids=()
 for job in ${jobs//,/ }; do
     case $job in
         macos) run=macos ;;
+        names) run=names ;;
         format | tidy | linux | sanitizers | windows) run="container $job $native" ;;
         *) echo "error: unknown job $job" >&2; exit 2 ;;
     esac
     rm -f "$logs/$job.result" "$logs/$job.parallel.log"
     names+=("$job"); runs+=("$run")
-    if [ $force -eq 0 ] && [ "$(cat "$logs/$job.pass" 2>/dev/null)" = "$state" ]; then
+    # names reads the docs too, which the state leaves out: it always runs (a second).
+    if [ $force -eq 0 ] && [ "$job" != names ] && [ "$(cat "$logs/$job.pass" 2>/dev/null)" = "$state" ]; then
         echo "SKIP 0" >"$logs/$job.result"
         pids+=("")
         continue

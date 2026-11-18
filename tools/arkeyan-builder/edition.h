@@ -12,7 +12,7 @@
 class DiscFileSystem;
 struct Image;
 
-namespace skybuild
+namespace arkeyan_builder
 {
     struct DiscEdition
     {
@@ -53,9 +53,10 @@ namespace skybuild
     std::optional<std::vector<fingerprint::Found>> FindEditionAddresses(
         const fingerprint::Code& code, const std::filesystem::path& references);
 
-    // The text the player pastes (ends with a newline). `tools`: "Arkeyan-Builder 0.9.5". `found`: where the disc has
-    // the addresses of the game's addresses.h, when its code differs and references are available. Null or empty:
-    // address matching is unavailable; identification and support decisions do not depend on these diagnostics.
+    // The text the player pastes (ends with a newline). `tools`: the builder and its kit's version ("Arkeyan-Builder
+    // 0.9.9"). `found`: where the disc has the addresses of the game's addresses.h, when its code differs and
+    // references are available. Null or empty: address matching is unavailable; identification and support decisions
+    // do not depend on these diagnostics.
     std::string EditionReport(const DiscEdition& edition, const std::vector<Game>& games, const std::string& tools,
         const std::vector<fingerprint::Found>* found = nullptr);
 }

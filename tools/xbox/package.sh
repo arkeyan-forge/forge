@@ -139,7 +139,7 @@ publisher_id=""
 for ((i = 0; i < 65; i += 5)); do publisher_id+=${alphabet:$((2#${bits:i:5})):1}; done
 
 # --- Layout -------------------------------------------------------------------------------------------------------
-stage="$(mktemp -d "$out_dir/.ssarecomp-package.XXXXXX")"
+stage="$(mktemp -d "$out_dir/.arkeyan-package.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 layout="$stage/layout"
 mkdir -p "$layout/Assets"

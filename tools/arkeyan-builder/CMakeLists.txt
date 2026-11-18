@@ -5,12 +5,12 @@
 if(WIN32)
     # UTF-8 as the process code page, as for the game (SSARecomp.manifest); the kit's version in the exe's details.
     configure_file(arkeyan-builder.rc.in arkeyan-builder.rc @ONLY)
-    set(SKYBUILD_PLATFORM ${CMAKE_CURRENT_BINARY_DIR}/arkeyan-builder.rc)
+    set(ARKEYAN_BUILDER_PLATFORM ${CMAKE_CURRENT_BINARY_DIR}/arkeyan-builder.rc)
 else()
-    set(SKYBUILD_PLATFORM "")
+    set(ARKEYAN_BUILDER_PLATFORM "")
 endif()
 # The HD texture step (hd_textures.h): the pack's DDS writer and content hash are the runtime's own.
-set(SKYBUILD_HD_SOURCES hd_upscale.cpp hd_textures.cpp ${CMAKE_SOURCE_DIR}/runtime/host/dds.cpp
+set(ARKEYAN_BUILDER_HD_SOURCES hd_upscale.cpp hd_textures.cpp ${CMAKE_SOURCE_DIR}/runtime/host/dds.cpp
     ${CMAKE_SOURCE_DIR}/runtime/host/texture_pack.cpp)
 # The Windows compiler arrives as a .zip, inflated in process (toolchain_fetch.cpp): miniz's inflate and CRC-32, the same
 # public-domain source as the runtime's ArkeyanMiniz (a library of its own here: the runtime is not part of a tools build).
@@ -19,8 +19,8 @@ target_compile_definitions(ArkeyanBuilderMiniz PRIVATE MINIZ_NO_STDIO MINIZ_NO_T
 target_include_directories(ArkeyanBuilderMiniz SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz)
 # runtime/guest_layout.cpp: the code layout record's checks, the runtime's own (#72).
 add_executable(Arkeyan-Builder main.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp
-    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
-    ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
+    ${ARKEYAN_BUILDER_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
+    ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${ARKEYAN_BUILDER_PLATFORM})
 target_include_directories(Arkeyan-Builder PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(Arkeyan-Builder SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(Arkeyan-Builder SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb) # stb's own warnings are not ours
@@ -30,8 +30,8 @@ if(WIN32)
     target_link_libraries(Arkeyan-Builder PRIVATE winmm winhttp)
 endif()
 add_executable(ArkeyanVersionResourceTest version_resource_test.cpp accents_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp
-    igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp ${SKYBUILD_HD_SOURCES}
-    ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
+    igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp ${ARKEYAN_BUILDER_HD_SOURCES}
+    ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${ARKEYAN_BUILDER_PLATFORM})
 target_include_directories(ArkeyanVersionResourceTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(ArkeyanVersionResourceTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(ArkeyanVersionResourceTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
@@ -71,8 +71,8 @@ arkeyan_setup_ffmpeg(ArkeyanBuilderMusicTest)
 
 # Real install steps with synthetic inputs and a fake child runner; never launches a game.
 add_executable(ArkeyanBuilderGuardTest install_guard_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp shader_cache_literals.cpp game_icon.cpp menu_music.cpp
-    ${SKYBUILD_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
-    ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${SKYBUILD_PLATFORM})
+    ${ARKEYAN_BUILDER_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
+    ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${ARKEYAN_BUILDER_PLATFORM})
 target_include_directories(ArkeyanBuilderGuardTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(ArkeyanBuilderGuardTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_include_directories(ArkeyanBuilderGuardTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
@@ -103,7 +103,7 @@ foreach(target ArkeyanEditionTest ArkeyanEditionPrints)
         add_executable(${target} edition_prints.cpp)
     endif()
     target_sources(${target} PRIVATE edition.cpp fingerprint.cpp sha256.cpp
-        ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${SKYBUILD_PLATFORM})
+        ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${ARKEYAN_BUILDER_PLATFORM})
     target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
     target_link_libraries(${target} PRIVATE ArkeyanHostFiles ArkeyanXenonUtils)
     if(WIN32)
@@ -125,7 +125,7 @@ add_test(NAME ArkeyanToolchainFetchTest COMMAND ArkeyanToolchainFetchTest ${CMAK
 set_tests_properties(ArkeyanToolchainFetchTest PROPERTIES TIMEOUT 120)
 
 # The HD texture pass on synthetic pictures (analysis, the 2x, BC1/BC3 round trips, the pack file): no game data.
-add_executable(ArkeyanHdTexturesTest hd_textures_test.cpp ${SKYBUILD_HD_SOURCES})
+add_executable(ArkeyanHdTexturesTest hd_textures_test.cpp ${ARKEYAN_BUILDER_HD_SOURCES})
 target_include_directories(ArkeyanHdTexturesTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime)
 target_include_directories(ArkeyanHdTexturesTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
 target_link_libraries(ArkeyanHdTexturesTest PRIVATE ArkeyanArtReader)

@@ -69,7 +69,7 @@ int main()
     CHECK(ToastMotion(since + ToastFade / 2, since, until, true).moving);
     CHECK(ToastGone(until + ToastFade, until, true) && !ToastGone(until + ToastFade - 1, until, true));
 
-    // The accent: each game's glow (Skylauncher's StyleOf) reads at 4.5:1 or more on the rail and the cards, lightened
+    // The accent: each game's glow (Arkeyan Launcher's StyleOf) reads at 4.5:1 or more on the rail and the cards, lightened
     // only as much as needed (Spyro's Adventure's blue as it is, Trap Team's red toward white), never darkened.
     CHECK(std::fabs(Contrast(0x000000, 0xFFFFFF) - 21) < 0.01 &&
           Contrast(0x26262C, 0x6BBAFF) == Contrast(0x6BBAFF, 0x26262C));
@@ -151,6 +151,7 @@ int main()
     // The Toy Box's focus (nav.h). A grid of 7 columns: 17 cards, so rows of 7, 7 and 3.
     using namespace toybox::nav;
     std::vector<Place> cells;
+    cells.reserve(17);
     for (int i = 0; i < 17; i++)
         cells.push_back({ i / 7, i % 7 });
     // Left and Right stay in the row: no wrap onto the row before or after.
@@ -180,6 +181,7 @@ int main()
         { 1140, 1248 } };
     std::vector<Span> bar = { { 728, 1088 }, { 1098, 1248 } };
     std::vector<Span> columns;
+    columns.reserve(7);
     for (int c = 0; c < 7; c++)
         columns.push_back({ 32 + c * 176.0f, 32 + c * 176.0f + 164 });
     CHECK(Nearest(bar, 140) == 0); // Player 1 above: the search field, nearest

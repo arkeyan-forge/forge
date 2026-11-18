@@ -65,7 +65,7 @@ time, so copying again re-runs them once).
 
 ## Arkeyan Launcher
 
-Arkeyan Launcher has its own copy of `vfs.{h,cpp}` (the same file, two include paths) and `game_data.{h,cpp}` (`tools/sync_skylauncher.sh`
+Arkeyan Launcher has its own copy of `vfs.{h,cpp}` (the same file, two include paths) and `game_data.{h,cpp}` (`tools/sync_launcher.sh`
 copies the latter). It makes the copy on a worker thread (`GameCopyJob`, `launcher/game_copy.h`), picks the source at start
 (`PickGameSource`: the complete copy, else the remembered image), and shows the states: the Arkeyan Launcher repo's launcher_ui doc, "Game data".
 

@@ -2,7 +2,7 @@
 
 // The "Report a problem" file of the game (docs/runtime/host/gamemenu.md): one text file with the versions, the OS, the CPU,
 // the GPU, the settings, the last crash's details, the game's log and the previous run's, and the launcher's game log.
-// The format is the launcher's (docs/support.md in Skylauncher): a header, then each file under "===== name =====". The
+// The format is the launcher's (docs/support.md in Arkeyan Launcher): a header, then each file under "===== name =====". The
 // home folder and the account and computer names are replaced (Redact), so the file can be sent as it is.
 #include <filesystem>
 #include <string>

@@ -147,7 +147,7 @@ namespace debugscreen
         return Bound::Unknown;
     }
 
-    // The game's glow made readable on the screen's dark strips (0x15171C), as Skylauncher does for Trap Team's red: mixed
+    // The game's glow made readable on the screen's dark strips (0x15171C), as Arkeyan Launcher does for Trap Team's red: mixed
     // toward white until its contrast ratio is at least 4.5:1.
     inline double Luminance(uint32_t rgb)
     {

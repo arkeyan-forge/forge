@@ -639,7 +639,7 @@ namespace toybox
             g_stacks; // swappers' joined pictures (an empty one: the halves have none)
 
         // A swapper's two halves joined at the waist, as the game's swap screen (collection::SwapperPicture, the same
-        // picture as Skylauncher's), fitted into a square of `box` pixels at `center`. False when a half has no such picture
+        // picture as Arkeyan Launcher's), fitted into a square of `box` pixels at `center`. False when a half has no such picture
         // from a disc: the caller draws the round portrait with the bottom small in a corner.
         bool SwapperStack(const Toy* top, uint16_t topVariant, const Toy* bottom, uint16_t bottomVariant, ImVec2 center,
             int box, bool grey = false)
@@ -1364,7 +1364,7 @@ namespace toybox
             }
         }
 
-        // One figure's card, the same as Skylauncher's: picture, name, level for this game, star, seat tag, lock.
+        // One figure's card, the same as Arkeyan Launcher's: picture, name, level for this game, star, seat tag, lock.
         void Card(Model& model, const Figure& f, ImVec2 a, ImVec2 b, bool cursor, bool grey)
         {
             float width = b.x - a.x, cx = (a.x + b.x) / 2;
@@ -3975,7 +3975,7 @@ namespace toybox
         g_mono = io.Fonts->AddFontDefaultBitmap();
         imgui_software::Init();
         g_background = MakeBackground();
-        // The one accent: the running game's colour (Skylauncher's), readable on the panels.
+        // The one accent: the running game's colour (Arkeyan Launcher's), readable on the panels.
         const GameInfo* info = FindGame(ARKEYAN_GAME_ID);
         Look::SetAccent(info != nullptr ? info->glow : GameInfo{}.glow);
         return g_bold != nullptr && g_black != nullptr && g_display != nullptr && g_title != nullptr;

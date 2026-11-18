@@ -88,7 +88,7 @@ namespace
         return name.find('\\') == std::string::npos ? name : std::string();
     }
 
-    // The F3 menu's Commands page (host/commands.h): Skylauncher's rows for this game, in its order and words.
+    // The F3 menu's Commands page (host/commands.h): Arkeyan Launcher's rows for this game, in its order and words.
     constexpr commands::Row InputRows[] = {
         { "left_up", "Move up", "Haut", nullptr },
         { "left_down", "Move down", "Bas", nullptr },
@@ -106,7 +106,7 @@ namespace
         { "right_right", "Same", "Idem", nullptr },
     };
 
-    // The mouse once on: attack 1 on the left button, attack 2 on the right (Skylauncher's rows name them so).
+    // The mouse once on: attack 1 on the left button, attack 2 on the right (Arkeyan Launcher's rows name them so).
     constexpr mouse::Default MouseDefaults[] = { { "a", mouse::Left }, { "x", mouse::Right } };
     // The front end: the game's own menus, where the mouse does nothing.
     constexpr std::string_view MenuLevels[] = { "frontend" };
@@ -120,7 +120,7 @@ namespace
 
 const game::Adapter& game::Current() { return g_adapter; }
 
-// Skylauncher's glow for this game (its StyleOf).
+// Arkeyan Launcher's glow for this game (its StyleOf).
 uint32_t game::Accent() { return 0x6BBAFF; }
 
 // Ultrawide, the camera: sub_827F56A0 divides the video mode's width by its height and stores it as the display's aspect

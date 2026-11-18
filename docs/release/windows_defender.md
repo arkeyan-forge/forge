@@ -14,7 +14,7 @@ plausible contributors, not Microsoft's feature weights or a finding that the pr
 | --- | --- | --- |
 | Unsigned releases and limited reputation | Likely contributor, inferred from the build | The Windows job in `private/launcher/.github/workflows/build.yml` uses clang-cl and copies the executable directly to `dist/`; neither it nor `tools/make_kit.sh` contains an Authenticode signing step. The macOS `codesign` calls do not sign Windows PE files. A separately signed published artifact cannot be ruled out without inspecting it. A changing locally built game has its own hash. |
 | Thin VERSIONINFO | Possible contributor | Before this change, the launcher's CompanyName was empty, the builder and games lacked CompanyName/LegalCopyright, and XenosRecomp had partial metadata. XenonRecomp had no first-party resource attachment in our build. Descriptive metadata identifies the software to people and scanners; it does not authenticate a publisher or guarantee a different verdict. |
-| Missing application manifest | Unlikely for launcher, builder, games and XenosRecomp; possible for XenonRecomp | `skylauncher.rc.in`, `arkeyan-builder.rc.in`, `SSARecomp.rc` and `xenosrecomp.rc.in` already referenced manifests. Games built by the kit inherit the manifest object through `kit_commands.py`. This change adds XenonRecomp's manifest and makes ordinary privileges explicit. |
+| Missing application manifest | Unlikely for launcher, builder, games and XenosRecomp; possible for XenonRecomp | `arkeyan-launcher.rc.in`, `arkeyan-builder.rc.in`, `SSARecomp.rc` and `xenosrecomp.rc.in` already referenced manifests. Games built by the kit inherit the manifest object through `kit_commands.py`. This change adds XenonRecomp's manifest and makes ordinary privileges explicit. |
 | llvm-mingw, clang/lld and static runtimes | Possible contributor in combination | `cmake/toolchains/x86_64-w64-mingw32-clang.cmake` selects llvm-mingw 20260922, UCRT and `-static`; `tools/make_kit.sh` uses it for tools and games. The launcher instead uses clang-cl and the static MSVC runtime. These are legitimate toolchains; replacing them is no demonstrated cure. |
 | Stripped symbols | Possible contributor, weak evidence alone | `strip_kit()` in `tools/make_kit.sh` applies `llvm-strip --strip-all` to our three kit executables and strips debug information from libraries/objects. This is existing release packaging, not proof of packing or obfuscation. Do not strip more to address a detection; retain a private diagnostic build when investigating it. |
 | PE sections and entropy | Possible, unmeasured | `cmake/embed_fonts.cmake`, runtime shader caches and the launcher's embedded fonts/catalogue increase the amount of non-code data. No release PE is available to measure entropy or section flags/names. No packer step was found in the inspected build scripts. High entropy and unusual sections must not be claimed as observed. |
@@ -36,14 +36,14 @@ plausible contributors, not Microsoft's feature weights or a finding that the pr
    classification from SmartScreen download reputation. Only distributable software is in this investigation; do not
    collect or redistribute a player's game or personal files.
 2. **Complete honest executable identity: small cost, modest/uncertain detection effect; implemented.**
-   `arkeyan-builder.rc.in`, `game.rc.in`, `version_resource.h`, `xenosrecomp.rc.in` and the launcher's `skylauncher.rc.in`
+   `arkeyan-builder.rc.in`, `game.rc.in`, `version_resource.h`, `xenosrecomp.rc.in` and the launcher's `arkeyan-launcher.rc.in`
    now contain CompanyName, product, description, file/product versions and copyright. `Arkeyan project` names a project,
    not an invented legal company or the game's original publisher. Copyright strings follow the existing licences and
    `THIRD_PARTY_NOTICES.md`; translator metadata explicitly identifies our kit distribution and retains upstream authors.
    Game descriptions identify the Arkeyan runtime. Binary file names and game identities stay compatible.
 3. **Make manifests explicit: small cost; implemented.** `CMakeLists.txt` enables the RC language and attaches the new
    `tools/arkeyan-builder/xenonrecomp.rc.in` to XenonRecomp. The builder uses the kit version defined in the root project.
-   `SSARecomp.manifest` and the launcher's `skylauncher.manifest` declare `asInvoker`, `uiAccess=false`; UTF-8 and the
+   `SSARecomp.manifest` and the launcher's `arkeyan-launcher.manifest` declare `asInvoker`, `uiAccess=false`; UTF-8 and the
    launcher's DPI settings remain present. Games built by the kit keep the existing prebuilt manifest object: adding a
    second one in `VersionResource()` would duplicate resource 24/1. `runtime/CMakeLists.txt` now also includes the game
    VERSIONINFO in direct UWP builds. UWP package identity/version remains the separate Xbox packaging path; the UWP build

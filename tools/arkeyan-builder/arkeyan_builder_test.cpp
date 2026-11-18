@@ -207,7 +207,7 @@ static void TestShaderCacheLiterals()
 
 static void TestGames(const fs::path& root)
 {
-    using namespace skybuild;
+    using namespace arkeyan_builder;
     std::vector<Game> games;
     for (const std::string id : { "ssa", "giants", "swapforce", "trapteam", "superchargers", "imaginators" })
     {
@@ -267,7 +267,7 @@ static void TestGames(const fs::path& root)
 
 static void TestUpgrade(const fs::path& root, const fs::path& scratch)
 {
-    using namespace skybuild;
+    using namespace arkeyan_builder;
     for (const std::string id : { "ssa", "giants", "swapforce", "trapteam" })
     {
         const auto game = ReadGame(id, ReadKeyValues(root / "games" / id / "game.txt"));
@@ -307,7 +307,7 @@ static void TestUpgrade(const fs::path& root, const fs::path& scratch)
 // An install made by an older kit keeps its ssabuild-work in place (no rebuild for the rename); a new one uses arkeyan-work.
 static void TestWorkFolder(const fs::path& scratch)
 {
-    using namespace skybuild;
+    using namespace arkeyan_builder;
     const fs::path fresh = scratch / "work-fresh", old = scratch / "work-old";
     CHECK(WorkFolder(fresh) == fresh / "arkeyan-work");
     fs::create_directories(old / "ssabuild-work" / "ppc");

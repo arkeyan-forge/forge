@@ -104,7 +104,7 @@ scripts and the app bundle depend on those names.
 | `patches/` | `xenonrecomp.patch`, `xenosrecomp.patch`, `plume.patch`, `plume_queue_order.patch` |
 | `thirdparty/` | submodules `XenonRecomp` (MIT), `XenosRecomp` (MIT, with `dxc-bin`, `xxHash`, `zstd`, `smol-v`), `plume` (MIT), `SDL` (zlib), `imgui`; `stb` (vendored, not a submodule); plus `plume.cmake` |
 | `resources/` | `collection/catalogue.json` (271 toys), `launcher/fonts`, `toybox/fonts` (Outfit, Bungee), `macos/{Info.plist.in,make_icon.py,ArkeyanRuntime.icns}`, `kit-licenses/` (COMPONENTS.md and licence texts) |
-| `tools/` | `prepare_game.sh`, `build_windows.sh`, `build_linux.sh`, `make_kit.sh`, `kit_scan.sh`, `sync_skylauncher.sh`, `test_all.sh`, `check_docs.py`, `docs_move.py`, `find_switch_tables.py`, `ppcinfo.py`, `xmatch.py`, `xexdump/`, `sigmatch/`, `shaders/`, `pipelines/`, `perf/`, `regress/`, `ffmpeg/`, `arkeyan-builder/`, `windows/`, `linux/`, `xbox/` ([tools/](../tools/README.md)) |
+| `tools/` | `prepare_game.sh`, `build_windows.sh`, `build_linux.sh`, `make_kit.sh`, `kit_scan.sh`, `sync_launcher.sh`, `test_all.sh`, `check_docs.py`, `docs_move.py`, `find_switch_tables.py`, `ppcinfo.py`, `xmatch.py`, `xexdump/`, `sigmatch/`, `shaders/`, `pipelines/`, `perf/`, `regress/`, `ffmpeg/`, `arkeyan-builder/`, `windows/`, `linux/`, `xbox/` ([tools/](../tools/README.md)) |
 | `README.md`, `CHANGELOG.md`, `LICENSE` (MIT), `THIRD_PARTY_NOTICES.md` | the README, the changelog, the notices (shipped in every package) |
 
 ## Choices made in the reorganisation (2026-10-25)

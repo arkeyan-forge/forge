@@ -51,7 +51,7 @@
 
 namespace
 {
-    using namespace skybuild;
+    using namespace arkeyan_builder;
     // The compiler Arkeyan-Builder downloads: the one the kit's runtime was built with (tools/make_kit.sh), pinned by SHA-256.
     struct Toolchain
     {
@@ -1571,7 +1571,7 @@ namespace
                 Fail("codesign failed");
             }
         }
-        skybuild::RemoveLegacyRuntime(build.game, build.options.out,
+        arkeyan_builder::RemoveLegacyRuntime(build.game, build.options.out,
             build.macos                       ? ".app"
             : build.platform == "windows-x64" ? ".exe"
                                               : "");

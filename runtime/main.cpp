@@ -556,7 +556,7 @@ int main(int argc, char** argv)
     // If the Toy Box could not start, keep its worker for presence without advertising a link.
     toyboxremote::Start(PortalSessionFolder(), game.id, false);
     ToyboxSetAutoOpen(settings.toyboxAutoOpen);
-    // While the game runs, Skylauncher refuses to restore a backup over its saves (Settings > Game data,
+    // While the game runs, Arkeyan Launcher refuses to restore a backup over its saves (Settings > Game data,
     // save_backup.h). The marker holds this process id; a crash leaves it behind and the launcher sees it is gone.
     savebackup::SetGameRunning(true);
     progress::BeginSession(game.id); // play time: written every minute and at exit (collection/progress.h)

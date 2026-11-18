@@ -136,7 +136,7 @@ namespace
 
 const game::Adapter& game::Current() { return g_adapter; }
 
-// Skylauncher's glow for this game (its StyleOf).
+// Arkeyan Launcher's glow for this game (its StyleOf).
 uint32_t game::Accent() { return 0xF07008; }
 
 bool game::FigureArriving()

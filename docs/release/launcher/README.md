@@ -15,16 +15,15 @@ background, layout) is **the designer's design**. It is not the runtime's own `-
 | Visibility | **public** source, MIT; no game data | **public**, MIT |
 | Holds | the runtime, the engines, the games' addresses, the tools, the docs | the launcher UI, the updater, the install flow, its own `README.md` and `docs/` |
 | Never holds | game data | game code, game art, the kit's binaries |
-| Releases | no tags; `tools/make_kit.sh` makes the **kits** | tags `vX.Y.Z`; `tools/release_local.sh` builds the launchers and `SHA256SUMS` and makes the draft; this repo's `tools/ci/kits_local.sh` (or `tools/release_kit.sh`) attaches the kits |
+| Releases | the tag `vX.Y.Z` of the commit the kits are built from; `tools/make_kit.sh` makes the **kits** | tags `vX.Y.Z`; `tools/release_local.sh` builds the launchers and `SHA256SUMS` and makes the draft; this repo's `tools/ci/kits_local.sh` (or `tools/release_kit.sh`) attaches the kits |
 
-Version 0.9.5 is released; the 0.9.6 kits are prepared with all six games. See the
-[0.9.5 notes](../../releases/v0.9.5.md), [0.9.6 notes](../../releases/v0.9.6.md) and
-[game table](../../../README.md#status-of-each-game-2026-11-12) for current versions and tested platforms.
+The released versions are on the launcher's [releases page](https://github.com/mflr0/Arkeyan-Launcher/releases); the
+[game table](../../../README.md#status-of-each-game-2026-11-12) gives each game's tested platforms.
 
 ## What passes between the two repos
 1. **The kit** (this repo -> Arkeyan Launcher's release): `tools/make_kit.sh` builds `skylanders-kit-<platform>.zip`, Arkeyan Launcher's
    `tools/release_kit.sh` attaches it to a launcher release. The contract: [kit_contract.md](kit_contract.md).
-2. **The shared library** (this repo -> an Arkeyan Launcher checkout): `tools/sync_skylauncher.sh [--check] <skylauncher dir>`
+2. **The shared library** (this repo -> an Arkeyan Launcher checkout): `tools/sync_launcher.sh [--check] <launcher dir>`
    copies, from `runtime/host/`:
    - `figures/` `figure_catalog`, `figure_crypto`, `figure_data`, `figure_tag` (`.h`, `.cpp`) -> `src/shared/figures/`;
    - `collection/` `json`, `catalogue`, `collection`, `icons`, `datadir`, `save_backup`, `game_data`, `upgrades`, `search` -> `src/shared/collection/`;
@@ -47,7 +46,7 @@ Version 0.9.5 is released; the 0.9.6 kits are prepared with all six games. See t
 | Change | Where | Then |
 |---|---|---|
 | Runtime or game behaviour | this repo | rebuild the kits (`tools/make_kit.sh`), attach them with `release_kit.sh` |
-| The figure, collection or art library | this repo (`runtime/host/`, with its tests) | `tools/sync_skylauncher.sh` into Arkeyan Launcher, commit there |
+| The figure, collection or art library | this repo (`runtime/host/`, with its tests) | `tools/sync_launcher.sh` into Arkeyan Launcher, commit there |
 | A new supported game | `games/<id>/` here (`info.cpp`, `game.txt`); a `GameRelease` + `GameInfo` row in Arkeyan Launcher | [../../porting/day1.md](../../porting/day1.md) |
 | The launcher's look or flow | Arkeyan Launcher | a launcher release; the kit is untouched |
 | The kit contract | **both** | bump the kit `version`; document it in [kit_contract.md](kit_contract.md) |
@@ -68,7 +67,7 @@ Version 0.9.5 is released; the 0.9.6 kits are prepared with all six games. See t
 | `src/shared/` | `vfs` (disc reader), `platform/`, `mini_json`, `stb_impl.cpp`, embedded fonts; `collection/`, `figures/`, `art/` = this repo's library (synced) |
 | `tests/` | `launcher_test.cpp`, `settings_test.cpp`, `shell_test.cpp`, `copy_test.cpp`, `fake_arkeyan_builder.c` |
 | `tools/release_kit.sh`, `tools/sync_collection.sh` | release and sync helpers |
-| `CMakeLists.txt` | `SKYLAUNCHER_VERSION`; `SkylauncherCore` (library), `ArkeyanLauncher` (WIN32 MACOSX_BUNDLE), `ArkeyanLauncherTest`, `FakeArkeyanBuilder` (both EXCLUDE_FROM_ALL) |
+| `CMakeLists.txt` | `LAUNCHER_VERSION`; `ArkeyanLauncherCore` (library), `ArkeyanLauncher` (WIN32 MACOSX_BUNDLE), `ArkeyanLauncherTest`, `FakeArkeyanBuilder` (both EXCLUDE_FROM_ALL) |
 
 Game table today: SSA (`0x415608AB`, `Skylanders Spyro's Adventure`), Giants (`0x415608DA`, `Skylanders Giants`) and Swap Force (`Skylanders Swap Force`); the sidebar shows the later
 games as "Coming later". v0.3.1 lists SSA only. **Adding a game = a `GameRelease` row (hash from the player's own
@@ -90,7 +89,7 @@ Build: `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja -C buil
 Clang C++20; `--recursive` clone). `ninja -C build ArkeyanLauncherTest FakeArkeyanBuilder`, then run `ArkeyanLauncherTest`. Every
 launcher run sets `SKY_LAUNCHER_INI` and `SKY_COLLECTION` to scratch paths and `SKY_LAUNCHER_NO_UPDATE_CHECK=1`
 ([../../getting-started/testing.md](../../getting-started/testing.md)). The fake kit and the screenshot test:
-[install_flow.md](install_flow.md). After a library change here: `tools/sync_skylauncher.sh --check <checkout>` lists
+[install_flow.md](install_flow.md). After a library change here: `tools/sync_launcher.sh --check <checkout>` lists
 what differs.
 
 ## Gotchas

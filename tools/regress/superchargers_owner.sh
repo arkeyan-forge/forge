@@ -1,5 +1,5 @@
 #!/bin/bash
-# SuperChargers keeps the player's owner id from one session to the next (Skylauncher issue #28;
+# SuperChargers keeps the player's owner id from one session to the next (Arkeyan Launcher issue #28;
 # docs/runtime/host/figures.md "Owner"): a new game registers Fiesta and Crypt Crusher (blank tags) with the save's
 # owner id, then a second session on that save and those dumps must use the same id, leave both toys as they are (no new
 # owner written) and list them in the game's collection (Portal Master > Collection > Skylanders: a picture to look at).

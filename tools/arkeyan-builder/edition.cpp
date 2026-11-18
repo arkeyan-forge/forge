@@ -10,7 +10,7 @@
 #include <iterator>
 #include <utility>
 
-namespace skybuild
+namespace arkeyan_builder
 {
     fingerprint::Code ImageCode(const Image& image)
     {

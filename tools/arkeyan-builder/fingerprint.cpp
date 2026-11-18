@@ -6,7 +6,7 @@
 #include <sstream>
 #include <unordered_map>
 
-namespace skybuild::fingerprint
+namespace arkeyan_builder::fingerprint
 {
     namespace
     {

@@ -35,5 +35,5 @@ docker run --rm --platform "linux/$arch" --user "$(id -u):$(id -g)" -v "$root:/s
     -e SKY_GPU_SNAPSHOT=/out/gpu -e SKY_GPU_SNAPSHOT_EVERY="${SKY_GPU_SNAPSHOT_EVERY:-60}" \
     -e SKY_DUMP_FRAME="${SKY_DUMP_FRAME:-30}" -e SKY_DUMP_PREFIX=/out/dump -e SKY_RENDER_STATS=1 \
     -e GAME_EXE="$build/ArkeyanRuntime/$(sed -n 's/^runtime=//p' "$root/games/$game/game.txt")" -e RUN_SECONDS="$seconds" \
-    "ssarecomp-linux-$arch" sh -c 'timeout -k 5 "$RUN_SECONDS" "$GAME_EXE" /game.iso > /out/log 2>&1; echo exit=$? >> /out/log'
+    "arkeyan-linux-$arch" sh -c 'timeout -k 5 "$RUN_SECONDS" "$GAME_EXE" /game.iso > /out/log 2>&1; echo exit=$? >> /out/log'
 tail -3 "$out/log"

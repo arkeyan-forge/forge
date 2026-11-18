@@ -31,7 +31,7 @@ from the disc to a running port: [toolchain/README.md](toolchain/README.md).
 | `tools/arkeyan-builder/edition*`, `fingerprint*` (`--edition-report`), `tools/editions/from_report.py` | the edition finder: a disc's report, header-only editions accepted, a disc's addresses by fingerprints | [edition_finder.md](edition_finder.md) |
 | `tools/arkeyan-builder/hd_*` (`--hd-textures`) | HD textures: our own 2x pass over the player's disc into their texture pack | [hd_textures.md](hd_textures.md) |
 | `tools/ffmpeg/build.sh` | the minimal LGPL FFmpeg (WMA Pro only) | [../release/licensing.md](../release/licensing.md) |
-| `tools/sync_skylauncher.sh` | copy the shared library into a Arkeyan Launcher checkout | [../release/launcher/README.md](../release/launcher/README.md) |
+| `tools/sync_launcher.sh` | copy the shared library into an Arkeyan Launcher checkout | [../release/launcher/README.md](../release/launcher/README.md) |
 | `tools/check_docs.py`, `tools/docs_move.py` | broken doc paths; move a page and rewrite its references | [../README.md](../README.md) |
 | `tools/day1.sh` | day 1 of a new disc (extract, xexdump, sigmatch) | [`docs/tools/day1.md`](day1.md) |
 

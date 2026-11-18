@@ -369,7 +369,7 @@ index a8b87a6..e6cc2d9 100644
  
 -void recompileShader(RecompiledShader& shader, const std::string_view include, std::atomic<uint32_t>& progress, uint32_t numShaders)
 +// Skylanders: the streams compiled. A game reads one or two (macOS the AIR, Linux the SPIR-V, Windows the DXIL and the
-+// SPIR-V): SkyBuild names them in the 5th argument ("air", "spirv", "dxil,spirv"), the others are written empty. Without
++// SPIR-V): Arkeyan-Builder names them in the 5th argument ("air", "spirv", "dxil,spirv"), the others are written empty. Without
 +// it, every stream this build has (the developer tools: one cache for every build).
 +enum : uint32_t { StreamDxil = 1, StreamSpirv = 2, StreamAir = 4 };
 +static constexpr uint32_t BuiltStreams = StreamSpirv
@@ -383,9 +383,9 @@ index a8b87a6..e6cc2d9 100644
 +static uint32_t g_streams = BuiltStreams;
 +
 +// Skylanders: a compiled shader is kept in <cache dir>/<hash>.bin, keyed by the hash of the translated HLSL (and what
-+// else the compilers are given), not by the original shader: a second run (SkyBuild's movie pass, or the run after a
++// else the compilers are given), not by the original shader: a second run (Arkeyan-Builder's movie pass, or the run after a
 +// game update whose translator changed) translates every shader again, which is fast, and compiles only those whose
-+// translated text is new (the text starts with shader_common.h, so that is covered). SkyBuild empties the folder when
++// translated text is new (the text starts with shader_common.h, so that is covered). Arkeyan-Builder empties the folder when
 +// the compilers (dxc) change.
 +// What an entry's compiled outputs depend on besides the translated text: this format, the streams this build can make
 +// and the compilers' arguments. Bump CacheFormat when the outputs change in a way none of these show (signDxil, the
@@ -592,7 +592,7 @@ index a8b87a6..e6cc2d9 100644
 +    return text;
 +}
 +
-+// SkyBuild reads these lines while the program runs (the launcher's progress bar): flushed, as stdout is a file.
++// Arkeyan-Builder reads these lines while the program runs (the launcher's progress bar): flushed, as stdout is a file.
 +static void reportProgress(size_t done, size_t total)
 +{
 +    if ((done % 10) == 0 || done == total)

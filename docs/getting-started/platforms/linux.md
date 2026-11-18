@@ -11,7 +11,7 @@ in a container with lavapipe (CPU Vulkan), never on a real desktop.
 tools/build_linux.sh "<disc>.iso" [--arch arm64|amd64] [--shader-dump <dir>]
 ```
 `prepare_game.sh` runs on the host (**build the shader cache on the Mac**: a Linux-built cache has no AIR). The image
-`ssarecomp-linux-<arch>` (`tools/linux/Dockerfile`: Ubuntu 24.04, clang 18, CMake, Ninja, SDL3's
+`arkeyan-linux-<arch>` (`tools/linux/Dockerfile`: Ubuntu 24.04, clang 18, CMake, Ninja, SDL3's
 X11/Wayland/ALSA/PulseAudio/PipeWire/udev/dbus headers, libusb, zlib, the Vulkan loader, Mesa's lavapipe, Xvfb; ~1.4 GB)
 builds `build-linux-<arch>` (RelWithDebInfo, plume Vulkan) in a container that mounts the checkout at `/src`; nothing
 is copied into the image and the container runs as the caller's user. FFmpeg goes to `private/ffmpeg/linux-<machine>`
@@ -58,11 +58,11 @@ image of the Docker host's architecture: arm64 on an Apple silicon Mac) with zig
   `@done` and ran to `tutorial_a.pak` and `eruptor.pak` at ~2 fps on lavapipe, no fault
   ([../../../games/swapforce/docs/status.md](../../../games/swapforce/docs/history.md), "Installing Swap Force").
 - **SuperChargers and Imaginators** (2026-11-05) [V]: `GAME=<id> tools/build_linux.sh <disc> --arch amd64` (x86-64-v2, in
-  `ssarecomp-linux-amd64`), then `GAME=<id> tools/linux/smoke_test.sh`: SuperChargers to its intro (423 draws at 2.6 fps),
+  `arkeyan-linux-amd64`), then `GAME=<id> tools/linux/smoke_test.sh`: SuperChargers to its intro (423 draws at 2.6 fps),
   Imaginators to its licence screen, no fault, the write watch on (SIGSEGV under Rosetta holds)
   ([README.md](README.md#proving-a-game-on-every-backend-how-to)).
 - `archlinux:latest`, same image recipe: Arkeyan-Builder from scratch to `@done`.
-- Arkeyan Launcher 0.3.1 (built in `ssarecomp-linux-amd64`): a fake release over `file://` with this kit, INSTALL to PLAY
+- Arkeyan Launcher 0.3.1 (built in `arkeyan-linux-amd64`): a fake release over `file://` with this kit, INSTALL to PLAY
   offscreen.
 
 ## Notes

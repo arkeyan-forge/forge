@@ -26,7 +26,7 @@ build paths (`Temporary/BuildServer/xenon/Output/textures/<shader>,textures@!ui!
 - The catalogue's SuperChargers toys need portrait keys (the badge names above, `collection_<internal name>_<variant>`) and SuperChargers in
   `ArkeyanArtTest`'s disc list (`TestDisc`, with the drawn-icon count it then has); the internal names are the game's (Fiesta is `SoulJam`, Crypt
   Crusher `VehicleUndeadCar`).
-- `tools/sync_skylauncher.sh` carries the reader (IGA v11 big-endian, IGZ v9, the separators) and the manifest.
+- `tools/sync_launcher.sh` carries the reader (IGA v11 big-endian, IGZ v9, the separators) and the manifest.
 
 ## Button pictures (glyphs, 2026-11-04) [Alchemy] [SuperChargers] [V]
 Swap Force's way ([input.md](../../../docs/runtime/xbox360/input.md), "Glyphs"): the game composes its strings on the CPU, so the

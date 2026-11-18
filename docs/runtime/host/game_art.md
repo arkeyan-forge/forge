@@ -27,7 +27,7 @@ streams and a disc claiming 1 TB files.
 
 The game's main menu theme comes from the same disc at the same moment, decoded by the kit's Arkeyan-Builder: [game_music.md](game_music.md).
 
-`tools/sync_skylauncher.sh` copies the four pairs to Arkeyan Launcher's `src/shared/art/`, and the manifests, and `host/dir_list.h`
+`tools/sync_launcher.sh` copies the four pairs to Arkeyan Launcher's `src/shared/art/`, and the manifests, and `host/dir_list.h`
 (`ListDirectory(folder, error)`: the entries of one folder, never throwing: a range-for over `directory_iterator(path, error)` checks
 the error only when the iterator is built, and `operator++` throws when a later read fails, a folder the system refuses to list or
 one that vanishes mid-walk; that crashed Arkeyan Launcher 0.4.1 at start on macOS). Walks of shared code use it, or `increment(error)`.
@@ -226,7 +226,7 @@ runtime's application id and desktop registration; a loose desktop entry alone m
 
 ## Adding a game
 A manifest `games/<id>/art.json` (where the pictures are), the toys' picture names in the catalogue (`portraits`, or
-`names`/`images`), a `TestDisc` line in `art_test.cpp`; then `tools/sync_skylauncher.sh`. No code, unless its archives
+`names`/`images`), a `TestDisc` line in `art_test.cpp`; then `tools/sync_launcher.sh`. No code, unless its archives
 are of a version the tables mark [?] and turn out different (fix the row), or its logo needs a new composition step.
 
 ## Verify

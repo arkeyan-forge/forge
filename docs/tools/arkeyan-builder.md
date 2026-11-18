@@ -249,7 +249,7 @@ disc variable, no `fingerprints.txt`; `share/guest_layout.h`, `kit_format=2`, `l
 container mounts it, and `KIT_SCAN_WORDS`, when they are outside the checkout. `KIT_HEADERS_FROM_PRIVATE=1` builds the
 same kit against `private/<id>/ppc` (the parity gate only): `python3 -I tools/tree_parity.py <that kit> <public kit>
 --rules tools/parity/public.rules` must find every file identical. Compare a record kit with the default kit with
-`--rules tools/parity/kit.rules`, and two installs of one disc with `tools/parity/install.rules`. `linux` runs in Docker on any host: it builds the image `ssarecomp-kit-linux-<arch>` from `tools/linux/kit.Dockerfile` (Ubuntu
+`--rules tools/parity/kit.rules`, and two installs of one disc with `tools/parity/install.rules`. `linux` runs in Docker on any host: it builds the image `arkeyan-kit-linux-<arch>` from `tools/linux/kit.Dockerfile` (Ubuntu
 24.04 for the Docker host's architecture, amd64 or arm64, zig 0.17.0 for that host checked by SHA-256; the x86-64 inputs
 from Ubuntu's amd64 packages: `libz.a`, the -dev headers SDL's configure looks for, binutils for x86-64, and the runtime
 libraries of the x86-64 programs the build runs, such as dxc, emulated on arm64) and runs the same script in it

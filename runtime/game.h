@@ -104,7 +104,7 @@ namespace game
         // (d3d/step_pacer.h). Empty: the game has none known.
         std::span<const uint64_t> stepPassShaders = {};
 
-        // The game's actions on the F3 menu's Commands page, in Skylauncher's order and words (its launcher/game_keys.cpp):
+        // The game's actions on the F3 menu's Commands page, in Arkeyan Launcher's order and words (its launcher/game_keys.cpp):
         // the keyboard key and the pad button of each (host/commands.h). Empty: the page has no rows.
         std::span<const commands::Row> inputRows = {};
 
@@ -147,7 +147,7 @@ namespace game
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.
     const Adapter& Current();
-    // The game's glow colour (0xRRGGBB, Skylauncher's StyleOf(game).glow): the debug screen's accent (games/<id>/adapter.cpp).
+    // The game's glow colour (0xRRGGBB, Arkeyan Launcher's StyleOf(game).glow): the debug screen's accent (games/<id>/adapter.cpp).
     uint32_t Accent();
     // True while the game brings a figure in, read from its memory every frame (games/<id>/adapter.cpp): the Toy Box
     // holds a new swap until it ends (docs/runtime/host/toybox_ux.md, "A quick swap the game missed"). Always false for a

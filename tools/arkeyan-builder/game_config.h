@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace skybuild
+namespace arkeyan_builder
 {
     // Existing stamps, objects and shader caches remain at their original paths.
     // Prefer the legacy folder even when both exist; no rename or migration is needed.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Copies the figure and collection library (runtime/host/figures, runtime/host/collection), the disc picture readers
 # (runtime/host/art, docs/runtime/host/game_art.md), the environment-variable helper (runtime/host/env.h), the catalogue, the embed and join CMake scripts and the games' art
-# manifests (games/<id>/art.json) into a Skylauncher checkout (docs/release/launcher/README.md), or with --check only
+# manifests (games/<id>/art.json) into an Arkeyan Launcher checkout (docs/release/launcher/README.md), or with --check only
 # lists the files that differ. The copies in this repo are the reference: they have the tests.
-#   tools/sync_skylauncher.sh [--check] <skylauncher dir>
+#   tools/sync_launcher.sh [--check] <launcher dir>
 set -euo pipefail
 check=0
 [[ "${1:-}" == "--check" ]] && { check=1; shift; }
-[[ $# -eq 1 && -d "$1/src" ]] || { echo "usage: $0 [--check] <skylauncher dir>" >&2; exit 2; }
+[[ $# -eq 1 && -d "$1/src" ]] || { echo "usage: $0 [--check] <launcher dir>" >&2; exit 2; }
 here="$(cd "$(dirname "$0")/.." && pwd)"
 target="$1"
 

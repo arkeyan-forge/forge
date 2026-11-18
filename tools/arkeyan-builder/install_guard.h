@@ -10,7 +10,7 @@
 #include <string>
 #include <string_view>
 
-namespace skybuild
+namespace arkeyan_builder
 {
     inline std::set<uint64_t> ShaderCacheHashes(const std::filesystem::path& cache)
     {

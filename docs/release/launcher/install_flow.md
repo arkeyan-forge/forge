@@ -32,7 +32,7 @@ Three games share the flow (SSA, Giants, Swap Force; one kit builds them when it
 PLAY starts: `SKY_LAUNCHER_RUNTIME`, else the game built for this disc, else `[launcher] runtime=`, else the game's runtime (`Skylanders Spyro's Adventure`, `Skylanders Giants`, `Skylanders Swap Force`) next to the launcher (a hand-set runtime also hides INSTALL). `SKY_LAUNCHER_DATA` replaces the data folder (tests).
 
 ## Testing without the kit
-`tests/fake_arkeyan_builder.c` prints Arkeyan-Builder's real step ids, titles and order with delays (target `FakeArkeyanBuilder`, built as `<build>/fake-kit/Arkeyan-Builder` with a `kit.txt`); `FAKE_SKYBUILD_FAIL=<step id>` fails half way through that step; `FAKE_SKYBUILD_DELAY` (0.05 s). `ArkeyanLauncherTest` parses events, runs the fake kit (failure, success, cancel), checks the checklist model; `SKY_LAUNCHER_TEST_INSTALL=real` with the real kit takes a shot every `SKY_LAUNCHER_TEST_EVERY` s (default 120). By hand: `SKY_LAUNCHER_KIT=$PWD/build/fake-kit`.
+`tests/fake_arkeyan_builder.c` prints Arkeyan-Builder's real step ids, titles and order with delays (target `FakeArkeyanBuilder`, built as `<build>/fake-kit/Arkeyan-Builder` with a `kit.txt`); `FAKE_ARKEYAN_BUILDER_FAIL=<step id>` fails half way through that step; `FAKE_ARKEYAN_BUILDER_DELAY` (0.05 s). `ArkeyanLauncherTest` parses events, runs the fake kit (failure, success, cancel), checks the checklist model; `SKY_LAUNCHER_TEST_INSTALL=real` with the real kit takes a shot every `SKY_LAUNCHER_TEST_EVERY` s (default 120). By hand: `SKY_LAUNCHER_KIT=$PWD/build/fake-kit`.
 
 ## Uninstall everything (2026-10-27)
 Settings (gear) > Launcher > **Remove Arkeyan Launcher** > **Uninstall everything...**: a list of what goes with sizes (each built game, the game-data copies, the
