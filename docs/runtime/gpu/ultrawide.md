@@ -272,6 +272,17 @@ The menus' vignette (2026-11-14, launcher issue 104) is four 200x320 corner piec
 autosave notice); `game::UltrawideHudVertexShader` sends them to the window's corners (the step 0.9, the save slot menu and
 the notice's other 34 draws unmoved, `SKY_DUMP_FRAME` viewports).
 
+The same shader draws the full-screen effects (2026-11-19): the fades, the zoom as a villain is beaten (one quad growing
+from 4172 to 12779 pixels across in five frames) and the flash into the capture screen (turning sheets 3000 to 4000
+pixels across). They are `Whole` (`d3d/frame_anchor.h`); centred like the HUD, they were cut at the 16:9 edges and the
+scene showed untouched at the sides. In a wide frame a `Whole` quad now gets the whole frame (viewport and scissor
+times the frame's ratio to 1280) and its clip x a factor (`d3d::WholeScaleX`, applied to c0-c3's x): the least stretch
+that still covers the frame, from 1 (a quad of the frame's size, a fade: stretched with it) to 1280 / frame width (a
+quad reaching that far past the sides, the flash: its shape kept). Not during a movie. A textured full-screen page of
+the frame's size (the start-up page) is stretched too. Left: the swirl's ~50 sprites along the screen's edge stay
+centred (`Centre`) while its four corner pieces go to the window's corners, so past about 2.4:1 bands without the
+swirl show between them [?].
+
 The 16:9 aspect global (`0x82826308`) is left alone: the camera rig reads it, and a wide value pulls the camera back from the character. Details and the limits:
 [games/trapteam/docs/status.md](../../../games/trapteam/docs/status.md) ("The picture", "The constant blur").
 

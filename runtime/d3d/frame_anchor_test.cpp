@@ -54,7 +54,7 @@ int main()
     const float leftBar[16] = { 100, 0, 0, 0, 0, 0, 0, 0, 0, -400, 0, 0, -w, 200, 0, w };
     CHECK(PlaceQuad(leftBar) == FramePlace::Centre);
 
-    // Over the whole frame (a fade, a full-screen page): Whole, centred in the wide frame as before, and never drawn
+    // Over the whole frame (a fade, a full-screen page): Whole, over the whole wide frame (render.cpp), and never drawn
     // smaller with aspect=fill. Across the whole width but not the height (a band): centred.
     const float full[16] = { 2 * w, 0, 0, 0, 0, 0, 0, 0, 0, -2 * w, 0, 0, -w, w, 0, w };
     CHECK(PlaceQuad(full) == FramePlace::Whole);
@@ -62,6 +62,28 @@ int main()
     CHECK(PlaceQuad(beyond) == FramePlace::Whole);
     const float band[16] = { 2 * w, 0, 0, 0, 0, 0, 0, 0, 0, -0.5f * w, 0, 0, -w, w, 0, w };
     CHECK(PlaceQuad(band) == FramePlace::Centre);
+
+    // How far a Whole draw reaches past the frame's nearer side, and how much it is stretched over a wide frame.
+    const float quad[12] = { 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1 };
+    float reach = 0;
+    CHECK(d3d::PlaceFrameDraw(quad, 4, 3, full, &reach) == FramePlace::Whole);
+    CHECK(reach > 0.999f && reach < 1.001f);
+    CHECK(d3d::PlaceFrameDraw(quad, 4, 3, beyond, &reach) == FramePlace::Whole);
+    CHECK(reach > 1.099f && reach < 1.101f);
+    // Off centre (from -1.1 to 3): the nearer side counts.
+    const float lopsided[16] = { 4.1f * w, 0, 0, 0, 0, 0, 0, 0, 0, -2 * w, 0, 0, -1.1f * w, w, 0, w };
+    CHECK(d3d::PlaceFrameDraw(quad, 4, 3, lopsided, &reach) == FramePlace::Whole);
+    CHECK(reach > 1.099f && reach < 1.101f);
+    // A fade of the frame's size: stretched with the wide frame. A sheet twice the screen's width (the capture flash):
+    // its shape kept at 21:9 (ratio 1.36), stretched just enough at 32:9 (ratio 2). Between: the least stretch that
+    // covers. No wide frame: unchanged.
+    const auto near = [](float a, float b) { return a > b - 0.001f && a < b + 0.001f; };
+    CHECK(near(d3d::WholeScaleX(1.0f, 1.36f), 1.0f));
+    CHECK(near(d3d::WholeScaleX(2.0f, 1.36f), 1.0f / 1.36f));
+    CHECK(near(d3d::WholeScaleX(2.0f, 2.0f), 0.5f));
+    CHECK(near(d3d::WholeScaleX(1.25f, 2.0f), 0.8f));
+    CHECK(near(d3d::WholeScaleX(3.0f, 1.0f), 1.0f));
+    CHECK(near(d3d::WholeScaleX(0.0f, 2.0f), 1.0f));
 
     // One pixel short of the corner (x from 1 to 201): centred.
     const float inset[16] = { 346.41f, 0, 0, 0, 0, 0, 0, 0, 0, -615.84f, 0, 0, -w + 2 * w / 1280, w, 0, w };
