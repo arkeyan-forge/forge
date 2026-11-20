@@ -35,6 +35,7 @@ namespace netplay
         void Poll();
         void Diagnose(const std::function<void()>& location, const std::function<void()>& capture);
         bool Active() const;
+        void NetworkWait(bool waiting);
 
     private:
         struct Context;
@@ -49,6 +50,7 @@ namespace netplay
         std::vector<std::unique_ptr<Context>> m_contexts;
         Id m_holder = None, m_head = None, m_tail = None;
         std::chrono::steady_clock::time_point m_handover;
+        bool m_networkWait = false;
         std::jthread m_watchdog;
         static thread_local Scheduler* t_scheduler;
         static thread_local Id t_context;

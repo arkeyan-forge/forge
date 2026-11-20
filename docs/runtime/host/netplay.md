@@ -407,6 +407,74 @@ host-sourced loads per frame: a 2500-frame range writes 3.7 GB per run.
 the branch came from a value outside the trace (a register, here the portal's reply or no reply), and a pair without the
 portal then agreed. Values returned only in registers and accesses outside the macros (vector loads) are not traced.
 
+## Step 1: lockstep on one machine
+
+[V] The host-side core is implemented in `runtime/netplay/protocol.{h,cpp}`, `session.{h,cpp}` and `socket.cpp`.
+`runtime.cpp` routes the first local pad (including the keyboard) into the host's seat 0 or the joiner's seat 1;
+only the remote pad supplies the other seat. At latch N the local input is queued for N + D. Both pads are neutral
+for the first D latches. Missing input holds the cooperative guest's baton, so every guest context and the picture
+wait together while a separate host thread continues UDP reception and transmission. The scheduler watchdog is
+suspended during that intentional network wait. A waiting line appears after one second; a missing peer or input
+ends the session after fifteen seconds. Normal play adds no frame logs or frame allocations.
+
+[V] The switches are opt-in; without HOST or JOIN the existing probe and live-input modes remain available:
+
+| Switch | Meaning |
+|---|---|
+| `SKY_NETPLAY_HOST=<port>` | host on UDP port 1–65535; local pad becomes P1 (XAM user 0) |
+| `SKY_NETPLAY_JOIN=<host>:<port>` | join an IPv4 address or DNS name; use `[IPv6]:port` for IPv6; local pad becomes P2 (user 1) |
+| `SKY_NETPLAY_PASSWORD=<text>` | optional shared password used to derive packet keys |
+| `SKY_NETPLAY_DELAY=<frames>` | 1–8; the host's override wins; otherwise five ping/pong probes select D = clamp(ceil(RTT / 2 / frame time) + 1, 1, 8), using the minimum measured round trip |
+| `SKY_NETPLAY_CROSS_PLATFORM=1` | both peers must opt in to allow different OS/CPU identities |
+| `SKY_NETPLAY_DESYNC_DUMP=<file>` | write the stopped checkpoint's blocks as a `SKYBLK01` sidecar before logging the desync and exiting |
+
+[V] Startup rejects HOST together with JOIN, record or replay, and requires all three of
+`SKY_NETPLAY_DETERMINISTIC=1`, `SKY_NETPLAY_DELIVERY=frame` and `SKY_NETPLAY_SCHEDULE=cooperative`.
+The hello checks session protocol version, game id, the decrypted/decompressed executable image's SHA-256
+(using the same `Sha256Hex` as the loader), runtime version, OS/CPU and FPS limit. Each side supplies a fresh
+128-bit nonce. A mismatch is reported on both sides as `[netplay] session refused: <reason>`.
+Every thirtieth checkpoint uses the same total and block selection as `SKY_NETPLAY_HASH`, even without a hash
+output file. Both peers wait for that checkpoint's hash before progressing, so a mismatch stops both at that frame
+and logs its frame, local hash and remote hash. Dumps can be compared with
+`python3 -I tools/netplay/hash_diff.py <host-dump> <join-dump>`. Quits, refusals, timeouts and desyncs send an end
+packet repeatedly when possible; fatal session exits use the runtime's existing `_Exit(1)` approach.
+
+[V] All integer fields are little-endian. The wire format is bounded to 512 bytes; current packets are at most 280:
+
+| Part | Bytes and fields |
+|---|---|
+| Common header | 32: `SKYNET01` (8), wire version (2), type (1), reserved zero (1), total size (2), reserved zero (2), sequence (8), contiguous remote-input acknowledgement (8) |
+| Hello payload | 232: game id (64), image SHA-256 lowercase hex (64), runtime version (32), OS/CPU (32), FPS (4), sender nonce (16), echoed peer nonce (16), cross-platform flag (1), host flag (1), session protocol version (2); text is zero-padded |
+| Ping / pong / ready payload | 8: probe token, echoed token, or the host's chosen delay |
+| Frame payload | count (1, 0–8), then count × (frame number (8) + the existing 13-byte pad encoding), checkpoint frame (8), checkpoint hash (8); checkpoint zero means none yet |
+| End payload | reason (1), checkpoint frame (8), sender hash (8), other hash (8) |
+| Authentication suffix | 16: our SipHash-2-4-128 tag over every preceding byte |
+
+[V] Password derivation uses SipHash-128 with a fixed protocol domain key; the session key tags the ordered host
+and joiner nonces with that password key. Initial hellos use the sender nonce and a zero unknown peer nonce;
+subsequent hellos echo the peer nonce and bind both. Other packets use the negotiated pair of nonces. A hello's
+fixed nonce fields are only inspected to verify its tag before they can affect session state. Wire-version, size,
+reserved-field, tag and payload failures are dropped and counted. An authenticated hello's session-version
+mismatch is refused. A sequence window filters duplicate/stale session packets. Frame packets repeat the latest
+eight local inputs; an acknowledgement window prevents a missing input from falling out of that history. The
+network thread keeps transmitting the history during a stall, without a separate resend request.
+
+[V] `ArkeyanNetplayProtocolTest` and `ArkeyanNetplaySessionTest` are registered with `sky_add_tests`, including its
+sanitizer configuration. The tests were written first; their initial build failed because the implementation sources were absent. Protocol coverage includes
+all packet types, a SipHash-128 known-answer vector, identity refusals, bad tags/versions/sizes, truncations and
+100,000 random or mutated packets (each rejected and counted). The session test uses an injectable transport and
+clock: 600-frame pad-pair equality and exact N + D delivery, all eight delays, 20% loss, duplicates, reordering,
+bilateral identity refusal, a frame-300 hash mismatch, quit notification, and silent-peer timeouts before and after
+setup. It also attempts 600-frame loopback UDP runs and a loopback desync run.
+
+[V] The configured Giants build and isolated startup refusal checks were exercised, without launching gameplay.
+The transport tests and protocol fuzz run pass natively and with address/undefined sanitizers; the existing netplay and scheduler tests pass too. Documentation checks report zero broken links. [V] The sandbox denied UDP binding with `Operation not permitted`;
+the test reports that part as skipped and still runs all injectable-transport checks. [?] Actual loopback UDP,
+IPv6/DNS connectivity, two game instances, pad seats in the game, real desync dump comparison and Windows remain
+unverified here. No portal events, settings/save transfer, router mapping or launcher UI are included. The
+remaining determinism differences documented in step 0c may stop a real session at its first hash checkpoint.
+Profiles still follow the existing `SKY_PLAYER*` settings and are not negotiated; P2 sign-in in the game needs checking.
+
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one
    world, one shared camera, each player on his own PC). Free exploration (each player his own camera, the 2026-11-04
