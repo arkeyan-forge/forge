@@ -320,6 +320,11 @@ on its remap target, and releasing it confirms the wheel.
   A or Enter swaps; B/Escape or never aiming cancels. Y/F3: the seat's full list; LB/RB: the other seats; X/F2 held
   0.6 s pins the current figure there.
 - The wheel does not pause the game; the player's input is withheld from the game while it is open.
+- Only a pad's own sticks and d-pad aim the wheel, never those the keyboard bindings make: a game key held when it
+  opens (K, the right stick down, as the Toy Box key) would aim the bottom place every frame. The keyboard aims from
+  its key events: the arrows, 1-8, and the keys bound to either stick pressed while the wheel is open
+  (`toybox::WheelKeys`, `ArkeyanToyboxWheelKeysTest`; the bindings no longer see them, "One key press, one move").
+  Check: `tools/regress/wheel_toybox.sh` (K held across the wheel, W aims).
 - **The player's own wheel** (2026-10-28). Why "I could not load Spyro": the wheel offered only the figures the game had *taken*
   (its recents), so a figure never played in that game was never on it, and a pin was three screens deep. Now a figure's page has
   **Add to the wheel** / **On the wheel** (the third action in the Toy Box; Arkeyan Launcher: the sheet's `...` menu, "On the wheel: <game>", and a
@@ -388,7 +393,7 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 | Toy Box: bar (search, Filters) | left/right: the search field, Filters; A: the on-screen keyboard / the Filters panel; up: the seats; down: the figures; LB/RB: other seat; B: clear the search, else close | arrows, Enter, Tab, Escape; typing goes into the field from any row | click the field, Filters, a tag's x |
 | Toy Box: figures | d-pad: move (left/right stay in the row; up/down keep the column); up from the first row: the bar; A: put on the seat; X: the figure; LB/RB: other seat; Y: search; Start: Filters; B: close | arrows, Enter, F2, Page Up/Down, F3, F4: Filters, Tab, type: search, Escape: clear / close | click: focus; double click: place; drag onto a seat: place there; right click: the figure; wheel: scroll |
 | Figure | up/down: action; A: do it; B: back (out of More first); LB/RB: previous/next figure | arrows, Enter, Escape | click |
-| Wheel | either stick: aim; release or A: swap; B: cancel; Y: list; LB/RB: other seat; hold X: pin | arrows or 1-8; release Tab or Enter; Escape | point, click |
+| Wheel | either stick: aim; release or A: swap; B: cancel; Y: list; LB/RB: other seat; hold X: pin | arrows, the keys bound to either stick (WASD, IJKL) or 1-8; release Tab or Enter; Escape | point, click |
 | Launcher Collection | d-pad (down from a seat to the shelf, up from its first row to the seats, the bar's search, Filters and tags on the way), A, B: stop choosing / clear the search, X: the sheet, Y: the search, LB/RB: choose for the other seat | Tab, arrows, Enter, Delete (seat), F2, F3, Page Up/Down, Escape | click, right click, drag a card onto a seat or a seat onto the shelf |
 
 - **Mouse everywhere in the Toy Box and the F3 menu** (2026-11-02): every card, seat, button, row and field is a click target, and

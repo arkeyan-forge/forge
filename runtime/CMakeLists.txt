@@ -354,6 +354,11 @@ add_executable(ArkeyanToyboxKeyMaskTest host/toybox/key_mask_test.cpp)
 target_include_directories(ArkeyanToyboxKeyMaskTest PRIVATE .)
 target_link_libraries(ArkeyanToyboxKeyMaskTest PRIVATE SDL3::SDL3-static)
 
+# The stick keys aiming the quick swap wheel (host/toybox/wheel_keys.h): ./ArkeyanToyboxWheelKeysTest
+add_executable(ArkeyanToyboxWheelKeysTest host/toybox/wheel_keys_test.cpp)
+target_include_directories(ArkeyanToyboxWheelKeysTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxWheelKeysTest PRIVATE SDL3::SDL3-static)
+
 # Atomic virtual figure and swapper replacements (no device or figure files): ./ArkeyanToyboxSwapTest
 add_executable(ArkeyanToyboxSwapTest host/toybox/swap_test.cpp host/portal_prompt.cpp)
 target_include_directories(ArkeyanToyboxSwapTest PRIVATE .)

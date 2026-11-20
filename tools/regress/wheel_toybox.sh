@@ -23,10 +23,11 @@ rm -rf "${R:?}"; mkdir -p "$R/collection" "$R/save" "$R/data" "$R/home"
 
 # F6 opens the Toy Box (the cursor is on Spyro, the played figure first), F2 opens its page, Down x2 to "On the wheel", Return adds
 # it; Escape back to the shelf; Right then Return puts the second card (Whirlwind) on Player 1; Add a figure (the button at
-# 1209/99), Return opens Spyro's versions; Escape x3 out of the Toy Box; then the wheel: Tab held, 1 aims place 1, Tab released.
+# 1209/99), Return opens Spyro's versions; Escape x3 out of the Toy Box; then the wheel: Tab held, W (the left stick's up
+# key) aims place 1, Tab released. K (a game key: the right stick down) is held from before the wheel opens: it must not aim.
 script="F6:25,shot=home:27,F2:28,Down:29,Down:30,Return:31,shot=page:32,Escape:33"
 script+=",Right:35,Return:36,click=1209/99:38,shot=add:39,Return:40,shot=versions:41,Escape:42,Escape:43,Escape:44"
-script+=",down=Tab:47,shot=wheel:48,1:48.5,shot=aimed:49,up=Tab:50,shot=swapped:55"
+script+=",hold=K*4:46.5,down=Tab:47,shot=wheel:48,W:48.5,shot=aimed:49,up=Tab:50,shot=swapped:55"
 env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=disk SDL_AUDIO_DISK_OUTPUT_FILE=/dev/null HOME="$R/home" CFFIXED_USER_HOME="$R/home" \
   SKYLANDERS_DATA="$R/data" SKY_SETTINGS="$R/none.ini" SKY_LAUNCHER_INI="$R/none.ini" SKY_COLLECTION="$R/collection" \
   SKY_SAVE_DIR="$R/save" SKY_LOG="$R/game.log" SKY_SKIP_MOVIES=1 SKY_PORTAL=emulated \

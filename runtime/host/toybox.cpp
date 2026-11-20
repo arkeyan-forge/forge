@@ -17,6 +17,7 @@
 #include "host/toybox/model.h"
 #include "host/toybox/key_mask.h"
 #include "host/toybox/keys.h"
+#include "host/toybox/wheel_keys.h"
 #include "host/toybox_remote.h"
 #include "vfs.h"
 #include <SDL3/SDL.h>
@@ -72,6 +73,7 @@ namespace
     uint64_t g_nextRepeat;
     toybox::pad::State g_padBindings;
     bool g_wheelByPad;         // the wheel closes when View is released
+    toybox::WheelKeys g_wheelKeys; // the stick keys pressed while the wheel is open
     bool g_swallow;            // the game gets nothing until every button is released
 
     // Keyboard. The Toy Box's keys (ToyboxSetKeys): the saved key opens it; while the Tab alias is on, Tab does too (tap: the Toy Box,
@@ -161,11 +163,19 @@ namespace
         return x >= 0 && y >= 0 && x < toybox::CanvasWidth && y < toybox::CanvasHeight;
     }
 
+    bool Arrow(const SDL_KeyboardEvent& key)
+    {
+        return key.key == SDLK_UP || key.key == SDLK_DOWN || key.key == SDLK_LEFT || key.key == SDLK_RIGHT;
+    }
+
+    // The arrows and the stick keys pressed while the wheel is open (WheelKeys).
     void AimFromArrows()
     {
         const bool* keys = SDL_GetKeyboardState(nullptr);
-        float x = float(keys[SDL_SCANCODE_RIGHT]) - float(keys[SDL_SCANCODE_LEFT]);
-        float y = float(keys[SDL_SCANCODE_UP]) - float(keys[SDL_SCANCODE_DOWN]);
+        float x = 0, y = 0;
+        g_wheelKeys.Direction(x, y);
+        x = std::clamp(x + float(keys[SDL_SCANCODE_RIGHT]) - float(keys[SDL_SCANCODE_LEFT]), -1.0f, 1.0f);
+        y = std::clamp(y + float(keys[SDL_SCANCODE_UP]) - float(keys[SDL_SCANCODE_DOWN]), -1.0f, 1.0f);
         if (x != 0 || y != 0)
             M().AimWheel(PlaceOf(x, y));
     }
@@ -221,6 +231,9 @@ namespace
         }
         if (!down)
         {
+            // As a d-pad: the keys still held aim; with none left the aim stays.
+            if ((g_wheelKeys.Release(key.scancode) || Arrow(key)) && model.screen == Screen::Wheel)
+                AimFromArrows();
             if (key.key == SDLK_F2)
                 g_pinKey = false;
             if (HoldKey(key) && g_tabDown != 0)
@@ -281,8 +294,6 @@ namespace
         {
             if (key.key >= SDLK_1 && key.key <= SDLK_8)
                 model.AimWheel(int(key.key - SDLK_1));
-            else if (key.key == SDLK_UP || key.key == SDLK_DOWN || key.key == SDLK_LEFT || key.key == SDLK_RIGHT)
-                AimFromArrows();
             else if (key.key == SDLK_RETURN || key.key == SDLK_KP_ENTER)
                 model.ConfirmWheel();
             else if (key.key == SDLK_ESCAPE)
@@ -293,6 +304,8 @@ namespace
                 model.WheelSeat(key.key == SDLK_PAGEDOWN ? 1 : -1);
             else if (key.key == SDLK_F2)
                 g_pinKey = true;
+            else if (Arrow(key) || (!key.repeat && g_wheelKeys.Press(key.scancode)))
+                AimFromArrows();
             return;
         }
         if (key.key == SDLK_TAB && model.screen == Screen::Home && model.dialogs.empty())
@@ -842,6 +855,10 @@ void ToyboxFilterGamepad(GamepadState& state, const GamepadState* raw, const Run
         return;
     static const RuntimeSettings defaults;
     const RuntimeSettings& bindings = settings != nullptr ? *settings : defaults;
+    SDL_Scancode stickKeys[8];
+    for (int i = 0; i < 8; i++)
+        stickKeys[i] = SDL_GetScancodeFromName(bindings.keys[10 + i].c_str()); // g_keyActions: left_up to right_right
+    g_wheelKeys.Bind(stickKeys);
     GamepadState physical = raw != nullptr ? *raw : state;
     toybox::Model& model = M();
     uint64_t now = SDL_GetTicksNS(), clock = ScriptClock();
@@ -865,9 +882,9 @@ void ToyboxFilterGamepad(GamepadState& state, const GamepadState* raw, const Run
         {
             scripted.buttons |= press.buttons;
             if (press.lx != 0)
-                state.thumbLX = press.lx;
+                state.thumbLX = physical.thumbLX = press.lx;
             if (press.ly != 0)
-                state.thumbLY = press.ly;
+                state.thumbLY = physical.thumbLY = press.ly;
         }
     }
     std::erase_if(g_padPresses, [&](const PadPress& press) { return clock >= press.to + 1'000'000'000; });
@@ -924,14 +941,17 @@ void ToyboxFilterGamepad(GamepadState& state, const GamepadState* raw, const Run
     // --- The wheel -------------------------------------------------------------------------------------------------
     if (model.screen == Screen::Wheel)
     {
-        // Either stick aims; the one tilted further wins (a player may hold the camera stick out of habit).
-        const bool right = std::max(std::abs(state.thumbRX), std::abs(state.thumbRY)) >
-                           std::max(std::abs(state.thumbLX), std::abs(state.thumbLY));
-        const int16_t sx = right ? state.thumbRX : state.thumbLX, sy = right ? state.thumbRY : state.thumbLY;
+        // Either stick of the pad aims; the one tilted further wins (a player may hold the camera stick out of habit).
+        // Not the sticks and d-pad the keyboard bindings make: a game key held when the wheel opened (K: the right stick
+        // down) would aim every frame. The keyboard aims with its own keys (HandleKey).
+        const bool right = std::max(std::abs(physical.thumbRX), std::abs(physical.thumbRY)) >
+                           std::max(std::abs(physical.thumbLX), std::abs(physical.thumbLY));
+        const int16_t sx = right ? physical.thumbRX : physical.thumbLX,
+                      sy = right ? physical.thumbRY : physical.thumbLY;
         float x = sx / 32767.0f, y = sy / 32767.0f;
         if (std::abs(sx) > StickAim || std::abs(sy) > StickAim)
             model.AimWheel(PlaceOf(x, y));
-        uint16_t dpad = buttons & (Button::DpadUp | Button::DpadDown | Button::DpadLeft | Button::DpadRight);
+        uint16_t dpad = physical.buttons & (Button::DpadUp | Button::DpadDown | Button::DpadLeft | Button::DpadRight);
         if (dpad != 0)
             model.AimWheel(PlaceOf(float((dpad & Button::DpadRight) != 0) - float((dpad & Button::DpadLeft) != 0),
                 float((dpad & Button::DpadUp) != 0) - float((dpad & Button::DpadDown) != 0)));
@@ -1327,6 +1347,7 @@ void ToyboxUpdate()
     if (model.open != g_wasOpen)
     {
         g_wasOpen = model.open;
+        g_wheelKeys.Clear();
         if (model.open && model.screen != Screen::Wheel)
             SDL_StartTextInput(g_window);
         else
