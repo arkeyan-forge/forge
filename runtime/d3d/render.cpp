@@ -108,6 +108,9 @@ namespace
     {
         uint32_t draws, skippedShader, skippedTarget, resolves;
         uint32_t guestDraws; // the game's draw calls, drawn or skipped
+        // Draws dropped for other reasons, for the stall report: a frame the step pacer skips, colour targets of
+        // different sizes, no index buffer, vertices not set up (no declaration or stream).
+        uint32_t droppedStep, droppedSizes, droppedIndices, droppedVertices;
     } g_stats;
 
     // --- Render targets: one host texture per EDRAM surface (base tile, format, size). ---------------------------------
@@ -1128,7 +1131,10 @@ namespace
             return false;
         }
         if (ps != nullptr && SkipStepPass(ps->hash))
+        {
+            g_stats.droppedStep++;
             return false;
+        }
         draw.vertexShader = vs != nullptr ? gpu::FindXenosShader(vs->hash) : nullptr;
         draw.pixelShader = ps != nullptr ? gpu::FindXenosShader(ps->hash) : nullptr;
         if (draw.vertexShader == nullptr || (pixelShaderObject != 0 && draw.pixelShader == nullptr))
@@ -1219,7 +1225,10 @@ namespace
         for (uint32_t i = 0; i < draw.colorTargetCount; i++)
             if (gpu::Desc(draw.colorTargets[i]).width != gpu::Desc(sizeTarget).width ||
                 gpu::Desc(draw.colorTargets[i]).height != gpu::Desc(sizeTarget).height)
+            {
+                g_stats.droppedSizes++;
                 return false; // different sizes cannot share a host framebuffer; not seen so far
+            }
 
         // Depth, stencil and rasteriser state.
         uint32_t depthControl = GpuRegister(device, Reg::RB_DEPTHCONTROL);
@@ -1897,7 +1906,10 @@ namespace
             uint32_t indices = Read32(device + Device::Indices);
             uint32_t guest = indices != 0 ? PhysicalToGuest(Read32(indices + Resource::IndexBufferAddress)) : 0;
             if (guest == 0)
+            {
+                g_stats.droppedIndices++;
                 return false;
+            }
             const uint32_t indexSize = Resource::IndexSize(Read32(indices));
             const uint32_t start = guest + first * indexSize;
             static bool indices32Logged = false;
@@ -1946,7 +1958,10 @@ namespace
         const GuestShader* vs = FindGuestShader(Read32(device + Device::VertexShader));
         if (!PrepareVertices(device, draw, vs != nullptr ? vs->inputs : 0, vs != nullptr ? vs->pulled : 0, vertexCount,
                 upData, upStride, expand, vertexStart, vertexEnd))
+        {
+            g_stats.droppedVertices++;
             return false;
+        }
         if (upData == 0 && !expand && !g_dump.active && g_promptFaceHash == 0)
         {
             // The cached streams start at vertexStart.
@@ -2907,8 +2922,8 @@ namespace
     // A game that swaps on with nothing drawn (no draw call, or every one skipped) shows the last presented frame for as
     // long as it lasts (a Swap Force picture that stayed green, forge issue #84). After 5 s of it outside a movie, once:
     // the game's draw calls, what the window shows and what each guest thread waits for. One readback per stall.
-    void CheckStall(
-        const Stats& frame, uint32_t texture, const xenos::TextureFetch& fetch, const gpu::Texture* presented)
+    void CheckStall(const PPCContext& ctx, const Stats& frame, uint32_t texture, const xenos::TextureFetch& fetch,
+        const gpu::Texture* presented)
     {
         static d3d::StallWatch watch(5'000'000'000ull);
         // The game's draw calls since the last frame that drew: none, or all skipped by the renderer.
@@ -2919,6 +2934,10 @@ namespace
         quiet.skippedShader += frame.skippedShader;
         quiet.skippedTarget += frame.skippedTarget;
         quiet.resolves += frame.resolves;
+        quiet.droppedStep += frame.droppedStep;
+        quiet.droppedSizes += frame.droppedSizes;
+        quiet.droppedIndices += frame.droppedIndices;
+        quiet.droppedVertices += frame.droppedVertices;
         const uint64_t now = PlatformNowNs();
         const d3d::StallWatch::Event event = watch.Swap(now, frame.draws, ultrawide::MoviePlaying());
         if (event == d3d::StallWatch::Event::Resumed)
@@ -2927,12 +2946,14 @@ namespace
         if (event != d3d::StallWatch::Event::Stalled)
             return;
         fprintf(stderr,
-            "[stall] frame %llu: nothing drawn for %.1f s (no movie): %u draw calls from the game (%u skipped for a "
-            "missing shader, %u for their target), %u resolves; last colour resolve at frame %llu, %ux%u into "
+            "[stall] frame %llu: nothing drawn for %.1f s (no movie): %u draw calls from the game (skipped: %u for a "
+            "missing shader, %u for their target, %u by the step pacer, %u for targets of different sizes, %u for no "
+            "index buffer, %u for their vertices), %u resolves; last colour resolve at frame %llu, %ux%u into "
             "0x%08X\n",
             (unsigned long long)g_frame, double(watch.QuietNs(now)) / 1e9, quiet.guestDraws, quiet.skippedShader,
-            quiet.skippedTarget, quiet.resolves, (unsigned long long)g_lastResolve.frame, g_lastResolve.width,
-            g_lastResolve.height, g_lastResolve.destination);
+            quiet.skippedTarget, quiet.droppedStep, quiet.droppedSizes, quiet.droppedIndices, quiet.droppedVertices,
+            quiet.resolves, (unsigned long long)g_lastResolve.frame, g_lastResolve.width, g_lastResolve.height,
+            g_lastResolve.destination);
         char shown[160] = "unknown to the renderer: nothing presented";
         std::vector<uint32_t> pixels;
         uint32_t width = 0, height = 0;
@@ -2954,6 +2975,7 @@ namespace
             snprintf(shown, sizeof(shown), "not read back");
         fprintf(stderr, "[stall] the swap presents texture 0x%08X (format %u, %ux%u), %s\n", texture, fetch.Format(),
             fetch.Width(), fetch.Height(), shown);
+        fprintf(stderr, "[stall] the swap is called from %s\n", GuestCallChain(ctx).c_str());
         PrintGuestThreads("[stall]");
     }
 }
@@ -3039,7 +3061,7 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
             if (presented != nullptr)
                 CheckMovieFrame(it->second.texture);
         }
-        CheckStall(g_stats, texture, fetch, it != g_textures.end() && !failedMovie ? it->second.texture : nullptr);
+        CheckStall(ctx, g_stats, texture, fetch, it != g_textures.end() && !failedMovie ? it->second.texture : nullptr);
         if (skyenv::Get("SKY_RENDER_STATS") != nullptr && g_frame % 60 == 0)
         {
             // Frames per second over the last 60 frames.

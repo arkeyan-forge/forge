@@ -33,7 +33,7 @@ struct GuestWait
         CriticalSection,
     };
     std::atomic<uint64_t> since{ 0 }; // PlatformNowNs() at the wait's start, 0 when not waiting
-    std::atomic<uint32_t> kind{}, target{}, count{}, caller{}, outerCaller{}, owner{};
+    std::atomic<uint32_t> kind{}, target{}, count{}, caller{}, sp{}, owner{}; // sp: r1 at the call, for the call chain
 };
 
 // A guest thread as a waitable kernel object, signaled once it exits. Fields but `wait` are guarded by g_kernelLock.
@@ -61,8 +61,8 @@ std::shared_ptr<GuestThread> CreateGuestThread(
 [[noreturn]] void ExitGuestThread(uint32_t exitCode);
 
 // Marks the calling guest thread as waiting while it lives: for `target` (the first object's dispatcher header or
-// handle, or the critical section) and `count` objects; `ctx` at the kernel call gives where from (lr, and the return
-// address its caller saved, through the stack's back chain); `owner` is the id of the thread holding a critical section.
+// handle, or the critical section) and `count` objects; `ctx` at the kernel call gives where from (lr and r1: the report
+// walks the stack's back chain while the thread still waits); `owner` is the id of the thread holding a critical section.
 // Nothing on a host-driven thread.
 class GuestWaitScope
 {
@@ -78,6 +78,10 @@ private:
 
 // Names the live guest thread `id` in the stall report and its exit line.
 void NameGuestThread(uint32_t id, const char* name);
+
+// The calling guest thread's return addresses at `ctx`, innermost first: lr, then each caller's through the stack's back
+// chain ("0x82.. < 0x82.. < ..."). Empty on a host-driven thread.
+std::string GuestCallChain(const PPCContext& ctx);
 
 // One line per live guest thread on stderr, each starting with `tag`: its name, what it waits for, since when, and from
 // where. For a one-off report, never per frame.

@@ -60,14 +60,20 @@ namespace
 
     // A thread that waits for an event, as a guest wait does (kernel/sync.cpp): the stall report shows it waiting.
     std::shared_ptr<Event> g_event = std::make_shared<Event>(true, false);
+    std::string g_chain;
     void WaitsForEvent(PPCContext& ctx, uint8_t*)
     {
-        // The wait's caller in lr, and its own caller's return address saved in the frame the back chain points to.
+        // The wait's caller in lr, then each caller's return address, saved 8 bytes below the frame the back chain
+        // points to; the last frame's back chain is 0.
         const uint32_t top = ctx.r1.u32;
         ctx.r1.u64 = top - 0x100;
         g_memory.Write<uint32_t>(top - 0x100, top - 0x40);
         g_memory.Write<uint32_t>(top - 0x48, 0x82005678);
+        g_memory.Write<uint32_t>(top - 0x40, top - 0x10);
+        g_memory.Write<uint32_t>(top - 0x18, 0x8200ABC0);
+        g_memory.Write<uint32_t>(top - 0x10, 0);
         ctx.lr = 0x82001234;
+        g_chain = GuestCallChain(ctx);
         GuestWaitScope scope(GuestWait::Objects, 0x40001230, 1, ctx);
         WaitForObjects({ g_event }, false, 0, 0, nullptr);
     }
@@ -204,7 +210,8 @@ int main()
             report = Stderr([] { PrintGuestThreads("[stall]"); });
         }
         CHECK(report.find("[stall] " + self + " for 1 object (first 0x40001230)") != std::string::npos);
-        CHECK(report.find("called from 0x82001234 (itself called from 0x82005678)") != std::string::npos);
+        CHECK(report.find("called from 0x82001234 < 0x82005678 < 0x8200ABC0\n") != std::string::npos);
+        CHECK(g_chain == "0x82001234 < 0x82005678 < 0x8200ABC0");
         log = Stderr([&] {
             {
                 std::lock_guard lock(g_kernelLock);
