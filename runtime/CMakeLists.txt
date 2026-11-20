@@ -345,6 +345,10 @@ target_include_directories(ArkeyanToyboxLookTest PRIVATE .)
 add_executable(ArkeyanToyboxInPlayTest host/toybox/in_play_test.cpp)
 target_include_directories(ArkeyanToyboxInPlayTest PRIVATE .)
 
+# Which refusal a seat gives a card, for the toast and the seats a drag greys out (host/toybox/put_on.h): ./ArkeyanToyboxPutOnTest
+add_executable(ArkeyanToyboxPutOnTest host/toybox/put_on_test.cpp)
+target_include_directories(ArkeyanToyboxPutOnTest PRIVATE .)
+
 # The keys the game's bindings see around the Toy Box and the F3 menu (host/toybox/key_mask.h): ./ArkeyanToyboxKeyMaskTest
 add_executable(ArkeyanToyboxKeyMaskTest host/toybox/key_mask_test.cpp)
 target_include_directories(ArkeyanToyboxKeyMaskTest PRIVATE .)

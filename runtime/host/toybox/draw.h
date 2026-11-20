@@ -18,6 +18,15 @@ namespace toybox
 
     // Mouse, in canvas pixels, on what the last Draw showed: button 1 left, 3 right; `twice` for a double click.
     void Click(Model& model, float x, float y, int button, bool twice);
+    // A left press at a canvas point, after its Click: a shelf card or a seat's virtual figure under it may be dragged.
+    void Press(float x, float y);
+    // The pointer moved with the left button held. True while a drag runs (draw again).
+    bool Drag(float x, float y);
+    // The left button released (`inside` false: off the canvas): a drag drops its card there, on a seat or the shelf.
+    // True when a drag ended.
+    bool Release(Model& model, float x, float y, bool inside);
+    // Escape: the drag ends with nothing done. True when one ran.
+    bool CancelDrag();
     // The pointer in canvas pixels (`inside` false: off the canvas): what is under it gets a hover outline. True when that
     // changed since the last Draw (draw again).
     bool Pointer(float x, float y, bool inside);

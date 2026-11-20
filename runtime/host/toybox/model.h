@@ -13,6 +13,7 @@
 #include "host/toybox_link.h"
 #include "host/toybox/look.h"
 #include "host/toybox/nav.h"
+#include "host/toybox/put_on.h"
 #include <cstdint>
 #include <functional>
 #include <set>
@@ -448,6 +449,10 @@ namespace toybox
         bool Dirty() const { return m_dirty; }
         void Clean() { m_dirty = false; }
         void Touch() { m_dirty = true; }
+        // A dragged card dropped on a seat: put on, as a double click on it puts it on the chosen seat.
+        void DropCard(int seatIndex, const std::string& path);
+        // A seat's figure dropped on another seat (moved there, or "Swap players?"), or on the shelf (`to` -1: taken off).
+        void DropSeat(int from, int to);
 
         // Wheel (toybox.cpp aims it from the stick, the arrows or 1-8).
         void OpenWheel(int seatIndex);
@@ -492,6 +497,8 @@ namespace toybox
         int SeatOf(const std::string& path) const; // -1 if not on a seat
         const collection::Figure* SeatFigure(int index) const; // null if empty or physical
         bool Accepts(const SeatState& s, const collection::Figure& f) const;
+        // Why the seat would not take the card (PutOn's refusal, its toast aside); None: it would.
+        puton::Refusal Refuses(int seatIndex, const std::string& path) const;
         std::string SeatLabel(int index) const; // "Player 1", "Magic item"
         std::string SeatTag(int index) const; // "P1", "Item"
         // Every occupied seat with its hardware slot ("P1 Gill Grunt · Item Shield"), from the seats the portal shows.
