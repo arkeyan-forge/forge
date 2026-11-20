@@ -6,6 +6,8 @@
 #include "host/gamemenu.h"
 #include "host/settings.h"
 #include "host/toybox.h"
+#include "host/profiles.h"
+#include "netplay/session_runtime.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
@@ -214,7 +216,7 @@ namespace toybox
             r.percent = percent;
             return r;
         };
-        std::vector<MenuRow> rows(look::MainRows);
+        std::vector<MenuRow> rows(look::MainRows + (netplay::Online() ? 1 : 0));
         rows[MainVolume] = row(Kind::Slider, L("Volume", "Volume"), std::to_string(v.volume), int(v.volume));
         rows[MainResume] = row(Kind::Action, L("Resume", "Reprendre"), "");
         rows[MainToyBox] = row(Kind::Action, "Toy Box",
@@ -227,6 +229,17 @@ namespace toybox
         rows[MainPerformance] = row(Kind::Choice, L("Performance", "Performances"), LevelLabel(v.debugScreen));
         rows[MainReport] = row(Kind::Action, L("Report a problem", "Signaler un problème"), "");
         rows[MainQuit] = row(Kind::Action, L("Quit to the launcher", "Quitter vers le launcher"), "");
+        if (netplay::Online())
+        {
+            const auto status = netplay::SessionStatus();
+            const auto& peer = profiles::Current()[netplay::Hosting() ? 1 : 0];
+            char value[160];
+            snprintf(value, sizeof(value), "%s · %llu ms · delay %u · %s", peer.name.c_str(),
+                static_cast<unsigned long long>(status.roundTripMs), status.delay,
+                status.goodHash ? "state OK" : "awaiting state check");
+            rows[MainOnline] = row(Kind::Action, "Online", value);
+            rows[MainQuit].label = L("Leave the session", "Quitter la session");
+        }
         return rows;
     }
 
@@ -246,7 +259,7 @@ namespace toybox
 
     void Model::FocusMenuRow(int row, int step)
     {
-        menuRow = std::clamp(row, 0, look::MainRows - 1);
+        menuRow = std::clamp(row, 0, look::MainRows + (netplay::Online() ? 1 : 0) - 1);
         MainStep(menuRow, step);
         m_dirty = true;
     }
@@ -302,6 +315,12 @@ namespace toybox
                 MenuStep(-1, 0);
             return;
         case MainQuit:
+            if (netplay::Online())
+            {
+                if (step == 0)
+                    netplay::LeaveSession();
+                return;
+            }
             if (step == 0)
                 Ask({ L("Quit to the launcher?", "Quitter vers le launcher ?"),
                     L("What the game has not saved is lost.", "Ce que le jeu n'a pas enregistré est perdu."),
@@ -322,8 +341,11 @@ namespace toybox
     {
         switch (command)
         {
-        case Command::Up: menuRow = (menuRow + look::MainRows - 1) % look::MainRows; break;
-        case Command::Down: menuRow = (menuRow + 1) % look::MainRows; break;
+        case Command::Up:
+            menuRow = (menuRow + look::MainRows + (netplay::Online() ? 1 : 0) - 1) %
+                      (look::MainRows + (netplay::Online() ? 1 : 0));
+            break;
+        case Command::Down: menuRow = (menuRow + 1) % (look::MainRows + (netplay::Online() ? 1 : 0)); break;
         case Command::Left:
         case Command::Right:
             if (menuRow == MainVolume || menuRow == MainPerformance)
@@ -607,6 +629,9 @@ namespace toybox
         rows[SkipIntro] = row(Kind::Toggle, L("Skip the start-up logos", "Passer les logos de départ"),
             OnOff(v.skipIntroMovies),
             L("Straight to the title when the game starts.", "Directement à l'écran titre au démarrage."), -1, true);
+        if (netplay::Online())
+            for (int locked : { FrameRate, AutoFallback, SkipIntro })
+                rows[locked].unavailable = L("Fixed for the online session", "Fixé pour la session en ligne");
         return rows;
     }
 
@@ -644,6 +669,8 @@ namespace toybox
     // volume by 10), 0 does the row.
     void Model::MenuStep(int row, int step)
     {
+        if (netplay::Online() && (row == FrameRate || row == AutoFallback || row == SkipIntro))
+            return;
         const gamemenu::Values& v = gamemenu::Current();
         bool saved = true;
         auto flip = [&](bool value, bool (*set)(bool)) { saved = set(!value); };

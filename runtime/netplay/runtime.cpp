@@ -7,6 +7,10 @@
 #include "netplay/trace.h"
 #endif
 #include "netplay/session.h"
+#include "netplay/session_end.h"
+#include "netplay/session_runtime.h"
+#include "netplay/session_settings.h"
+#include "host/portal.h"
 #include "kernel/video.h"
 #include "vfs.h"
 #include <image.h>
@@ -29,11 +33,17 @@ namespace netplay
 {
     namespace
     {
-        [[noreturn]] void SessionRefuse(const char* message)
+        std::atomic<EndReason> g_endReason{ EndReason::None };
+        std::atomic<Session*> g_activeSession{ nullptr };
+        std::mutex g_sessionExitMutex, g_pendingMutex;
+        EventBatch g_pending;
+        bool g_leftLocally = false;
+
+        void ExitSession(const SessionFailure& failure);
+        void SessionRefuse(const char* message, EndReason reason = EndReason::Invalid)
         {
             fprintf(stderr, "[netplay] session refused: %s\n", message);
-            fflush(stderr);
-            std::_Exit(1);
+            ExitSession({ reason });
         }
 
         struct NetworkOptions
@@ -41,7 +51,8 @@ namespace netplay
             bool enabled = false, host = false, crossPlatform = false;
             uint16_t port = 0;
             uint32_t delay = 0;
-            std::string address, password, dump;
+            std::string address, password, dump, error;
+            EndReason errorReason = EndReason::Invalid;
 
             NetworkOptions()
             {
@@ -51,30 +62,54 @@ namespace netplay
                     return;
                 enabled = true;
                 if (hosting && joining)
-                    SessionRefuse("HOST and JOIN are mutually exclusive");
+                {
+                    error = "HOST and JOIN are mutually exclusive";
+                    return;
+                }
                 const auto is = [](const char* name, std::string_view expected) {
                     const char* value = skyenv::Get(name);
                     return value && std::string_view(value) == expected;
                 };
                 if (!is("SKY_NETPLAY_DETERMINISTIC", "1") || !is("SKY_NETPLAY_DELIVERY", "frame") ||
                     !is("SKY_NETPLAY_SCHEDULE", "cooperative"))
-                    SessionRefuse("HOST/JOIN require deterministic=1, delivery=frame and schedule=cooperative");
+                {
+                    error = "HOST/JOIN require deterministic=1, delivery=frame and schedule=cooperative";
+                    return;
+                }
                 if (skyenv::Get("SKY_NETPLAY_RECORD") || skyenv::Get("SKY_NETPLAY_REPLAY"))
-                    SessionRefuse("HOST/JOIN cannot be used with record or replay");
+                {
+                    error = "HOST/JOIN cannot be used with record or replay";
+                    return;
+                }
+                if (!SessionFrameRate(skyenv::Get("SKY_NETPLAY_FPS")))
+                {
+                    error = "SKY_NETPLAY_FPS is required and must be 30 or 60";
+                    errorReason = EndReason::Fps;
+                    return;
+                }
                 host = hosting != nullptr;
                 uint64_t number = 0;
                 if (host)
                 {
                     if (!ParseCount(hosting, 1, 65535, false, number))
-                        SessionRefuse("HOST must be a UDP port from 1 to 65535");
+                    {
+                        error = "HOST must be a UDP port from 1 to 65535";
+                        return;
+                    }
                     port = uint16_t(number);
                 }
                 else if (!ParseEndpoint(joining, address, port))
-                    SessionRefuse("JOIN must be host:port or [IPv6]:port");
+                {
+                    error = "JOIN must be host:port or [IPv6]:port";
+                    return;
+                }
                 if (const char* value = skyenv::Get("SKY_NETPLAY_DELAY"))
                 {
                     if (!ParseCount(value, 1, 8, false, number))
-                        SessionRefuse("DELAY must be from 1 to 8 frames");
+                    {
+                        error = "DELAY must be from 1 to 8 frames";
+                        return;
+                    }
                     delay = uint32_t(number);
                 }
                 if (const char* value = skyenv::Get("SKY_NETPLAY_PASSWORD"))
@@ -84,11 +119,17 @@ namespace netplay
                 crossPlatform = is("SKY_NETPLAY_CROSS_PLATFORM", "1");
             }
         };
-        const NetworkOptions g_network;
-        std::mutex g_sessionExitMutex;
-
-        [[noreturn]] void ExitSession(const SessionFailure& failure)
+        const NetworkOptions& Network()
         {
+            static const NetworkOptions options;
+            return options;
+        }
+
+        void ExitSession(const SessionFailure& failure)
+        {
+            std::lock_guard lock(g_sessionExitMutex);
+            if (g_endReason.load(std::memory_order_relaxed) != EndReason::None)
+                return;
             if (failure.reason == EndReason::Desync)
                 fprintf(stderr, "[netplay] session ended: desync frame %llu local=%016llx remote=%016llx\n",
                     static_cast<unsigned long long>(failure.frame), static_cast<unsigned long long>(failure.localHash),
@@ -98,7 +139,9 @@ namespace netplay
                     failure.reason >= EndReason::Protocol && failure.reason <= EndReason::Seats ? "refused" : "ended",
                     ReasonText(failure.reason));
             fflush(stderr);
-            std::_Exit(1);
+            if (!WriteEndFile(PortalSessionFolder(), failure.reason))
+                fprintf(stderr, "[netplay] cannot write online-ended.txt\n");
+            g_endReason.store(failure.reason, std::memory_order_release);
         }
 
         const char* PlatformName()
@@ -200,6 +243,12 @@ namespace netplay
 
             Probe()
             {
+                PrepareSessionSetup();
+                if (SessionEndReason() != EndReason::None)
+                {
+                    g_probe.store(this, std::memory_order_release);
+                    return;
+                }
                 if (const char* path = skyenv::Get("SKY_NETPLAY_REPLAY"))
                 {
                     FILE* file = Open(path, "rb");
@@ -229,7 +278,7 @@ namespace netplay
                     Write(record, header.data(), header.size());
                 }
                 const char* hashPath = skyenv::Get("SKY_NETPLAY_HASH");
-                if (hashPath || g_network.enabled)
+                if (hashPath || Network().enabled)
                 {
                     std::string error;
                     const char* skip = skyenv::Get("SKY_NETPLAY_HASH_SKIP");
@@ -263,33 +312,44 @@ namespace netplay
                     events.emplace(Open(path, "w"));
                     g_events.store(&*events, std::memory_order_release);
                 }
-                if (g_network.enabled)
+                if (Network().enabled)
                 {
                     const auto xex = g_disc.ReadAll("default.xex");
                     const auto image = Image::ParseImage(xex.data(), xex.size());
                     if (!image.data)
+                    {
                         SessionRefuse("cannot read executable image for SHA-256");
+                        g_probe.store(this, std::memory_order_release);
+                        return;
+                    }
                     SessionConfig config;
                     config.hello = MakeHello(g_gameInfo.id, Sha256Hex({ image.data.get(), size_t(image.size) }),
-                        ARKEYAN_VERSION, PlatformName(), FrameRateLimit(), g_network.crossPlatform, g_network.host);
+                        ARKEYAN_VERSION, PlatformName(), FrameRateLimit(), Network().crossPlatform, Network().host);
                     std::random_device random;
                     for (auto& byte : config.hello.nonce)
                         byte = uint8_t(random());
-                    config.password = g_network.password;
-                    config.delay = g_network.delay;
+                    config.password = Network().password;
+                    config.delay = Network().delay;
+                    config.slotPlayers = PortalOnlinePlayers();
+                    config.prepareEvent = PortalPrepareOnline;
+                    config.applyEvents = PortalApplyOnline;
                     config.ended = [](const SessionFailure& failure) {
                         // A desync is handled at its hash barrier, where the guest's block dump is still available.
                         if (failure.reason != EndReason::Desync)
                         {
-                            std::lock_guard lock(g_sessionExitMutex);
                             ExitSession(failure);
                         }
                     };
                     std::string error;
-                    auto transport = OpenUdp(g_network.address, g_network.port, g_network.host, error);
+                    auto transport = OpenUdp(Network().address, Network().port, Network().host, error);
                     if (!transport)
-                        SessionRefuse(error.c_str());
+                    {
+                        SessionRefuse(error.c_str(), EndReason::Transport);
+                        g_probe.store(this, std::memory_order_release);
+                        return;
+                    }
                     session = std::make_unique<Session>(std::move(config), std::move(transport));
+                    g_activeSession.store(session.get(), std::memory_order_release);
                 }
                 g_probe.store(this, std::memory_order_release);
             }
@@ -303,6 +363,7 @@ namespace netplay
                 finished = true;
                 if (session)
                     session->Stop();
+                PortalFinishOnline();
                 if (record)
                     fclose(record);
                 if (totals)
@@ -326,11 +387,29 @@ namespace netplay
                 {
                     NetworkWait waiting;
                     if (!session->WaitReady())
+                    {
                         SessionExit();
+                        return;
+                    }
+                    EventBatch pending;
+                    {
+                        std::lock_guard lock(g_pendingMutex);
+                        pending.count = g_pending.count;
+                        std::copy_n(g_pending.events.begin(), pending.count, pending.events.begin());
+                        g_pending.count = 0;
+                    }
+                    if (pending.count && !session->QueueEvents(std::span(pending.events).first(pending.count)))
+                    {
+                        ExitSession({ EndReason::Invalid });
+                        return;
+                    }
                     uint32_t ignored = 0;
                     const Pad local{ GetGamepad(ignored, 0), GamepadConnected(0) };
                     if (!session->Exchange(frames, local, frame))
+                    {
                         SessionExit();
+                        return;
+                    }
                 }
                 else if (replaying)
                 {
@@ -403,18 +482,33 @@ namespace netplay
                 }
             }
 
-            [[noreturn]] void SessionExit()
+            void SessionExit()
             {
-                std::lock_guard lock(g_sessionExitMutex);
+                if (ended)
+                    return;
+                ended = true;
                 const auto failure = session->Failure();
-                if (failure.reason == EndReason::Desync && !g_network.dump.empty())
+                if (failure.reason == EndReason::Desync && !Network().dump.empty())
                 {
-                    FILE* file = Open(g_network.dump.c_str(), "wb");
-                    Write(file, "SKYBLK01", 8);
-                    WriteLE(file, 1, 4);
-                    WriteBlocks(file);
-                    if (fclose(file) != 0)
-                        Refuse("desync dump flush failed");
+                    FILE* file = fopen(Network().dump.c_str(), "wb");
+                    bool saved = file != nullptr;
+                    if (file)
+                    {
+                        const auto number = [file](uint64_t value, size_t size) {
+                            std::array<uint8_t, 8> bytes{};
+                            for (size_t index = 0; index < size; ++index)
+                                bytes[index] = uint8_t(value >> (index * 8));
+                            return fwrite(bytes.data(), 1, size, file) == size;
+                        };
+                        saved = fwrite("SKYBLK01", 1, 8, file) == 8 && number(1, 4) && number(frames, 8) &&
+                                number(blocks.size(), 4);
+                        for (const auto& block : blocks)
+                            saved = saved && number(block.address, 4) && number(uint32_t(block.heap), 4) &&
+                                    number(block.hash, 8);
+                        saved = fclose(file) == 0 && saved;
+                    }
+                    if (!saved)
+                        fprintf(stderr, "[netplay] cannot write desync block dump\n");
                 }
                 ExitSession(failure);
             }
@@ -458,7 +552,10 @@ namespace netplay
                 {
                     NetworkWait waiting;
                     if (!session->CheckHash(frames, total))
+                    {
                         SessionExit();
+                        return;
+                    }
                 }
                 const double ms =
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -467,6 +564,45 @@ namespace netplay
                 ++hashed;
             }
         };
+    }
+
+    void PrepareSessionSetup()
+    {
+        static std::once_flag checked;
+        std::call_once(checked, [] {
+            if (!Network().enabled)
+                return;
+            std::error_code error;
+            std::filesystem::remove(std::filesystem::path(PortalSessionFolder()) / "online-ended.txt", error);
+            if (!Network().error.empty())
+                SessionRefuse(Network().error.c_str(), Network().errorReason);
+        });
+    }
+
+    OnlineStatus SessionStatus()
+    {
+        if (auto* session = g_activeSession.load(std::memory_order_acquire))
+            return { session->RoundTripMs(), session->LastGoodHash(), session->Delay() };
+        return {};
+    }
+    EndReason SessionEndReason() { return g_endReason.load(std::memory_order_acquire); }
+    const char* SessionEndMessage() { return g_leftLocally ? "You left the session" : EndMessage(SessionEndReason()); }
+    void LeaveSession()
+    {
+        g_leftLocally = true;
+        if (auto* session = g_activeSession.load(std::memory_order_acquire))
+            session->Stop();
+        ExitSession({ EndReason::Quit });
+    }
+    bool QueuePortalEvents(std::span<const PortalEvent> events)
+    {
+        std::lock_guard lock(g_pendingMutex);
+        if (SessionEndReason() != EndReason::None || events.empty() || !events.back().last ||
+            events.size() > MaxFrameEvents - g_pending.count)
+            return false;
+        std::copy(events.begin(), events.end(), g_pending.events.begin() + g_pending.count);
+        g_pending.count += events.size();
+        return true;
     }
 
 #ifdef ARKEYAN_NETPLAY_TRACE
@@ -484,7 +620,18 @@ namespace netplay
     void OnFrame(uint32_t presentInterval)
     {
         static Probe probe;
-        std::lock_guard lock(probe.mutex);
+        std::unique_lock lock(probe.mutex);
+        const auto park = [&] {
+            if (SessionEndReason() == EndReason::None)
+                return;
+            lock.unlock();
+            NetworkWait waiting;
+            static std::mutex mutex;
+            static std::condition_variable stopped;
+            std::unique_lock waitLock(mutex);
+            stopped.wait(waitLock, [] { return false; });
+        };
+        park();
         if (probe.finished)
             return;
         if (probe.events && !probe.events->EndFrame(probe.frames))
@@ -496,15 +643,25 @@ namespace netplay
         g_clock.Advance(presentInterval);
         WriteBundle();
         probe.Latch();
+        park();
         ++probe.frames;
 #ifdef ARKEYAN_NETPLAY_TRACE
         g_frame.store(uint32_t(probe.frames), std::memory_order_relaxed);
 #endif
         probe.Hash();
+        park();
     }
 
     void Finish()
     {
+        if (Online())
+        {
+            if (auto* session = g_activeSession.load(std::memory_order_acquire))
+                session->Stop();
+            ExitSession({ EndReason::Quit });
+        }
+        if (!g_probe.load(std::memory_order_acquire))
+            PortalFinishOnline();
         if (Probe* probe = g_probe.load(std::memory_order_acquire))
         {
             std::lock_guard lock(probe->mutex);

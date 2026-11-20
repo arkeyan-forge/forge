@@ -18,7 +18,8 @@ namespace netplay
         Pong,
         Ready,
         Frames,
-        End
+        End,
+        Event
     };
     enum class EndReason : uint8_t
     {
@@ -49,10 +50,29 @@ namespace netplay
     Hello MakeHello(std::string_view game, std::string_view image, std::string_view runtime, std::string_view platform,
         uint32_t fps, bool crossPlatform, bool host);
     EndReason CompareHello(const Hello& local, const Hello& remote);
+    inline constexpr size_t MaxFrameEvents = 32;
+    struct PortalEvent
+    {
+        uint64_t sequence = 0, frame = 0, figure = 0;
+        uint8_t slot = 0;
+        bool hasDump = false, last = false;
+        std::array<uint8_t, 1024> dump{};
+    };
+    struct EventBatch
+    {
+        std::array<PortalEvent, MaxFrameEvents> events{};
+        size_t count = 0;
+    };
+    struct FrameEvents
+    {
+        std::array<EventBatch, 2> players{};
+    };
+    inline bool SeatAllowed(bool host, uint8_t player) { return player <= 2 && (host ? player != 2 : player == 2); }
     struct FramePad
     {
         uint64_t frame = UINT64_MAX;
         Pad pad{};
+        uint64_t events = 0;
     };
     struct Packet
     {
@@ -61,11 +81,13 @@ namespace netplay
         Hello hello{};
         std::array<FramePad, 8> pads{};
         uint8_t count = 0;
+        uint64_t eventAck = 0;
+        PortalEvent event{};
         EndReason reason = EndReason::None;
     };
     struct Datagram
     {
-        std::array<uint8_t, 512> bytes{};
+        std::array<uint8_t, 1200> bytes{};
         uint16_t size = 0;
         std::span<const uint8_t> View() const { return { bytes.data(), size }; }
     };

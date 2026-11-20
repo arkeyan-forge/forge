@@ -437,9 +437,11 @@ Every thirtieth checkpoint uses the same total and block selection as `SKY_NETPL
 output file. Both peers wait for that checkpoint's hash before progressing, so a mismatch stops both at that frame
 and logs its frame, local hash and remote hash. Dumps can be compared with
 `python3 -I tools/netplay/hash_diff.py <host-dump> <join-dump>`. Quits, refusals, timeouts and desyncs send an end
-packet repeatedly when possible; fatal session exits use the runtime's existing `_Exit(1)` approach.
+packet repeatedly when possible. Step 3 replaces the original immediate session exit with an end overlay and the
+runtime's normal quit path.
 
-[V] All integer fields are little-endian. The wire format is bounded to 512 bytes; current packets are at most 280:
+[V] All integer fields are little-endian. The original step-1 format below was bounded to 512 bytes, with packets
+at most 280 bytes; step 3 extends frames and adds the reliable event channel:
 
 | Part | Bytes and fields |
 |---|---|
@@ -471,9 +473,81 @@ setup. It also attempts 600-frame loopback UDP runs and a loopback desync run.
 The transport tests and protocol fuzz run pass natively and with address/undefined sanitizers; the existing netplay and scheduler tests pass too. Documentation checks report zero broken links. [V] The sandbox denied UDP binding with `Operation not permitted`;
 the test reports that part as skipped and still runs all injectable-transport checks. [?] Actual loopback UDP,
 IPv6/DNS connectivity, two game instances, pad seats in the game, real desync dump comparison and Windows remain
-unverified here. No portal events, settings/save transfer, router mapping or launcher UI are included. The
+unverified here. Step 1 did not include portal events, settings/save transfer, router mapping or launcher UI. Step 3 adds portal
+events and game-side session settings; save transfer, mapping integration and launcher UI remain separate. The
 remaining determinism differences documented in step 0c may stop a real session at its first hash checkpoint.
-Profiles still follow the existing `SKY_PLAYER*` settings and are not negotiated; P2 sign-in in the game needs checking.
+Profiles follow the launcher's `SKY_PLAYER*` settings and are not negotiated; step 3 checks P2 sign-in through the
+host-side parser. P2 joining inside a game still needs a game run.
+
+## Step 3: session setup (game side)
+
+A session requires `SKY_NETPLAY_FPS=30|60`, in addition to the step-1 scheduling switches. It overrides the settings
+file and command line; the game cap and live F3 controls cannot change it. Both peers still check the resulting FPS
+in the hello. Aspect is fixed to 16:9 (`aspectAuto` and `aspectFill` off), and `fps_auto_fallback` is off with its
+explicit-setting flag set, so the GPU default cannot turn it back on. Startup logos are not skipped and Nightmare
+unlocking is off. Before guest threads start, session setup removes guest-changing level, movie, scripted-input,
+clock, portal-model and execution-debug overrides, including their legacy aliases. Save, collection and other
+isolation variables are preserved. Figure editing is unavailable for the session.
+
+The launcher supplies the host as `SKY_PLAYER_*` and the guest as `SKY_PLAYER2_*` on **both** computers. XAM user 1
+uses the second profile; it remains signed in during a session even if its name is missing (the normal fallback
+profile). A session always selects the emulated portal and logs once that real portals are not read. The seats saved in the session's `portal.txt` are restored at start: the launcher writes
+the same file and figures into both games' session folders, so both start identical; `SKY_PORTAL_PLACE`, when provided, queues session events just like the keys.
+
+Portal place, remove, replace and clear requests from the Toy Box, its linked window, wheel and keys enter the local
+player's event queue. The next latch stamps them for N + delay alongside that player's pad. The host owns P1 and
+shared seats; the joiner owns P2, including P2 vehicle seats. Fixed slot assignments reserve both halves of a
+swapper. The other player's seats stay visible and locked; changing or swapping them is refused both by the UI and
+by session validation. Clear removes only the local player's seats. UI previews may show a queued local choice,
+but the guest sees it only at its scheduled frame.
+
+The authenticated protocol keeps the original hello and end layouts and extends frame packets:
+
+| Payload | Fields, little-endian |
+|---|---|
+| Frames | count (1), up to eight records of frame (8), cumulative event sequence for that frame (8), pad (13); checkpoint frame (8), hash (8), contiguous reliable-event acknowledgement (8) |
+| Event | reliable sequence (8), target frame (8), figure id (8; zero removes), slot (1), flags (1: dump present, transaction end), optional 1024-byte figure dump |
+
+Datagrams are bounded to 1200 bytes; a full figure event is 1098 bytes. Each sender resends up to eight unacknowledged
+events per network tick, independently of redundant pads. Only the next reliable sequence is accepted; duplicates
+and out-of-order copies cannot reapply an event. A frame waits for both pads and every event through their advertised
+sequences. Transaction boundaries preserve compound replacements, and both peers apply P1 before P2. The network
+worker applies events while the cooperative guest holds its frame barrier; the guest's frame path uses fixed buffers
+and performs no new allocation or portal file I/O. Queues are bounded to 32 changes per latch and 512 reliable records
+per direction. A full local queue refuses the request rather than overwriting an accepted event.
+
+Figure ids are separate for each player. The first accepted placement sends its dump; later placements use its id.
+Both sides play session copies in `<SKY_SAVE_DIR>/online-figures/`. The receiver prepares the first dump before
+acknowledging it. Guest progress updates those copies; normal session finalization copies only locally owned figures
+back to their original files and releases collection locks. Remote progress stays in the session folder. No paths or
+collection metadata are sent over the wire.
+
+F3 adds an **Online** row with the peer's pseudo, measured round trip, input delay and `state OK` after a successful
+hash checkpoint (before the first check it says `awaiting state check`). **Leave the session** sends repeated end
+packets. Refusal, timeout, desync, transport failure and peer departure log their reason and write
+`<SKY_SAVE_DIR>/online-ended.txt` as `reason=<code>`. Codes are `protocol`, `game`, `image`, `runtime`, `platform`,
+`fps`, `seats`, `timeout`, `desync`, `quit`, `transport` and `invalid`. A stale marker is removed when setup starts.
+The runtime's own overlay shows a short reason for four seconds, then posts the same quit event as the normal menu;
+that path finishes save/progress work and flushes locally owned figures. The host presents the overlay independently
+of guest flips. The cooperative guest stays parked during
+the end screen, with its watchdog suspended. A requested desync block dump is written at the hash barrier.
+
+[V] Tests were added before implementation: initial event and end APIs failed to compile; the forced-settings test
+then failed against the previous parser. `ArkeyanNetplayProtocolTest` covers dump/reference/removal encoding and
+malformed packets. `ArkeyanNetplaySessionTest` checks equal pads and exact event frames on both peers over 20% loss,
+duplicates and reordering, all delays 1–8, event-sink application, compound bursts, removals, first-dump references,
+reliable-ring wraparound and refusal of a guest's P1-seat request. `ArkeyanNetplaySetupTest` checks FPS precedence,
+16:9 and fallback forcing, second-profile sign-in, debug-switch removal without changing save isolation, launcher
+reason files and the four-second end-screen clock. `ArkeyanNetplayStartupTest` first failed at the old static
+scheduler exit, then checked that invalid session prerequisites reach window setup for a visible refusal. All are
+registered with `sky_add_tests`.
+
+[?] No game was run. Two actual games, visual F3/end overlays, Toy Box and wheel interactions, figure progress flushes
+in a running game, P2 joining and Windows still need validation. Real UDP is skipped here because the sandbox denies
+socket binding with `Operation not permitted`; the injectable lossy transport runs independently. This step does not
+transfer saves or languages, negotiate profiles, integrate router mapping or build launcher UI. The determinism
+residue from step 0c still needs the game runs described there. Both games must use this session implementation;
+the extended frame layout does not interoperate with a step-1-only binary.
 
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one

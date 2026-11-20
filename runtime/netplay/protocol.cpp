@@ -47,7 +47,7 @@ namespace netplay
                     byte = T(bytes[at++]);
             }
         };
-        size_t PayloadSize(PacketType type, uint8_t count)
+        size_t PayloadSize(PacketType type, uint8_t count, bool dump = false)
         {
             switch (type)
             {
@@ -55,8 +55,9 @@ namespace netplay
             case PacketType::Ping:
             case PacketType::Pong:
             case PacketType::Ready: return 8;
-            case PacketType::Frames: return count <= 8 ? 17 + size_t(count) * 21 : 0;
+            case PacketType::Frames: return count <= 8 ? 25 + size_t(count) * 29 : 0;
             case PacketType::End: return 25;
+            case PacketType::Event: return 26 + (dump ? 1024 : 0);
             }
             return 0;
         }
@@ -215,9 +216,10 @@ namespace netplay
 
     bool EncodePacket(const Packet& packet, const Key& key, Datagram& bytes)
     {
-        const size_t payload = PayloadSize(packet.type, packet.count);
+        const size_t payload = PayloadSize(packet.type, packet.count, packet.event.hasDump);
         bytes = {};
-        if (!payload)
+        if (!payload || (packet.type == PacketType::Event && (packet.event.slot >= 16 || !packet.event.sequence ||
+                                                                 (packet.event.hasDump && !packet.event.figure))))
             return false;
         Writer out{ bytes };
         out.Array(Magic);
@@ -252,6 +254,7 @@ namespace netplay
                 const auto& pad = packet.pads[i].pad;
                 const auto& state = pad.state;
                 out.Number(packet.pads[i].frame, 8);
+                out.Number(packet.pads[i].events, 8);
                 out.Number(pad.connected, 1);
                 out.Number(state.buttons, 2);
                 out.Number(state.leftTrigger, 1);
@@ -263,6 +266,16 @@ namespace netplay
             }
             out.Number(packet.hashFrame, 8);
             out.Number(packet.hash, 8);
+            out.Number(packet.eventAck, 8);
+            break;
+        case PacketType::Event:
+            out.Number(packet.event.sequence, 8);
+            out.Number(packet.event.frame, 8);
+            out.Number(packet.event.figure, 8);
+            out.Number(packet.event.slot, 1);
+            out.Number((packet.event.hasDump ? 1 : 0) | (packet.event.last ? 2 : 0), 1);
+            if (packet.event.hasDump)
+                out.Array(packet.event.dump);
             break;
         case PacketType::End:
             out.Number(uint8_t(packet.reason), 1);
@@ -282,16 +295,19 @@ namespace netplay
             ++dropped;
             return false;
         };
-        if (bytes.size() < 48 || bytes.size() > 512 || !std::equal(Magic.begin(), Magic.end(), bytes.begin()))
+        if (bytes.size() < 48 || bytes.size() > Datagram{}.bytes.size() ||
+            !std::equal(Magic.begin(), Magic.end(), bytes.begin()))
             return fail();
         if (Read(bytes.subspan(8, 2)) != ProtocolVersion || bytes[11] || bytes[14] || bytes[15] ||
             Read(bytes.subspan(12, 2)) != bytes.size())
             return fail();
         const auto type = PacketType(bytes[10]);
-        if (type == PacketType::Frames && bytes.size() < 65)
+        if (type == PacketType::Frames && bytes.size() < 73)
             return fail();
         const uint8_t count = type == PacketType::Frames ? bytes[32] : 0;
-        const size_t payload = PayloadSize(type, count);
+        if (type == PacketType::Event && (bytes.size() < 74 || bytes[57] > 3))
+            return fail();
+        const size_t payload = PayloadSize(type, count, type == PacketType::Event && (bytes[57] & 1));
         if (!payload || bytes.size() != 48 + payload)
             return fail();
         const auto tag = Tag(bytes.first(bytes.size() - 16), key);
@@ -335,6 +351,7 @@ namespace netplay
                 auto& pad = result.pads[i].pad;
                 auto& state = pad.state;
                 result.pads[i].frame = in.Number(8);
+                result.pads[i].events = in.Number(8);
                 if (bytes[in.at] > 1)
                     return fail();
                 pad.connected = in.Number(1) != 0;
@@ -348,6 +365,19 @@ namespace netplay
             }
             result.hashFrame = in.Number(8);
             result.hash = in.Number(8);
+            result.eventAck = in.Number(8);
+            break;
+        case PacketType::Event:
+            result.event.sequence = in.Number(8);
+            result.event.frame = in.Number(8);
+            result.event.figure = in.Number(8);
+            result.event.slot = uint8_t(in.Number(1));
+            result.event.hasDump = (bytes[in.at] & 1) != 0;
+            result.event.last = (in.Number(1) & 2) != 0;
+            if (result.event.slot >= 16 || !result.event.sequence || (result.event.hasDump && !result.event.figure))
+                return fail();
+            if (result.event.hasDump)
+                in.Array(result.event.dump);
             break;
         case PacketType::End:
             result.reason = EndReason(in.Number(1));

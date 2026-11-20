@@ -192,19 +192,19 @@ namespace toybox::look
 
     struct MainLayout
     {
-        float rowTop[MainRows]; // the top of each row (row 0: the volume's card)
-        float rowHeight[MainRows];
+        float rowTop[MainRows + 1]; // the top of each row (row 0: the volume's card)
+        float rowHeight[MainRows + 1];
         float footerTop; // the hints' line
     };
 
-    inline MainLayout Main()
+    inline MainLayout Main(bool online = false)
     {
         MainLayout l{};
         float y = MainPad + MainHeader + 20;
         l.rowTop[0] = y;
         l.rowHeight[0] = MainVolumeHeight;
         y += MainVolumeHeight + 20;
-        for (int row = 1; row < MainRows; row++)
+        for (int row = 1; row < MainRows + (online ? 1 : 0); row++)
         {
             if (row == MainSmallFrom)
                 y += MainSeparator;

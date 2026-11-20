@@ -1,5 +1,6 @@
 #include "netplay/scheduler.h"
 #include "netplay/events.h"
+#include "netplay/session_runtime.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -17,6 +18,8 @@ namespace netplay
         if (!deterministic || std::string_view(deterministic) != "1" || !delivery ||
             std::string_view(delivery) != "frame")
         {
+            if (Online())
+                return false;
             fprintf(stderr, "[netplay] refused: cooperative scheduling requires deterministic=1 and delivery=frame\n");
             std::_Exit(1);
         }

@@ -161,7 +161,8 @@ namespace profiles
             const Names& names = Players[i];
             const char* name = skyenv::Get(names.name, lookup);
             Profile& profile = result[i];
-            profile.signedIn = i == 0 || (name != nullptr && *name != '\0');
+            profile.signedIn = i == 0 || (name != nullptr && *name != '\0') ||
+                               skyenv::Get("SKY_NETPLAY_HOST", lookup) || skyenv::Get("SKY_NETPLAY_JOIN", lookup);
             if (!profile.signedIn)
                 continue;
             profile.name = GameName(name ? name : "", names.fallbackName, drawnAccents);

@@ -10,6 +10,7 @@
 #include "host/portal.h"
 #include "host/portal_backend.h"
 #include "language.h"
+#include "netplay/session_runtime.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
@@ -244,6 +245,13 @@ namespace toybox
         open = true;
         fromMenu = false;
         seat = std::clamp(seatIndex, 0, int(seats.size()) - 1);
+        if (!SeatWritable(seat))
+            for (size_t index = 0; index < seats.size(); ++index)
+                if (SeatWritable(int(index)))
+                {
+                    seat = int(index);
+                    break;
+                }
         screen = to;
         dialogs.clear();
         search.clear();
@@ -367,6 +375,11 @@ namespace toybox
                 return int(i);
         }
         return -1;
+    }
+
+    bool Model::SeatWritable(int index) const
+    {
+        return index >= 0 && index < int(seats.size()) && PortalSeatWritable(seats[size_t(index)].seat.player);
     }
 
     const Figure* Model::SeatFigure(int index) const
@@ -563,6 +576,30 @@ namespace toybox
 
     void Model::RefreshSeats(uint64_t now)
     {
+        if (netplay::Online())
+        {
+            for (size_t index = 0; index < seats.size(); ++index)
+            {
+                auto& target = seats[index];
+                target.slot = PortalOnlineSlot(int(index));
+                target.slot2 = PortalOnlineSlot(int(index), 1);
+                const auto path = PortalSlotFigure(target.slot);
+                const auto second = PortalSlotFigure(target.slot2);
+                if (target.path != path || target.path2 != second)
+                    m_dirty = true;
+                target.path = path;
+                target.path2 = second;
+                target.waiting = false;
+                for (const auto& shown : { path, second })
+                    if (!shown.empty() && FindFigure(shown) < 0)
+                    {
+                        Figure shownFigure;
+                        if (collection::Read(shown, shownFigure))
+                            figures.push_back(std::move(shownFigure));
+                    }
+            }
+            return;
+        }
         if (realPortal)
         {
             for (SeatState& s : seats)
@@ -742,6 +779,8 @@ namespace toybox
 
     int Model::FreeSlot(int seatIndex, int half, uint32_t available, uint32_t planned) const
     {
+        if (netplay::Online())
+            return SeatWritable(seatIndex) ? PortalOnlineSlot(seatIndex, half) : -1;
         auto used = [&](int slot) {
             if ((planned >> slot & 1) != 0 || PortalSlotIsReal(slot))
                 return true;
@@ -786,6 +825,19 @@ namespace toybox
     void Model::RemoveFromPortal(int seatIndex)
     {
         SeatState& s = seats[seatIndex];
+        if (netplay::Online())
+        {
+            std::vector<PortalFigureChange> changes;
+            if (s.slot >= 0 && !s.path.empty())
+                changes.push_back({ s.slot, {} });
+            if (s.slot2 >= 0 && !s.path2.empty())
+                changes.push_back({ s.slot2, {} });
+            if (!changes.empty())
+                PortalReplaceFigures(changes);
+            s.path2.clear();
+            s.slot2 = -1;
+            return;
+        }
         if (s.slot >= 0 && !s.path.empty())
             PortalRemoveFigure(s.slot);
         if (s.slot2 >= 0 && !s.path2.empty())
@@ -796,6 +848,9 @@ namespace toybox
 
     bool Model::ReplaceCards(const std::vector<std::pair<int, std::string>>& cards)
     {
+        for (const auto& card : cards)
+            if (!SeatWritable(card.first))
+                return false;
         std::vector<PortalFigureChange> changes;
         uint32_t available = 0, planned = 0;
         auto change = [&](int slot, const std::string& path) {
@@ -885,6 +940,12 @@ namespace toybox
 
     bool Model::PutOn(int seatIndex, const std::string& path, bool fromWheel)
     {
+        const int source = SeatOf(path);
+        if (!SeatWritable(seatIndex) || (source >= 0 && !SeatWritable(source)))
+        {
+            Toast(L("This seat belongs to the other player", "Cette place appartient à l'autre joueur"));
+            return false;
+        }
         const puton::Refusal refusal = Refuses(seatIndex, path);
         if (refusal == puton::Refusal::RealPortal)
         {
@@ -1032,6 +1093,8 @@ namespace toybox
 
     void Model::TakeOff(int seatIndex)
     {
+        if (!SeatWritable(seatIndex))
+            return;
         SeatState& s = seats[seatIndex];
         if (realPortal || s.path.empty())
             return;
@@ -1051,6 +1114,8 @@ namespace toybox
 
     bool Model::SwapPlayers()
     {
+        if (netplay::Online())
+            return false;
         int a = -1, b = -1;
         for (size_t i = 0; i < seats.size(); i++)
         {
@@ -1099,6 +1164,8 @@ namespace toybox
         PortalRemoveAllFigures();
         for (SeatState& s : seats)
         {
+            if (!PortalSeatWritable(s.seat.player))
+                continue;
             s.path.clear();
             s.path2.clear();
             s.slot2 = -1;
@@ -1118,7 +1185,7 @@ namespace toybox
             return toyboxlink::refusal::Unknown;
         if (!PortalIsEmulated())
             return toyboxlink::refusal::NoPortal;
-        if (realPortal || seats[seatIndex].physical)
+        if (!SeatWritable(seatIndex) || realPortal || seats[seatIndex].physical)
             return toyboxlink::refusal::Real;
         std::string wanted = path;
         if (FindFigure(wanted) < 0)
@@ -1147,7 +1214,7 @@ namespace toybox
     {
         if (seatIndex < 0 || seatIndex >= int(seats.size()))
             return toyboxlink::refusal::Unknown;
-        if (realPortal || seats[seatIndex].physical)
+        if (!SeatWritable(seatIndex) || realPortal || seats[seatIndex].physical)
             return toyboxlink::refusal::Real;
         Remote remote(*this);
         TakeOff(seatIndex);
@@ -1183,7 +1250,17 @@ namespace toybox
         {
             const SeatState& s = seats[i];
             toyboxlink::Seat& out = shown[i];
-            if (s.physical)
+            if (!SeatWritable(int(i)))
+            {
+                out.kind = toyboxlink::Seat::Kind::Real;
+                if (const Figure* shownFigure = SeatFigure(int(i)))
+                {
+                    out.type = shownFigure->type;
+                    out.variant = shownFigure->variant;
+                    out.known = true;
+                }
+            }
+            else if (s.physical)
             {
                 out.kind = toyboxlink::Seat::Kind::Real;
                 out.type = s.physicalType;
@@ -1203,6 +1280,11 @@ namespace toybox
 
     void Model::SeatOptions(int seatIndex)
     {
+        if (!SeatWritable(seatIndex))
+        {
+            Toast(L("This seat belongs to the other player", "Cette place appartient à l'autre joueur"));
+            return;
+        }
         SeatState& s = seats[seatIndex];
         std::vector<std::string> buttons;
         std::vector<int> ids; // 0 take off, 1 swap, 2 details, 3 undo, 4 clear, 5 save copy, 6 manage
@@ -2699,6 +2781,12 @@ namespace toybox
         bool writes = action == Action::EditStats || action == Action::Rename || action == Action::Restore ||
                       action == Action::Reset || action == Action::Delete || action == Action::ChangeHalf ||
                       action == Action::Villain || action == Action::Evolved;
+        if (writes && netplay::Online())
+        {
+            Toast(L(
+                "Figure editing is unavailable during an online session", "La modification est indisponible en ligne"));
+            return;
+        }
         if (writes && CardBusy(f))
         {
             for (const Figure* half : CardFor(f).Halves())
@@ -4287,6 +4375,13 @@ namespace toybox
         RefreshSeats(SDL_GetTicksNS());
         wheel = {};
         wheel.seat = std::clamp(seatIndex, 0, int(seats.size()) - 1);
+        if (!SeatWritable(wheel.seat))
+            for (size_t index = 0; index < seats.size(); ++index)
+                if (SeatWritable(int(index)))
+                {
+                    wheel.seat = int(index);
+                    break;
+                }
         const SeatState& s = seats[wheel.seat];
         wheel.places = GetWheel(game, s.seat.id);
         wheel.places.resize(WheelPlaces);

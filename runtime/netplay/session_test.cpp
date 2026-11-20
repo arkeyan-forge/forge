@@ -23,7 +23,8 @@ namespace
         std::mutex mutex;
         std::array<std::deque<netplay::Datagram>, 2> queues;
         std::mt19937 random{ 283 };
-        bool chaos = false, silent = false;
+        bool chaos = false, silent = false, virtualTime = false;
+        std::atomic<uint64_t> time{ 2000 };
     };
     class Wire : public netplay::Transport
     {
@@ -32,6 +33,8 @@ namespace
         bool Send(std::span<const uint8_t> bytes) override
         {
             std::lock_guard lock(m_link.mutex);
+            if (m_link.virtualTime)
+                ++m_link.time;
             if (m_link.silent || (m_link.chaos && m_link.random() % 5 == 0))
                 return true;
             netplay::Datagram packet{};
@@ -69,7 +72,9 @@ namespace
         config.hello.nonce[0] = host ? 12 : 27;
         config.password = "room";
         config.delay = host ? 4 : 8;
-        config.timeoutMs = 3000;
+        config.timeoutMs = 5000;
+        config.slotPlayers[0] = 1;
+        config.slotPlayers[1] = 2;
         return config;
     }
     netplay::Pad Pad(uint64_t frame, size_t seat)
@@ -83,16 +88,46 @@ namespace
     {
         auto config = Config(true);
         config.delay = delay;
+        std::array<std::atomic<uint64_t>, 2> applied{};
+        const auto apply = [&](size_t peer, const netplay::FrameEvents& events) {
+            for (size_t player = 0; player < 2; ++player)
+                for (size_t index = 0; index < events.players[player].count; ++index)
+                {
+                    const auto& event = events.players[player].events[index];
+                    Check(event.frame >= delay && (event.frame - delay) % 7 == 0 && event.slot == player,
+                        "event application runs at its frame barrier");
+                    ++applied[peer];
+                }
+            return true;
+        };
+        config.applyEvents = [&](const netplay::FrameEvents& events) { return apply(0, events); };
+        auto joinConfig = Config(false);
+        joinConfig.applyEvents = [&](const netplay::FrameEvents& events) { return apply(1, events); };
         netplay::Session first(config, std::move(host));
-        netplay::Session second(Config(false), std::move(join));
+        netplay::Session second(joinConfig, std::move(join));
         std::array<std::array<netplay::InputFrame, 600>, 2> results{};
         std::array<uint64_t, 2> stopped{};
+        auto eventResults = std::make_unique<std::array<std::array<netplay::FrameEvents, 600>, 2>>();
         const auto play = [&](netplay::Session& session, size_t seat) {
             Check(session.WaitReady(), "session ready");
             Check(session.Delay() == delay, "host delay wins");
             for (uint64_t frame = 0; frame < 600; ++frame)
             {
-                Check(session.Exchange(frame, Pad(frame, seat), results[seat][frame]), "exchange frame");
+                netplay::PortalEvent event;
+                event.slot = uint8_t(seat);
+                event.figure = frame + 1;
+                event.hasDump = true;
+                event.last = true;
+                event.dump.fill(uint8_t(frame + seat));
+                if (frame % 7 == 0)
+                    Check(session.QueueEvents(std::span(&event, 1)), "queue event");
+                if (frame == 0 && seat == 1)
+                {
+                    event.slot = 0;
+                    Check(!session.QueueEvents(std::span(&event, 1)), "guest cannot change player one seat");
+                }
+                Check(session.Exchange(frame, Pad(frame, seat), results[seat][frame], &(*eventResults)[seat][frame]),
+                    "exchange frame and reliable events");
                 if ((frame + 1) % 30 == 0 &&
                     !session.CheckHash(frame + 1, desync && seat == 1 && frame == 299 ? 999 : frame + 1))
                 {
@@ -113,17 +148,119 @@ namespace
         a.join();
         b.join();
         const uint64_t frames = desync ? 300 : 600;
+        Check(applied[0] == 2 * ((frames - delay + 6) / 7) && applied[1] == applied[0],
+            "both event sinks apply each event exactly once");
         if (desync)
             Check(stopped[0] == 300 && stopped[1] == 300, "both stop at hash frame 300");
         for (uint64_t frame = 0; frame < frames; ++frame)
         {
             Check(netplay::EncodeFrame(results[0][frame]) == netplay::EncodeFrame(results[1][frame]), "same pad pair");
+            for (size_t player = 0; player < 2; ++player)
+            {
+                const bool due = frame >= delay && (frame - delay) % 7 == 0;
+                const auto& aEvents = (*eventResults)[0][frame].players[player];
+                const auto& bEvents = (*eventResults)[1][frame].players[player];
+                Check(aEvents.count == (due ? 1 : 0) && bEvents.count == aEvents.count,
+                    "events delivered exactly once at N plus D on both peers");
+                if (due)
+                {
+                    const auto& aEvent = aEvents.events[0];
+                    const auto& bEvent = bEvents.events[0];
+                    Check(aEvent.figure == frame - delay + 1 && aEvent.frame == frame &&
+                              aEvent.sequence == (frame - delay) / 7 + 1 && aEvent.slot == player &&
+                              aEvent.dump == bEvent.dump && aEvent.dump[0] == uint8_t(frame - delay + player),
+                        "ordered event identity, frame and dump");
+                }
+            }
             netplay::InputFrame expected{};
             if (frame >= delay)
                 expected = { Pad(frame - delay, 0), Pad(frame - delay, 1) };
             Check(netplay::EncodeFrame(results[0][frame]) == netplay::EncodeFrame(expected), "pads arrive at N plus D");
         }
     }
+    void RoundTrips()
+    {
+        using namespace netplay;
+        Link link;
+        link.virtualTime = true;
+        auto host = Config(true), join = Config(false);
+        host.now = join.now = [&] { return link.time.load(); };
+        host.timeoutMs = join.timeoutMs = 100000;
+        Session first(host, std::make_unique<Wire>(link, 0));
+        Session second(join, std::make_unique<Wire>(link, 1));
+        Check(first.WaitReady() && second.WaitReady(), "ready before RTT refresh");
+        link.time += 1001;
+        for (unsigned wait = 0; wait < 1000 && !second.RoundTripMs(); ++wait)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        Check(first.RoundTripMs() > 0 && second.RoundTripMs() > 0, "both peers measure the round trip for F3");
+    }
+
+    void Bursts()
+    {
+        using namespace netplay;
+        Link link;
+        link.chaos = true;
+        auto host = Config(true), join = Config(false);
+        host.delay = 8;
+        host.timeoutMs = join.timeoutMs = 10000;
+        std::array<std::array<bool, 4>, 2> known{};
+        const auto prepare = [&](size_t receiver, const PortalEvent& event) {
+            if (!event.figure)
+                return true;
+            const size_t id = size_t(event.figure - 1);
+            Check(
+                id < 4 && event.hasDump == !known[receiver][id], "first reference carries the stand-in dump only once");
+            known[receiver][id] = true;
+            return true;
+        };
+        host.prepareEvent = [&](bool, const PortalEvent& event) { return prepare(0, event); };
+        join.prepareEvent = [&](bool, const PortalEvent& event) { return prepare(1, event); };
+        auto first = std::make_unique<Session>(host, std::make_unique<Wire>(link, 0));
+        auto second = std::make_unique<Session>(join, std::make_unique<Wire>(link, 1));
+        const auto play = [&](Session& session, size_t player) {
+            Check(session.WaitReady(), "burst session ready");
+            std::array<PortalEvent, MaxFrameEvents + 1> pending{};
+            pending.back().last = true;
+            Check(!session.QueueEvents(pending), "oversized pending batch refused");
+            for (uint64_t frame = 0; frame < 88; ++frame)
+            {
+                for (size_t index = 0; index < MaxFrameEvents; ++index)
+                {
+                    auto& event = pending[index];
+                    event.slot = uint8_t(player);
+                    event.figure = index % 2 ? 0 : 1 + frame % 4;
+                    event.hasDump = frame < 4 && index == 0;
+                    event.dump.fill(uint8_t(frame % 4));
+                    event.last = index % 4 == 3;
+                }
+                if (frame < 80)
+                    Check(session.QueueEvents(std::span(pending).first(MaxFrameEvents)),
+                        "queue compound replacements and removals");
+                InputFrame pads;
+                FrameEvents events;
+                Check(session.Exchange(frame, Pad(frame, player), pads, &events),
+                    "exchange event burst across ring wrap");
+                for (size_t owner = 0; owner < 2; ++owner)
+                {
+                    const auto& received = events.players[owner];
+                    Check(received.count == (frame < 8 ? 0 : MaxFrameEvents), "complete burst waits for its frame");
+                    for (size_t index = 0; index < received.count; ++index)
+                    {
+                        const auto& event = received.events[index];
+                        Check(event.sequence == (frame - 8) * MaxFrameEvents + index + 1 && event.slot == owner &&
+                                  event.frame == frame && event.last == (index % 4 == 3) &&
+                                  event.figure == (index % 2 ? 0 : 1 + (frame - 8) % 4),
+                            "burst order, transaction boundary, removals and references preserved");
+                    }
+                }
+            }
+        };
+        std::thread a([&] { play(*first, 0); });
+        std::thread b([&] { play(*second, 1); });
+        a.join();
+        b.join();
+    }
+
     void Refusals()
     {
         using namespace netplay;
@@ -210,6 +347,8 @@ int main()
         Check(ParseEndpoint(text, endpointHost, port) && port == 47640, "IPv4, bracketed IPv6 and DNS endpoints");
     for (const auto text : { "", ":123", "::1:123", "[::1]", "host:0", "host:65536", "host:+2", "host:12x" })
         Check(!ParseEndpoint(text, endpointHost, port), "invalid endpoint refused");
+    RoundTrips();
+    Bursts();
     Refusals();
     TimeoutAndQuit();
     for (bool chaos : { false, true })

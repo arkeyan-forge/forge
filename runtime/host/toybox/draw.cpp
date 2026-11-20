@@ -1,5 +1,6 @@
 #include "host/toybox/draw.h"
 #include "host/gamemenu.h"
+#include "netplay/session_runtime.h"
 #include "host/toybox/hit.h"
 #include "host/collection/icons.h"
 #include "host/embedded_fonts.h"
@@ -1188,7 +1189,7 @@ namespace toybox
                 }
                 const float cy = (a.y + b.y) / 2;
                 uint32_t ink = selected ? Colour::Text : Colour::TextSoft;
-                DrawIcon(Icons[i], ImVec2(a.x + 12 + 9, cy), 18, ink);
+                DrawIcon(i == Model::MainOnline ? Icon::Activity : Icons[i], ImVec2(a.x + 12 + 9, cy), 18, ink);
                 TextMiddle(selected ? g_black : g_bold, 15, a.x + 12 + 18 + 12, cy, ink,
                     Fit(g_bold, 15, labels[i], b.x - a.x - 54));
                 if (page == Page::Performance && gamemenu::Current().debugScreen)
@@ -1815,7 +1816,7 @@ namespace toybox
         void SeatHit(Model& model, int index, ImVec2 a, ImVec2 b)
         {
             const SeatState& seat = model.seats[size_t(index)];
-            const bool takeOff = !model.realPortal && !seat.physical && !seat.path.empty();
+            const bool takeOff = model.SeatWritable(index) && !model.realPortal && !seat.physical && !seat.path.empty();
             AddHit(
                 a, b, [&model, index] { model.FocusColumnRow(index); },
                 [&model, index] {
@@ -1831,7 +1832,8 @@ namespace toybox
                 g_hits.back().dragPath = seat.path;
                 g_hits.back().dragSeat = index;
             }
-            g_drops.push_back({ a, b, index, look::Radius::Card });
+            if (model.SeatWritable(index))
+                g_drops.push_back({ a, b, index, look::Radius::Card });
         }
 
         // A seat's pointer areas: the card, and over it an empty seat's + (its picture), which opens Add a figure for it.
@@ -1972,11 +1974,16 @@ namespace toybox
                     name = model.realPortal ? L("None", "Aucun") : L("Empty", "Vide");
                 }
                 if (s.seat.player == 2 && s.seat.id[0] == 'p' && !s.physical && (f == nullptr || !s.waiting) &&
-                    !GamepadConnected(1))
+                    !GamepadConnected(1) && !netplay::Online())
                 {
                     line = seatWidth < 200 ? L("No controller", "Pas de manette")
                                            : L("needs a 2nd controller", "il faut une 2e manette");
                     lineColor = Look::TextDimmer;
+                }
+                if (!model.SeatWritable(int(i)))
+                {
+                    label += L(" · LOCKED", " · VERROUILLÉ");
+                    line = L("Other player's seat", "Place de l'autre joueur");
                 }
                 // A LightCore toy lights up with the portal's light, where the game drives it.
                 bool lightCore =
@@ -3602,7 +3609,7 @@ namespace toybox
         {
             using namespace look;
             using look::CanvasWidth, look::CanvasHeight;
-            const MainLayout layout = look::Main();
+            const MainLayout layout = look::Main(netplay::Online());
             Fill(ImVec2(0, 0), ImVec2(MainLeft, CanvasHeight), Colour::Scrim, 0.28f);
             // A soft shadow on the game along the panel's edge.
             for (int i = 0; i < 8; i++)
@@ -3634,7 +3641,7 @@ namespace toybox
                     pa.x - 12 - left));
 
             std::vector<MenuRow> rows = model.MainRows();
-            for (int i = 0; i < MainRows; i++)
+            for (int i = 0; i < int(rows.size()); i++)
             {
                 const MenuRow& row = rows[size_t(i)];
                 ImVec2 a(left, layout.rowTop[i]), b(right, layout.rowTop[i] + layout.rowHeight[i]);
@@ -3683,7 +3690,14 @@ namespace toybox
                     Icon::Activity, Icon::Flag, Icon::Quit };
                 const bool quit = i == Model::MainQuit, small = i >= MainSmallFrom;
                 const uint32_t ink = quit ? Colour::DangerText : small ? Colour::TextSoft : Colour::Text;
-                DrawIcon(Icons[i], ImVec2(a.x + 16 + 10, cy), 20, ink);
+                DrawIcon(i == Model::MainOnline ? Icon::Activity : Icons[i], ImVec2(a.x + 16 + 10, cy), 20, ink);
+                if (i == Model::MainOnline)
+                {
+                    TextMiddle(g_black, 14, a.x + 50, cy - 11, ink, row.label);
+                    TextMiddle(
+                        g_bold, 11, a.x + 16, cy + 11, Colour::TextDim, Fit(g_bold, 11, row.value, b.x - a.x - 32));
+                    continue;
+                }
                 TextMiddle(focused ? g_black : g_bold, small ? 15 : 16, a.x + 16 + 20 + 14, cy, ink,
                     Fit(g_black, 16, row.label, b.x - a.x - 140));
                 if (row.kind == MenuRow::Kind::Toggle)
@@ -4287,6 +4301,14 @@ namespace toybox
             DrawDrag(model);
         if (!model.open) // it would sit on the corner buttons of the full-screen pages
             DrawFps(model);
+        if (netplay::SessionEndReason() != netplay::EndReason::None)
+        {
+            g_hits.clear();
+            g_drops.clear();
+            Fill(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), look::Colour::Surface);
+            TextCentered(
+                g_black, 26, ImVec2(CanvasWidth / 2, CanvasHeight / 2), Look::Text, netplay::SessionEndMessage());
+        }
         ImGui::Render();
         // Into the caller's buffer: once it has its size, a frame (a toast sliding in) allocates nothing.
         imgui_software::Texture canvas{ CanvasWidth, CanvasHeight };

@@ -84,6 +84,8 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_NETPLAY_TRACE_FRAMES=<a>-<b>` | inclusive decimal range for full trace records, default all frames; summaries and shadow updates continue for every frame; use `trace_diff.py --frames <a.frames> <b.frames>` first, then compare the two binary files |
 | `SKY_NETPLAY_HOST=<port>` | host an input-lockstep session on UDP port 1–65535; local pad/keyboard becomes P1; requires deterministic=1, delivery=frame and schedule=cooperative; exclusive with JOIN, RECORD and REPLAY |
 | `SKY_NETPLAY_JOIN=<host>:<port>` | join an IPv4 address, DNS name, or `[IPv6]:port`; local first pad/keyboard becomes P2; same prerequisites as HOST |
+| `SKY_NETPLAY_FPS=30\|60` | required with HOST/JOIN; overrides file and command-line FPS, disables automatic fallback, forces 16:9 and locks guest-changing settings for the session; [step 3](../runtime/host/netplay.md#step-3-session-setup-game-side) |
+| `SKY_SAVE_DIR=<folder>` | session save folder; received/session figures go in `online-figures/`, and `online-ended.txt` contains `reason=<code>` after a session ends; the runtime shows the reason for four seconds before normal quit |
 | `SKY_NETPLAY_PASSWORD=<text>` | optional shared password for nonce-derived SipHash-128 packet authentication |
 | `SKY_NETPLAY_DELAY=<frames>` | 1–8; host override wins, otherwise clamp(ceil(RTT / 2 / frame time) + 1, 1, 8) from five ping/pong probes |
 | `SKY_NETPLAY_CROSS_PLATFORM=1` | allow different OS/CPU identities only when both peers opt in; unverified |

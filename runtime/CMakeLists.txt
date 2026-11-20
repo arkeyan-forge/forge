@@ -934,3 +934,17 @@ target_link_libraries(ArkeyanNetplaySessionTest PRIVATE ArkeyanNetplayTransport)
 add_executable(ArkeyanPortMapTest netplay/portmap_test.cpp)
 target_link_libraries(ArkeyanPortMapTest PRIVATE ArkeyanNetplayTransport)
 sky_add_tests(ArkeyanNetplayProtocolTest ArkeyanNetplaySessionTest ArkeyanPortMapTest)
+
+add_executable(ArkeyanNetplaySetupTest netplay/session_setup_test.cpp host/game_options.cpp host/settings.cpp host/window_size.cpp
+    host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp host/profiles.cpp host/stb_impl.cpp)
+target_include_directories(ArkeyanNetplaySetupTest PRIVATE .)
+target_include_directories(ArkeyanNetplaySetupTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
+target_link_libraries(ArkeyanNetplaySetupTest PRIVATE ArkeyanNetplayTransport fmt::fmt SDL3::SDL3-static)
+sky_add_tests(ArkeyanNetplaySetupTest)
+set_tests_properties(ArkeyanNetplaySetupTest PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_executable(ArkeyanNetplayStartupTest netplay/session_startup_test.cpp)
+target_link_libraries(ArkeyanNetplayStartupTest PRIVATE ArkeyanNetplay)
+sky_add_tests(ArkeyanNetplayStartupTest)
+set_tests_properties(ArkeyanNetplayStartupTest PROPERTIES
+    ENVIRONMENT "SKY_NETPLAY_HOST=1234;SKY_NETPLAY_DETERMINISTIC=0;SKY_NETPLAY_DELIVERY=frame;SKY_NETPLAY_SCHEDULE=cooperative")

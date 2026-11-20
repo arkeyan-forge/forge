@@ -9,6 +9,8 @@
 #include "host/figures/figure_tag.h"
 #include "kernel/objects.h"
 #include "netplay/clock.h"
+#include "netplay/session_runtime.h"
+#include <filesystem>
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <array>
@@ -34,11 +36,132 @@ namespace
     bool Real() { return g_emulated == nullptr || g_mixed != nullptr; }
     const bool g_log = skyenv::Get("SKY_PORTAL_LOG") != nullptr;
 
+    constexpr const char* GameId = ARKEYAN_GAME_ID;
+
+    struct OnlineFigure
+    {
+        bool host = false;
+        uint64_t id = 0;
+        std::string path, source;
+        bool announced = false;
+    };
+    std::mutex g_onlineMutex;
+    std::vector<OnlineFigure> g_onlineFigures;
+    std::array<std::string, PortalSlotCount> g_onlinePlanned;
+    std::array<uint8_t, PortalSlotCount> g_onlinePlayers{};
+    std::array<std::array<int, 2>, PortalSlotCount> g_onlineSlots{};
+    uint64_t g_nextFigure = 0;
+
+    OnlineFigure* OnlineFind(bool host, uint64_t id)
+    {
+        for (auto& figure : g_onlineFigures)
+            if (figure.host == host && figure.id == id)
+                return &figure;
+        return nullptr;
+    }
+
+    std::string OnlinePath(bool host, uint64_t id)
+    {
+        return datadir::Text(std::filesystem::path(PortalSessionFolder()) / "online-figures" /
+                             (std::string(host ? "1-" : "2-") + std::to_string(id) + ".sky"));
+    }
+
+    bool InCollection(const std::string& path);
+
+    bool QueueOnlineLocked(const std::vector<PortalFigureChange>& changes)
+    {
+        if (changes.empty() || changes.size() > PortalSlotCount)
+            return false;
+        std::array<netplay::PortalEvent, PortalSlotCount> events{};
+        const size_t previousSize = g_onlineFigures.size();
+        std::vector<std::string> acquired;
+        const auto refuse = [&] {
+            for (const auto& path : acquired)
+                collection::Unlock(path);
+            for (size_t index = previousSize; index < g_onlineFigures.size(); ++index)
+            {
+                std::error_code error;
+                std::filesystem::remove(g_onlineFigures[index].path, error);
+            }
+            g_onlineFigures.resize(previousSize);
+            return false;
+        };
+        uint32_t used = 0;
+        size_t count = 0;
+        for (const auto& change : changes)
+        {
+            if (change.slot < 0 || change.slot >= PortalSlotCount || (used >> change.slot & 1) ||
+                !netplay::SeatAllowed(netplay::Hosting(), g_onlinePlayers[change.slot]))
+                return refuse();
+            used |= uint32_t(1) << change.slot;
+            auto& event = events[count++];
+            event.slot = uint8_t(change.slot);
+            if (change.path.empty())
+                continue;
+            OnlineFigure* known = nullptr;
+            for (auto& figure : g_onlineFigures)
+                if (figure.host == netplay::Hosting() && figure.source == change.path)
+                    known = &figure;
+            if (known)
+            {
+                event.figure = known->id;
+                if (!known->announced)
+                {
+                    event.hasDump = true;
+                    if (!LoadFigure(known->path, event.dump))
+                        return refuse();
+                }
+            }
+            else
+            {
+                FigureData data;
+                if (g_onlineFigures.size() >= 4096 || !LoadFigure(change.path, data))
+                    return refuse();
+                figures::MendVirtualToy(data);
+                if (InCollection(change.path))
+                {
+                    const bool mine = collection::GetLock(change.path).mine;
+                    if (!collection::Lock(change.path, GameId))
+                        return refuse();
+                    if (!mine)
+                        acquired.push_back(change.path);
+                }
+                event.figure = ++g_nextFigure;
+                event.hasDump = true;
+                event.dump = data;
+                const auto path = OnlinePath(netplay::Hosting(), event.figure);
+                std::error_code error;
+                std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
+                if (error || !SaveFigure(path, data))
+                    return refuse();
+                g_onlineFigures.push_back({ netplay::Hosting(), event.figure, path, change.path });
+            }
+        }
+        for (size_t index = 0; index < count; ++index)
+            for (size_t before = 0; before < index; ++before)
+                if (events[index].figure && events[index].figure == events[before].figure)
+                    events[index].hasDump = false;
+        events[count - 1].last = true;
+        if (!netplay::QueuePortalEvents(std::span(events).first(count)))
+            return refuse();
+        for (size_t index = 0; index < count; ++index)
+        {
+            const auto& change = changes[index];
+            g_onlinePlanned[change.slot] = change.path;
+            if (auto* figure = OnlineFind(netplay::Hosting(), events[index].figure))
+                figure->announced = true;
+        }
+        return true;
+    }
+
+    bool QueueOnline(const std::vector<PortalFigureChange>& changes)
+    {
+        std::lock_guard lock(g_onlineMutex);
+        return QueueOnlineLocked(changes);
+    }
+
     // The traffic as the title sees it (PortalSeen). Under g_mutex.
     PortalSlotSeen g_seen[PortalSlotCount];
-
-    // The game this runtime is for (the portal identity table, the Toy Box's seats, the collection's locks).
-    constexpr const char* GameId = ARKEYAN_GAME_ID;
 
     PortalLightState g_light; // under g_mutex
     uint64_t g_resets = 0;    // the title's `R` commands, under g_mutex
@@ -207,7 +330,8 @@ namespace
 
     void SaveState()
     {
-        if (g_emulated == nullptr || g_restoring || g_mixed != nullptr) // mixed: the virtual seats last one session
+        if (netplay::Online() || g_emulated == nullptr || g_restoring ||
+            g_mixed != nullptr) // mixed: the virtual seats last one session
             return;
         std::string text;
         for (int slot = 0; slot < EmulatedPortal::SlotCount; slot++)
@@ -316,6 +440,19 @@ namespace
 
     int Place(const std::string& path, int wanted)
     {
+        if (netplay::Online())
+        {
+            std::lock_guard lock(g_onlineMutex);
+            int slot = wanted;
+            if (slot < 0 || slot >= PortalSlotCount || !g_onlinePlanned[slot].empty())
+            {
+                slot = -1;
+                for (int i = 0; i < PortalSlotCount && slot < 0; ++i)
+                    if (netplay::SeatAllowed(netplay::Hosting(), g_onlinePlayers[i]) && g_onlinePlanned[i].empty())
+                        slot = i;
+            }
+            return slot >= 0 && QueueOnlineLocked({ { slot, path } }) ? slot : -1;
+        }
         if (g_emulated == nullptr)
             return -1;
 
@@ -358,8 +495,36 @@ std::string PortalSessionFolder()
 
 void PortalInit()
 {
+    netplay::PrepareSessionSetup();
     const char* modeVariable = skyenv::Get("SKY_PORTAL");
     std::string mode = modeVariable != nullptr ? modeVariable : "auto";
+    if (netplay::Online())
+    {
+        mode = "emulated";
+        fprintf(stderr, "[portal] online session: real portals are not read; using the emulated portal\n");
+        const auto* game = collection::Catalogue::Get().FindGame(GameId);
+        for (auto& slots : g_onlineSlots)
+            slots.fill(-1);
+        int slot = 0;
+        bool halves = false;
+        if (game)
+            for (const auto& seat : game->seats)
+                halves |= std::find(seat.accepts.begin(), seat.accepts.end(), collection::Category::SwapTop) !=
+                          seat.accepts.end();
+        if (game)
+            for (size_t index = 0; index < game->seats.size() && index < g_onlineSlots.size(); ++index)
+            {
+                const auto& seat = game->seats[index];
+                const uint8_t player = uint8_t(seat.player);
+                for (int half = 0;
+                    half < (halves && player && seat.id.starts_with('p') ? 2 : 1) && slot < PortalSlotCount;
+                    ++half, ++slot)
+                {
+                    g_onlinePlayers[slot] = player;
+                    g_onlineSlots[index][half] = slot;
+                }
+            }
+    }
     fprintf(stderr, "[portal] mode %s%s\n", mode.c_str(), modeVariable != nullptr ? " (SKY_PORTAL)" : "");
     if (mode == "none")
     {
@@ -484,8 +649,9 @@ void PortalInit()
             begin = end + 1;
         }
     }
-    else if (g_mixed ==
-             nullptr) // with a real portal the virtual seats start empty (portal.txt is the virtual portal's)
+    // With a real portal the virtual seats start empty (portal.txt is the virtual portal's). A session restores them
+    // too: the launcher writes the same portal.txt, the same figure files, into both games' session folders.
+    else if (g_mixed == nullptr)
         RestoreState();
     SDL_AddEventWatch(OnHostEvent, nullptr);
 }
@@ -593,6 +759,8 @@ int PortalPlaceFigureAt(const std::string& path, int slot) { return Place(path, 
 
 bool PortalReplaceFigures(const std::vector<PortalFigureChange>& changes)
 {
+    if (netplay::Online())
+        return QueueOnline(changes);
     std::lock_guard lock(g_mutex);
     if (g_emulated == nullptr)
         return false;
@@ -658,6 +826,11 @@ bool PortalReplaceFigures(const std::vector<PortalFigureChange>& changes)
 
 void PortalRemoveFigure(int slot)
 {
+    if (netplay::Online())
+    {
+        QueueOnline({ { slot, {} } });
+        return;
+    }
     if (g_emulated == nullptr)
         return;
     collection::Unlock(g_emulated->SlotPath(slot));
@@ -667,6 +840,16 @@ void PortalRemoveFigure(int slot)
 
 void PortalRemoveAllFigures()
 {
+    if (netplay::Online())
+    {
+        std::vector<PortalFigureChange> changes;
+        for (int slot = 0; slot < PortalSlotCount; ++slot)
+            if (netplay::SeatAllowed(netplay::Hosting(), g_onlinePlayers[slot]))
+                changes.push_back({ slot, {} });
+        QueueOnline(changes);
+        g_hotkeySlot = -1;
+        return;
+    }
     if (g_emulated == nullptr)
         return;
     for (int slot = 0; slot < EmulatedPortal::SlotCount; slot++)
@@ -681,11 +864,102 @@ void PortalRemoveAllFigures()
 
 bool PortalIsEmulated() { return g_emulated != nullptr; }
 
+bool PortalSeatWritable(int player)
+{
+    return !netplay::Online() || netplay::SeatAllowed(netplay::Hosting(), uint8_t(player));
+}
+
+int PortalOnlineSlot(int seat, int half)
+{
+    return seat >= 0 && seat < PortalSlotCount && half >= 0 && half < 2 ? g_onlineSlots[seat][half] : -1;
+}
+
+std::array<uint8_t, PortalSlotCount> PortalOnlinePlayers() { return g_onlinePlayers; }
+
+bool PortalPrepareOnline(bool host, const netplay::PortalEvent& event)
+{
+    if (!event.figure)
+        return true;
+    std::lock_guard lock(g_onlineMutex);
+    if (OnlineFind(host, event.figure))
+        return !event.hasDump;
+    if (!event.hasDump || g_onlineFigures.size() >= 4096)
+        return false;
+    const auto path = OnlinePath(host, event.figure);
+    std::error_code error;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
+    if (error || !SaveFigure(path, event.dump))
+        return false;
+    g_onlineFigures.push_back({ host, event.figure, path, {} });
+    return true;
+}
+
+bool PortalApplyOnline(const netplay::FrameEvents& events)
+{
+    for (const auto& player : events.players)
+        if (player.count)
+        {
+            std::lock_guard onlineLock(g_onlineMutex);
+            std::lock_guard portalLock(g_mutex);
+            std::vector<PortalSlots::Replacement> replacements;
+            replacements.reserve(PortalSlotCount);
+            const bool host = &player == &events.players[0];
+            for (size_t index = 0; index < player.count; ++index)
+            {
+                const auto& event = player.events[index];
+                PortalSlots::Replacement replacement{ event.slot, std::nullopt, {} };
+                if (event.figure)
+                {
+                    const auto* figure = OnlineFind(host, event.figure);
+                    FigureData data;
+                    if (!figure || !LoadFigure(figure->path, data))
+                        return false;
+                    replacement.data = data;
+                    replacement.path = figure->path;
+                }
+                replacements.push_back(std::move(replacement));
+                if (event.last)
+                {
+                    if (!g_emulated || !g_emulated->Replace(replacements))
+                        return false;
+                    replacements.clear();
+                }
+            }
+            if (!replacements.empty())
+                return false;
+        }
+    return true;
+}
+
+void PortalFinishOnline()
+{
+    if (!netplay::Online())
+        return;
+    std::lock_guard lock(g_onlineMutex);
+    for (const auto& figure : g_onlineFigures)
+        if (!figure.source.empty())
+        {
+            FigureData data;
+            if (!LoadFigure(figure.path, data) || !SaveFigure(figure.source, data))
+                fprintf(stderr, "[portal] cannot flush an online figure\n");
+            collection::Unlock(figure.source);
+        }
+}
+
 bool PortalIsMixed() { return g_mixed != nullptr; }
 
 bool PortalSlotIsReal(int slot) { return g_mixed != nullptr && g_mixed->IsRealSlot(slot); }
 
-std::string PortalSlotFigure(int slot) { return g_emulated != nullptr ? g_emulated->SlotPath(slot) : std::string(); }
+std::string PortalSlotFigure(int slot)
+{
+    if (netplay::Online() && slot >= 0 && slot < PortalSlotCount)
+    {
+        std::lock_guard lock(g_onlineMutex);
+        if (netplay::SeatAllowed(netplay::Hosting(), g_onlinePlayers[slot]))
+            return g_onlinePlanned[slot];
+    }
+    return g_emulated ? g_emulated->SlotPath(slot) : std::string();
+}
 
 std::string PortalFigureFolder() { return FigureFolder(); }
 

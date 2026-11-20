@@ -81,6 +81,35 @@ int main()
                       decoded.hashFrame == 300 && decoded.hash == 1234567,
                 "pad and hash fields");
     }
+    const auto savedPacket = packet;
+    packet = {};
+    packet.type = PacketType::Event;
+    packet.event.sequence = 17;
+    packet.event.frame = 42;
+    packet.event.slot = 3;
+    packet.event.figure = 123;
+    packet.event.hasDump = true;
+    packet.event.last = true;
+    for (size_t i = 0; i < packet.event.dump.size(); ++i)
+        packet.event.dump[i] = uint8_t(i * 13);
+    Check(EncodePacket(packet, key, bytes) && DecodePacket(bytes.View(), key, decoded, dropped),
+        "figure event round trip");
+    Check(decoded.event.dump == packet.event.dump && decoded.event.figure == 123 && decoded.event.slot == 3 &&
+              decoded.event.sequence == 17 && decoded.event.frame == 42 && decoded.event.last,
+        "full event fields");
+    packet.event.hasDump = false;
+    Check(EncodePacket(packet, key, bytes) && bytes.size < 128 && DecodePacket(bytes.View(), key, decoded, dropped),
+        "known figure uses only its id");
+    packet.event.figure = 0;
+    Check(
+        EncodePacket(packet, key, bytes) && DecodePacket(bytes.View(), key, decoded, dropped) && !decoded.event.figure,
+        "removal event");
+    packet.event.slot = 16;
+    Check(!EncodePacket(packet, key, bytes), "invalid event slot refused");
+    packet.event.slot = 0;
+    EncodePacket(packet, key, bytes);
+    packet = savedPacket;
+    EncodePacket(packet, key, bytes);
     Check(!DecodePacket(bytes.View(), PasswordKey("wrong"), decoded, dropped), "wrong password tag");
     std::mt19937 random(9281);
     const auto valid = bytes;
@@ -116,7 +145,7 @@ int main()
     EncodePacket(packet, key, bytes);
     for (size_t size = 0; size < bytes.size; ++size)
         Check(!DecodePacket(bytes.View().first(size), key, decoded, dropped), "every truncated frame packet");
-    bytes.bytes[41] = 2;
+    bytes.bytes[49] = 2;
     const auto tag = Tag(bytes.View().first(bytes.size - 16), key);
     std::copy(tag.begin(), tag.end(), bytes.bytes.begin() + bytes.size - 16);
     Check(!DecodePacket(bytes.View(), key, decoded, dropped), "authenticated invalid connection flag");
