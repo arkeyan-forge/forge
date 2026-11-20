@@ -353,18 +353,21 @@ GPU-written ranges of section 3.
 
 ## Step 0d: the last host values in guest memory [Xbox]
 
-[V] Two replays of 0c still differed in a few blocks. Three causes, each found and fixed, measured 2026-11-20 on an M1 Pro
+[V] Two replays of 0c still differed in a few blocks. The causes, each found and fixed, measured 2026-11-20 on an M1 Pro
 (Europe discs, 0b's recordings, cooperative schedule, hashing every 30th frame):
 
 | Cause | Where it showed | Fix |
 |---|---|---|
 | The translator emitted a guest `setjmp` as the host's, with the host `jmp_buf` (stack pointers, return addresses, values mangled with a per-process cookie) written into guest memory | Giants: 192 bytes at `0x8267DD30` of the executable's data from frame 30 on; SSA: the blocks that differed from the level load | XenonRecomp emits `PPC_SETJMP_BUF(r3)` / `PPC_LONGJMP_BUF(r3)`: host buffers kept by the runtime per host thread, keyed by guest address (`runtime/platform/jmpbuf.cpp`); guest memory is no longer written. Every game's code is regenerated (code generated before still builds, with the old behaviour) |
 | The emulated portal sent its unprompted status reports at most every 8 ms of the **host's** clock, so the poll that got one depended on the host's speed | Giants: two physical blocks the game writes from what it read, from a frame that changed with each pair (240 to 1110) | In deterministic mode the interval runs on the game's virtual time (`EmulatedPortal::SetClock`, `GuestSystemTime`) |
+| SSA's light-tile job reads the full-resolution depth the GPU resolved, written back into guest memory from an asynchronous read-back that is the latest finished one, so how old it was (or whether there was one) followed the GPU's speed | Two instances in lockstep, one slowed by frame dumps: 49 physical blocks from `0xA6A60000` (that depth target) differed at frame 750 | Online, read-backs are kept by request and the write-back always takes the one asked two depth resolves before, waiting for it if needed (`gpu::TakeReadback`, `gpu/readback_queue.h`); the shadows stay. Off line nothing changes. Different GPUs may still compute different depth bits: [?] |
 
 [V] After both fixes, no block differs: SSA over 409 compared frames to frame 12270 (6.8 minutes of game at 30 FPS),
 Giants over 177 to frame 5310 (a pair without any portal agreed too, which pointed at it). The event logs stay identical.
-Tests: `ArkeyanJmpBufTest` (round trips, per-thread buffers, stable addresses, guest memory untouched) and a virtual-clock
-case in `ArkeyanPortalTest`; both failed first.
+Tests: `ArkeyanJmpBufTest` (round trips, per-thread buffers, stable addresses, guest memory untouched), a virtual-clock
+case in `ArkeyanPortalTest` and `ArkeyanReadbackQueueTest` (the one asked, not the latest; waits; a dropped request answers
+at once); each failed first. With the read-back fix, two SSA instances in lockstep, both dumping frames, agreed on 190 of 190
+checks to frame 5700.
 
 [?] Not measured: the four other games, a 10-minute Giants pair, Windows and Linux, a real portal (sessions use the
 emulated one).
