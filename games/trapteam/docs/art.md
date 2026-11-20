@@ -45,6 +45,9 @@ differ by one (Magic Trap 0x3015 not 0x3014; Air 0x300E not 0x300D; Tech 0x3001 
 shapes are "Shape N"; the game's table gives no shape names. The villains' elements: `death` is Undead, `kaos` (Kaos alone) has no element.
 
 ## What is not known [?]
+- What the game draws in a trap's element slot for its villain, and where the slot is on each shape: the disc has no
+  villain picture smaller than the vault's, so a trap holding a villain shows the trap with the vault's captured picture
+  small at its bottom, centred (`collection::TrapPicture`, [game_art.md](../../../docs/runtime/host/game_art.md)).
 - Where a trap holds its villain: `figures::TrapVillainOffset`, packed `0x10`, settled by a capture in play ([boot.md](boot.md#the-first-capture-2026-11-02-v)). The Toy Box lists the villains a trap can hold by its element and
   shows "Holds <name>" only when `figures::TrapVillainVerified` is true.
 - The shapes' names; the villains' display names in other languages (the table is the English text); which of a trap's shapes were ever sold.

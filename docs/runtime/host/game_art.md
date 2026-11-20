@@ -187,6 +187,7 @@ and `CacheVersion` stay unchanged; no re-extraction is needed. Missing art can b
 | Individual swapper halves | `HalfPicturePath`, `PortraitPath`, `BestPicturePath`: own half art, then whole-figure art, then generated icon; a bottom can use its matching top's whole picture |
 | Low-level per-game reads | `GamePortraitPath` and `GameKindPicturePath` intentionally inspect only the requested cache; they do not choose art across games |
 | Villains | `VillainPicturePath` keeps Trap Team's captured/escaped state pictures; these are not interchangeable toy portraits |
+| A trap holding a villain | `TrapPicture`: the trap's picture with the villain's captured picture small at its bottom, centred (Toy Box: `IconOf`, keyed by the villain too) |
 | Traps, magic items and other families | The ordinary shared selector preserves their own variant pictures, then plain art, family glyph and generated fallback |
 
 Previously the launcher and Toy Box already agreed when they called the same API. However, portraits used the viewed
@@ -212,6 +213,15 @@ lists tops only), then the generated icon. One missing half never suppresses the
 image logic, tested on synthetic images (`ArkeyanCollectionTest`, `TestSwapperPicture`). Any top and any bottom work,
 matched or mixed. (Until 2026-10-28 the halves were cropped and stacked at the wider one's width: a gap at the waist and
 two scales.)
+
+**A trap holding a villain** (Trap Team): `collection::TrapPicture(trap, variant, villain, path)` takes the trap's
+picture (`path`, from `PortraitPath` or `BestPicturePath`) and lays the villain's captured picture (`VillainPicturePath`,
+cut to its visible box) at its bottom: fitted into a box of 0.34 of the picture, centred across and at 0.76 down, so its corners
+stay inside the circle the Toy Box crops its portraits to. `villain` is the id the trap stores (1-46), found among its
+own game's `villains`. Empty for an empty trap, a villain with no picture cached, another toy or a card with its own
+picture: the caller keeps the trap's picture. The disc has no smaller villain icon, and where the game draws the
+villain on each of the 60 trap shapes is not known, so the corner is ours, not the game's. Tested on synthetic images
+(`ArkeyanPictureLookupTest`, `TestTrapPicture`).
 
 When only a variant's kind is known (the Toy Box's cards, the collection's), `collection::VariantFor(toy, kind)` picks
 the toy's one variant of that kind. `large` asks for the game's biggest picture (SSA's 512 px "versus" art; Giants has

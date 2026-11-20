@@ -166,6 +166,8 @@ bool fromDisc;
 collection::Image icon = collection::Icon(f.toy, f.Kind(), 128, &fromDisc); // RGBA, R in the low byte
 // A swapper's picture, its halves joined at the waist as the game's swap screen (empty when a half has none from a disc: draw the top's picture and the bottom small):
 collection::Image swapper = collection::SwapperPicture(*top.toy, top.variant, *bottom.toy, bottom.variant);
+// A trap holding a villain: the trap's picture with the villain's small at its bottom, centred (empty: keep the trap's):
+collection::Image trap = collection::TrapPicture(*f.toy, f.variant, f.stats.villain, collection::PortraitPath("trapteam", *f.toy, f.variant));
 // HalfPicturePath(toy, variant): a half's file, else whole-figure art; never pass a whole-figure fallback to JoinHalves.
 // CropToVisible(image): the alpha bounding box; JoinHalves(top, bottom): genuine half frames only.
 // fromDisc: the player's disc picture (cached by the game); else drawn. Show "drawn" icons over the element colour,
