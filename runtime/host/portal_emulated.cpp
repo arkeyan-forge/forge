@@ -162,8 +162,8 @@ size_t EmulatedPortal::Read(uint8_t* report, size_t capacity)
     }
     else if (m_active)
     {
-        auto now = std::chrono::steady_clock::now();
-        if (now - m_lastStatus < m_statusInterval)
+        const auto now = m_clock ? m_clock() : std::chrono::steady_clock::now().time_since_epoch();
+        if (m_lastStatus && now - *m_lastStatus < m_statusInterval)
             return 0;
         m_lastStatus = now;
         next = StatusReport();

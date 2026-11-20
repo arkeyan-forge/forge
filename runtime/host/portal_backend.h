@@ -6,6 +6,7 @@
 #include "host/portal_slots.h"
 #include <array>
 #include <chrono>
+#include <functional>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -90,6 +91,14 @@ public:
         m_statusInterval = interval;
     }
 
+    // Where the status interval's time comes from: the host's steady clock by default; online play gives the game's
+    // virtual time, so the reports a poll gets do not depend on how fast this computer runs.
+    void SetClock(std::function<std::chrono::nanoseconds()> clock)
+    {
+        std::lock_guard lock(m_mutex);
+        m_clock = std::move(clock);
+    }
+
     bool IsActive();
     // The last `C r g b` the title sent, and how many it sent (Giants fades the portal's light all the time).
     struct Light
@@ -116,7 +125,8 @@ private:
     std::deque<Report> m_responses;
     bool m_active = false;
     std::chrono::milliseconds m_statusInterval{ 0 };
-    std::chrono::steady_clock::time_point m_lastStatus{};
+    std::function<std::chrono::nanoseconds()> m_clock;
+    std::optional<std::chrono::nanoseconds> m_lastStatus;
     uint8_t m_statusCounter = 0;
     Light m_light;
     uint64_t m_lightCommands = 0;
