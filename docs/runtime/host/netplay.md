@@ -351,88 +351,45 @@ item before lockstep.
 [?] Not tested: the four other games, portal changes during a replay, a real portal, the fence-retirement stubs and the
 GPU-written ranges of section 3.
 
-## Step 0d: keep host jump buffers out of guest memory [Xbox]
+## Step 0d: the last host values in guest memory [Xbox]
 
-[V] The translator's `setjmp`/`longjmp` buffer expression pointed into guest memory. The host `jmp_buf` contains
-host stack pointers, return addresses and process-dependent state; it accounts for the reported 192 differing bytes
-in Giants' executable data between replays.
+[V] Two replays of 0c still differed in a few blocks. Three causes, each found and fixed, measured 2026-11-20 on an M1 Pro
+(Europe discs, 0b's recordings, cooperative schedule, hashing every 30th frame):
 
-[V] XenonRecomp now emits `PPC_SETJMP_BUF` / `PPC_LONGJMP_BUF`. Only the buffer expression changes: `setjmp` stays
-directly in the translated function. The runtime keeps stable buffers keyed by guest address in host thread-local
-storage, without a lock or guest writes. A missing buffer on the calling thread logs one `[setjmp]` line and aborts.
+| Cause | Where it showed | Fix |
+|---|---|---|
+| The translator emitted a guest `setjmp` as the host's, with the host `jmp_buf` (stack pointers, return addresses, values mangled with a per-process cookie) written into guest memory | Giants: 192 bytes at `0x8267DD30` of the executable's data from frame 30 on; SSA: the blocks that differed from the level load | XenonRecomp emits `PPC_SETJMP_BUF(r3)` / `PPC_LONGJMP_BUF(r3)`: host buffers kept by the runtime per host thread, keyed by guest address (`runtime/platform/jmpbuf.cpp`); guest memory is no longer written. Every game's code is regenerated (code generated before still builds, with the old behaviour) |
+| The emulated portal sent its unprompted status reports at most every 8 ms of the **host's** clock, so the poll that got one depended on the host's speed | Giants: two physical blocks the game writes from what it read, from a frame that changed with each pair (240 to 1110) | In deterministic mode the interval runs on the game's virtual time (`EmulatedPortal::SetClock`, `GuestSystemTime`) |
 
-[V] `ArkeyanJmpBufTest` checks both round-trip return values (including zero becoming one), reuse on one thread,
-stable addresses after storage growth, isolation between live threads using the same guest address, and byte-identical
-synthetic guest memory. The missing-buffer check verifies the diagnostic and abort. The existing generated Giants
-code still builds with `ninja -C build-giants -j4`.
+[V] After both fixes, no block differs: SSA over 409 compared frames to frame 12270 (6.8 minutes of game at 30 FPS),
+Giants over 177 to frame 5310 (a pair without any portal agreed too, which pointed at it). The event logs stay identical.
+Tests: `ArkeyanJmpBufTest` (round trips, per-thread buffers, stable addresses, guest memory untouched) and a virtual-clock
+case in `ArkeyanPortalTest`; both failed first.
 
-[?] No game or replay was run for this change. Existing translations retain their old buffer expression until they
-are regenerated; no game code was regenerated here.
+[?] Not measured: the four other games, a 10-minute Giants pair, Windows and Linux, a real portal (sessions use the
+emulated one).
 
-### Trace host-sourced loads
+### Tracing host-sourced loads (how the portal was found)
 
-[V] `ARKEYAN_NETPLAY_TRACE` is a CMake option, default **OFF**. ON forces `runtime/netplay/trace_macros.h` into the
-translated code and enables the runtime's trace integration. The integer `PPC_LOAD_U8/U16/U32/U64` and
-`PPC_STORE_U8/U16/U32/U64` macros, including their forwarding `PPC_MM_` forms, use inline accessors. A prebuilt
-`ARKEYAN_PPC_LIBRARY` is refused with this option: its accesses could not be instrumented.
+`-DARKEYAN_NETPLAY_TRACE=ON` (a separate build tree; OFF leaves the translated objects byte-identical) routes the
+translated code's integer loads and stores (`PPC_LOAD_*` / `PPC_STORE_*`) through a **shadow** of guest memory (a second
+4 GB reservation, committed on use). A store writes both; a load whose bytes differ from the shadow was written by the
+host side (an import, a host thread, the loader): it is recorded and the shadow updated.
 
 | Variable | Effect in a trace build |
 |---|---|
-| `SKY_NETPLAY_TRACE=<file>` | enables the shadow and binary host-sourced load records in `<file>`, plus per-frame summaries in `<file>.frames`; startup requires `SKY_NETPLAY_SCHEDULE=cooperative`, `SKY_NETPLAY_DETERMINISTIC=1` and `SKY_NETPLAY_DELIVERY=frame` |
-| `SKY_NETPLAY_TRACE_FRAMES=<a>-<b>` | writes full records only for decimal frames a..b inclusive; default all frames; invalid or reversed bounds are refused; shadow updates, global sequence numbers and frame summaries continue outside the range |
+| `SKY_NETPLAY_TRACE=<file>` | records host-sourced loads in `<file>` and one `frame <n> <count> <chain hash>` line per frame in `<file>.frames`; needs the cooperative schedule |
+| `SKY_NETPLAY_TRACE_FRAMES=<a>-<b>` | full records only for frames a..b (inclusive); the summaries cover every frame |
 
-With `SKY_NETPLAY_TRACE` unset, the accessors only read or write guest memory. With it set, the shadow reserves a
-second 4 GB address space, initially zero, without eagerly backing it with physical memory: anonymous `mmap` on
-POSIX, `VirtualAlloc` reservation and commits on demand on Windows. A translated store updates both memory and
-the shadow. A translated load compares its captured bytes with the shadow; a difference records a host-sourced
-load and updates those shadow bytes. An unchanged second read is not recorded. There is no host heap allocation
-per access; record writes are buffered and both files are flushed at frame end.
+Records (`SKYTRC01`, u32 version 1, then 37 bytes each, little-endian): u64 sequence, u32 frame, u32 guest address, u8
+size, u64 value, u64 previous shadow value, u32 the translated code's link register. `tools/netplay/trace_diff.py --frames
+a b` gives the first frame whose summary differs; `trace_diff.py a b` the first differing record and the ten before it on
+each side. A first run with a range of `0-0` finds the frame; a second around it names the load. About 37 bytes x 1500
+host-sourced loads per frame: a 2500-frame range writes 3.7 GB per run.
 
-The binary format is little-endian, with no padding: eight ASCII bytes `SKYTRC01`, then `u32 version = 1`, then
-37 bytes per record in this order:
-
-| Field | Type | Meaning |
-|---|---|---|
-| sequence | `u64` | host-sourced load count since startup, starting at 1, including records filtered out by the frame range |
-| frame | `u32` | the probe's frame number; 0 covers startup before the first flip, then advances once per flip |
-| address | `u32` | guest address |
-| size | `u8` | 1, 2, 4 or 8 bytes |
-| value | `u64` | loaded guest value, zero-extended |
-| shadow | `u64` | previous shadow value, zero-extended |
-| lr | `u32` | low 32 bits of the translated context's link register |
-
-Every frame, including an empty frame, has one text line `frame <n> <count> <64-bit hex chain hash>` in
-`<file>.frames`. The count and hash restart each frame; the hash starts at `netplay::HashSeed` and applies
-`netplay::Mix` to address, size and value, in that order, for every host-sourced load. Finalization also writes the
-current partial frame and closes the files once. The frame number follows the probe, rather than virtual-clock
-ticks (a flip can cover more than one tick).
-
-Build separately, then use the same replay and isolation variables as step 0a. First compare the summaries to find
-the frame; repeat with `SKY_NETPLAY_TRACE_FRAMES` around that frame to narrow the binary trace:
-
-```sh
-cmake -S . -B build-giants-trace -G Ninja -DARKEYAN_GAME=giants -DCMAKE_BUILD_TYPE=RelWithDebInfo -DARKEYAN_NETPLAY_TRACE=ON
-ninja -C build-giants-trace -j4
-python3 -I tools/netplay/trace_diff.py --frames .scratch/netplay/a.trace.frames .scratch/netplay/b.trace.frames
-python3 -I tools/netplay/trace_diff.py .scratch/netplay/a.trace .scratch/netplay/b.trace
-python3 -I tools/netplay/trace_diff.py --self-test
-```
-
-The binary comparison prints the first differing record on each side, then each side's ten preceding records, with
-guest addresses and link registers in hex. Missing records or frames also differ. Exit status: 0 equal, 1 different,
-2 malformed or unreadable input. Comparisons stream the files and keep only ten preceding records in memory.
-
-[V] `ArkeyanTraceTest` failed first with the missing implementation, then passed: guest store/load suppression,
-a plain host write recorded once, overlapping widths, zero shadow pages, cross-page shadow copies, inclusive range
-filtering with continuous sequence numbers, frame summaries and a changed host value changing the chain.
-`trace_diff.py --self-test` also failed first, then passed, including malformed files and unequal lengths.
-The synthetic startup check verifies activation, the unset-variable path, refusal without cooperative scheduling,
-frame-range filtering and the recorded link register. The separate Giants `RelWithDebInfo` trace build passes with
-`ninja -j4`; every translated macro use compiled with `ctx` in scope. The existing OFF build also passes, and all
-93 translated objects remain byte-identical to their pre-change copies.
-
-[?] No game or replay has been run with this trace. Host values returned only in registers are outside this memory
-trace, as are accesses that bypass these macros. Windows reservation and commitment have not been exercised here.
+[V] On Giants it showed the two runs reading the same host values until one called `time()` where the other read a flag:
+the branch came from a value outside the trace (a register, here the portal's reply or no reply), and a pair without the
+portal then agreed. Values returned only in registers and accesses outside the macros (vector loads) are not traced.
 
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one
