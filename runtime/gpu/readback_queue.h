@@ -33,11 +33,12 @@ namespace gpu
             const auto found = m_ready.find(request);
             if (found == m_ready.end())
                 return false;
-            const bool ok = found->second.has_value();
-            if (ok)
-                data.swap(*found->second);
+            std::optional<std::vector<uint32_t>> taken = std::move(found->second);
             m_ready.erase(found);
-            return ok;
+            if (!taken)
+                return false;
+            data.swap(*taken);
+            return true;
         }
 
         size_t Size()
