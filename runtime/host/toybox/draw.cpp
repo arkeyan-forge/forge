@@ -2953,7 +2953,7 @@ namespace toybox
                     ImVec2 a(pmin.x + 16, y), b(pmax.x - 16, y + rowHeight - 6);
                     bool focused = model.addVersions && model.addVersion == int(v);
                     FocusBox(a, b, focused, 10, Look::Night);
-                    // The version's picture (the toy's own when it has none), its name and its kind.
+                    // The version's picture (the toy's own when it has none), its name, its kind and its game.
                     float middle = (a.y + b.y) / 2, picture = std::min(36.0f, b.y - a.y - 6);
                     if (!SwapperStackOfToy(toy, version.variant, ImVec2(a.x + 8 + picture / 2, middle), int(picture)) &&
                         !ArtworkPicture(
@@ -2961,10 +2961,13 @@ namespace toybox
                         Portrait(toy, version.kind, ImVec2(a.x + 8 + picture / 2, middle), int(picture), false,
                             version.variant);
                     float textX = a.x + 16 + picture;
-                    Text(g_black, 14, ImVec2(textX, middle - (version.kind == VariantKind::Base ? 9 : 17)), Look::Text,
+                    Text(g_black, 14, ImVec2(textX, middle - 17), Look::Text,
                         Fit(g_black, 14, version.name, b.x - textX - 100));
-                    if (version.kind != VariantKind::Base)
-                        Text(g_bold, 12, ImVec2(textX, middle + 2), Look::TextDim, VariantLabel(version.kind));
+                    std::string detail = VariantLabel(version.kind);
+                    if (!version.game.empty())
+                        detail += " · " + version.game;
+                    Text(g_bold, 12, ImVec2(textX, middle + 2), Look::TextDim,
+                        Fit(g_bold, 12, detail, b.x - textX - 100));
                     std::string mark = version.owned == 0 ? (version.edition.empty() ? "" : L("same tag", "même puce"))
                                        : version.owned == 1
                                            ? L("owned", "à vous")

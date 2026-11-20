@@ -148,6 +148,7 @@ namespace toybox
         std::string name, edition; // edition: a same-tag edition (created as the plain toy, the edition recorded)
         collection::VariantKind kind = collection::VariantKind::Base;
         int owned = 0;
+        std::string game; // the short name of the game it came with ("Giants")
     };
 
     struct NameEntry

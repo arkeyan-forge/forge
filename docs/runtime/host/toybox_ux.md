@@ -86,7 +86,8 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
   **Standard** (made under the id the toy is sold with when the catalogue has one: Jet-Vac `0x1000`, the Giants'
   LightCore ones `0x1206`, Swap Force's `0x2000`; a swapper's halves too) and never lists a `base` entry as a second row
   (the toy's own name again: 85 toys have one, 22 of them Giants'; `ArkeyanCollectionTest`); each row has the version's picture (the toy's own when it has none)
-  and its kind ("Series", "Eon's Elite", an unknown kind shows as "Other"). On a shelf card and the figure sheet the
+  and, on a second line, its kind ("Series", "Eon's Elite", an unknown kind shows as "Other") and the game it came with
+  ("Series · Giants", "Standard · Spyro's Adventure": `toybox::VersionGame`, from `Catalogue::Origin`). On a shelf card and the figure sheet the
   variant's name is the figure's name and its kind is a tag. The game's Add screen has no search (it is browsed by
   section); the shelf's search (Y) already finds a variant by its name. Menus and rows that open or unfold something
   (More, Details) end with a **drawn chevron** (`Chevron` in `toybox/draw.cpp`: two lines, no font glyph).
