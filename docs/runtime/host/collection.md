@@ -244,7 +244,9 @@ the collection folder adds toys or replaces them by toy type, and games by id. F
 characters, swap halves, traps, vehicles, magic items, battle pieces and expansion pieces; Imaginators also lists
 Senseis and creation crystals among its characters. The `toys` entries' `type` and `class` identify the families:
 every catalogue trap type is listed, as are ordinary and racing-villain vehicle types. Clown Cruiser and Barrel
-Blaster are absent from both Xbox tables; their existing catalogue types are now excluded through `rejects`.
+Blaster are absent from both Xbox tables; their existing catalogue types are now excluded through `rejects`. So are
+their drivers, Turbo Charge Donkey Kong (3423) and Hammer Slam Bowser (3424): the disc has their pictures, but neither
+table defines them, so the game cannot play them. They show under "Not for this game".
 No private table payload is embedded or copied into the catalogue.
 
 [V] The generation rule already admitted traps to both games and vehicles to Imaginators. The missing part was

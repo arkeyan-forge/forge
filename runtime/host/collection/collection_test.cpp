@@ -1050,6 +1050,16 @@ namespace
             if (game == nullptr)
                 continue;
             const auto accepted = catalogue.Accepted(id);
+            for (uint16_t type : { uint16_t(3423), uint16_t(3424) })
+            {
+                const Toy* toy = catalogue.Find(type);
+                CHECK(toy != nullptr);
+                if (toy == nullptr)
+                    continue;
+                CHECK(!catalogue.Accepts(id, type));
+                CHECK(!catalogue.Read(id, toy, StandardVariant(*toy)).works);
+                CHECK(std::find(accepted.begin(), accepted.end(), toy) == accepted.end());
+            }
             std::vector<Figure> accessories;
             std::vector<Figure> excluded;
             for (const Toy& toy : catalogue.Toys())
