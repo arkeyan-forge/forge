@@ -101,6 +101,7 @@ add_executable(ArkeyanRuntime
     host/toybox/menu.cpp
     host/toybox/model.cpp
     host/toybox/trap_villain.cpp
+    host/toybox/version_game.cpp
     host/toybox_link.cpp
     host/toybox_remote.cpp
     host/toybox_socket.cpp
@@ -368,6 +369,11 @@ target_include_directories(ArkeyanToyboxSwapTest PRIVATE .)
 add_executable(ArkeyanToyboxTrapTest host/toybox/trap_villain_test.cpp host/toybox/trap_villain.cpp)
 target_include_directories(ArkeyanToyboxTrapTest PRIVATE .)
 target_link_libraries(ArkeyanToyboxTrapTest PRIVATE ArkeyanArtReader)
+
+# The game Add a figure's versions panel names for each version (host/toybox/version_game.h): ./ArkeyanToyboxVersionGameTest
+add_executable(ArkeyanToyboxVersionGameTest host/toybox/version_game_test.cpp host/toybox/version_game.cpp)
+target_include_directories(ArkeyanToyboxVersionGameTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxVersionGameTest PRIVATE ArkeyanArtReader)
 
 # The remembered "resolution scale auto" step-down's file line: ./ArkeyanAutoScaleTest
 add_executable(ArkeyanAutoScaleTest gpu/auto_scale_test.cpp)

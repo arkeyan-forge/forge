@@ -6,6 +6,7 @@
 #include "host/toybox/look.h"
 #include "host/toybox/retake.h"
 #include "host/toybox/trap_villain.h"
+#include "host/toybox/version_game.h"
 #include "host/portal.h"
 #include "host/portal_backend.h"
 #include "language.h"
@@ -475,9 +476,7 @@ namespace toybox
 
     std::string Model::GameName() const
     {
-        std::string name = gameInfo != nullptr ? gameInfo->name : game;
-        if (name.rfind("Skylanders: ", 0) == 0)
-            name = name.substr(12);
+        std::string name = gameInfo != nullptr ? ShortGameName(*gameInfo) : game;
         if (French() && name == "Spyro's Adventure")
             return "Spyro's Adventure";
         return name;
@@ -3638,12 +3637,14 @@ namespace toybox
         uint16_t sold = StandardVariant(*toy);
         Version plain{ toy->type, sold, AddName(*toy), {}, toy->edition };
         plain.owned = OwnedCount(toy->type, 0, {}) + (sold != 0 ? OwnedCount(toy->type, sold, {}) : 0);
+        plain.game = VersionGame(*toy, sold);
         versions.push_back(plain);
         for (const Variant* v : Catalogue::Get().VersionsFor(game, *toy))
         {
             Version version{ toy->type, uint16_t(v->sameTag ? sold : v->id), v->name,
                 v->sameTag ? v->name : std::string(), v->kind };
             version.owned = OwnedCount(version.type, version.variant, version.edition);
+            version.game = VersionGame(*toy, version.variant);
             versions.push_back(version);
         }
     }
