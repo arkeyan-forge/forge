@@ -45,6 +45,29 @@ namespace
         std::erase_if(g_live, [&](const auto& live) { return live.get() == &thread; });
     }
 
+    // lr, then the return address each function saved 8 bytes below its caller's frame, which the back chain at its own
+    // frame (r1) points to; within the thread's stack, each frame above the last, at most 12. The kernel call usually comes
+    // through the title's wait wrapper, so lr alone names only the wrapper.
+    std::string CallChain(uint32_t lr, uint32_t sp, const GuestThreadContext& thread)
+    {
+        auto onStack = [&](uint32_t address) {
+            return address >= thread.stack && address + 4 <= thread.stack + thread.stackSize;
+        };
+        char text[16];
+        snprintf(text, sizeof(text), "0x%08X", lr);
+        std::string chain = text;
+        for (int depth = 0; depth < 12 && onStack(sp); depth++)
+        {
+            const uint32_t next = g_memory.Read<uint32_t>(sp);
+            if (next <= sp || !onStack(next - 8))
+                break;
+            snprintf(text, sizeof(text), " < 0x%08X", g_memory.Read<uint32_t>(next - 8));
+            chain += text;
+            sp = next;
+        }
+        return chain;
+    }
+
     // " \"name\"" when the title named the thread, else nothing. Call with g_kernelLock held.
     std::string QuotedName(const GuestThread& thread)
     {
@@ -243,22 +266,12 @@ GuestWaitScope::GuestWaitScope(
 {
     if (m_thread == nullptr)
         return;
-    // The kernel call usually comes through the title's wait wrapper, so lr names the wrapper; the wrapper saved its own
-    // return address 8 bytes below its caller's frame, which the back chain at r1 points to.
-    const GuestThreadContext& thread = *m_thread->context;
-    auto onStack = [&](uint32_t address) {
-        return address >= thread.stack && address < thread.stack + thread.stackSize;
-    };
-    uint32_t outer = 0;
-    if (onStack(ctx.r1.u32))
-        if (const uint32_t chain = g_memory.Read<uint32_t>(ctx.r1.u32); onStack(chain - 8) && onStack(chain - 5))
-            outer = g_memory.Read<uint32_t>(chain - 8);
     GuestWait& wait = m_thread->wait;
     wait.kind.store(kind, std::memory_order_relaxed);
     wait.target.store(target, std::memory_order_relaxed);
     wait.count.store(count, std::memory_order_relaxed);
     wait.caller.store(uint32_t(ctx.lr), std::memory_order_relaxed);
-    wait.outerCaller.store(outer, std::memory_order_relaxed);
+    wait.sp.store(ctx.r1.u32, std::memory_order_relaxed);
     wait.owner.store(owner, std::memory_order_relaxed);
     wait.since.store(std::max<uint64_t>(PlatformNowNs(), 1), std::memory_order_release);
 }
@@ -267,6 +280,11 @@ GuestWaitScope::~GuestWaitScope()
 {
     if (m_thread != nullptr)
         m_thread->wait.since.store(0, std::memory_order_relaxed);
+}
+
+std::string GuestCallChain(const PPCContext& ctx)
+{
+    return t_guestThread != nullptr ? CallChain(uint32_t(ctx.lr), ctx.r1.u32, *t_guestThread->context) : std::string();
 }
 
 void NameGuestThread(uint32_t id, const char* name)
@@ -314,10 +332,11 @@ void PrintGuestThreads(const char* tag)
             const uint32_t count = wait.count.load(std::memory_order_relaxed);
             snprintf(what, sizeof(what), "%u object%s (first 0x%08X)", count, count == 1 ? "" : "s", target);
         }
-        fprintf(stderr,
-            "%s thread %u%s: waiting for %s, %.1f s so far, called from 0x%08X (itself called from 0x%08X)\n", tag,
-            thread->id, name.c_str(), what, seconds, wait.caller.load(std::memory_order_relaxed),
-            wait.outerCaller.load(std::memory_order_relaxed));
+        // The thread may stop waiting during the walk: its frames then change, but every read stays on its stack.
+        const std::string chain = CallChain(
+            wait.caller.load(std::memory_order_relaxed), wait.sp.load(std::memory_order_relaxed), *thread->context);
+        fprintf(stderr, "%s thread %u%s: waiting for %s, %.1f s so far, called from %s\n", tag, thread->id,
+            name.c_str(), what, seconds, chain.c_str());
     }
 }
 
