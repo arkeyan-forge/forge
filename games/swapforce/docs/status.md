@@ -5,7 +5,7 @@
 ## At a glance
 
 - **Played on:** macOS (the test suite, the owner); Windows (issue #26); Linux on a Steam Deck (issue #23).
-- **Known limits:** A plain green picture after some in-level events, fixed in 0.9.9, to confirm (#9); not every mode played.
+- **Known limits:** A plain green picture after a figure swap in Wildwoods, still seen after #9, being looked into (#84); not every mode played.
 
 (The source of the README's game table: `python3 -I tools/game_status.py` writes it from this section and `game.txt`.)
 

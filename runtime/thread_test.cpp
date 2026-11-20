@@ -58,6 +58,20 @@ namespace
 
     void Apc(PPCContext& ctx, uint8_t*) { g_apcs += int(ctx.r3.u32); }
 
+    // A thread that waits for an event, as a guest wait does (kernel/sync.cpp): the stall report shows it waiting.
+    std::shared_ptr<Event> g_event = std::make_shared<Event>(true, false);
+    void WaitsForEvent(PPCContext& ctx, uint8_t*)
+    {
+        // The wait's caller in lr, and its own caller's return address saved in the frame the back chain points to.
+        const uint32_t top = ctx.r1.u32;
+        ctx.r1.u64 = top - 0x100;
+        g_memory.Write<uint32_t>(top - 0x100, top - 0x40);
+        g_memory.Write<uint32_t>(top - 0x48, 0x82005678);
+        ctx.lr = 0x82001234;
+        GuestWaitScope scope(GuestWait::Objects, 0x40001230, 1, ctx);
+        WaitForObjects({ g_event }, false, 0, 0, nullptr);
+    }
+
     // What `body` writes to stderr.
     template <typename Body>
     std::string Stderr(Body body)
@@ -120,10 +134,11 @@ int main()
         CHECK(CloseHandle(handle) && found); // the destructor ran after the lock was released
         CHECK(!CloseHandle(handle) && CloseHandle(other));
     }
-    const uint32_t start = PPC_CODE_BASE, exit = PPC_CODE_BASE + 4, apc = PPC_CODE_BASE + 8;
+    const uint32_t start = PPC_CODE_BASE, exit = PPC_CODE_BASE + 4, apc = PPC_CODE_BASE + 8, waits = PPC_CODE_BASE + 12;
     PPC_LOOKUP_FUNC(g_memory.base, start) = Start;
     PPC_LOOKUP_FUNC(g_memory.base, exit) = Exit;
     PPC_LOOKUP_FUNC(g_memory.base, apc) = Apc;
+    PPC_LOOKUP_FUNC(g_memory.base, waits) = WaitsForEvent;
     g_module.tlsDataSize = 0x10;
     g_module.tlsSlotCount = 4;
     g_module.tlsRawDataSize = 4;
@@ -163,15 +178,46 @@ int main()
     // reused, the 256 MB system heap ("System heap exhausted" after about 1000) is never full.
     std::weak_ptr<GuestThread> first;
     int good = 0;
-    for (uint32_t i = 0; i < 2000; i++)
-    {
-        auto thread = CreateGuestThread(i % 2 ? exit : start, i, 0, StackSize, false, 0);
-        if (i == 0)
-            first = thread;
-        Wait(thread);
-        good += thread->exitCode == (i % 2 ? 7 : i + 1);
-    }
+    log = Stderr([&] {
+        for (uint32_t i = 0; i < 2000; i++)
+        {
+            auto thread = CreateGuestThread(i % 2 ? exit : start, i, 0, StackSize, false, 0);
+            if (i == 0)
+                first = thread;
+            Wait(thread);
+            good += thread->exitCode == (i % 2 ? 7 : i + 1);
+        }
+    });
     CHECK(good == 2000 && g_started == 1000 && g_dirtyStarts == 0);
+    CHECK(Count(log, " exited, code 0x") == 2000);
+
+    // The stall report: each live thread with its name, what it waits for, since when, and from where; a thread that
+    // ends says so once, with its name, and leaves the report.
+    {
+        auto waiter = CreateGuestThread(waits, 0, 0, StackSize, false, 0);
+        NameGuestThread(waiter->id, "Loading Thread");
+        const std::string self = "thread " + std::to_string(waiter->id) + " \"Loading Thread\": waiting";
+        std::string report;
+        for (int i = 0; i < 200 && report.find(self) == std::string::npos; i++)
+        {
+            usleep(10000);
+            report = Stderr([] { PrintGuestThreads("[stall]"); });
+        }
+        CHECK(report.find("[stall] " + self + " for 1 object (first 0x40001230)") != std::string::npos);
+        CHECK(report.find("called from 0x82001234 (itself called from 0x82005678)") != std::string::npos);
+        log = Stderr([&] {
+            {
+                std::lock_guard lock(g_kernelLock);
+                g_event->signaled = true;
+                g_event->WakeSleepers();
+            }
+            Wait(waiter);
+        });
+        CHECK(log.find("[thread] " + std::to_string(waiter->id) + " \"Loading Thread\" exited, code 0x") !=
+              std::string::npos);
+        report = Stderr([] { PrintGuestThreads("[stall]"); });
+        CHECK(report.find("thread " + std::to_string(waiter->id) + " ") == std::string::npos);
+    }
     // The first thread's KTHREAD went to a later thread, which replaced it in the dispatcher table.
     CHECK(first.expired());
 

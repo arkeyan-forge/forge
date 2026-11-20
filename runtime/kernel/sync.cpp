@@ -2,6 +2,7 @@
 #include "thread.h"
 #include <atomic>
 #include <cstdio>
+#include <optional>
 #include <thread>
 
 namespace
@@ -16,6 +17,7 @@ namespace
     constexpr uint32_t CsLockCount = 0x10;
     constexpr uint32_t CsRecursionCount = 0x14;
     constexpr uint32_t CsOwningThread = 0x18;
+    constexpr uint32_t KThreadThreadId = 0x14C;
 
     std::atomic_ref<uint32_t> GuestAtomic(uint32_t address)
     {
@@ -134,6 +136,7 @@ PPC_FUNC(__imp__RtlEnterCriticalSection)
     // Cooperative: a loop that takes and leaves a free section to poll a flag must still let the other threads run.
     if (netplay::Cooperative())
         netplay::GuestScheduler().Poll();
+    std::optional<GuestWaitScope> waiting;
     while (!TryEnterCriticalSection(cs, thread))
     {
         if (netplay::Cooperative())
@@ -143,6 +146,9 @@ PPC_FUNC(__imp__RtlEnterCriticalSection)
         }
         auto owner = GuestAtomic(cs + CsOwningThread);
         uint32_t current = owner.load();
+        if (!waiting && current != 0)
+            waiting.emplace(
+                GuestWait::CriticalSection, cs, 1, ctx, g_memory.Read<uint32_t>(ByteSwap(current) + KThreadThreadId));
         if (current != 0)
             owner.wait(current);
     }
@@ -374,12 +380,17 @@ PPC_FUNC(__imp__ObDereferenceObject) {}
 namespace
 {
     // Shared by every wait: an alertable wait on a guest thread runs the APCs that interrupt it.
-    uint32_t Wait(PPCContext& ctx, const std::vector<std::shared_ptr<KernelObject>>& objects, bool waitAll,
-        uint32_t timeoutPointer, bool alertable)
+    // `first`: the first object's dispatcher header or handle, as the title passed it (the stall report).
+    uint32_t Wait(PPCContext& ctx, const std::vector<std::shared_ptr<KernelObject>>& objects, uint32_t first,
+        bool waitAll, uint32_t timeoutPointer, bool alertable)
     {
         auto thread = alertable ? CurrentGuestThread(ctx.r13.u32) : nullptr;
-        uint32_t status = WaitForObjects(
-            objects, waitAll, timeoutPointer, CurrentKThread(ctx.r13.u32), thread != nullptr ? &thread->apcs : nullptr);
+        uint32_t status;
+        {
+            GuestWaitScope waiting(GuestWait::Objects, first, uint32_t(objects.size()), ctx);
+            status = WaitForObjects(objects, waitAll, timeoutPointer, CurrentKThread(ctx.r13.u32),
+                thread != nullptr ? &thread->apcs : nullptr);
+        }
         if (status == StatusUserApc)
             DeliverUserApcs(ctx, *thread);
         return status;
@@ -389,7 +400,7 @@ namespace
 PPC_FUNC(__imp__KeWaitForSingleObject)
 {
     std::vector objects{ LookupDispatcher(ctx.r3.u32) };
-    ctx.r3.u64 = Wait(ctx, objects, false, ctx.r7.u32, ctx.r6.u32 != 0);
+    ctx.r3.u64 = Wait(ctx, objects, ctx.r3.u32, false, ctx.r7.u32, ctx.r6.u32 != 0);
 }
 
 PPC_FUNC(__imp__KeWaitForMultipleObjects)
@@ -398,7 +409,8 @@ PPC_FUNC(__imp__KeWaitForMultipleObjects)
     for (uint32_t i = 0; i < ctx.r3.u32; i++)
         objects.push_back(LookupDispatcher(g_memory.Read<uint32_t>(ctx.r4.u32 + i * 4)));
 
-    ctx.r3.u64 = Wait(ctx, objects, ctx.r5.u32 == WaitAll, ctx.r9.u32, ctx.r8.u32 != 0);
+    ctx.r3.u64 = Wait(ctx, objects, objects.empty() ? 0 : g_memory.Read<uint32_t>(ctx.r4.u32), ctx.r5.u32 == WaitAll,
+        ctx.r9.u32, ctx.r8.u32 != 0);
 }
 
 PPC_FUNC(__imp__NtWaitForSingleObjectEx)
@@ -411,7 +423,7 @@ PPC_FUNC(__imp__NtWaitForSingleObjectEx)
     }
 
     std::vector objects{ object };
-    ctx.r3.u64 = Wait(ctx, objects, false, ctx.r6.u32, ctx.r5.u32 != 0);
+    ctx.r3.u64 = Wait(ctx, objects, ctx.r3.u32, false, ctx.r6.u32, ctx.r5.u32 != 0);
 }
 
 PPC_FUNC(__imp__NtWaitForMultipleObjectsEx)
@@ -436,5 +448,6 @@ PPC_FUNC(__imp__NtWaitForMultipleObjectsEx)
         objects.push_back(std::move(object));
     }
 
-    ctx.r3.u64 = Wait(ctx, objects, ctx.r5.u32 == WaitAll, ctx.r8.u32, ctx.r7.u32 != 0);
+    ctx.r3.u64 =
+        Wait(ctx, objects, g_memory.Read<uint32_t>(ctx.r4.u32), ctx.r5.u32 == WaitAll, ctx.r8.u32, ctx.r7.u32 != 0);
 }

@@ -223,7 +223,9 @@ PPC_FUNC(__imp__RtlRaiseException)
     uint32_t threadId = g_memory.Read<uint32_t>(record + 0x14 + 8);
     uint32_t self = g_memory.Read<uint32_t>(CurrentKThread(ctx.r13.u32) + 0x14C);
     auto* text = static_cast<const char*>(g_memory.Translate(name));
-    fprintf(stderr, "[thread] %u named \"%s\"\n", threadId == 0xFFFFFFFF ? self : threadId, text);
+    uint32_t id = threadId == 0xFFFFFFFF ? self : threadId;
+    fprintf(stderr, "[thread] %u named \"%s\"\n", id, text);
+    NameGuestThread(id, text);
     if (threadId == 0xFFFFFFFF || threadId == self)
         PlatformSetThreadName(text);
 }

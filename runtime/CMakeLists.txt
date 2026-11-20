@@ -459,6 +459,10 @@ target_include_directories(ArkeyanThunkSlotTest PRIVATE .)
 add_executable(ArkeyanYieldBackOffTest kernel/yield_backoff_test.cpp)
 target_include_directories(ArkeyanYieldBackOffTest PRIVATE .)
 
+# When the stall report fires (a game swapping on without drawing), with a fake clock: ./ArkeyanStallWatchTest
+add_executable(ArkeyanStallWatchTest d3d/stall_watch_test.cpp)
+target_include_directories(ArkeyanStallWatchTest PRIVATE .)
+
 # The frame rate limiter's schedule and wait, with a fake clock: ./ArkeyanFrameLimiterTest
 add_executable(ArkeyanFrameLimiterTest kernel/frame_limiter_test.cpp)
 target_include_directories(ArkeyanFrameLimiterTest PRIVATE .)
