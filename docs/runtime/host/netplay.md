@@ -351,6 +351,89 @@ item before lockstep.
 [?] Not tested: the four other games, portal changes during a replay, a real portal, the fence-retirement stubs and the
 GPU-written ranges of section 3.
 
+## Step 0d: keep host jump buffers out of guest memory [Xbox]
+
+[V] The translator's `setjmp`/`longjmp` buffer expression pointed into guest memory. The host `jmp_buf` contains
+host stack pointers, return addresses and process-dependent state; it accounts for the reported 192 differing bytes
+in Giants' executable data between replays.
+
+[V] XenonRecomp now emits `PPC_SETJMP_BUF` / `PPC_LONGJMP_BUF`. Only the buffer expression changes: `setjmp` stays
+directly in the translated function. The runtime keeps stable buffers keyed by guest address in host thread-local
+storage, without a lock or guest writes. A missing buffer on the calling thread logs one `[setjmp]` line and aborts.
+
+[V] `ArkeyanJmpBufTest` checks both round-trip return values (including zero becoming one), reuse on one thread,
+stable addresses after storage growth, isolation between live threads using the same guest address, and byte-identical
+synthetic guest memory. The missing-buffer check verifies the diagnostic and abort. The existing generated Giants
+code still builds with `ninja -C build-giants -j4`.
+
+[?] No game or replay was run for this change. Existing translations retain their old buffer expression until they
+are regenerated; no game code was regenerated here.
+
+### Trace host-sourced loads
+
+[V] `ARKEYAN_NETPLAY_TRACE` is a CMake option, default **OFF**. ON forces `runtime/netplay/trace_macros.h` into the
+translated code and enables the runtime's trace integration. The integer `PPC_LOAD_U8/U16/U32/U64` and
+`PPC_STORE_U8/U16/U32/U64` macros, including their forwarding `PPC_MM_` forms, use inline accessors. A prebuilt
+`ARKEYAN_PPC_LIBRARY` is refused with this option: its accesses could not be instrumented.
+
+| Variable | Effect in a trace build |
+|---|---|
+| `SKY_NETPLAY_TRACE=<file>` | enables the shadow and binary host-sourced load records in `<file>`, plus per-frame summaries in `<file>.frames`; startup requires `SKY_NETPLAY_SCHEDULE=cooperative`, `SKY_NETPLAY_DETERMINISTIC=1` and `SKY_NETPLAY_DELIVERY=frame` |
+| `SKY_NETPLAY_TRACE_FRAMES=<a>-<b>` | writes full records only for decimal frames a..b inclusive; default all frames; invalid or reversed bounds are refused; shadow updates, global sequence numbers and frame summaries continue outside the range |
+
+With `SKY_NETPLAY_TRACE` unset, the accessors only read or write guest memory. With it set, the shadow reserves a
+second 4 GB address space, initially zero, without eagerly backing it with physical memory: anonymous `mmap` on
+POSIX, `VirtualAlloc` reservation and commits on demand on Windows. A translated store updates both memory and
+the shadow. A translated load compares its captured bytes with the shadow; a difference records a host-sourced
+load and updates those shadow bytes. An unchanged second read is not recorded. There is no host heap allocation
+per access; record writes are buffered and both files are flushed at frame end.
+
+The binary format is little-endian, with no padding: eight ASCII bytes `SKYTRC01`, then `u32 version = 1`, then
+37 bytes per record in this order:
+
+| Field | Type | Meaning |
+|---|---|---|
+| sequence | `u64` | host-sourced load count since startup, starting at 1, including records filtered out by the frame range |
+| frame | `u32` | the probe's frame number; 0 covers startup before the first flip, then advances once per flip |
+| address | `u32` | guest address |
+| size | `u8` | 1, 2, 4 or 8 bytes |
+| value | `u64` | loaded guest value, zero-extended |
+| shadow | `u64` | previous shadow value, zero-extended |
+| lr | `u32` | low 32 bits of the translated context's link register |
+
+Every frame, including an empty frame, has one text line `frame <n> <count> <64-bit hex chain hash>` in
+`<file>.frames`. The count and hash restart each frame; the hash starts at `netplay::HashSeed` and applies
+`netplay::Mix` to address, size and value, in that order, for every host-sourced load. Finalization also writes the
+current partial frame and closes the files once. The frame number follows the probe, rather than virtual-clock
+ticks (a flip can cover more than one tick).
+
+Build separately, then use the same replay and isolation variables as step 0a. First compare the summaries to find
+the frame; repeat with `SKY_NETPLAY_TRACE_FRAMES` around that frame to narrow the binary trace:
+
+```sh
+cmake -S . -B build-giants-trace -G Ninja -DARKEYAN_GAME=giants -DCMAKE_BUILD_TYPE=RelWithDebInfo -DARKEYAN_NETPLAY_TRACE=ON
+ninja -C build-giants-trace -j4
+python3 -I tools/netplay/trace_diff.py --frames .scratch/netplay/a.trace.frames .scratch/netplay/b.trace.frames
+python3 -I tools/netplay/trace_diff.py .scratch/netplay/a.trace .scratch/netplay/b.trace
+python3 -I tools/netplay/trace_diff.py --self-test
+```
+
+The binary comparison prints the first differing record on each side, then each side's ten preceding records, with
+guest addresses and link registers in hex. Missing records or frames also differ. Exit status: 0 equal, 1 different,
+2 malformed or unreadable input. Comparisons stream the files and keep only ten preceding records in memory.
+
+[V] `ArkeyanTraceTest` failed first with the missing implementation, then passed: guest store/load suppression,
+a plain host write recorded once, overlapping widths, zero shadow pages, cross-page shadow copies, inclusive range
+filtering with continuous sequence numbers, frame summaries and a changed host value changing the chain.
+`trace_diff.py --self-test` also failed first, then passed, including malformed files and unequal lengths.
+The synthetic startup check verifies activation, the unset-variable path, refusal without cooperative scheduling,
+frame-range filtering and the recorded link register. The separate Giants `RelWithDebInfo` trace build passes with
+`ninja -j4`; every translated macro use compiled with `ctx` in scope. The existing OFF build also passes, and all
+93 translated objects remain byte-identical to their pre-change copies.
+
+[?] No game or replay has been run with this trace. Host values returned only in registers are outside this memory
+trace, as are accesses that bypass these macros. Windows reservation and commitment have not been exercised here.
+
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one
    world, one shared camera, each player on his own PC). Free exploration (each player his own camera, the 2026-11-04

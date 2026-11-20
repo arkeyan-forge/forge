@@ -48,6 +48,7 @@ add_executable(ArkeyanRuntime
     memory.cpp
     write_watch.cpp
     loader.cpp
+    platform/jmpbuf.cpp
     platform/timebase.cpp
     ${ARKEYAN_PLATFORM_SOURCES}
     thread.cpp
@@ -403,6 +404,10 @@ target_include_directories(ArkeyanHeapViewTest PRIVATE .)
 # The perf log's clock counts nanoseconds: ./ArkeyanClockTest
 add_executable(ArkeyanClockTest platform/clock_test.cpp)
 target_include_directories(ArkeyanClockTest PRIVATE .)
+
+add_executable(ArkeyanJmpBufTest platform/jmpbuf_test.cpp platform/jmpbuf.cpp)
+target_include_directories(ArkeyanJmpBufTest PRIVATE .)
+sky_add_tests(ArkeyanJmpBufTest)
 
 # The buffer cache's range hash (chunks shared by overlapping ranges): ./ArkeyanRangeHashTest
 add_executable(ArkeyanRangeHashTest gpu/range_hash_test.cpp)

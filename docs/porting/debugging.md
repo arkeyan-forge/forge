@@ -80,6 +80,8 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_NETPLAY_EVENTS=<file>` | frame-stamped log: per frame the vblanks, other graphics interrupts, audio periods and timebase reads, and in order the threads created and files opened; compare with `hash_diff.py --events <a> <b>` |
 | `SKY_NETPLAY_DELIVERY=frame` | vblanks and audio periods granted per frame (the present interval's blanks, 3.125 audio periods per 1/60 s) instead of following the wall clock; the flip waits until their callbacks ran |
 | `SKY_NETPLAY_SCHEDULE=cooperative` | one FIFO baton for guest threads, APCs and graphics/audio callbacks; startup requires both `SKY_NETPLAY_DETERMINISTIC=1` and `SKY_NETPLAY_DELIVERY=frame`; virtual wait deadlines, yields at spin hints and every `PollQuantum` clock reads or free critical-section entries, a 2 s scheduler watchdog; step 0c of [netplay.md](../runtime/host/netplay.md) |
+| `SKY_NETPLAY_TRACE=<file>` | requires an `ARKEYAN_NETPLAY_TRACE=ON` build and cooperative scheduling; shadow guest memory to record host-sourced loads in a versioned binary file and counts/chain hashes per frame in `<file>.frames`; compare with `tools/netplay/trace_diff.py` (step 0d of [netplay.md](../runtime/host/netplay.md)) |
+| `SKY_NETPLAY_TRACE_FRAMES=<a>-<b>` | inclusive decimal range for full trace records, default all frames; summaries and shadow updates continue for every frame; use `trace_diff.py --frames <a.frames> <b.frames>` first, then compare the two binary files |
 
 ### Renderer, GPU, performance
 | Variable | Effect |

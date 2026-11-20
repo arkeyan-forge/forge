@@ -164,6 +164,7 @@ if(ARKEYAN_TOOLS_ONLY)
 endif()
 # The translated game code; tools/make_kit.sh points it at a game-free stub to build the player kit's runtime.
 set(ARKEYAN_PPC_DIR ${CMAKE_SOURCE_DIR}/private/${ARKEYAN_GAME}/ppc CACHE PATH "XenonRecomp output (ppc_*.cpp/h, shader_cache.cpp)")
+option(ARKEYAN_NETPLAY_TRACE "Trace host-sourced translated guest loads" OFF)
 if(NOT SKY_TESTS_ONLY)
     add_subdirectory(ArkeyanRecompLib)
     # Unread by the game code, but part of the player's compile command (the kit's compile.args), whose freshness key
@@ -171,17 +172,26 @@ if(NOT SKY_TESTS_ONLY)
     get_target_property(ARKEYAN_PPC_IMPORTED ArkeyanRecompLib IMPORTED)
     if(NOT ARKEYAN_PPC_IMPORTED)
         target_compile_definitions(ArkeyanRecompLib PRIVATE ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
+        if(ARKEYAN_NETPLAY_TRACE)
+            target_compile_options(ArkeyanRecompLib PRIVATE "SHELL:-include \"${CMAKE_SOURCE_DIR}/runtime/netplay/trace_macros.h\"")
+        endif()
+    elseif(ARKEYAN_NETPLAY_TRACE)
+        message(FATAL_ERROR "ARKEYAN_NETPLAY_TRACE requires compiling translated code, without ARKEYAN_PPC_LIBRARY")
     endif()
 endif()
 # The runtime is built into build/ArkeyanRuntime/: the executable, the bundle and the test paths keep their names.
 add_subdirectory(runtime ArkeyanRuntime)
 
 add_library(ArkeyanNetplay STATIC runtime/netplay/clock.cpp runtime/netplay/delivery.cpp runtime/netplay/events.cpp runtime/netplay/inputs.cpp
-    runtime/netplay/state_hash.cpp runtime/netplay/scheduler.cpp)
+    runtime/netplay/state_hash.cpp runtime/netplay/scheduler.cpp runtime/netplay/trace.cpp)
 target_include_directories(ArkeyanNetplay PUBLIC ${CMAKE_SOURCE_DIR}/runtime)
 sky_quality(ArkeyanNetplay)
 target_sources(ArkeyanRuntime PRIVATE runtime/netplay/runtime.cpp)
 target_link_libraries(ArkeyanRuntime PRIVATE ArkeyanNetplay)
+if(ARKEYAN_NETPLAY_TRACE)
+    target_compile_definitions(ArkeyanRuntime PRIVATE ARKEYAN_NETPLAY_TRACE=1)
+    target_compile_definitions(ArkeyanNetplay PRIVATE ARKEYAN_NETPLAY_TRACE=1)
+endif()
 foreach(target ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
     if(TARGET ${target})
         target_link_libraries(${target} PRIVATE ArkeyanNetplay)
@@ -189,6 +199,9 @@ foreach(target ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
 endforeach()
 add_executable(ArkeyanNetplayTest runtime/netplay/netplay_test.cpp)
 add_executable(ArkeyanSchedulerTest runtime/netplay/scheduler_test.cpp)
+add_executable(ArkeyanTraceTest runtime/netplay/trace_test.cpp)
+target_link_libraries(ArkeyanTraceTest PRIVATE ArkeyanNetplay)
+set_target_properties(ArkeyanTraceTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/ArkeyanRuntime)
 target_link_libraries(ArkeyanSchedulerTest PRIVATE ArkeyanNetplay)
 set_target_properties(ArkeyanSchedulerTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/ArkeyanRuntime)
 target_link_libraries(ArkeyanNetplayTest PRIVATE ArkeyanNetplay)
@@ -203,7 +216,7 @@ foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi Ar
     endif()
 endforeach()
 # The tests that build by default and need no argument (the others run from tools/test_all.sh with a disc or a scratch folder).
-sky_add_tests(ArkeyanSchedulerTest ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanUwpSettingsTest ArkeyanGameOptionsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanDatadirTest
+sky_add_tests(ArkeyanTraceTest ArkeyanSchedulerTest ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanUwpSettingsTest ArkeyanGameOptionsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanDatadirTest
     ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanPackSamplingTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanStallWatchTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanPresentRectTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanClockTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
     ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanFrameAnchorTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanWindowSizeTest ArkeyanToyboxLookTest ArkeyanToyboxInPlayTest ArkeyanToyboxPutOnTest ArkeyanToyboxKeyMaskTest ArkeyanToyboxWheelKeysTest ArkeyanToyboxPadBindingsTest
     ArkeyanToyboxSwapTest ArkeyanToyboxTrapTest ArkeyanGlyphModelsTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanToyboxLinkTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest ArkeyanNightmareGateTest
