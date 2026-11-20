@@ -740,8 +740,9 @@ namespace
     void Present()
     {
         toybox::Model& model = M();
-        bool visible = netplay::SessionEndReason() != netplay::EndReason::None || model.open || !model.toast.empty() ||
-                       !model.fps.empty() || gamemenu::Current().debugScreen;
+        bool visible = (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues()) ||
+                       model.open || !model.toast.empty() || !model.fps.empty() || gamemenu::Current().debugScreen ||
+                       (netplay::Online() && netplay::SessionStatus().peerMenuOpen);
         if (!visible)
         {
             if (g_overlayShown)
@@ -799,7 +800,7 @@ void ToyboxInit(SDL_Window* window)
 
 bool ToyboxHandleEvent(const SDL_Event& event)
 {
-    if (netplay::SessionEndReason() != netplay::EndReason::None)
+    if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())
         return true;
     if (!g_enabled)
         return false;
@@ -1307,7 +1308,7 @@ namespace
 
 void ToyboxUpdate()
 {
-    if (netplay::SessionEndReason() != netplay::EndReason::None)
+    if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())
     {
         static netplay::EndScreenClock clock;
         static bool shown = false;
@@ -1335,8 +1336,25 @@ void ToyboxUpdate()
     }
     if (!g_enabled)
         return;
+    if (netplay::SessionContinues() && netplay::SessionEndReason() != netplay::EndReason::None)
+    {
+        static bool announced = false;
+        if (!announced)
+        {
+            announced = true;
+            M().Notice(netplay::SessionEndMessage(), 4);
+        }
+    }
     RunScript();
     toybox::Model& model = M();
+    netplay::SetMenuOpen(model.open && (MenuScreen(model) || model.fromMenu));
+    static bool peerMenu = false;
+    const bool peerMenuNow = netplay::Online() && netplay::SessionStatus().peerMenuOpen;
+    if (peerMenuNow != peerMenu)
+    {
+        peerMenu = peerMenuNow;
+        model.Touch();
+    }
     if (netplay::Online() && model.open && model.screen == Screen::Menu)
     {
         static uint64_t refreshed = 0;

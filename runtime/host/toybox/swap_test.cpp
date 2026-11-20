@@ -233,6 +233,19 @@ namespace
 
 int main()
 {
+    {
+        PortalSlots slots;
+        const auto marker = Marker(7);
+        CHECK(slots.Place(marker, "session-copy", 0) == 0);
+        CHECK(slots.TakeStatus() == 3);
+        CHECK(slots.Retarget("session-copy", "local-source"));
+        CHECK(slots.SlotPath(0) == "local-source" && slots.SlotOfSerial(marker.data()) == 0);
+        CHECK(slots.TakeStatus() == 1);
+        CHECK(!slots.Retarget("session-copy", "local-source"));
+        CHECK(slots.Replace({ { 0, Marker(8), "pending-copy" } }));
+        CHECK(slots.Retarget("pending-copy", "pending-source"));
+        CHECK(slots.TakeStatus() == 2 && slots.TakeStatus() == 3 && slots.SlotPath(0) == "pending-source");
+    }
     SwapChecks();
     ConcurrentChecks();
     RemovalChecks();

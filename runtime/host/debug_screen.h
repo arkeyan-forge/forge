@@ -2,6 +2,7 @@
 
 // Allocation-free presentation logic, independent of the renderer and the host clock.
 #include "gpu/frame_stats.h"
+#include "netplay/session.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -263,7 +264,8 @@ namespace debugscreen
         Render,
         AudioInput,
         Machine,
-        Session
+        Session,
+        Online
     };
     struct Row
     {
@@ -287,6 +289,34 @@ namespace debugscreen
         bool StartsGroup(size_t row) const { return row == 0 || rows[row].group != rows[row - 1].group; }
     };
 
+    inline void OnlineCompact(char* out, size_t capacity, const netplay::SessionStats& stats)
+    {
+        snprintf(out, capacity, "%llu ms  %uf  %s", static_cast<unsigned long long>(stats.roundTripMs), stats.delay,
+            stats.goodChecks ? "ok" : "checking");
+    }
+    inline void OnlineFull(Panel& panel, const netplay::SessionStats& stats)
+    {
+        char value[192];
+        snprintf(value, sizeof(value), "%llu ms  min %llu  max %llu",
+            static_cast<unsigned long long>(stats.roundTripMs), static_cast<unsigned long long>(stats.minPingMs),
+            static_cast<unsigned long long>(stats.maxPingMs));
+        panel.Add(Group::Online, "ping (60 s)", value);
+        snprintf(value, sizeof(value), "%uf", stats.delay);
+        panel.Add(Group::Online, "input delay", value);
+        snprintf(value, sizeof(value), "%.2f ms per frame  %llu frames waited (60 s)", stats.waitMs,
+            static_cast<unsigned long long>(stats.waitedFrames));
+        panel.Add(Group::Online, "input wait", value);
+        snprintf(value, sizeof(value), "tx %.0f  rx %.0f  lost %llu  bad tag %llu", stats.sentPerSecond,
+            stats.receivedPerSecond, static_cast<unsigned long long>(stats.lost),
+            static_cast<unsigned long long>(stats.rejected));
+        panel.Add(Group::Online, "packets per second", value);
+        snprintf(value, sizeof(value), "tx %.2f  rx %.2f KB per s", stats.sentKB, stats.receivedKB);
+        panel.Add(Group::Online, "data rate", value);
+        snprintf(value, sizeof(value), "frame %llu  %llu good checks", static_cast<unsigned long long>(stats.goodHash),
+            static_cast<unsigned long long>(stats.goodChecks));
+        panel.Add(Group::Online, "hash", value);
+    }
+
     // The per-thread CPU bars (Full): the kinds of gpu::framestats::Thread, then the streaming threads (none known).
     constexpr size_t ThreadBars = 7;
 
@@ -296,6 +326,8 @@ namespace debugscreen
         // Full: the frame-time graph, each frame's game-thread CPU and GPU milliseconds (negative: unknown), oldest first.
         std::array<float, GraphBars> graphCpuMs{}, graphGpuMs{}, graphFrameMs{};
         size_t graphCount = 0;
+        std::array<float, 60> pingMs{};
+        size_t pingCount = 0;
         float worstMs = 0, worstAgo = 0; // the slowest of them, and how long ago (seconds)
         // Full: each thread kind's CPU use in % of one core (negative: unknown) and how many threads it has.
         std::array<float, ThreadBars> threadPercent{};

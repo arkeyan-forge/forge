@@ -17,6 +17,7 @@
 #include <random>
 #include "host/env.h"
 #include "host/launcher.h"
+#include "host/profiles.h"
 #include "memory.h"
 #include <algorithm>
 #include <atomic>
@@ -37,7 +38,8 @@ namespace netplay
         std::atomic<Session*> g_activeSession{ nullptr };
         std::mutex g_sessionExitMutex, g_pendingMutex;
         EventBatch g_pending;
-        bool g_leftLocally = false;
+        std::atomic<bool> g_leftLocally{ false };
+        std::array<char, 256> g_endMessage{};
 
         void ExitSession(const SessionFailure& failure);
         void SessionRefuse(const char* message, EndReason reason = EndReason::Invalid)
@@ -139,9 +141,28 @@ namespace netplay
                     failure.reason >= EndReason::Protocol && failure.reason <= EndReason::Seats ? "refused" : "ended",
                     ReasonText(failure.reason));
             fflush(stderr);
-            if (!WriteEndFile(PortalSessionFolder(), failure.reason))
+            auto* session = g_activeSession.load(std::memory_order_acquire);
+            const bool continues = session && session->ContinuingSolo() && !g_leftLocally.load();
+            if (continues)
+            {
+                g_savePolicy.End(Hosting(), true, failure.reason, false);
+                PortalPeerLeft();
+                if (Hosting())
+                    snprintf(g_endMessage.data(), g_endMessage.size(), "%s left the game",
+                        profiles::Current()[1].name.c_str());
+                else
+                    snprintf(g_endMessage.data(), g_endMessage.size(),
+                        "The host left. You can keep playing, but nothing will be saved.");
+            }
+            else
+                snprintf(g_endMessage.data(), g_endMessage.size(), "%s",
+                    g_leftLocally.load() ? "You left the session" : EndMessage(failure.reason));
+            g_continuingSolo.store(continues, std::memory_order_release);
+            const auto reason =
+                continues && failure.reason == EndReason::Transport ? EndReason::Timeout : failure.reason;
+            if (!WriteEndFile(PortalSessionFolder(), reason))
                 fprintf(stderr, "[netplay] cannot write online-ended.txt\n");
-            g_endReason.store(failure.reason, std::memory_order_release);
+            g_endReason.store(reason, std::memory_order_release);
         }
 
         const char* PlatformName()
@@ -386,10 +407,11 @@ namespace netplay
                 if (session)
                 {
                     NetworkWait waiting;
-                    if (!session->WaitReady())
+                    if (!session->ContinuingSolo() && !session->WaitReady())
                     {
                         SessionExit();
-                        return;
+                        if (!session->ContinuingSolo())
+                            return;
                     }
                     EventBatch pending;
                     {
@@ -398,7 +420,8 @@ namespace netplay
                         std::copy_n(g_pending.events.begin(), pending.count, pending.events.begin());
                         g_pending.count = 0;
                     }
-                    if (pending.count && !session->QueueEvents(std::span(pending.events).first(pending.count)))
+                    if (pending.count && !session->QueueEvents(std::span(pending.events).first(pending.count)) &&
+                        !session->ContinuingSolo())
                     {
                         ExitSession({ EndReason::Invalid });
                         return;
@@ -410,6 +433,8 @@ namespace netplay
                         SessionExit();
                         return;
                     }
+                    if (session->ContinuingSolo())
+                        SessionExit();
                 }
                 else if (replaying)
                 {
@@ -532,7 +557,7 @@ namespace netplay
 
             void Hash()
             {
-                const bool networkHash = session && frames % 30 == 0;
+                const bool networkHash = session && !session->ContinuingSolo() && frames % 30 == 0;
                 const bool fileHash = totals && frames % hashEvery == 0;
                 if (!networkHash && !fileHash)
                     return;
@@ -582,11 +607,16 @@ namespace netplay
     OnlineStatus SessionStatus()
     {
         if (auto* session = g_activeSession.load(std::memory_order_acquire))
-            return { session->RoundTripMs(), session->LastGoodHash(), session->Delay() };
+            return session->Stats();
         return {};
     }
     EndReason SessionEndReason() { return g_endReason.load(std::memory_order_acquire); }
-    const char* SessionEndMessage() { return g_leftLocally ? "You left the session" : EndMessage(SessionEndReason()); }
+    const char* SessionEndMessage() { return SessionEndReason() == EndReason::None ? "" : g_endMessage.data(); }
+    void SetMenuOpen(bool open)
+    {
+        if (auto* session = g_activeSession.load(std::memory_order_acquire))
+            session->SetMenuOpen(open);
+    }
     void LeaveSession()
     {
         g_leftLocally = true;
@@ -622,7 +652,7 @@ namespace netplay
         static Probe probe;
         std::unique_lock lock(probe.mutex);
         const auto park = [&] {
-            if (SessionEndReason() == EndReason::None)
+            if (SessionEndReason() == EndReason::None || SessionContinues())
                 return;
             lock.unlock();
             NetworkWait waiting;

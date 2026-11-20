@@ -931,10 +931,35 @@ bool PortalApplyOnline(const netplay::FrameEvents& events)
     return true;
 }
 
+void PortalPeerLeft()
+{
+    std::lock_guard onlineLock(g_onlineMutex);
+    std::lock_guard portalLock(g_mutex);
+    if (!g_emulated)
+        return;
+    for (int slot = 0; slot < PortalSlotCount; ++slot)
+        if (!netplay::SeatAllowed(netplay::Hosting(), g_onlinePlayers[slot]))
+        {
+            g_emulated->Remove(slot);
+            g_onlinePlanned[slot].clear();
+        }
+    for (auto& figure : g_onlineFigures)
+        if (!figure.source.empty())
+        {
+            FigureData data;
+            if (!LoadFigure(figure.path, data) || !SaveFigure(figure.source, data))
+            {
+                fprintf(stderr, "[portal] cannot finish an online figure\n");
+                continue;
+            }
+            if (!g_emulated->Retarget(figure.path, figure.source))
+                collection::Unlock(figure.source);
+            figure.source.clear();
+        }
+}
+
 void PortalFinishOnline()
 {
-    if (!netplay::Online())
-        return;
     std::lock_guard lock(g_onlineMutex);
     for (const auto& figure : g_onlineFigures)
         if (!figure.source.empty())

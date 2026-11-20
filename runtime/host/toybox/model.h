@@ -367,7 +367,7 @@ namespace toybox
             MainPerformance,
             MainReport,
             MainQuit,
-            MainOnline
+            MainPlayOnline
         };
         int menuRow = MainResume;
         std::vector<MenuRow> MainRows() const;

@@ -107,6 +107,17 @@ int main()
         CHECK(l.footerTop + MainFooterHeight <= CanvasHeight);
     }
 
+    for (bool online : { false, true })
+    {
+        const auto layout = Main(online, !online);
+        const int count = MainRows + (online ? 0 : 1);
+        CHECK(layout.rowTop[count - 1] + layout.rowHeight[count - 1] + 8 <= layout.footerTop);
+        if (online)
+            CHECK(layout.rowTop[0] >= MainPad + MainHeader + 72);
+        for (int row = 1; row < count; ++row)
+            CHECK(layout.rowTop[row] >= layout.rowTop[row - 1] + layout.rowHeight[row - 1] + 4);
+    }
+
     // The rail: its five pages under the game's name, above the profile at the bottom.
     CHECK(RailRowTop(0) >= RailPadTop + RailTitleHeight);
     CHECK(RailRowTop(int(Page::Count) - 1) + RailRowHeight + 16 <= CanvasHeight - 64);

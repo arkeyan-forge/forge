@@ -505,9 +505,11 @@ The authenticated protocol keeps the original hello and end layouts and extends 
 
 | Payload | Fields, little-endian |
 |---|---|
-| Frames | count (1), up to eight records of frame (8), cumulative event sequence for that frame (8), pad (13); checkpoint frame (8), hash (8), contiguous reliable-event acknowledgement (8) |
+| Frames | count (1), up to eight records of frame (8), cumulative event sequence for that frame (8), pad (13); checkpoint frame (8), hash (8), contiguous reliable-event acknowledgement (8), menu-open flag (1; 0 or 1) |
 | Event | reliable sequence (8), target frame (8), figure id (8; zero removes), slot (1), flags (1: dump present, transaction end), optional 1024-byte figure dump |
 
+The menu-open flag is presentation metadata: it is not latched as a pad or applied to guest memory. Only the newest
+authenticated frame packet changes the peer's marker, so reordered packets cannot restore an old menu state.
 Datagrams are bounded to 1200 bytes; a full figure event is 1098 bytes. Each sender resends up to eight unacknowledged
 events per network tick, independently of redundant pads. Only the next reliable sequence is accepted; duplicates
 and out-of-order copies cannot reapply an event. A frame waits for both pads and every event through their advertised
@@ -522,32 +524,54 @@ acknowledging it. Guest progress updates those copies; normal session finalizati
 back to their original files and releases collection locks. Remote progress stays in the session folder. No paths or
 collection metadata are sent over the wire.
 
-F3 adds an **Online** row with the peer's pseudo, measured round trip, input delay and `state OK` after a successful
-hash checkpoint (before the first check it says `awaiting state check`). **Leave the session** sends repeated end
-packets. Refusal, timeout, desync, transport failure and peer departure log their reason and write
-`<SKY_SAVE_DIR>/online-ended.txt` as `reason=<code>`. Codes are `protocol`, `game`, `image`, `runtime`, `platform`,
-`fps`, `seats`, `timeout`, `desync`, `quit`, `transport` and `invalid`. A stale marker is removed when setup starts.
-The runtime's own overlay shows a short reason for four seconds, then posts the same quit event as the normal menu;
-that path finishes save/progress work and flushes locally owned figures. The host presents the overlay independently
-of guest flips. The cooperative guest stays parked during
-the end screen, with its watchdog suspended. A requested desync block dump is written at the hash barrier.
+F3 has an **Online with <pseudo>** strip with the peer's picture, measured round trip, input delay and **in sync**
+after a successful hash checkpoint (**checking** before the first). Shared Settings rows are greyed with **Set by the
+host**. F3 leaves the game running and sends its open/closed state in frame-packet metadata; the peer sees **in the
+menu**. In this checkout the offline overlay also leaves the guest running: it suppresses local inputs, with no
+runtime pause to disable. The menu and Shift+F3 statistics are described in [gamemenu.md](gamemenu.md#debug-screen).
 
-[V] Tests were added before implementation: initial event and end APIs failed to compile; the forced-settings test
-then failed against the previous parser. `ArkeyanNetplayProtocolTest` covers dump/reference/removal encoding and
-malformed packets. `ArkeyanNetplaySessionTest` checks equal pads and exact event frames on both peers over 20% loss,
-duplicates and reordering, all delays 1–8, event-sink application, compound bursts, removals, first-dump references,
-reliable-ring wraparound and refusal of a guest's P1-seat request. `ArkeyanNetplaySetupTest` checks FPS precedence,
-16:9 and fallback forcing, second-profile sign-in, debug-switch removal without changing save isolation, launcher
-reason files and the four-second end-screen clock. `ArkeyanNetplayStartupTest` first failed at the old static
-scheduler exit, then checked that invalid session prerequisites reach window setup for a visible refusal. All are
-registered with `sky_add_tests`.
+**Leave the session** confirms before sending repeated end packets and returning to the launcher. When an established
+peer quits, times out or loses its connection, the remaining game continues solo immediately. It retains the local
+player's input seat and supplies neutral, disconnected input for the departed seat, discards pending session events
+and lifts the departed player's figures, including shared seats when the host departs. Network hash checks stop and
+the worker stops sending after its final end packets. For four seconds a remaining host sees **<pseudo> left the
+game**. A remaining guest sees **The host left. You can keep playing, but nothing will be saved.** Its title-save
+writes, pending save commits, deletes, renames and content-package changes are disabled for the rest of the run.
+Figure writes remain enabled. Local session copies are flushed to their source files and their save destinations
+are retargeted without lifting the figures; later solo writes go directly to those sources. Finalization retries any
+copy whose handoff failed.
 
-[?] No game was run. Two actual games, visual F3/end overlays, Toy Box and wheel interactions, figure progress flushes
-in a running game, P2 joining and Windows still need validation. Real UDP is skipped here because the sandbox denies
-socket binding with `Operation not permitted`; the injectable lossy transport runs independently. This step does not
-transfer saves or languages, negotiate profiles, integrate router mapping or build launcher UI. The determinism
-residue from step 0c still needs the game runs described there. Both games must use this session implementation;
-the extended frame layout does not interoperate with a step-1-only binary.
+Refusal, desync and a local leave keep the existing four-second end screen/quit path (the menu's confirmed local
+leave posts the normal quit event directly). A desync still parks the cooperative guest at the hash barrier, suspends
+its watchdog and writes a requested block dump; neither divergent game continues. The host can present that end
+screen independently of guest flips.
+
+Every session end writes `<SKY_SAVE_DIR>/online-ended.txt` as `reason=<code>`, including solo continuation: **quit**
+for a peer's leave, **timeout** for a timeout or lost connection. Startup refusal and fatal codes remain `protocol`,
+`game`, `image`, `runtime`, `platform`, `fps`, `seats`, `desync`, `transport` and `invalid`. Setup removes a stale end
+marker. In solo F3, **Play online** confirms before writing `<save dir>/open-online.txt` (the game id and newline)
+and posting the normal quit event, so the launcher can open this game's Online page.
+
+[V] Tests were added before implementation, failing first against the missing protocol, statistics, continuation,
+save-policy, formatting, marker and layout APIs. `ArkeyanNetplayProtocolTest` covers menu flags as well as
+figure-event encoding and malformed packets. `ArkeyanNetplaySessionTest` exchanges 600 frames with loss, duplicates
+and reordering at delays 1–8, checks desync barriers, reliable events, periodic hash counts, menu open/close delivery,
+ping history, packet/byte rates, lost packets, rejected tags, input waits and sixty-second expiry. Both host and guest
+survivors keep exchanging local input with a disconnected, neutral departed pad. Timeout is tested with virtual time.
+`ArkeyanNetplaySetupTest` covers the persistent save-write switch, which the title-save path reads, the debug lines
+from supplied numbers, exact launcher marker contents, forced settings, profiles and the four-second message clock.
+`ArkeyanToyboxLookTest` checks that both the online strip and solo Play online row fit above the footer.
+`ArkeyanToyboxSwapTest` checks that retargeting keeps both present and pending figures and their status reports.
+These use existing `sky_add_tests` targets. `ArkeyanDebugScreenTest` was run directly in solo and online modes;
+it covers the online rows and ping curve, collection and drawing without per-frame C++ allocation. This checkout
+builds that executable but does not register it with CTest; changing build scripts is outside this task.
+
+[?] No game was run. Two actual games, visual F3/end overlays, physical connection loss, Toy Box and wheel
+interactions, figure progress flushes in a running game, P2 joining and Windows still need validation. Injectable
+lossy transport does not need real sockets. This step does not transfer saves or languages, negotiate profiles,
+integrate router mapping or build launcher UI. The determinism residue from step 0c still needs the game runs
+described there. Both games must use this session implementation; the extended frame layout does not interoperate
+with earlier frame layouts.
 
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one

@@ -81,6 +81,7 @@ std::array<uint8_t, PortalSlotCount> PortalOnlinePlayers();
 bool PortalPrepareOnline(bool host, const netplay::PortalEvent& event);
 bool PortalApplyOnline(const netplay::FrameEvents& events);
 void PortalFinishOnline();
+void PortalPeerLeft();
 
 // What the title saw of each slot, from the traffic (any portal, real or emulated): the status reports' presence and
 // the blocks it read or wrote since the toy arrived. The Toy Box uses it to tell when the title took a figure, and to

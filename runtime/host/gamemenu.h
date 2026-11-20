@@ -39,6 +39,8 @@ namespace gamemenu
         uint32_t fsrQuality = 0;       // upscalemode::Quality
         bool frameGeneration = false; // [<game>.video] fsr_frame_generation (gpu/fsr/framegen.h)
         uint32_t gpuBackend = 0; // gpubackend::Backend as chosen ([<game>.video] gpu_backend), for the next start
+        std::string language{}, voiceLanguage{};
+        bool nightmareFromStart = false;
         bool gpuBackendShown = false; // desktop Windows, the one host with two backends
     };
 

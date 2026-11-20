@@ -3,6 +3,7 @@
 #include "host/profiles.h"
 #include "netplay/session_end.h"
 #include "netplay/session_settings.h"
+#include "host/debug_screen.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
 #include <cstdlib>
@@ -98,6 +99,53 @@ int main()
     SDL_unsetenv_unsafe("SKY_SKIP_MOVIES");
     Check(
         std::string(SDL_getenv_unsafe("SKY_SAVE_DIR")) == ".scratch/session-tests/save", "save isolation is preserved");
+    netplay::SavePolicy saves;
+    Check(saves.Allowed(), "solo saves initially enabled");
+    saves.End(true, true, netplay::EndReason::Quit, false);
+    Check(saves.Allowed(), "host still saves after guest leaves");
+    saves.End(false, true, netplay::EndReason::Timeout, false);
+    Check(!saves.Allowed(), "guest stops saving after host vanishes");
+    saves.End(true, true, netplay::EndReason::None, false);
+    Check(!saves.Allowed(), "save suppression persists for the remainder of the run");
+    for (auto reason : { netplay::EndReason::Quit, netplay::EndReason::Timeout, netplay::EndReason::Transport })
+    {
+        netplay::SavePolicy guest;
+        guest.End(false, true, reason, false);
+        Check(!guest.Allowed(), "all remote departure reasons suppress guest saves");
+        Check(netplay::ContinueSolo(true, reason, false) && !netplay::ContinueSolo(true, reason, true) &&
+                  !netplay::ContinueSolo(false, reason, false),
+            "only established remote departures continue");
+    }
+    Check(!netplay::ContinueSolo(true, netplay::EndReason::Desync, false), "desync remains fatal");
+    netplay::SessionStats stats;
+    stats.roundTripMs = 42;
+    stats.delay = 3;
+    char online[192];
+    debugscreen::OnlineCompact(online, sizeof(online), stats);
+    Check(std::string_view(online) == "42 ms  3f  checking", "compact online before hash check");
+    stats.goodHash = 300;
+    stats.goodChecks = 10;
+    stats.goodChecks = 10;
+    debugscreen::OnlineCompact(online, sizeof(online), stats);
+    Check(std::string_view(online) == "42 ms  3f  ok", "compact online after hash check");
+    stats.minPingMs = 12;
+    stats.maxPingMs = 67;
+    stats.waitMs = 1.25;
+    stats.waitedFrames = 7;
+    stats.sentPerSecond = 120;
+    stats.receivedPerSecond = 98;
+    stats.lost = 4;
+    stats.rejected = 2;
+    stats.sentKB = 10.5;
+    stats.receivedKB = 8.25;
+    debugscreen::Panel panel;
+    debugscreen::OnlineFull(panel, stats);
+    Check(panel.count == 6 && std::string_view(panel.rows[0].value) == "42 ms  min 12  max 67" &&
+              std::string_view(panel.rows[2].value) == "1.25 ms per frame  7 frames waited (60 s)" &&
+              std::string_view(panel.rows[3].value) == "tx 120  rx 98  lost 4  bad tag 2" &&
+              std::string_view(panel.rows[4].value) == "tx 10.50  rx 8.25 KB per s" &&
+              std::string_view(panel.rows[5].value) == "frame 300  10 good checks",
+        "full online formatting");
     netplay::EndScreenClock clock;
     Check(!clock.QuitDue(123), "no quit before the end screen is shown");
     clock.Show(1000);
@@ -115,6 +163,13 @@ int main()
         Check(line == std::string("reason=") + netplay::ReasonCode(reason), "stable launcher reason code");
         Check(*netplay::EndMessage(reason), "short end message available");
     }
+    Check(netplay::WriteOpenOnlineFile(folder, "test"), "open-online marker written");
+    {
+        std::ifstream file(folder / "open-online.txt");
+        std::string content((std::istreambuf_iterator<char>(file)), {});
+        Check(content == "test\n", "launcher receives exactly the game id and newline");
+    }
+    Check(!netplay::WriteOpenOnlineFile(folder, "bad\nline"), "invalid game id cannot add launcher instructions");
     std::filesystem::remove_all(folder);
     puts("session setup: forced settings, profiles and end marker passed");
 }

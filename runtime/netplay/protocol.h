@@ -81,6 +81,7 @@ namespace netplay
         Hello hello{};
         std::array<FramePad, 8> pads{};
         uint8_t count = 0;
+        bool menuOpen = false;
         uint64_t eventAck = 0;
         PortalEvent event{};
         EndReason reason = EndReason::None;
@@ -95,8 +96,10 @@ namespace netplay
     Key PasswordKey(std::string_view password);
     Key SessionKey(const Key& password, const Nonce& host, const Nonce& join);
     Key HelloKey(const Key& password, const Hello& hello);
-    bool DecodeHello(std::span<const uint8_t> bytes, const Key& password, Packet& packet, uint64_t& dropped);
+    bool DecodeHello(std::span<const uint8_t> bytes, const Key& password, Packet& packet, uint64_t& dropped,
+        uint64_t* rejected = nullptr);
     bool EncodePacket(const Packet& packet, const Key& key, Datagram& bytes);
-    bool DecodePacket(std::span<const uint8_t> bytes, const Key& key, Packet& packet, uint64_t& dropped);
+    bool DecodePacket(std::span<const uint8_t> bytes, const Key& key, Packet& packet, uint64_t& dropped,
+        uint64_t* rejected = nullptr);
     uint32_t ChooseDelay(uint64_t roundTripMs, uint32_t fps);
 }

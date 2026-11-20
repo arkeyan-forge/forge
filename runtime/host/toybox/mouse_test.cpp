@@ -22,6 +22,7 @@ void toybox::Model::DropSeat(int from, int to)
     g_calls.push_back("drop seat " + std::to_string(from) + " on " + std::to_string(to));
 }
 toybox::puton::Refusal toybox::Model::Refuses(int, const std::string&) const { return puton::Refusal::None; }
+bool toybox::Model::SeatWritable(int) const { return true; }
 
 int main()
 {

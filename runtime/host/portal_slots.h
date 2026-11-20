@@ -53,6 +53,19 @@ public:
     // Takes wanted if free, else the first free slot; -1 when full. An empty path keeps writes in memory.
     int Place(const FigureData& data, const std::string& path, int wanted = -1);
     void Remove(int slot);
+    // Leaving a session changes the local figure's save destination without lifting it from the portal.
+    bool Retarget(const std::string& from, const std::string& to)
+    {
+        std::lock_guard lock(m_mutex);
+        bool found = false;
+        for (auto& slot : m_slots)
+            if (slot.Held() && slot.path == from)
+            {
+                slot.path = to;
+                found = true;
+            }
+        return found;
+    }
     // A real portal's reset renumbers its toys from slot 0, each arriving again (the fake real portal's tests).
     void Renumber();
     // First four bytes of block 0: the tag serial. Returns -1 for none.

@@ -6,6 +6,7 @@
 #include "gpu/draw.h"
 #include "gpu/frame_stats.h"
 #include "host/collection/save_backup.h"
+#include "netplay/session_runtime.h"
 #include "kernel/objects.h"
 #include "kernel/overlapped.h"
 #include "thread.h"
@@ -124,6 +125,13 @@ namespace
                 return;
             stream.flush();
             stream.close();
+            if (!netplay::SaveWritesAllowed())
+            {
+                std::error_code error;
+                fs::remove(tempPath, error);
+                tempPath.clear();
+                return;
+            }
             savebackup::Commit commit = savebackup::CommitFile(tempPath, hostPath, savebackup::Root(ARKEYAN_GAME_ID));
             if (!commit.ok)
             {
@@ -152,7 +160,8 @@ namespace
                 std::error_code error;
                 if (!tempPath.empty())
                     fs::remove(tempPath, error);
-                fs::remove(hostPath, error);
+                if (netplay::SaveWritesAllowed())
+                    fs::remove(hostPath, error);
             }
             else
             {
@@ -393,6 +402,9 @@ namespace
     uint32_t OpenHostFile(const fs::path& path, uint32_t desiredAccess, uint32_t disposition, uint32_t options,
         File& file, uint32_t& information)
     {
+        if (!netplay::SaveWritesAllowed() &&
+            ((desiredAccess & WriteAccess) || disposition != FileOpen || (options & FileDeleteOnClose)))
+            return StatusAccessDenied;
         std::error_code error;
         auto status = fs::status(path, error);
         bool exists = fs::exists(status);
@@ -669,7 +681,7 @@ PPC_FUNC(__imp__NtWriteFile)
 
     uint64_t position = TransferPosition(*file, ctx.r10.u32);
     uint32_t status = StatusSuccess;
-    if (!file->OnHost() || !file->writable)
+    if (!file->OnHost() || !file->writable || !netplay::SaveWritesAllowed())
     {
         status = StatusAccessDenied;
     }
@@ -712,7 +724,7 @@ PPC_FUNC(__imp__NtWriteFileGather)
     uint64_t position = TransferPosition(*file, ctx.r10.u32);
     uint32_t status = StatusSuccess;
     uint32_t written = 0;
-    if (!file->OnHost() || !file->writable)
+    if (!file->OnHost() || !file->writable || !netplay::SaveWritesAllowed())
     {
         status = StatusAccessDenied;
     }
@@ -822,6 +834,12 @@ PPC_FUNC(__imp__NtSetInformationFile)
     uint32_t status = StatusSuccess;
     std::error_code error;
     std::lock_guard lock(file->lock);
+    if (!netplay::SaveWritesAllowed() && infoClass != FilePositionInformation)
+    {
+        WriteIoStatus(ioStatusBlock, StatusAccessDenied, 0);
+        ctx.r3.u64 = StatusAccessDenied;
+        return;
+    }
     switch (infoClass)
     {
     case FilePositionInformation: file->position = g_memory.Read<uint64_t>(info); break;

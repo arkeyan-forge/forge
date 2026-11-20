@@ -1,6 +1,7 @@
 #pragma once
 
 #include "netplay/protocol.h"
+#include "netplay/session_end.h"
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -28,6 +29,16 @@ namespace netplay
         EndReason reason = EndReason::None;
         uint64_t frame = 0, localHash = 0, remoteHash = 0;
     };
+    struct SessionStats
+    {
+        uint64_t roundTripMs = 0, minPingMs = 0, maxPingMs = 0, goodHash = 0, goodChecks = 0;
+        uint64_t lost = 0, rejected = 0, waitedFrames = 0;
+        double waitMs = 0, sentPerSecond = 0, receivedPerSecond = 0, sentKB = 0, receivedKB = 0;
+        uint32_t delay = 0;
+        bool peerMenuOpen = false;
+        std::array<float, 60> pingMs{};
+        size_t pingCount = 0;
+    };
     struct SessionConfig
     {
         Hello hello{};
@@ -54,15 +65,27 @@ namespace netplay
         uint32_t Delay() const;
         SessionFailure Failure() const;
         uint64_t Dropped() const;
+        SessionStats Stats() const;
+        void SetMenuOpen(bool open);
+        bool ContinuingSolo() const;
         void Stop();
 
     private:
         void Run(std::stop_token stop);
         void Receive(const Packet& packet, bool bootstrap);
+        bool AcceptSequence(uint64_t sequence);
         void Send(Packet packet, bool bootstrap = false);
         void End(EndReason reason, uint64_t frame = 0, uint64_t local = 0, uint64_t remote = 0);
         void SetDelay(uint32_t delay);
-        bool Wait(std::unique_lock<std::mutex>& lock, const std::function<bool()>& ready);
+        bool Solo(uint64_t frame, const Pad& local, InputFrame& pads, FrameEvents* events);
+        struct Second
+        {
+            uint64_t stamp = UINT64_MAX, sent = 0, received = 0, sentBytes = 0, receivedBytes = 0;
+            uint64_t waitMs = 0, frames = 0, waited = 0, minPing = UINT64_MAX, maxPing = 0;
+        };
+        Second& Counters();
+        void CountInputWait(uint64_t waited);
+        bool Wait(std::unique_lock<std::mutex>& lock, const std::function<bool()>& ready, uint64_t* waited = nullptr);
         SessionConfig m_config;
         std::unique_ptr<Transport> m_transport;
         Key m_password{}, m_key{};
@@ -70,7 +93,16 @@ namespace netplay
         std::condition_variable m_changed;
         Hello m_peer{};
         bool m_havePeer = false, m_ready = false, m_peerReady = false, m_notifiedEnd = false;
-        bool m_stopping = false;
+        bool m_stopping = false, m_established = false, m_menuOpen = false, m_peerMenuOpen = false;
+        uint64_t m_menuSequence = 0, m_rejected = 0, m_lost = 0, m_firstSequence = 0, m_uniqueReceived = 0;
+        uint64_t m_goodChecks = 0, m_started = 0;
+        std::array<Second, 60> m_seconds{};
+        struct PingSample
+        {
+            uint64_t time = 0, ms = 0;
+        };
+        std::array<PingSample, 60> m_pingSamples{};
+        size_t m_pingSamplesCount = 0;
         uint32_t m_delay = 0, m_pings = 0, m_endSends = 0;
         uint64_t m_sequence = 0, m_dropped = 0, m_lastReceive = 0, m_rtt = UINT64_MAX;
         uint64_t m_ping = 1, m_pingStart = 0;

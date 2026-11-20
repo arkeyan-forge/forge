@@ -40,6 +40,27 @@ at the top, then:
 | Report a problem | writes the file, below |
 | Quit to the launcher | asks first ("What the game has not saved is lost."); Quit ends the game as closing its window does (an `SDL_EVENT_QUIT`: the play time is written, the launcher comes back) |
 
+During a session the panel has a strip above the volume card: **Online with <pseudo>**, the peer's picture
+(`SKY_PLAYER2_PICTURE` on the host, `SKY_PLAYER_PICTURE` on the guest), round-trip ping in ms, input delay in frames,
+and **checking** until the first matching hash checkpoint, then **in sync**. It replaces the Online row.
+**Leave the session** replaces Quit to the launcher and keeps its confirmation. The leaver returns to the launcher;
+the peer keeps playing locally, with the departed pad neutral and disconnected and the departed figures lifted
+immediately. For four seconds the host sees **<pseudo> left the game**; a remaining guest sees **The host left. You
+can keep playing, but nothing will be saved.** The guest's game save becomes read-only for the rest of the run;
+locally owned figures still retain their progress. Timeout or a lost connection has the same solo continuation;
+desync still ends the game. See [netplay.md](netplay.md#step-3-session-setup-game-side).
+
+In solo play **Play online** asks **Close the game and open Online in the launcher?** Confirmation writes
+`<save dir>/open-online.txt`, containing the game id and one newline, and takes the normal quit-to-launcher path.
+A failed marker write keeps the game open and reports the failure.
+
+Shared session settings (frame rate, game language, voices and Nightmare from start) are greyed out with
+**Set by the host** on the Settings page, for both players. The existing locks on startup logos and frame-rate fallback
+remain. The language, voices and Nightmare rows describe the current session values; they do not add solo controls.
+Opening F3 and its pages continues exchanging inputs: the remote menu flag travels only in frame-packet metadata,
+never in guest state. A small **in the menu** marker appears at the top left while the peer's F3 panel or a page opened
+from it is open. The local pad remains neutral while navigating the menu.
+
 Up and Down move (round the ends), A or Enter does the row, B or Esc closes; the mouse: the pointer moving onto a row focuses
 it, a click does it. Toasts show on the left of the panel, over the game.
 
@@ -294,6 +315,7 @@ under headings in Bungee coloured with the running game's glow (Arkeyan Launcher
 `games/<id>/adapter.cpp`, lightened to a 4.5:1 contrast as the launcher does for Trap Team's red); the bottom boxes on
 `1E1E24`, bar tracks `26262C`, rules `3A3A42`. Left column: FRAME, GUEST, RENDER, AUDIO AND INPUT; right column, right-aligned:
 MACHINE, SESSION. Compact keeps fps, frame time, cap, output, level and game, and OS, CPU, GPU, GPU memory, RAM.
+In a session it adds `online 42 ms  3f  ok` (or `checking` before the first good hash checkpoint).
 
 | Line (Full) | What it shows, and where it comes from |
 |---|---|
@@ -309,12 +331,18 @@ MACHINE, SESSION. Compact keeps fps, frame time, cap, output, level and game, an
 | AUDIO AND INPUT | 48 kHz, the game's audio clients playing, the device queue in ms, underruns (an output that found the queue empty); the pad's type (never its name) or the keyboard, the button pictures |
 | MACHINE | OS and architecture, CPU model and logical cores, process and system CPU %, GPU and its busy % (GPU ms over frame ms), GPU memory, game and system RAM, display mode and window, power and thermal state (macOS thermal pressure; Linux the hottest thermal zone; Windows n/a) |
 | SESSION | time played, game and version, build |
+| ONLINE (sessions only) | round-trip ping now and min/max over 60 s; input delay; average ms per frame waiting for peer input and frames that waited in the last 60 s; packets sent/received per second; cumulative lost and bad-tag counts; sent/received KB per second; last matching hash frame and number of matching checks |
 
 **Full** adds, bottom left, the **frame-time graph**: the last 240 frames, game-thread CPU (blue) under GPU (orange), 16.7 and
 33.3 ms lines, the worst frame and how long ago; bottom right, **per-thread CPU** bars (% of one core): game, render (the
 GPU thread), host main, texture workers, shader build, audio; and the key hint line at the bottom centre. **F3 held** with
 **G** hides or shows the graph, **T** the thread bars, **C** copies every line to the clipboard as text, **R** records ten
 seconds of the performance log; the game does not see those four keys while F3 is down.
+
+A session also adds a ping curve above the frame-time graph, using the last 60 s of ping samples. Session counters
+use fixed-size buffers under the session lock; collecting them does not allocate or log each frame. Lost packets are
+sequence gaps that have passed the 64-packet reorder window; bad tags are counted separately from other rejected
+packets. Packet and byte rates use the current and previous second; input waits and ping bounds use 60-second buckets.
 
 **Not measured, shown as n/a**: guest threads waiting, write-watch pages watched, MRT aliases, an upscaler (the runtime has
 none: no CAS or FSR), texture-pack replacements in use (the files indexed are shown), the video-memory split by kind, a

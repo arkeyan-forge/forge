@@ -55,7 +55,7 @@ namespace netplay
             case PacketType::Ping:
             case PacketType::Pong:
             case PacketType::Ready: return 8;
-            case PacketType::Frames: return count <= 8 ? 25 + size_t(count) * 29 : 0;
+            case PacketType::Frames: return count <= 8 ? 26 + size_t(count) * 29 : 0;
             case PacketType::End: return 25;
             case PacketType::Event: return 26 + (dump ? 1024 : 0);
             }
@@ -144,7 +144,8 @@ namespace netplay
                           : SessionKey(password, hello.echo, hello.nonce);
     }
 
-    bool DecodeHello(std::span<const uint8_t> bytes, const Key& password, Packet& packet, uint64_t& dropped)
+    bool DecodeHello(
+        std::span<const uint8_t> bytes, const Key& password, Packet& packet, uint64_t& dropped, uint64_t* rejected)
     {
         if (bytes.size() != 280 || bytes[10] != uint8_t(PacketType::Hello))
         {
@@ -156,7 +157,7 @@ namespace netplay
         std::copy_n(bytes.begin() + 228, 16, hello.nonce.begin());
         std::copy_n(bytes.begin() + 244, 16, hello.echo.begin());
         hello.host = bytes[261] != 0;
-        return DecodePacket(bytes, HelloKey(password, hello), packet, dropped);
+        return DecodePacket(bytes, HelloKey(password, hello), packet, dropped, rejected);
     }
 
     Hello MakeHello(std::string_view game, std::string_view image, std::string_view runtime, std::string_view platform,
@@ -267,6 +268,7 @@ namespace netplay
             out.Number(packet.hashFrame, 8);
             out.Number(packet.hash, 8);
             out.Number(packet.eventAck, 8);
+            out.Number(packet.menuOpen, 1);
             break;
         case PacketType::Event:
             out.Number(packet.event.sequence, 8);
@@ -289,7 +291,8 @@ namespace netplay
         return true;
     }
 
-    bool DecodePacket(std::span<const uint8_t> bytes, const Key& key, Packet& packet, uint64_t& dropped)
+    bool DecodePacket(
+        std::span<const uint8_t> bytes, const Key& key, Packet& packet, uint64_t& dropped, uint64_t* rejected)
     {
         const auto fail = [&] {
             ++dropped;
@@ -302,7 +305,7 @@ namespace netplay
             Read(bytes.subspan(12, 2)) != bytes.size())
             return fail();
         const auto type = PacketType(bytes[10]);
-        if (type == PacketType::Frames && bytes.size() < 73)
+        if (type == PacketType::Frames && bytes.size() < 74)
             return fail();
         const uint8_t count = type == PacketType::Frames ? bytes[32] : 0;
         if (type == PacketType::Event && (bytes.size() < 74 || bytes[57] > 3))
@@ -315,7 +318,11 @@ namespace netplay
         for (size_t i = 0; i < tag.size(); ++i)
             difference |= tag[i] ^ bytes[bytes.size() - 16 + i];
         if (difference)
+        {
+            if (rejected)
+                ++*rejected;
             return fail();
+        }
         Packet result{};
         result.type = type;
         Reader in{ bytes, 16 };
@@ -366,6 +373,9 @@ namespace netplay
             result.hashFrame = in.Number(8);
             result.hash = in.Number(8);
             result.eventAck = in.Number(8);
+            if (bytes[in.at] > 1)
+                return fail();
+            result.menuOpen = in.Number(1) != 0;
             break;
         case PacketType::Event:
             result.event.sequence = in.Number(8);

@@ -23,8 +23,9 @@ namespace
         std::mutex mutex;
         std::array<std::deque<netplay::Datagram>, 2> queues;
         std::mt19937 random{ 283 };
-        bool chaos = false, silent = false, virtualTime = false;
+        bool chaos = false, silent = false, virtualTime = false, corrupt = false;
         std::atomic<uint64_t> time{ 2000 };
+        std::array<std::atomic<bool>, 2> healthy{ true, true };
     };
     class Wire : public netplay::Transport
     {
@@ -40,6 +41,8 @@ namespace
             netplay::Datagram packet{};
             packet.size = uint16_t(bytes.size());
             std::copy(bytes.begin(), bytes.end(), packet.bytes.begin());
+            if (m_link.corrupt && m_link.random() % 7 == 0)
+                packet.bytes[packet.size - 1] ^= 1;
             auto& queue = m_link.queues[1 - m_seat];
             if (m_link.chaos && m_link.random() % 3 == 0)
                 queue.push_front(packet);
@@ -49,6 +52,7 @@ namespace
                 queue.push_back(packet);
             return true;
         }
+        bool Healthy() const override { return m_link.healthy[m_seat].load(); }
         size_t Receive(std::span<uint8_t> bytes) override
         {
             std::lock_guard lock(m_link.mutex);
@@ -150,6 +154,8 @@ namespace
         const uint64_t frames = desync ? 300 : 600;
         Check(applied[0] == 2 * ((frames - delay + 6) / 7) && applied[1] == applied[0],
             "both event sinks apply each event exactly once");
+        Check(first.Stats().goodChecks == (desync ? 9u : 20u) && second.Stats().goodChecks == first.Stats().goodChecks,
+            "successful hash checks counted exactly");
         if (desync)
             Check(stopped[0] == 300 && stopped[1] == 300, "both stop at hash frame 300");
         for (uint64_t frame = 0; frame < frames; ++frame)
@@ -193,6 +199,76 @@ namespace
         for (unsigned wait = 0; wait < 1000 && !second.RoundTripMs(); ++wait)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         Check(first.RoundTripMs() > 0 && second.RoundTripMs() > 0, "both peers measure the round trip for F3");
+    }
+
+    void OnlineMenuAndStats()
+    {
+        using namespace netplay;
+        Link link;
+        link.chaos = link.virtualTime = link.corrupt = true;
+        auto host = Config(true), join = Config(false);
+        host.now = join.now = [&] { return link.time.load(); };
+        host.timeoutMs = join.timeoutMs = 100000;
+        Session first(host, std::make_unique<Wire>(link, 0));
+        Session second(join, std::make_unique<Wire>(link, 1));
+        Check(first.WaitReady() && second.WaitReady(), "statistics session ready");
+        for (bool open : { true, false })
+        {
+            first.SetMenuOpen(open);
+            for (unsigned i = 0; i < 1000 && second.Stats().peerMenuOpen != open; ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            Check(second.Stats().peerMenuOpen == open, "peer sees menu opening and closing through loss");
+        }
+        auto play = [&](Session& session, size_t seat) {
+            InputFrame pads;
+            for (uint64_t frame = 0; frame < 180; ++frame)
+                Check(session.Exchange(frame, Pad(frame, seat), pads), "lossy statistics exchange");
+        };
+        std::thread a([&] { play(first, 0); });
+        std::thread b([&] { play(second, 1); });
+        a.join();
+        b.join();
+        const auto stats = first.Stats();
+        Check(stats.lost > 0 && stats.rejected > 0 && stats.waitedFrames > 0 && stats.waitMs > 0,
+            "loss, bad tags and input waits counted independently");
+        Check(stats.sentPerSecond > 0 && stats.receivedPerSecond > 0 && stats.sentKB > 0 && stats.receivedKB > 0,
+            "packet and byte rates measured");
+        Check(stats.pingCount > 0 && stats.minPingMs <= stats.roundTripMs && stats.maxPingMs >= stats.minPingMs,
+            "ping history and bounds available");
+        link.time += 61000;
+        Check(first.Stats().waitedFrames == 0 && first.Stats().waitMs == 0, "input waits expire after sixty seconds");
+    }
+    void RemoteDeparture()
+    {
+        using namespace netplay;
+        for (bool hosting : { true, false })
+            for (auto reason : { EndReason::Quit, EndReason::Transport })
+            {
+                Link link;
+                Session survivor(Config(hosting), std::make_unique<Wire>(link, 0));
+                Session leaver(Config(!hosting), std::make_unique<Wire>(link, 1));
+                Check(survivor.WaitReady() && leaver.WaitReady(), "ready before remote departure");
+                if (reason == EndReason::Quit)
+                    leaver.Stop();
+                else
+                    link.healthy[0] = false;
+                for (unsigned wait = 0; wait < 1000 && survivor.Failure().reason == EndReason::None; ++wait)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                Check(!survivor.WaitReady() && survivor.Failure().reason == reason, "network session ended");
+                for (uint64_t frame = 0; frame < 90; ++frame)
+                {
+                    InputFrame pads;
+                    FrameEvents events;
+                    events.players[0].count = 1;
+                    Check(survivor.Exchange(frame, Pad(frame, 0), pads, &events), "survivor keeps advancing frames");
+                    const auto seat = hosting ? 0u : 1u;
+                    Check(pads[seat].connected && pads[seat].state.buttons == Pad(frame, 0).state.buttons &&
+                              !pads[1 - seat].connected && EncodeFrame({ pads[1 - seat] }) == EncodeFrame({}),
+                        "survivor retains seat; departed pad neutral and disconnected");
+                    Check(
+                        events.players[0].count == 0 && events.players[1].count == 0, "pending peer events discarded");
+                }
+            }
     }
 
     void Bursts()
@@ -305,9 +381,12 @@ namespace
                 }
             });
             InputFrame pads;
-            for (uint64_t frame = 0;; ++frame)
-                if (!first.Exchange(frame, Pad(frame, 0), pads))
-                    break;
+            uint64_t frame = 0;
+            while (first.Failure().reason == EndReason::None && frame < 1000)
+                Check(first.Exchange(frame++, Pad(0, 0), pads), "timeout keeps exchanging neutral remote input");
+            Check(first.Exchange(frame, Pad(123, 0), pads) && pads[0].state.buttons == Pad(123, 0).state.buttons &&
+                      !pads[1].connected && pads[1].state.buttons == 0,
+                "timeout retains local pad and disconnects peer");
             Check(first.Failure().reason == EndReason::Timeout, "silent established peer ends after virtual timeout");
         }
         {
@@ -347,6 +426,8 @@ int main()
         Check(ParseEndpoint(text, endpointHost, port) && port == 47640, "IPv4, bracketed IPv6 and DNS endpoints");
     for (const auto text : { "", ":123", "::1:123", "[::1]", "host:0", "host:65536", "host:+2", "host:12x" })
         Check(!ParseEndpoint(text, endpointHost, port), "invalid endpoint refused");
+    OnlineMenuAndStats();
+    RemoteDeparture();
     RoundTrips();
     Bursts();
     Refusals();

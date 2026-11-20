@@ -15,6 +15,7 @@
 #include <cstring>
 #include <utility>
 #include "host/debug_screen.h"
+#include "netplay/session_runtime.h"
 #include "host/portal.h"
 #include "host/toybox/model.h"
 #include <imgui.h>
@@ -130,6 +131,7 @@ namespace
         case Group::Render: return Words("RENDER", "RENDU");
         case Group::AudioInput: return Words("AUDIO AND INPUT", "AUDIO ET ENTRÉES");
         case Group::Machine: return "MACHINE";
+        case Group::Online: return "ONLINE";
         default: return "SESSION";
         }
     }
@@ -813,6 +815,21 @@ bool gamemenu::UpdateDebugScreen()
     }
     else
         Compact(values, snapshot, frames);
+    g_debug.pingCount = 0;
+    if (netplay::Online())
+    {
+        const auto online = netplay::SessionStatus();
+        if (g_debug.full)
+            debugscreen::OnlineFull(g_debug.right, online);
+        else
+        {
+            char value[192];
+            debugscreen::OnlineCompact(value, sizeof(value), online);
+            g_debug.left.Add(Group::Online, "online", value);
+        }
+        g_debug.pingMs = online.pingMs;
+        g_debug.pingCount = online.pingCount;
+    }
     return true;
 }
 
@@ -911,6 +928,24 @@ void gamemenu::DrawDebugScreen(const DebugFonts& fonts)
             char label[16];
             snprintf(label, sizeof(label), "%.1f", double(ms));
             draw->AddText(mono, 11, ImVec2(x0 + graphWidth - 28, y - 12), key, label);
+        }
+    }
+    if (g_showGraphs && g_debug.pingCount)
+    {
+        constexpr float PingWidth = 240, PingHeight = 60;
+        const float x = Margin, y = boxTop - PingHeight - 6;
+        draw->AddRectFilled(ImVec2(x, y), ImVec2(x + PingWidth, y + PingHeight), panelFill);
+        draw->AddText(heading, Size, ImVec2(x + Pad, y + 2), accent, "PING (ms, 60 s)");
+        float maximum = 1;
+        for (size_t i = 0; i < g_debug.pingCount; ++i)
+            maximum = std::max(maximum, g_debug.pingMs[i]);
+        for (size_t i = 1; i < g_debug.pingCount; ++i)
+        {
+            const auto point = [&](size_t sample) {
+                return ImVec2(x + Pad + float(sample) * (PingWidth - 2 * Pad) / 59,
+                    y + PingHeight - Pad - g_debug.pingMs[sample] / maximum * (PingHeight - 22));
+            };
+            draw->AddLine(point(i - 1), point(i), accent, 1.5f);
         }
     }
     if (g_showThreads)

@@ -81,6 +81,14 @@ int main()
                       decoded.hashFrame == 300 && decoded.hash == 1234567,
                 "pad and hash fields");
     }
+    packet.type = PacketType::Frames;
+    for (bool open : { false, true, false })
+    {
+        packet.menuOpen = open;
+        Check(EncodePacket(packet, key, bytes) && DecodePacket(bytes.View(), key, decoded, dropped) &&
+                  decoded.menuOpen == open,
+            "menu flag round trip, independent of pads");
+    }
     const auto savedPacket = packet;
     packet = {};
     packet.type = PacketType::Event;

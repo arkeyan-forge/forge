@@ -6,6 +6,7 @@
 #include "kernel/xam_enumerator.h"
 #include "memory.h"
 #include "host/collection/save_backup.h"
+#include "netplay/session_runtime.h"
 #include "host/profiles.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -62,7 +63,8 @@ namespace
     {
         std::error_code error;
         const fs::path& root = SaveRoot();
-        return !root.empty() && (fs::is_directory(root, error) || fs::create_directories(root, error));
+        return !root.empty() &&
+               (fs::is_directory(root, error) || (netplay::SaveWritesAllowed() && fs::create_directories(root, error)));
     }
 
     bool IsHardDrive(uint32_t deviceId) { return deviceId == HardDriveId && HardDrivePresent(); }
@@ -94,6 +96,11 @@ namespace
         std::error_code error;
         bool exists = fs::is_directory(directory, error);
         uint32_t result = ErrorSuccess;
+        if (!netplay::SaveWritesAllowed() && (!exists || creation == CreateAlways || creation == TruncateExisting))
+        {
+            UnmountContentRoot(root);
+            return ErrorAccessDenied;
+        }
         switch (creation)
         {
         case CreateNew: result = exists ? ErrorAlreadyExists : ErrorSuccess; break;
@@ -243,6 +250,8 @@ PPC_FUNC(__imp__XamContentDelete)
             result = ErrorInvalidName;
         else if (!fs::is_directory(SaveRoot() / type / name, error))
             result = ErrorPathNotFound;
+        else if (!netplay::SaveWritesAllowed())
+            result = ErrorAccessDenied;
         else if (fs::remove_all(SaveRoot() / type / name, error); error)
             result = ErrorAccessDenied;
         fprintf(stderr, "[content] delete \"%s\" type %s -> %u\n", name.string().c_str(), type, result);

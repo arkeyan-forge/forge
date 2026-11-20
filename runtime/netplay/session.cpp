@@ -1,5 +1,6 @@
 #include "netplay/session.h"
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstdio>
 
@@ -23,7 +24,7 @@ namespace netplay
         if (!m_config.now)
             m_config.now = Now;
         m_lastReceive = m_config.now();
-        m_pingStart = m_lastReceive;
+        m_started = m_pingStart = m_lastReceive;
         m_thread = std::jthread([this](std::stop_token stop) { Run(stop); });
     }
     Session::~Session()
@@ -48,6 +49,98 @@ namespace netplay
         std::lock_guard lock(m_mutex);
         return m_dropped;
     }
+    Session::Second& Session::Counters()
+    {
+        const auto second = m_config.now() / 1000;
+        auto& bucket = m_seconds[second % m_seconds.size()];
+        if (bucket.stamp != second)
+        {
+            bucket = {};
+            bucket.stamp = second;
+        }
+        return bucket;
+    }
+    void Session::CountInputWait(uint64_t waited)
+    {
+        auto& counters = Counters();
+        ++counters.frames;
+        counters.waitMs += waited;
+        counters.waited += waited > 0;
+    }
+    SessionStats Session::Stats() const
+    {
+        std::lock_guard lock(m_mutex);
+        SessionStats stats;
+        stats.roundTripMs = m_rtt == UINT64_MAX ? 0 : m_rtt;
+        stats.goodHash = m_goodHash;
+        stats.goodChecks = m_goodChecks;
+        stats.delay = m_delay;
+        stats.peerMenuOpen = m_peerMenuOpen;
+        stats.lost = m_lost;
+        stats.rejected = m_rejected;
+        const auto now = m_config.now();
+        const auto second = now / 1000;
+        uint64_t frames = 0, wait = 0, minPing = UINT64_MAX;
+        for (const auto& bucket : m_seconds)
+            if (bucket.stamp <= second && second - bucket.stamp < 60)
+            {
+                frames += bucket.frames;
+                wait += bucket.waitMs;
+                stats.waitedFrames += bucket.waited;
+                minPing = std::min(minPing, bucket.minPing);
+                stats.maxPingMs = std::max(stats.maxPingMs, bucket.maxPing);
+                if (second - bucket.stamp <= 1)
+                {
+                    stats.sentPerSecond += double(bucket.sent);
+                    stats.receivedPerSecond += double(bucket.received);
+                    stats.sentKB += double(bucket.sentBytes) / 1024.0;
+                    stats.receivedKB += double(bucket.receivedBytes) / 1024.0;
+                }
+            }
+        const double rateSeconds =
+            std::max(0.001, double(now - std::max(m_started, second ? (second - 1) * 1000 : 0)) / 1000);
+        stats.sentPerSecond /= rateSeconds;
+        stats.receivedPerSecond /= rateSeconds;
+        stats.sentKB /= rateSeconds;
+        stats.receivedKB /= rateSeconds;
+        stats.waitMs = frames ? double(wait) / double(frames) : 0;
+        stats.minPingMs = minPing == UINT64_MAX ? 0 : minPing;
+        const auto begin = m_pingSamplesCount > m_pingSamples.size() ? m_pingSamplesCount - m_pingSamples.size() : 0;
+        for (size_t i = begin; i < m_pingSamplesCount; ++i)
+        {
+            const auto& ping = m_pingSamples[i % m_pingSamples.size()];
+            if (now >= ping.time && now - ping.time < 60000)
+                stats.pingMs[stats.pingCount++] = float(ping.ms);
+        }
+        return stats;
+    }
+    void Session::SetMenuOpen(bool open)
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_menuOpen != open)
+        {
+            m_menuOpen = open;
+            m_changed.notify_all();
+        }
+    }
+    bool Session::ContinuingSolo() const
+    {
+        std::lock_guard lock(m_mutex);
+        return ContinueSolo(m_established, m_failure.reason, m_stopping);
+    }
+    bool Session::Solo(uint64_t frame, const Pad& local, InputFrame& pads, FrameEvents* events)
+    {
+        if (!ContinueSolo(m_established, m_failure.reason, m_stopping))
+            return false;
+        pads = {};
+        pads[m_config.hello.host ? 0 : 1] = local;
+        if (events)
+            for (auto& player : events->players)
+                player.count = 0;
+        m_history->pending.count = 0;
+        m_next = frame + 1;
+        return true;
+    }
     void Session::End(EndReason reason, uint64_t frame, uint64_t local, uint64_t remote)
     {
         if (m_failure.reason == EndReason::None)
@@ -63,7 +156,7 @@ namespace netplay
         End(EndReason::Quit);
         m_changed.wait(lock, [&] { return m_endSends >= 16; });
     }
-    bool Session::Wait(std::unique_lock<std::mutex>& lock, const std::function<bool()>& ready)
+    bool Session::Wait(std::unique_lock<std::mutex>& lock, const std::function<bool()>& ready, uint64_t* waited)
     {
         const uint64_t start = m_config.now();
         bool warned = false;
@@ -81,13 +174,19 @@ namespace netplay
                 fprintf(stderr, "[netplay] waiting for the other player\n");
                 warned = true;
             }
+            const auto before = m_config.now();
             m_changed.wait_for(lock, std::chrono::milliseconds(2));
+            if (waited)
+                *waited += m_config.now() - before;
         }
     }
     bool Session::WaitReady()
     {
         std::unique_lock lock(m_mutex);
-        return Wait(lock, [&] { return m_ready && (!m_config.hello.host || m_peerReady); });
+        if (!Wait(lock, [&] { return m_ready && (!m_config.hello.host || m_peerReady); }))
+            return false;
+        m_established = true;
+        return true;
     }
     void Session::SetDelay(uint32_t delay)
     {
@@ -129,12 +228,21 @@ namespace netplay
             End(EndReason::Invalid);
             return false;
         }
+        if (m_failure.reason != EndReason::None)
+            return Solo(frame, local, pads, events);
+        uint64_t inputWait = 0;
         const uint64_t target = frame + m_delay;
-        if (!Wait(lock, [&] {
-                return target <= m_ack + 8 &&
-                       m_eventSequence - m_eventAck <= m_history->local.size() - m_history->pending.count;
-            }))
-            return false;
+        if (!Wait(
+                lock,
+                [&] {
+                    return target <= m_ack + 8 &&
+                           m_eventSequence - m_eventAck <= m_history->local.size() - m_history->pending.count;
+                },
+                &inputWait))
+        {
+            CountInputWait(inputWait);
+            return Solo(frame, local, pads, events);
+        }
         for (size_t i = 0; i < m_history->pending.count; ++i)
         {
             auto event = m_history->pending.events[i];
@@ -146,11 +254,18 @@ namespace netplay
         m_local[target % m_local.size()] = { target, local, m_eventSequence };
         m_latest = target;
         m_changed.notify_all();
-        if (!Wait(lock, [&] {
-                const auto& remote = m_remote[frame % m_remote.size()];
-                return frame < m_delay || (remote.frame == frame && remote.events <= m_receivedEvent);
-            }))
-            return false;
+        if (!Wait(
+                lock,
+                [&] {
+                    const auto& remote = m_remote[frame % m_remote.size()];
+                    return frame < m_delay || (remote.frame == frame && remote.events <= m_receivedEvent);
+                },
+                &inputWait))
+        {
+            CountInputWait(inputWait);
+            return Solo(frame, local, pads, events);
+        }
+        CountInputWait(inputWait);
         pads = {};
         if (!events && m_config.applyEvents)
             events = &m_history->application;
@@ -197,7 +312,7 @@ namespace netplay
             m_applyRequested = true;
             m_changed.notify_all();
             if (!Wait(lock, [&] { return m_applyDone; }))
-                return false;
+                return Solo(frame, local, pads, events);
         }
         ++m_next;
         return true;
@@ -224,6 +339,7 @@ namespace netplay
             return false;
         }
         m_goodHash = frame;
+        ++m_goodChecks;
         return true;
     }
     void Session::Send(Packet packet, bool bootstrap)
@@ -231,9 +347,49 @@ namespace netplay
         Datagram bytes;
         packet.sequence = ++m_sequence;
         packet.ack = m_remoteAck;
-        if (EncodePacket(packet, bootstrap ? HelloKey(m_password, packet.hello) : m_key, bytes) &&
-            !m_transport->Send(bytes.View()))
-            End(EndReason::Transport);
+        if (EncodePacket(packet, bootstrap ? HelloKey(m_password, packet.hello) : m_key, bytes))
+        {
+            if (!m_transport->Send(bytes.View()))
+                End(EndReason::Transport);
+            else
+            {
+                auto& counters = Counters();
+                ++counters.sent;
+                counters.sentBytes += bytes.size;
+            }
+        }
+    }
+    bool Session::AcceptSequence(uint64_t sequence)
+    {
+        if (!sequence)
+        {
+            ++m_dropped;
+            return false;
+        }
+        if (sequence > m_receivedSequence)
+        {
+            const uint64_t delta = sequence - m_receivedSequence;
+            m_receivedMask = (delta >= 64 ? 0 : m_receivedMask << delta) | 1;
+            m_receivedSequence = sequence;
+        }
+        else
+        {
+            const uint64_t delta = m_receivedSequence - sequence;
+            if (delta >= 64 || (m_receivedMask & (uint64_t(1) << delta)))
+            {
+                ++m_dropped;
+                return false;
+            }
+            m_receivedMask |= uint64_t(1) << delta;
+        }
+        m_firstSequence = m_firstSequence ? std::min(m_firstSequence, sequence) : sequence;
+        ++m_uniqueReceived;
+        const auto span = m_receivedSequence - m_firstSequence + 1;
+        const auto width = std::min(span, uint64_t(64));
+        const auto mask = width == 64 ? UINT64_MAX : (uint64_t(1) << width) - 1;
+        const auto pendingLoss = width - uint64_t(std::popcount(m_receivedMask & mask));
+        m_lost = span - m_uniqueReceived - pendingLoss;
+        return true;
     }
     void Session::Receive(const Packet& packet, bool bootstrap)
     {
@@ -245,6 +401,8 @@ namespace netplay
                 ++m_dropped;
                 return;
             }
+            if (!AcceptSequence(packet.sequence))
+                return;
             m_transport->AcceptPeer();
             m_peer = packet.hello;
             m_havePeer = true;
@@ -259,22 +417,8 @@ namespace netplay
         }
         if (!m_havePeer)
             return;
-        if (packet.sequence > m_receivedSequence)
-        {
-            const uint64_t delta = packet.sequence - m_receivedSequence;
-            m_receivedMask = (delta >= 64 ? 0 : m_receivedMask << delta) | 1;
-            m_receivedSequence = packet.sequence;
-        }
-        else
-        {
-            const uint64_t delta = m_receivedSequence - packet.sequence;
-            if (delta >= 64 || (m_receivedMask & (uint64_t(1) << delta)))
-            {
-                ++m_dropped;
-                return;
-            }
-            m_receivedMask |= uint64_t(1) << delta;
-        }
+        if (!AcceptSequence(packet.sequence))
+            return;
         m_lastReceive = m_config.now();
         switch (packet.type)
         {
@@ -291,6 +435,10 @@ namespace netplay
             if ((m_config.hello.host || m_ready) && packet.value == m_ping)
             {
                 m_rtt = m_ready ? m_config.now() - m_pingStart : std::min(m_rtt, m_config.now() - m_pingStart);
+                auto& counters = Counters();
+                counters.minPing = std::min(counters.minPing, m_rtt);
+                counters.maxPing = std::max(counters.maxPing, m_rtt);
+                m_pingSamples[m_pingSamplesCount++ % m_pingSamples.size()] = { m_config.now(), m_rtt };
                 ++m_pings;
                 ++m_ping;
                 m_pingStart = m_config.now();
@@ -327,6 +475,11 @@ namespace netplay
             {
                 ++m_dropped;
                 break;
+            }
+            if (packet.sequence > m_menuSequence)
+            {
+                m_menuSequence = packet.sequence;
+                m_peerMenuOpen = packet.menuOpen;
             }
             m_ack = std::max(m_ack, packet.ack);
             m_eventAck = std::max(m_eventAck, packet.eventAck);
@@ -397,6 +550,9 @@ namespace netplay
                 const size_t size = m_transport->Receive(bytes.bytes);
                 if (size == Transport::NoDatagram)
                     break;
+                auto& counters = Counters();
+                ++counters.received;
+                counters.receivedBytes += std::min(size, bytes.bytes.size());
                 if (size > bytes.bytes.size())
                 {
                     ++m_dropped;
@@ -405,8 +561,8 @@ namespace netplay
                 Packet packet;
                 const bool bootstrap = size > 10 && bytes.bytes[10] == uint8_t(PacketType::Hello);
                 const auto view = std::span(bytes.bytes).first(size);
-                if (bootstrap ? DecodeHello(view, m_password, packet, m_dropped)
-                              : DecodePacket(view, m_key, packet, m_dropped))
+                if (bootstrap ? DecodeHello(view, m_password, packet, m_dropped, &m_rejected)
+                              : DecodePacket(view, m_key, packet, m_dropped, &m_rejected))
                     Receive(packet, bootstrap);
             }
             if (!m_transport->Healthy())
@@ -454,6 +610,7 @@ namespace netplay
                     frames.hashFrame = m_hashFrame;
                     frames.hash = m_hash;
                     frames.eventAck = m_receivedEvent;
+                    frames.menuOpen = m_menuOpen;
                     Send(frames);
                     const uint64_t end = std::min(m_eventSequence, m_eventAck + 8);
                     for (uint64_t sequence = m_eventAck + 1; sequence <= end; ++sequence)
@@ -488,7 +645,10 @@ namespace netplay
                     lock.lock();
                 }
             }
-            m_changed.wait_for(lock, std::chrono::milliseconds(2));
+            if (m_failure.reason != EndReason::None && m_endSends >= 16)
+                m_changed.wait(lock, [&] { return stop.stop_requested(); });
+            else
+                m_changed.wait_for(lock, std::chrono::milliseconds(2));
         }
     }
 }

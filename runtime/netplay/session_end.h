@@ -1,11 +1,47 @@
 #pragma once
 
 #include "netplay/protocol.h"
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 
 namespace netplay
 {
+    inline bool ContinueSolo(bool established, EndReason reason, bool leftLocally)
+    {
+        return established && !leftLocally &&
+               (reason == EndReason::Quit || reason == EndReason::Timeout || reason == EndReason::Transport);
+    }
+
+    class SavePolicy
+    {
+    public:
+        bool Allowed() const { return !m_suppressed.load(std::memory_order_acquire); }
+        void End(bool hosting, bool established, EndReason reason, bool leftLocally)
+        {
+            if (!hosting && ContinueSolo(established, reason, leftLocally))
+                m_suppressed.store(true, std::memory_order_release);
+        }
+
+    private:
+        std::atomic<bool> m_suppressed{ false };
+    };
+
+    inline bool WriteOpenOnlineFile(const std::filesystem::path& folder, std::string_view game)
+    {
+        if (game.empty() || game.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-") != std::string_view::npos)
+            return false;
+        std::error_code error;
+        if (!folder.empty())
+            std::filesystem::create_directories(folder, error);
+        if (error)
+            return false;
+        std::ofstream file(folder / "open-online.txt", std::ios::trunc);
+        file << game << '\n';
+        file.close();
+        return !file.fail();
+    }
+
     class EndScreenClock
     {
     public:
