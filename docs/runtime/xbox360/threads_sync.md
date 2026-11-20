@@ -113,6 +113,7 @@ lives. The polling loops keep their back-off. Found with `sample` on the job's t
 | `KeTimeStampBundle` | ticked every 1 ms by a detached host thread (`StartTimeStampBundle`). XAPI `GetTickCount` and Bink's `RADTimerRead` read `TickCount` **directly**; movies stalled without it |
 | `KeQuerySystemTime` / `GuestSystemTime` | host system time as FILETIME (1601 epoch) |
 | `mftb` | translated by XenonRecomp to the host counter (`cntvct_el0` on arm64, TSC on x64) |
+| `setjmp` / `longjmp` | new translations use host thread-local buffers keyed by guest address (`runtime/platform/jmpbuf.cpp`), with stable addresses and no guest writes; an unset buffer on the calling thread logs `[setjmp]` and aborts |
 | `KeQueryPerformanceFrequency` | `PlatformTimeBaseFrequency()`: `cntfrq_el0`, or the TSC measured against `steady_clock` over 100 ms once |
 | Timers (`NtCreateTimer`, `NtSetTimerEx`) | **not implemented** (weak stubs): the title does not use them |
 | Windows | `timeBeginPeriod(1)` in `PlatformInit` (sleeps and timed waits would otherwise round up to the 15.6 ms system tick; desktop only, UWP has none) |

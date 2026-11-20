@@ -351,6 +351,49 @@ item before lockstep.
 [?] Not tested: the four other games, portal changes during a replay, a real portal, the fence-retirement stubs and the
 GPU-written ranges of section 3.
 
+## Step 0d: the last host values in guest memory [Xbox]
+
+[V] Two replays of 0c still differed in a few blocks. The causes, each found and fixed, measured 2026-11-20 on an M1 Pro
+(Europe discs, 0b's recordings, cooperative schedule, hashing every 30th frame):
+
+| Cause | Where it showed | Fix |
+|---|---|---|
+| The translator emitted a guest `setjmp` as the host's, with the host `jmp_buf` (stack pointers, return addresses, values mangled with a per-process cookie) written into guest memory | Giants: 192 bytes at `0x8267DD30` of the executable's data from frame 30 on; SSA: the blocks that differed from the level load | XenonRecomp emits `PPC_SETJMP_BUF(r3)` / `PPC_LONGJMP_BUF(r3)`: host buffers kept by the runtime per host thread, keyed by guest address (`runtime/platform/jmpbuf.cpp`); guest memory is no longer written. Every game's code is regenerated (code generated before still builds, with the old behaviour) |
+| The emulated portal sent its unprompted status reports at most every 8 ms of the **host's** clock, so the poll that got one depended on the host's speed | Giants: two physical blocks the game writes from what it read, from a frame that changed with each pair (240 to 1110) | In deterministic mode the interval runs on the game's virtual time (`EmulatedPortal::SetClock`, `GuestSystemTime`) |
+| SSA's light-tile job reads the full-resolution depth the GPU resolved, written back into guest memory from an asynchronous read-back that is the latest finished one, so how old it was (or whether there was one) followed the GPU's speed | Two instances in lockstep, one slowed by frame dumps: 49 physical blocks from `0xA6A60000` (that depth target) differed at frame 750 | Online, read-backs are kept by request and the write-back always takes the one asked two depth resolves before, waiting for it if needed (`gpu::TakeReadback`, `gpu/readback_queue.h`); the shadows stay. Off line nothing changes. Different GPUs may still compute different depth bits: [?] |
+
+[V] After both fixes, no block differs: SSA over 409 compared frames to frame 12270 (6.8 minutes of game at 30 FPS),
+Giants over 177 to frame 5310 (a pair without any portal agreed too, which pointed at it). The event logs stay identical.
+Tests: `ArkeyanJmpBufTest` (round trips, per-thread buffers, stable addresses, guest memory untouched), a virtual-clock
+case in `ArkeyanPortalTest` and `ArkeyanReadbackQueueTest` (the one asked, not the latest; waits; a dropped request answers
+at once); each failed first. With the read-back fix, two SSA instances in lockstep, both dumping frames, agreed on 190 of 190
+checks to frame 5700.
+
+[?] Not measured: the four other games, a 10-minute Giants pair, Windows and Linux, a real portal (sessions use the
+emulated one).
+
+### Tracing host-sourced loads (how the portal was found)
+
+`-DARKEYAN_NETPLAY_TRACE=ON` (a separate build tree; OFF leaves the translated objects byte-identical) routes the
+translated code's integer loads and stores (`PPC_LOAD_*` / `PPC_STORE_*`) through a **shadow** of guest memory (a second
+4 GB reservation, committed on use). A store writes both; a load whose bytes differ from the shadow was written by the
+host side (an import, a host thread, the loader): it is recorded and the shadow updated.
+
+| Variable | Effect in a trace build |
+|---|---|
+| `SKY_NETPLAY_TRACE=<file>` | records host-sourced loads in `<file>` and one `frame <n> <count> <chain hash>` line per frame in `<file>.frames`; needs the cooperative schedule |
+| `SKY_NETPLAY_TRACE_FRAMES=<a>-<b>` | full records only for frames a..b (inclusive); the summaries cover every frame |
+
+Records (`SKYTRC01`, u32 version 1, then 37 bytes each, little-endian): u64 sequence, u32 frame, u32 guest address, u8
+size, u64 value, u64 previous shadow value, u32 the translated code's link register. `tools/netplay/trace_diff.py --frames
+a b` gives the first frame whose summary differs; `trace_diff.py a b` the first differing record and the ten before it on
+each side. A first run with a range of `0-0` finds the frame; a second around it names the load. About 37 bytes x 1500
+host-sourced loads per frame: a 2500-frame range writes 3.7 GB per run.
+
+[V] On Giants it showed the two runs reading the same host values until one called `time()` where the other read a flag:
+the branch came from a value outside the trace (a register, here the portal's reply or no reply), and a pair without the
+portal then agreed. Values returned only in registers and accesses outside the macros (vector loads) are not traced.
+
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one
    world, one shared camera, each player on his own PC). Free exploration (each player his own camera, the 2026-11-04

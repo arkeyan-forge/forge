@@ -169,8 +169,14 @@ namespace gpu
     // it turns the pixels (width x height, row-major) into what CollectReadback returns. One request per frame.
     using ReadbackConvert =
         std::function<void(const uint32_t* pixels, uint32_t width, uint32_t height, std::vector<uint32_t>& out)>;
-    void RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert convert);
+    // Returns the request's number, for TakeReadback.
+    uint64_t RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert convert);
     bool CollectReadback(std::vector<uint32_t>& data);
+    // Online play (docs/runtime/host/netplay.md, step 0d): finished read-backs are kept by request instead, and
+    // TakeReadback waits for the one asked (at most a GPU frame), so the guest reads the same frame's depth on both
+    // computers. False when it was not recorded (device lost) or did not come within 2 s.
+    void KeepReadbacksByRequest(bool keep);
+    bool TakeReadback(uint64_t request, std::vector<uint32_t>& data);
 
     // --- Render state, as the Direct3D replacement describes it (see gpu/draw.h) -------------------------------------
 

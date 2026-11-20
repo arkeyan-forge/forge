@@ -3,6 +3,9 @@
 #include "netplay/events.h"
 #include "netplay/inputs.h"
 #include "netplay/state_hash.h"
+#ifdef ARKEYAN_NETPLAY_TRACE
+#include "netplay/trace.h"
+#endif
 #include "host/env.h"
 #include "host/launcher.h"
 #include "memory.h"
@@ -26,6 +29,9 @@ namespace netplay
         std::atomic<uint32_t> g_bundle{ 0 };
         std::mutex g_inputMutex;
         InputLatch g_latch;
+#ifdef ARKEYAN_NETPLAY_TRACE
+        std::atomic<uint32_t> g_frame{ 0 };
+#endif
 
         [[noreturn]] void Refuse(const char* message)
         {
@@ -272,6 +278,10 @@ namespace netplay
         };
     }
 
+#ifdef ARKEYAN_NETPLAY_TRACE
+    uint32_t ProbeFrame() { return g_frame.load(std::memory_order_relaxed); }
+#endif
+
     void SetTimeStampBundle(uint32_t address)
     {
         g_bundle.store(address, std::memory_order_release);
@@ -288,10 +298,17 @@ namespace netplay
             return;
         if (probe.events && !probe.events->EndFrame(probe.frames))
             Refuse("event log write failed");
+#ifdef ARKEYAN_NETPLAY_TRACE
+        if (g_trace)
+            g_trace->EndFrame(ProbeFrame());
+#endif
         g_clock.Advance(presentInterval);
         WriteBundle();
         probe.Latch();
         ++probe.frames;
+#ifdef ARKEYAN_NETPLAY_TRACE
+        g_frame.store(uint32_t(probe.frames), std::memory_order_relaxed);
+#endif
         probe.Hash();
     }
 
@@ -301,7 +318,14 @@ namespace netplay
         {
             std::lock_guard lock(probe->mutex);
             probe->Finish();
+#ifdef ARKEYAN_NETPLAY_TRACE
+            FinishTrace(ProbeFrame());
+#endif
         }
+#ifdef ARKEYAN_NETPLAY_TRACE
+        else
+            FinishTrace(ProbeFrame());
+#endif
     }
 
     bool LatchedConnected(int user)

@@ -148,6 +148,7 @@ namespace gpu::detail
             uint32_t width = 0, height = 0;
             bool pending = false;
             uint64_t frame = 0;
+            uint64_t request = 0; // gpu::RequestReadback's number
             gpu::ReadbackConvert convert;
         } rawReadbacks[2];
         uint64_t frames = 0;

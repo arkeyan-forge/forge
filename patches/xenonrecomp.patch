@@ -13,7 +13,7 @@ index d08371e..501370e 100644
  }
  
 diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
-index fa91527..2e37d69 100644
+index fa91527..f0d7c43 100644
 --- a/XenonRecomp/recompiler.cpp
 +++ b/XenonRecomp/recompiler.cpp
 @@ -1,5 +1,6 @@
@@ -92,6 +92,21 @@ index fa91527..2e37d69 100644
              {
                  localVariables.reserved = true;
                  return "reserved";
+@@ -373,12 +374,12 @@ bool Recompiler::Recompile(
+         {
+             if (address == config.longJmpAddress)
+             {
+-                println("\tlongjmp(*reinterpret_cast<jmp_buf*>(base + {}.u32), {}.s32);", r(3), r(4));
++                println("\tlongjmp(PPC_LONGJMP_BUF({}.u32), {}.s32);", r(3), r(4));
+             }
+             else if (address == config.setJmpAddress)
+             {
+                 println("\t{} = ctx;", env());
+-                println("\t{}.s64 = setjmp(*reinterpret_cast<jmp_buf*>(base + {}.u32));", temp(), r(3));
++                println("\t{}.s64 = setjmp(PPC_SETJMP_BUF({}.u32));", temp(), r(3));
+                 println("\tif ({}.s64 != 0) ctx = {};", temp(), env());
+                 println("\t{} = {};", r(3), temp());
+             }
 @@ -388,10 +389,17 @@ bool Recompiler::Recompile(
  
                  if (targetSymbol != image.symbols.end() && targetSymbol->address == address && targetSymbol->type == Symbol_Function)
@@ -1226,7 +1241,7 @@ index 195bc85..4ebe502 100644
  
      static int Disassemble(const void* code, uint64_t base, ppc_insn& out)
 diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
-index 31a86cd..ae311f2 100644
+index 31a86cd..c954112 100644
 --- a/XenonUtils/ppc_context.h
 +++ b/XenonUtils/ppc_context.h
 @@ -251,7 +251,7 @@ struct PPCFPSCRRegister
@@ -1392,12 +1407,16 @@ index 31a86cd..ae311f2 100644
  inline simde__m128i simde_mm_vsr(simde__m128i a, simde__m128i b)
  {
      b = simde_mm_srli_epi64(simde_mm_slli_epi64(b, 61), 61);
-@@ -700,4 +699,9 @@ inline uint64_t __rdtsc()
+@@ -700,4 +699,13 @@ inline uint64_t __rdtsc()
  #   error "Missing implementation for __rdtsc()"
  #endif
  
 +extern "C" uint64_t ppc_mftb();
 +#define PPC_MFTB() ppc_mftb()
++extern "C" jmp_buf* ppc_setjmp_buf(uint32_t guestAddress);
++extern "C" jmp_buf* ppc_longjmp_buf(uint32_t guestAddress);
++#define PPC_SETJMP_BUF(x) (*ppc_setjmp_buf(x))
++#define PPC_LONGJMP_BUF(x) (*ppc_longjmp_buf(x))
 +extern "C" void ppc_spin_hint();
 +#define PPC_SPIN_HINT() ppc_spin_hint()
 +
@@ -1428,6 +1447,7 @@ index 06e6572..d87c3f7 100644
  endif()
 diff --git a/XenonRecomp/recompiler_headers.h b/XenonRecomp/recompiler_headers.h
 new file mode 100644
+index 0000000..d01e9d9
 --- /dev/null
 +++ b/XenonRecomp/recompiler_headers.h
 @@ -0,0 +1,48 @@

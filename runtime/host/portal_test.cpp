@@ -608,6 +608,25 @@ int main()
         CHECK(Receive(paced)[0] == 'S');
     }
 
+    // Online play's clock (docs/runtime/host/netplay.md, step 0d): with the game's virtual time, the unprompted status
+    // reports follow that time only, so two games given the same inputs read the same reports whatever the host's speed.
+    {
+        EmulatedPortal paced;
+        std::chrono::nanoseconds virtualNow{ 0 };
+        paced.SetClock([&] { return virtualNow; });
+        paced.SetStatusInterval(std::chrono::milliseconds(8));
+        Send(paced, { 'A', 0x01 });
+        CHECK(Receive(paced)[0] == 'A');
+        CHECK(Receive(paced)[0] == 'S');
+        std::this_thread::sleep_for(std::chrono::milliseconds(20)); // wall time passes, virtual time does not
+        CHECK(Receive(paced).empty());
+        virtualNow += std::chrono::milliseconds(7);
+        CHECK(Receive(paced).empty());
+        virtualNow += std::chrono::milliseconds(1);
+        CHECK(Receive(paced)[0] == 'S');
+        CHECK(Receive(paced).empty());
+    }
+
     SDL_RemovePath(path.c_str());
     MixedChecks();
     RenumberChecks();
