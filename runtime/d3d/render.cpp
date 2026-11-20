@@ -25,6 +25,7 @@
 #include "d3d/ultrawide.h"
 #include "d3d/upscale.h"
 #include "d3d/xenos.h"
+#include "netplay/clock.h"
 #include "gpu/buffer_cache.h"
 #include "gpu/draw.h"
 #include "gpu/edge_smoothing.h"
@@ -2480,7 +2481,20 @@ namespace
         bool tiled = fetch.Tiled();
         uint32_t pitch = level.pitchBlocks, rows = tiled ? (level.height + 31) & ~31u : level.height;
         std::vector<uint32_t> image;
-        if (gpu::CollectReadback(image) && image.size() == size_t(pitch) * rows) // two frames old
+        // Online play: always the one asked two depth resolves before (one a frame), waited for, so both computers'
+        // games read the same depth at the same frame; else the latest finished, never waited for.
+        static std::array<uint64_t, 2> asked{};
+        static uint64_t count = 0;
+        const bool byRequest = netplay::Enabled();
+        bool got = false;
+        if (byRequest)
+        {
+            gpu::KeepReadbacksByRequest(true);
+            got = count >= asked.size() && gpu::TakeReadback(asked[count % asked.size()], image);
+        }
+        else
+            got = gpu::CollectReadback(image);
+        if (got && image.size() == size_t(pitch) * rows) // two frames old
             memcpy(g_memory.Translate(guest), image.data(), image.size() * 4);
 
         uint32_t scale = uint32_t(Scale());
@@ -2488,7 +2502,7 @@ namespace
         uint32_t right = std::min((x + width) / scale, level.width),
                  bottom = std::min((y + height) / scale, level.height);
         std::shared_ptr<const d3d::TiledDepthLayout> layout = tiled ? DepthLayout(pitch, rows) : nullptr;
-        gpu::RequestReadback(texture, scale,
+        const uint64_t request = gpu::RequestReadback(texture, scale,
             [=](const uint32_t* depth, uint32_t depthWidth, uint32_t depthHeight, std::vector<uint32_t>& out) {
                 out.assign(size_t(pitch) * rows, 0);
                 const uint32_t rowEnd = std::min(bottom, depthHeight), columnEnd = std::min(right, depthWidth);
@@ -2511,6 +2525,8 @@ namespace
                             out[xenos::Tiled2D(column, row, pitch, 2) / 4] = GuestDepth(source[column]);
                 }
             });
+        if (byRequest)
+            asked[count++ % asked.size()] = request;
     }
 
     void Resolve(uint32_t device, const ResolveArgs& args)

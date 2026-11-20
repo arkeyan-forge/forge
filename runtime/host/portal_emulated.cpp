@@ -112,10 +112,13 @@ bool EmulatedPortal::Write(const uint8_t* command, size_t size)
         size_t block = size > 2 ? command[2] : FigureBlockCount;
         response[2] = uint8_t(block);
         response[1] = Failure;
-        if (slot < 0 || block >= FigureBlockCount || !m_slots[slot].data)
+        if (slot < 0 || block >= FigureBlockCount)
+            break;
+        auto& figure = m_slots[slot].data;
+        if (!figure)
             break;
 
-        uint8_t* data = m_slots[slot].data->data() + block * FigureBlockSize;
+        uint8_t* data = figure->data() + block * FigureBlockSize;
         if (command[0] == 'Q')
         {
             memcpy(&response[3], data, FigureBlockSize);
@@ -127,7 +130,7 @@ bool EmulatedPortal::Write(const uint8_t* command, size_t size)
         if (size < 3 + FigureBlockSize || block == 0 || IsSectorTrailer(block))
             break;
         memcpy(data, command + 3, FigureBlockSize);
-        if (!m_slots[slot].path.empty() && !SaveFigure(m_slots[slot].path, *m_slots[slot].data))
+        if (!m_slots[slot].path.empty() && !SaveFigure(m_slots[slot].path, *figure))
             fprintf(stderr, "[portal] cannot save figure %s\n", m_slots[slot].path.c_str());
         response[1] = uint8_t(OneBlock | slot);
         break;

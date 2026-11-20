@@ -19,7 +19,8 @@ namespace
         if (!condition)
         {
             fprintf(stderr, "FAIL: %s\n", message);
-            std::exit(1);
+            fflush(stderr);
+            std::_Exit(1);
         }
     }
 
@@ -68,7 +69,7 @@ namespace
         base[24] = 0xEE;
         netplay::Load<uint8_t>(base, 24, 0, &trace, 2);
         trace.EndFrame(2);
-        rewind(records.get());
+        Check(fseek(records.get(), 0, SEEK_SET) == 0, "rewind the trace file");
         std::array<char, 8> magic{};
         Check(fread(magic.data(), 1, magic.size(), records.get()) == magic.size() &&
                   std::memcmp(magic.data(), "SKYTRC01", 8) == 0,
@@ -80,7 +81,7 @@ namespace
         Check(ReadLE(records.get(), 8) == 0x70AB && ReadLE(records.get(), 8) == 0x7080, "loaded and previous values");
         Check(ReadLE(records.get(), 4) == 0xABCDEF01, "link register");
         Check(fgetc(records.get()) == EOF, "records outside range filtered");
-        rewind(frames.get());
+        Check(fseek(frames.get(), 0, SEEK_SET) == 0, "rewind the trace file");
         for (unsigned frame = 0; frame < 3; ++frame)
         {
             unsigned number = 0;

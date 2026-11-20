@@ -13,7 +13,8 @@ namespace
         if (!condition)
         {
             fprintf(stderr, "FAIL: %s\n", message);
-            std::exit(1);
+            fflush(stderr);
+            std::_Exit(1);
         }
     }
 

@@ -15,6 +15,7 @@
 #include <SDL3/SDL_metal.h>
 #include <plume_render_interface.h>
 #include <algorithm>
+#include "gpu/readback_queue.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -428,6 +429,10 @@ namespace gpu::detail
     // now, and the frame may use them).
     // After EndFrame's wait: a read-back recorded two frames before (or earlier) has finished on the GPU; its pixels
     // go to `rawReady` for the producers.
+    gpu::ReadbackQueue g_readbackQueue;
+    std::atomic<bool> g_readbacksByRequest{ false };
+    std::atomic<uint64_t> g_readbackRequests{ 0 };
+
     static void FinishRawReadbacks()
     {
         Context& c = *g_context;
@@ -438,10 +443,18 @@ namespace gpu::detail
             slot.pending = false;
             auto data = static_cast<const uint32_t*>(slot.cpu->map());
             if (data == nullptr)
+            {
+                g_readbackQueue.Drop(slot.request);
                 continue;
+            }
             std::vector<uint32_t> converted;
             slot.convert(data, slot.width, slot.height, converted);
             slot.cpu->unmap();
+            if (g_readbacksByRequest.load(std::memory_order_relaxed))
+            {
+                g_readbackQueue.Finish(slot.request, std::move(converted));
+                continue;
+            }
             std::lock_guard ready(c.rawReadyMutex);
             c.rawReady.swap(converted);
             c.rawReadyValid = true;
@@ -2009,15 +2022,19 @@ bool gpu::detail::ReadbackNow(
     return true;
 }
 
-void gpu::RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert convert)
+uint64_t gpu::RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert convert)
 {
     ProducerLock producer;
-    Enqueue([texture, step, convert = std::move(convert)] { // after the producer's earlier commands (the resolve)
+    const uint64_t request = ++g_readbackRequests;
+    Enqueue([texture, step, request, convert = std::move(convert)] { // after the producer's earlier commands
         std::lock_guard lock(g_mutex);
         Context& c = *g_context;
         Context::RawReadback& slot = c.rawReadbacks[c.frames & 1];
         if (texture == nullptr || slot.pending || DeviceLost())
+        {
+            g_readbackQueue.Drop(request);
             return;
+        }
         SettleCopies(texture);
 
         slot.width = texture->desc.width / step;
@@ -2047,8 +2064,17 @@ void gpu::RequestReadback(const Texture* texture, uint32_t step, ReadbackConvert
         list.copyBufferRegion(slot.cpu->at(0), slot.gpu->at(0), size);
         slot.pending = true;
         slot.frame = c.frames;
+        slot.request = request;
         slot.convert = convert;
     });
+    return request;
+}
+
+void gpu::KeepReadbacksByRequest(bool keep) { g_readbacksByRequest.store(keep, std::memory_order_relaxed); }
+
+bool gpu::TakeReadback(uint64_t request, std::vector<uint32_t>& data)
+{
+    return g_readbackQueue.Take(request, data, std::chrono::seconds(2));
 }
 
 bool gpu::CollectReadback(std::vector<uint32_t>& data)
