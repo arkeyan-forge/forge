@@ -20,6 +20,7 @@
 #include "d3d/vertex_pairs.h"
 #include "d3d/ring.h"
 #include "d3d/shaders.h"
+#include "d3d/stall_watch.h"
 #include "d3d/step_pacer.h"
 #include "d3d/ultrawide.h"
 #include "d3d/upscale.h"
@@ -37,6 +38,7 @@
 #include "kernel/video.h"
 #include "game.h"
 #include "game_hooks.h"
+#include "thread.h"
 #include "memory.h"
 #include "platform/clock.h"
 #include "platform/platform.h"
@@ -105,6 +107,7 @@ namespace
     struct Stats
     {
         uint32_t draws, skippedShader, skippedTarget, resolves;
+        uint32_t guestDraws; // the game's draw calls, drawn or skipped
     } g_stats;
 
     // --- Render targets: one host texture per EDRAM surface (base tile, format, size). ---------------------------------
@@ -1001,6 +1004,12 @@ namespace
     // aspect=fill: the colour target whose copy the last swap presented (the game's frame, whatever its size: in the
     // later games the scene is 1280x720 too); its HUD draws are made smaller (ultrawide::HudInset). Compared only.
     const gpu::Texture* g_presentedTarget;
+    // The last colour resolve into a texture, for the stall report: its frame, destination and source size.
+    struct LastResolve
+    {
+        uint64_t frame;
+        uint32_t destination, width, height;
+    } g_lastResolve;
     // The draw's guest shader hashes, for the frame dump's lines (0: none).
     uint64_t g_drawVertexShader, g_drawPixelShader;
     // The render targets the draw's pixel shader writes (GuestShader::colorOutputs; 0: none, or no pixel shader).
@@ -1103,6 +1112,7 @@ namespace
     bool PrepareDraw(uint32_t device, uint32_t primitive, gpu::DrawDesc& draw)
     {
         memset(&draw, 0, sizeof(draw));
+        g_stats.guestDraws++;
         g_frameDraw = g_frameSceneRead = g_frameFrameRead = g_frameComposite = g_frameBackdrop = false;
         g_frameWholeScaleX = 1.0f;
 
@@ -2558,6 +2568,8 @@ namespace
                 fetch.dword[i] = Read32(args.destination + Resource::TextureFetch + i * 4);
             HostTexture& host = g_textures[TextureKey(fetch)];
             host.resolvedFrom = depth ? nullptr : target;
+            if (!depth)
+                g_lastResolve = { g_frame, args.destination, gpu::Desc(target).width, gpu::Desc(target).height };
             // Depth (k_24_8, k_24_8_FLOAT textures) is sampled as its value in X, as Xenia converts it.
             gpu::Format format = depth ? gpu::Format::R32_FLOAT : gpu::Desc(target).format;
             // The frame's copy is as wide as the frame: that is what the swap presents.
@@ -2890,6 +2902,62 @@ namespace
     }
 }
 
+namespace
+{
+    // A game that swaps on with nothing drawn (no draw call, or every one skipped) shows the last presented frame for as
+    // long as it lasts (a Swap Force picture that stayed green, forge issue #84). After 5 s of it outside a movie, once:
+    // the game's draw calls, what the window shows and what each guest thread waits for. One readback per stall.
+    void CheckStall(
+        const Stats& frame, uint32_t texture, const xenos::TextureFetch& fetch, const gpu::Texture* presented)
+    {
+        static d3d::StallWatch watch(5'000'000'000ull);
+        // The game's draw calls since the last frame that drew: none, or all skipped by the renderer.
+        static Stats quiet;
+        if (frame.draws != 0)
+            quiet = {};
+        quiet.guestDraws += frame.guestDraws;
+        quiet.skippedShader += frame.skippedShader;
+        quiet.skippedTarget += frame.skippedTarget;
+        quiet.resolves += frame.resolves;
+        const uint64_t now = PlatformNowNs();
+        const d3d::StallWatch::Event event = watch.Swap(now, frame.draws, ultrawide::MoviePlaying());
+        if (event == d3d::StallWatch::Event::Resumed)
+            fprintf(stderr, "[stall] the game draws again at frame %llu, after %.1f s without a draw\n",
+                (unsigned long long)g_frame, double(watch.QuietNs(now)) / 1e9);
+        if (event != d3d::StallWatch::Event::Stalled)
+            return;
+        fprintf(stderr,
+            "[stall] frame %llu: nothing drawn for %.1f s (no movie): %u draw calls from the game (%u skipped for a "
+            "missing shader, %u for their target), %u resolves; last colour resolve at frame %llu, %ux%u into "
+            "0x%08X\n",
+            (unsigned long long)g_frame, double(watch.QuietNs(now)) / 1e9, quiet.guestDraws, quiet.skippedShader,
+            quiet.skippedTarget, quiet.resolves, (unsigned long long)g_lastResolve.frame, g_lastResolve.width,
+            g_lastResolve.height, g_lastResolve.destination);
+        char shown[160] = "unknown to the renderer: nothing presented";
+        std::vector<uint32_t> pixels;
+        uint32_t width = 0, height = 0;
+        if (presented != nullptr && gpu::ReadbackTexture(presented, pixels, width, height) && !pixels.empty())
+        {
+            uint64_t sum[3] = {}, lit = 0;
+            for (uint32_t p : pixels)
+            {
+                sum[0] += p & 0xFF;
+                sum[1] += p >> 8 & 0xFF;
+                sum[2] += p >> 16 & 0xFF;
+                lit += ((p & 0xFF) | (p >> 8 & 0xFF) | (p >> 16 & 0xFF)) > 8;
+            }
+            const double n = double(pixels.size());
+            snprintf(shown, sizeof(shown), "read back %ux%u: mean colour %.0f %.0f %.0f, %.1f %% of its pixels lit",
+                width, height, double(sum[0]) / n, double(sum[1]) / n, double(sum[2]) / n, 100.0 * double(lit) / n);
+        }
+        else if (presented != nullptr)
+            snprintf(shown, sizeof(shown), "not read back");
+        fprintf(stderr, "[stall] the swap presents texture 0x%08X (format %u, %ux%u), %s\n", texture, fetch.Format(),
+            fetch.Width(), fetch.Height(), shown);
+        PrintGuestThreads("[stall]");
+    }
+}
+
 #ifdef GAME_HOOK_D3DDevice_Swap
 PPC_FUNC_IMPL(GAME_IMP(D3DDevice_Swap));
 // D3DDevice_Swap(device, frontBufferTexture, ...): presents the texture the frame was resolved into.
@@ -2971,6 +3039,7 @@ PPC_FUNC(GAME_HOOK(D3DDevice_Swap))
             if (presented != nullptr)
                 CheckMovieFrame(it->second.texture);
         }
+        CheckStall(g_stats, texture, fetch, it != g_textures.end() && !failedMovie ? it->second.texture : nullptr);
         if (skyenv::Get("SKY_RENDER_STATS") != nullptr && g_frame % 60 == 0)
         {
             // Frames per second over the last 60 frames.

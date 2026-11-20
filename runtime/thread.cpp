@@ -1,12 +1,15 @@
 #include "thread.h"
 #include "loader.h"
 #include "memory.h"
+#include "platform/clock.h"
 #include "platform/platform.h"
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <deque>
 #include <map>
 #include <mutex>
+#include <vector>
 
 namespace
 {
@@ -31,6 +34,22 @@ namespace
 
     std::atomic<uint32_t> g_nextThreadId{ 1 };
     std::atomic<uint32_t> g_threadsRunning;
+
+    thread_local GuestThread* t_guestThread;
+    std::mutex g_liveLock;
+    std::vector<std::shared_ptr<GuestThread>> g_live; // started, not exited: the stall report
+
+    void Forget(const GuestThread& thread)
+    {
+        std::lock_guard lock(g_liveLock);
+        std::erase_if(g_live, [&](const auto& live) { return live.get() == &thread; });
+    }
+
+    // " \"name\"" when the title named the thread, else nothing. Call with g_kernelLock held.
+    std::string QuotedName(const GuestThread& thread)
+    {
+        return thread.name.empty() ? std::string() : " \"" + thread.name + "\"";
+    }
 
     // KPCR fields read by game code through r13.
     constexpr uint32_t PcrTlsPointer = 0x0;
@@ -116,6 +135,7 @@ namespace
 
         PPCContext& ctx = thread.context->ctx;
         t_guestContext = &ctx;
+        t_guestThread = &thread;
         ScheduleContext(ctx, thread.scheduleId);
         ctx.fpscr.loadFromHost();
         g_threadsRunning.fetch_add(1, std::memory_order_relaxed);
@@ -143,9 +163,11 @@ namespace
             exitCode = exit.code;
         }
         g_threadsRunning.fetch_sub(1, std::memory_order_relaxed);
+        Forget(thread);
 
         {
             std::lock_guard lock(g_kernelLock);
+            fprintf(stderr, "[thread] %u%s exited, code 0x%08X\n", thread.id, QuotedName(thread).c_str(), exitCode);
             thread.exited = true;
             thread.exitCode = exitCode;
             thread.SyncHeader();
@@ -201,6 +223,10 @@ std::shared_ptr<GuestThread> CreateGuestThread(
     g_memory.Write<uint8_t>(thread->context->kthread, ThreadObjectType);
     RegisterDispatcher(thread->context->kthread, thread);
 
+    {
+        std::lock_guard lock(g_liveLock);
+        g_live.push_back(thread);
+    }
     PlatformStartThread(
         HostStackSize, [info = StartInfo{ thread, start, context, xapiStartup }] { HostThreadMain(&info); });
 
@@ -210,6 +236,90 @@ std::shared_ptr<GuestThread> CreateGuestThread(
 void ExitGuestThread(uint32_t exitCode) { throw ThreadExit{ exitCode }; }
 
 uint32_t GuestThreadsRunning() { return g_threadsRunning.load(std::memory_order_relaxed); }
+
+GuestWaitScope::GuestWaitScope(
+    GuestWait::Kind kind, uint32_t target, uint32_t count, const PPCContext& ctx, uint32_t owner)
+    : m_thread(t_guestThread)
+{
+    if (m_thread == nullptr)
+        return;
+    // The kernel call usually comes through the title's wait wrapper, so lr names the wrapper; the wrapper saved its own
+    // return address 8 bytes below its caller's frame, which the back chain at r1 points to.
+    const GuestThreadContext& thread = *m_thread->context;
+    auto onStack = [&](uint32_t address) {
+        return address >= thread.stack && address < thread.stack + thread.stackSize;
+    };
+    uint32_t outer = 0;
+    if (onStack(ctx.r1.u32))
+        if (const uint32_t chain = g_memory.Read<uint32_t>(ctx.r1.u32); onStack(chain - 8) && onStack(chain - 5))
+            outer = g_memory.Read<uint32_t>(chain - 8);
+    GuestWait& wait = m_thread->wait;
+    wait.kind.store(kind, std::memory_order_relaxed);
+    wait.target.store(target, std::memory_order_relaxed);
+    wait.count.store(count, std::memory_order_relaxed);
+    wait.caller.store(uint32_t(ctx.lr), std::memory_order_relaxed);
+    wait.outerCaller.store(outer, std::memory_order_relaxed);
+    wait.owner.store(owner, std::memory_order_relaxed);
+    wait.since.store(std::max<uint64_t>(PlatformNowNs(), 1), std::memory_order_release);
+}
+
+GuestWaitScope::~GuestWaitScope()
+{
+    if (m_thread != nullptr)
+        m_thread->wait.since.store(0, std::memory_order_relaxed);
+}
+
+void NameGuestThread(uint32_t id, const char* name)
+{
+    std::lock_guard live(g_liveLock);
+    for (const auto& thread : g_live)
+        if (thread->id == id)
+        {
+            std::lock_guard lock(g_kernelLock);
+            thread->name = name;
+        }
+}
+
+void PrintGuestThreads(const char* tag)
+{
+    std::vector<std::shared_ptr<GuestThread>> threads;
+    {
+        std::lock_guard lock(g_liveLock);
+        threads = g_live;
+    }
+    const uint64_t now = PlatformNowNs();
+    for (const auto& thread : threads)
+    {
+        std::string name;
+        {
+            std::lock_guard lock(g_kernelLock);
+            name = QuotedName(*thread);
+        }
+        const GuestWait& wait = thread->wait;
+        const uint64_t since = wait.since.load(std::memory_order_acquire);
+        if (since == 0)
+        {
+            fprintf(stderr, "%s thread %u%s: not in a wait (running, sleeping or yielding)\n", tag, thread->id,
+                name.c_str());
+            continue;
+        }
+        const double seconds = now > since ? double(now - since) / 1e9 : 0.0;
+        const uint32_t target = wait.target.load(std::memory_order_relaxed);
+        char what[96];
+        if (wait.kind.load(std::memory_order_relaxed) == GuestWait::CriticalSection)
+            snprintf(what, sizeof(what), "critical section 0x%08X held by thread %u", target,
+                wait.owner.load(std::memory_order_relaxed));
+        else
+        {
+            const uint32_t count = wait.count.load(std::memory_order_relaxed);
+            snprintf(what, sizeof(what), "%u object%s (first 0x%08X)", count, count == 1 ? "" : "s", target);
+        }
+        fprintf(stderr,
+            "%s thread %u%s: waiting for %s, %.1f s so far, called from 0x%08X (itself called from 0x%08X)\n", tag,
+            thread->id, name.c_str(), what, seconds, wait.caller.load(std::memory_order_relaxed),
+            wait.outerCaller.load(std::memory_order_relaxed));
+    }
+}
 
 std::shared_ptr<GuestThread> CurrentGuestThread(uint32_t pcr)
 {

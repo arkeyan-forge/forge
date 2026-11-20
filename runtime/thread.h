@@ -2,8 +2,10 @@
 
 #include "kernel/objects.h"
 #include "netplay/scheduler.h"
+#include <atomic>
 #include <functional>
 #include <memory>
+#include <string>
 #include <ppc_config.h>
 #include <ppc_context.h>
 
@@ -22,7 +24,19 @@ struct GuestThreadContext
     GuestThreadContext(uint32_t stackBytes, uint32_t threadId, uint8_t cpu);
 };
 
-// A guest thread as a waitable kernel object, signaled once it exits. Fields are guarded by g_kernelLock.
+// What a guest thread waits for, for the stall report (PrintGuestThreads): written by the thread itself, read by any.
+struct GuestWait
+{
+    enum Kind : uint32_t
+    {
+        Objects,
+        CriticalSection,
+    };
+    std::atomic<uint64_t> since{ 0 }; // PlatformNowNs() at the wait's start, 0 when not waiting
+    std::atomic<uint32_t> kind{}, target{}, count{}, caller{}, outerCaller{}, owner{};
+};
+
+// A guest thread as a waitable kernel object, signaled once it exits. Fields but `wait` are guarded by g_kernelLock.
 struct GuestThread : KernelObject
 {
     std::unique_ptr<GuestThreadContext> context;
@@ -32,6 +46,8 @@ struct GuestThread : KernelObject
     bool exited{};
     uint32_t exitCode{};
     ApcQueue apcs;
+    std::string name; // the title's SetThreadName
+    GuestWait wait;
 
     bool IsSignaled(uint32_t) const override { return exited; }
     int32_t SignalState() const override { return exited; }
@@ -43,6 +59,29 @@ std::shared_ptr<GuestThread> CreateGuestThread(
 
 // Unwinds the calling guest thread back to its host entry (ExTerminateThread).
 [[noreturn]] void ExitGuestThread(uint32_t exitCode);
+
+// Marks the calling guest thread as waiting while it lives: for `target` (the first object's dispatcher header or
+// handle, or the critical section) and `count` objects; `ctx` at the kernel call gives where from (lr, and the return
+// address its caller saved, through the stack's back chain); `owner` is the id of the thread holding a critical section.
+// Nothing on a host-driven thread.
+class GuestWaitScope
+{
+public:
+    GuestWaitScope(GuestWait::Kind kind, uint32_t target, uint32_t count, const PPCContext& ctx, uint32_t owner = 0);
+    ~GuestWaitScope();
+    GuestWaitScope(const GuestWaitScope&) = delete;
+    GuestWaitScope& operator=(const GuestWaitScope&) = delete;
+
+private:
+    GuestThread* m_thread;
+};
+
+// Names the live guest thread `id` in the stall report and its exit line.
+void NameGuestThread(uint32_t id, const char* name);
+
+// One line per live guest thread on stderr, each starting with `tag`: its name, what it waits for, since when, and from
+// where. For a one-off report, never per frame.
+void PrintGuestThreads(const char* tag);
 
 // The GuestThread whose PCR is `pcr`, or null for host-driven threads.
 std::shared_ptr<GuestThread> CurrentGuestThread(uint32_t pcr);
