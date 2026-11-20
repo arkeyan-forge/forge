@@ -539,14 +539,29 @@ namespace toybox
 
         std::map<std::string, collection::Image> g_artworks; // the figure sheet's artworks, by path
 
-        const collection::Image& IconOf(const Toy* toy, VariantKind kind, uint16_t variant)
+        // `villain`: the one a trap holds (collection::TrapPicture), 0 for any other figure.
+        const collection::Image& IconOf(const Toy* toy, VariantKind kind, uint16_t variant, uint16_t villain = 0)
         {
-            uint64_t key =
-                uint64_t(toy != nullptr ? toy->type : 0xFFFF) << 24 | uint64_t(variant) << 8 | uint64_t(kind);
+            uint64_t key = uint64_t(villain) << 40 | uint64_t(toy != nullptr ? toy->type : 0xFFFF) << 24 |
+                           uint64_t(variant) << 8 | uint64_t(kind);
             auto found = g_icons.find(key);
-            if (found == g_icons.end())
-                found = g_icons.emplace(key, collection::Portrait(ARKEYAN_GAME_ID, toy, kind, 128, variant)).first;
-            return found->second;
+            if (found != g_icons.end())
+                return found->second;
+            collection::Image image;
+            if (toy != nullptr && villain != 0)
+            {
+                uint16_t shown = variant != 0 ? variant : collection::VariantFor(*toy, kind);
+                image = collection::TrapPicture(
+                    *toy, shown, villain, collection::PortraitPath(ARKEYAN_GAME_ID, *toy, shown));
+                if (!image.Empty())
+                {
+                    image = collection::Resize(image, 128, 128);
+                    collection::AddBadge(image, kind);
+                }
+            }
+            if (image.Empty())
+                image = collection::Portrait(ARKEYAN_GAME_ID, toy, kind, 128, variant);
+            return g_icons.emplace(key, std::move(image)).first->second;
         }
 
         std::string Initials(const std::string& name)
@@ -565,13 +580,13 @@ namespace toybox
         }
 
         // The round picture: the element colour, the disc's picture (or the drawn icon) over it, bilinear.
-        void Portrait(
-            const Toy* toy, VariantKind kind, ImVec2 center, int diameter, bool grey = false, uint16_t variant = 0)
+        void Portrait(const Toy* toy, VariantKind kind, ImVec2 center, int diameter, bool grey = false,
+            uint16_t variant = 0, uint16_t villain = 0)
         {
             char key[80];
-            snprintf(key, sizeof(key), "portrait %u %u %d %d %d", toy != nullptr ? toy->type : 0xFFFF,
-                unsigned(variant), int(kind), diameter, grey ? 1 : 0);
-            const collection::Image& image = IconOf(toy, kind, variant);
+            snprintf(key, sizeof(key), "portrait %u %u %d %d %d %u", toy != nullptr ? toy->type : 0xFFFF,
+                unsigned(variant), int(kind), diameter, grey ? 1 : 0, unsigned(villain));
+            const collection::Image& image = IconOf(toy, kind, variant, villain);
             Blit(Bake(key, diameter,
                      [&](float dx, float dy) {
                          float radius = diameter / 2.0f;
@@ -614,7 +629,8 @@ namespace toybox
 
         void FigurePortrait(const Figure& f, ImVec2 center, int diameter, bool grey = false)
         {
-            Portrait(f.toy, f.Kind(), center, diameter, grey, f.variant);
+            const bool trap = f.toy != nullptr && f.toy->category == Category::Trap;
+            Portrait(f.toy, f.Kind(), center, diameter, grey, f.variant, trap ? f.stats.villain : 0);
         }
 
         // A swapper's bottom half, small at the lower right of its top's picture (one card, two halves).

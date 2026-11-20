@@ -256,6 +256,54 @@ namespace
         CHECK(seen);
         CHECK(GameFileOf(PortraitPath("ssa", *spyro)) == "superchargers/collection_spyro_normal.png");
     }
+
+    // A Magic Trap holding Chompy Mage (storage id 1, villain 1001): the trap's picture with the villain's at its bottom,
+    // centred; nothing for an empty trap, a villain with no picture, another toy or a card with its own picture.
+    void TestTrapPicture(const fs::path& data)
+    {
+        SetEnv("SKYLANDERS_DATA", data.string());
+        ForgetPictureFolders();
+        const Toy* trap = Catalogue::Get().Find(210);
+        const Toy* eruptor = Catalogue::Get().Find(9);
+        CHECK(trap != nullptr && trap->category == Category::Trap && eruptor != nullptr);
+        if (trap == nullptr || eruptor == nullptr)
+            return;
+        const fs::path folder = datadir::Game("trapteam") / "portraits";
+        fs::create_directories(folder);
+        const std::string path = (folder / "210_12290.png").string();
+        CHECK(SavePng(Image{ 100, 100, std::vector<uint32_t>(size_t(100) * 100, 0xFFFF0000u) }, path));
+        // A red villain on a transparent margin: only its visible part is fitted.
+        Image villain{ 60, 60, std::vector<uint32_t>(size_t(60) * 60, 0) };
+        for (int y = 10; y < 50; y++)
+            for (int x = 10; x < 50; x++)
+                villain.rgba[size_t(y) * 60 + x] = 0xFF0000FFu;
+        CHECK(SavePng(villain, (folder / "1001_villaincaptured.png").string()));
+        ForgetPictureFolders();
+
+        CHECK(TrapPicture(*trap, 0x3002, 0, path).Empty());
+        CHECK(TrapPicture(*trap, 0x3002, 2, path).Empty()); // Dr Krankcase: no picture cached
+        CHECK(TrapPicture(*eruptor, 0, 1, path).Empty());
+        CHECK(TrapPicture(*trap, 0x3002, 1, {}).Empty());
+        const Image held = TrapPicture(*trap, 0x3002, 1, path);
+        CHECK(held.width == 100 && held.height == 100);
+        if (held.width == 100 && held.height == 100)
+        {
+            auto at = [&](int x, int y) { return held.rgba[size_t(y) * 100 + x]; };
+            CHECK(at(50, 76) == 0xFF0000FFu && at(36, 76) == 0xFF0000FFu && at(63, 76) == 0xFF0000FFu); // the villain
+            CHECK(at(20, 20) == 0xFFFF0000u && at(50, 97) == 0xFFFF0000u && at(50, 50) == 0xFFFF0000u);
+            // Inside the circle the Toy Box crops its portraits to.
+            for (int y = 0; y < 100; y++)
+                for (int x = 0; x < 100; x++)
+                    if (at(x, y) != 0xFFFF0000u)
+                        CHECK((x - 49.5f) * (x - 49.5f) + (y - 49.5f) * (y - 49.5f) < 50.0f * 50.0f);
+        }
+
+        // The player's own picture stays as it is.
+        CHECK(SetOwnPicture(210, 0x3002, Image{ 8, 8, std::vector<uint32_t>(64, 0xFF00FF00u) }));
+        CHECK(TrapPicture(*trap, 0x3002, 1, path).Empty());
+        CHECK(RemoveOwnPicture(210, 0x3002));
+        CHECK(!TrapPicture(*trap, 0x3002, 1, path).Empty());
+    }
 }
 
 int main()
@@ -270,6 +318,7 @@ int main()
     TestLookups(scratch / "portraits");
     TestOrigins();
     TestChoices(scratch / "data");
+    TestTrapPicture(scratch / "data");
     fs::remove_all(scratch, error);
     printf("picture lookup test: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
