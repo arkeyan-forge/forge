@@ -993,6 +993,8 @@ namespace
     // What PrepareDraw saw of the draw it built, for BuildDraw: it draws into the wide frame, may read the scene, VTE_CNTL.
     bool g_frameDraw, g_frameSceneRead, g_frameFrameRead, g_frameComposite, g_frameBackdrop;
     uint64_t g_backdropFrame; // g_frame + 1 of the last frame that drew game::UltrawideBackdropPixelShader
+    // A HUD quad over the whole frame drawn over the whole wide frame: the factor on its clip x (d3d::WholeScaleX).
+    float g_frameWholeScaleX = 1.0f;
     // Fill's smaller HUD (ultrawide::HudInset): the draw reads a copy of a render target (a resolve), not a texture of the
     // game's files; a screen-covering pass that does is a picture of the scene, not HUD.
     bool g_frameTargetRead;
@@ -1102,6 +1104,7 @@ namespace
     {
         memset(&draw, 0, sizeof(draw));
         g_frameDraw = g_frameSceneRead = g_frameFrameRead = g_frameComposite = g_frameBackdrop = false;
+        g_frameWholeScaleX = 1.0f;
 
         // No pixel shader is allowed: depth-only passes.
         uint32_t pixelShaderObject = Read32(device + Device::PixelShader);
@@ -1703,9 +1706,9 @@ namespace
 
     // The wide frame: where a draw goes (d3d/frame_anchor.h), from its positions in guest memory and the position matrix
     // in vertex constants c<matrix>-c<matrix + 3>. Small draws only (a quad's 4 vertices); `count` 0: every vertex of the
-    // stream (an indexed quad).
-    d3d::FramePlace PlaceByVertices(
-        uint32_t device, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride, uint32_t matrix)
+    // stream (an indexed quad). `reach`: d3d::PlaceFrameDraw's, for a Whole draw.
+    d3d::FramePlace PlaceByVertices(uint32_t device, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride,
+        uint32_t matrix, float* reach = nullptr)
     {
         constexpr uint32_t MaxVertices = 6;
         if (count != 0 && (count < 3 || count > MaxVertices))
@@ -1748,17 +1751,18 @@ namespace
             float rows[16];
             for (uint32_t r = 0; r < 16; r++)
                 rows[r] = std::bit_cast<float>(ByteSwap(words[matrix * 4 + r]));
-            return d3d::PlaceFrameDraw(positions, count, components, rows);
+            return d3d::PlaceFrameDraw(positions, count, components, rows, reach);
         }
         return d3d::FramePlace::Centre;
     }
 
     // Where a HUD draw of game::UltrawideHudVertexShader goes: its position matrix is in c0-c3.
-    d3d::FramePlace HudPlace(uint32_t device, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride)
+    d3d::FramePlace HudPlace(
+        uint32_t device, uint32_t first, uint32_t count, uint32_t upData, uint32_t upStride, float* reach)
     {
         if (game::UltrawideHudVertexShader == 0 || g_drawVertexShader != game::UltrawideHudVertexShader)
             return d3d::FramePlace::Centre;
-        return PlaceByVertices(device, first, count, upData, upStride, 0);
+        return PlaceByVertices(device, first, count, upData, upStride, 0, reach);
     }
 
     // Builds the host draw from the device state now. The data it points to (g_streamData, g_indexData, g_constants)
@@ -1827,14 +1831,31 @@ namespace
             else
             {
                 // The HUD stays centred; a piece in a corner of its 16:9 frame goes to that corner of the window.
+                float reach = 1.0f;
                 const d3d::FramePlace place =
-                    indexed ? d3d::FramePlace::Centre : HudPlace(device, first, count, upData, upStride);
-                const int32_t shift = place == d3d::FramePlace::Left    ? 0
-                                      : place == d3d::FramePlace::Right ? 2 * FrameShift()
-                                                                        : FrameShift();
-                draw.viewport.x += float(shift);
-                draw.scissor.left = std::min(draw.scissor.left + shift, int32_t(size.width));
-                draw.scissor.right = std::min(draw.scissor.right + shift, int32_t(size.width));
+                    indexed ? d3d::FramePlace::Centre : HudPlace(device, first, count, upData, upStride, &reach);
+                const float wideRatio = float(ultrawide::FrameWidth()) / float(ultrawide::FrameWidth16x9);
+                if (place == d3d::FramePlace::Whole && wideRatio > 1.0f && !ultrawide::MoviePlaying())
+                {
+                    // A fade or a flash over the whole frame: over the whole wide frame, with the least stretch that
+                    // still covers it (centred, the scene showed untouched at the sides).
+                    draw.viewport.x *= wideRatio;
+                    draw.viewport.width *= wideRatio;
+                    draw.scissor.left =
+                        std::min(int32_t(std::floor(float(draw.scissor.left) * wideRatio)), int32_t(size.width));
+                    draw.scissor.right =
+                        std::min(int32_t(std::ceil(float(draw.scissor.right) * wideRatio)), int32_t(size.width));
+                    g_frameWholeScaleX = d3d::WholeScaleX(reach, wideRatio);
+                }
+                else
+                {
+                    const int32_t shift = place == d3d::FramePlace::Left    ? 0
+                                          : place == d3d::FramePlace::Right ? 2 * FrameShift()
+                                                                            : FrameShift();
+                    draw.viewport.x += float(shift);
+                    draw.scissor.left = std::min(draw.scissor.left + shift, int32_t(size.width));
+                    draw.scissor.right = std::min(draw.scissor.right + shift, int32_t(size.width));
+                }
                 // aspect=fill on a narrower window: the present cuts the frame's sides, so the HUD is drawn as much
                 // smaller towards the frame's centre and stays whole. Movies fill; a corner piece stays in its corner,
                 // and a quad over the whole frame (a fade, a full-screen page) covers it as the scene does.
@@ -1937,8 +1958,8 @@ namespace
         // The "Edge smoothing" setting: Game leaves the pass's contrast thresholds, Light and Off raise them (gpu/edge_smoothing.h).
         const edgesmoothing::Mode smoothing = fxaaPass ? EdgeSmoothing() : edgesmoothing::Game;
         if (upData != 0 || g_dump.active || g_promptFaceHash != 0 ||
-            (g_frameComposite && game::UltrawideCompositeVpos) || g_frameBackdrop || hostKernel ||
-            smoothing != edgesmoothing::Game || g_drawUvMatrix >= 0)
+            (g_frameComposite && game::UltrawideCompositeVpos) || g_frameBackdrop || g_frameWholeScaleX != 1.0f ||
+            hostKernel || smoothing != edgesmoothing::Game || g_drawUvMatrix >= 0)
         {
             // A BeginVertices draw captures the constants when the buffer is requested, before the game fills the
             // vertices (and may change state); the debug dump wants the same host-order copy.
@@ -1970,6 +1991,12 @@ namespace
                     constants[i] = off ? edgesmoothing::OffThreshold : edgesmoothing::LightThreshold;
                     constants[4 + i] = off ? edgesmoothing::OffMinimum : edgesmoothing::LightMinimum;
                 }
+            }
+            if (g_frameWholeScaleX != 1.0f)
+            {
+                // The HUD's position matrix (c0-c3, row vectors): its x column.
+                for (uint32_t row = 0; row < 4; row++)
+                    g_constants[row * 4] *= g_frameWholeScaleX;
             }
             if (g_frameBackdrop)
                 ultrawide::FitBackdrop(g_constants.data() + game::UpscalePositionMatrix * 4,

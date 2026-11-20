@@ -13,15 +13,18 @@ namespace d3d
         Centre, // the HUD's place: the 16:9 frame in the middle of the wide one
         Left, // flush with the window's left edge
         Right, // flush with the window's right edge
-        Whole, // over the whole frame (a fade, a full-screen page): centred in the wide frame like the HUD, and never
-        // drawn smaller where aspect=fill cuts the frame (d3d/render.cpp)
+        Whole, // over the whole frame (a fade, a flash, a full-screen page): over the whole wide frame too (WholeScaleX),
+        // and never drawn smaller where aspect=fill cuts the frame (d3d/render.cpp)
     };
 
     // `positions`: `count` vertices of `components` floats (x, y[, z]; the rest 0). `rows`: the vertex shader's position
     // matrix, four rows of four (clip = x rows[0] + y rows[1] + z rows[2] + rows[3]). A draw that reaches one corner of
     // the 16:9 frame (within half a guest pixel, or past it) and is partly on screen goes to that side; one that reaches
-    // all four edges is Whole; anything else, a band across the whole width included, stays centred.
-    inline FramePlace PlaceFrameDraw(const float* positions, uint32_t count, uint32_t components, const float* rows)
+    // all four edges is Whole; anything else, a band across the whole width included, stays centred. `reach`, for Whole:
+    // how far it goes past the nearer side, in clip units (1: the frame's own width; a turning sheet bigger than the
+    // screen goes further).
+    inline FramePlace PlaceFrameDraw(
+        const float* positions, uint32_t count, uint32_t components, const float* rows, float* reach = nullptr)
     {
         if (count < 3 || components < 2)
             return FramePlace::Centre;
@@ -45,10 +48,25 @@ namespace d3d
         const bool left = minX <= -1.0f + halfX, right = maxX >= 1.0f - halfX;
         const bool top = minY <= -1.0f + halfY, bottom = maxY >= 1.0f - halfY;
         if (left && right && top && bottom)
+        {
+            if (reach != nullptr)
+                *reach = std::min(-minX, maxX);
             return FramePlace::Whole;
+        }
         const bool corner = top || bottom;
         if (!corner || left == right)
             return FramePlace::Centre;
         return left ? FramePlace::Left : FramePlace::Right;
+    }
+
+    // The factor on a Whole draw's clip x once its viewport covers a frame `wideRatio` times the 16:9 one's width: the
+    // least stretch that still covers that frame. A draw of the frame's own size (a fade) is stretched with it (1); one
+    // reaching at least `wideRatio` past the sides (Trap Team's capture flash, sheets several screens wide) keeps its
+    // shape (1 / wideRatio).
+    inline float WholeScaleX(float reach, float wideRatio)
+    {
+        if (!(reach > 0.0f) || !(wideRatio > 1.0f))
+            return 1.0f;
+        return std::clamp(1.0f / reach, 1.0f / wideRatio, 1.0f);
     }
 }
