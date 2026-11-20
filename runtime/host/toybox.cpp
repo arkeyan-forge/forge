@@ -251,6 +251,11 @@ namespace
         }
         if (key.repeat && (HoldKey(key) || OpenKey(key) || key.key == SDLK_F3))
             return;
+        if (key.key == SDLK_ESCAPE && toybox::CancelDrag())
+        {
+            model.Touch();
+            return;
+        }
         if (!model.open)
         {
             if (g_f3Held && key.key != SDLK_F3)
@@ -369,6 +374,8 @@ namespace
         if (sdlButton != SDL_BUTTON_LEFT && sdlButton != SDL_BUTTON_RIGHT)
             return;
         toybox::Click(model, x, y, sdlButton == SDL_BUTTON_RIGHT ? 3 : 1, twice);
+        if (sdlButton == SDL_BUTTON_LEFT && !twice && model.screen == Screen::Home)
+            toybox::Press(x, y);
         g_mouseHeld = true;
         model.Hold(true, SDL_GetTicksNS());
     }
@@ -397,8 +404,22 @@ namespace
             if (place >= -1)
                 model.AimWheel(place);
         }
-        else if (toybox::Pointer(x, y, inside))
-            model.Touch();
+        else
+        {
+            const bool hover = toybox::Pointer(x, y, inside);
+            if (toybox::Drag(x, y) || hover)
+                model.Touch();
+        }
+    }
+
+    // The left button released: a drag drops where it is.
+    void MouseUp(float x, float y, bool inside)
+    {
+        toybox::Model& model = M();
+        g_mouseHeld = false;
+        model.Hold(false, SDL_GetTicksNS());
+        if (toybox::Release(model, x, y, inside))
+            fprintf(stderr, "[toybox] drop at %.0f/%.0f\n", x, y);
     }
 
     // --- Script ----------------------------------------------------------------------------------------------------
@@ -451,10 +472,11 @@ namespace
     // launch. A key name (SDL_GetKeyFromName; "shift+Right") is pressed and released; "down=Tab" / "up=Tab" press or
     // release only; "type=<text>" types; "shot" or "shot=<name>" saves a screenshot; "pad=back+lright*0.8" holds pad
     // buttons (a b x y back start lb rb up down left right, lup ldown lleft lright for the stick) for 0.8 s (0.15 s
-    // without "*"), as the Toy Box sees the pad; "click=x/y" and "rclick=x/y" click at canvas pixels, "move=x/y" moves the
-    // pointer there (hover), "wheel=up" / "wheel=down" turn the wheel one tick (each logs the focus); "hold=K*0.5" holds a
-    // key (an SDL scancode name) for the game's input 0.5 s and logs the pad state the game gets from it; "place=<dump>",
-    // "remove=<slot>" and "remove=all" change the emulated portal (host/portal_script.h).
+    // without "*"), as the Toy Box sees the pad; "click=x/y" and "rclick=x/y" click at canvas pixels, "move=x/y" moves
+    // the pointer there (hover), "drag=x1/y1/x2/y2" drags from one to the other and drops, "wheel=up" / "wheel=down"
+    // turn the wheel one tick (each logs the focus); "hold=K*0.5" holds a key (an SDL scancode name) for the game's
+    // input 0.5 s and logs the pad state the game gets from it; "place=<dump>", "remove=<slot>" and "remove=all" change
+    // the emulated portal (host/portal_script.h).
     void LoadScript()
     {
         const char* script = skyenv::Get("SKY_TOYBOX_SCRIPT");
@@ -650,6 +672,26 @@ namespace
                 LogFocus();
                 continue;
             }
+            if (action.rfind("drag=", 0) == 0)
+            {
+                float at[4] = {};
+                const char* text = action.c_str() + 5;
+                for (float& value : at)
+                {
+                    value = float(atof(text));
+                    if (const char* slash = strchr(text, '/'))
+                        text = slash + 1;
+                }
+                if (M().open)
+                {
+                    MouseMove(at[0], at[1], true);
+                    MouseDown(at[0], at[1], SDL_BUTTON_LEFT, false);
+                    MouseMove(at[2], at[3], true);
+                    MouseUp(at[2], at[3], true);
+                }
+                LogFocus();
+                continue;
+            }
             if (action.rfind("wheel=", 0) == 0)
             {
                 if (M().open)
@@ -766,9 +808,18 @@ bool ToyboxHandleEvent(const SDL_Event& event)
         return model.open;
     }
     case SDL_EVENT_MOUSE_BUTTON_UP:
-        g_mouseHeld = false;
-        model.Hold(false, SDL_GetTicksNS());
+    {
+        float x = 0, y = 0;
+        bool inside = CanvasPoint(event.button.x, event.button.y, x, y);
+        if (event.button.button == SDL_BUTTON_LEFT)
+            MouseUp(x, y, inside);
+        else
+        {
+            g_mouseHeld = false;
+            model.Hold(false, SDL_GetTicksNS());
+        }
         return model.open;
+    }
     case SDL_EVENT_MOUSE_MOTION:
     {
         float x = 0, y = 0;

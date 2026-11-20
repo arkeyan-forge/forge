@@ -10,6 +10,15 @@ void toybox::Model::Run(Command command) { g_calls.push_back("run=" + std::to_st
 void toybox::Model::FocusAddCell(int cell) { g_calls.push_back("focus add=" + std::to_string(cell)); }
 void toybox::Model::HoverAddCell(int cell) { g_calls.push_back("hover add=" + std::to_string(cell)); }
 void toybox::Model::FocusColumnRow(int row) { g_calls.push_back("seat=" + std::to_string(row)); }
+void toybox::Model::DropCard(int seatIndex, const std::string& path)
+{
+    g_calls.push_back("drop " + path + " on " + std::to_string(seatIndex));
+}
+void toybox::Model::DropSeat(int from, int to)
+{
+    g_calls.push_back("drop seat " + std::to_string(from) + " on " + std::to_string(to));
+}
+toybox::puton::Refusal toybox::Model::Refuses(int, const std::string&) const { return puton::Refusal::None; }
 
 int main()
 {
@@ -150,10 +159,63 @@ int main()
     g_calls.clear();
     Click(model, 5, 205, 1, true);
     check(g_calls == std::vector<std::string>{ "seat=0", accept });
-    printf("%d checks, %d failures\n", 26, failures);
+    // Drag and drop: a press on a shelf card or a seat's figure, a move past the threshold, a release on a seat or on the
+    // shelf. Under the threshold it was only the press's click; released on nothing, nothing happens.
+    model.seats.assign(2, {});
+    model.seats[0].path = "a.bin";
+    model.realPortal = false;
+    auto homeHits = [&] {
+        g_hits.clear();
+        g_drops.clear();
+        g_hovered = -1;
+        ShelfDrop({ 0, 300 }, { 100, 400 });
+        AddHit({ 0, 300 }, { 20, 320 }, [] {});
+        g_hits.back().dragPath = "b.bin";
+        g_hits.back().focus = [] { g_calls.push_back("focus card"); };
+        AddHit({ 30, 300 }, { 50, 320 }, [] {});
+        g_hits.back().focus = [] { g_calls.push_back("focus other"); };
+        SeatHit(model, 0, { 0, 200 }, { 20, 220 });
+        SeatHit(model, 1, { 30, 200 }, { 50, 220 });
+    };
+    auto drag = [&](float x1, float y1, float x2, float y2, bool inside = true) {
+        Pointer(x1, y1, true);
+        g_hovered = HoveredHit();
+        g_calls.clear();
+        Press(x1, y1);
+        bool moved = Drag(x2, y2);
+        bool dropped = Release(model, x2, y2, inside);
+        return std::pair(moved, dropped);
+    };
+    homeHits();
+    check(drag(5, 305, 8, 308) == std::pair(false, false) && g_calls.empty());
+    check(drag(5, 305, 35, 205) == std::pair(true, true) && g_calls == std::vector<std::string>{ "drop b.bin on 1" });
+    check(drag(5, 305, 70, 250) == std::pair(true, true) && g_calls.empty());
+    check(drag(5, 305, 35, 205, false) == std::pair(true, true) && g_calls.empty());
+    check(drag(5, 205, 50, 350).second && g_calls == std::vector<std::string>{ "drop seat 0 on -1" });
+    check(drag(5, 205, 35, 210).second && g_calls == std::vector<std::string>{ "drop seat 0 on 1" });
+    check(drag(5, 205, 15, 215).second && g_calls.empty()); // back onto its own seat
+    check(drag(35, 205, 50, 350) == std::pair(false, false) && g_calls.empty()); // an empty seat
+    // While dragging, the pointer passing over a card does not move the focus; Escape (CancelDrag) drops nothing.
+    Pointer(5, 305, true);
+    g_hovered = HoveredHit();
+    g_calls.clear();
+    Press(5, 305);
+    Drag(35, 305);
+    Pointer(35, 305, true);
+    check(g_calls.empty() && CancelDrag() && !Release(model, 35, 205, true) && g_calls.empty());
+    // A real figure, or any figure on a real portal, stays where it is.
+    model.seats[0].physical = true;
+    homeHits();
+    check(drag(5, 205, 50, 350) == std::pair(false, false) && g_calls.empty());
+    model.seats[0].physical = false;
+    model.realPortal = true;
+    homeHits();
+    check(drag(5, 205, 50, 350) == std::pair(false, false) && g_calls.empty());
+    model.realPortal = false;
+    printf("%d checks, %d failures\n", 37, failures);
     puts(failures
              ? "FAIL: menu pointer and click"
              : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus, Add "
-               "cards' hover and a click beside them while versions show, a seat's double click");
+               "cards' hover and a click beside them while versions show, a seat's double click, drag and drop");
     return failures ? 1 : 0;
 }

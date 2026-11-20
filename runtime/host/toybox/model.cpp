@@ -833,9 +833,28 @@ namespace toybox
         return true;
     }
 
+    puton::Refusal Model::Refuses(int seatIndex, const std::string& path) const
+    {
+        int index = FindFigure(path);
+        if (index < 0 || seatIndex < 0 || seatIndex >= int(seats.size()))
+            return puton::Check(realPortal, false, false, {});
+        const Card card = collection::CardOf(figures, size_t(index));
+        const SeatState& target = seats[size_t(seatIndex)];
+        puton::Half halves[2];
+        size_t count = 0;
+        for (const Figure* half : { card.first, card.second })
+        {
+            if (half != nullptr)
+                halves[count++] = { half->lock.Busy(),
+                    half->toy == nullptr || Catalogue::Get().Accepts(game, half->type), Accepts(target, *half) };
+        }
+        return puton::Check(realPortal, true, target.physical, std::span(halves, count));
+    }
+
     bool Model::PutOn(int seatIndex, const std::string& path, bool fromWheel)
     {
-        if (realPortal)
+        const puton::Refusal refusal = Refuses(seatIndex, path);
+        if (refusal == puton::Refusal::RealPortal)
         {
             Toast(L("Real portal: use the virtual portal to play it",
                       "Portail réel : utilisez le portail virtuel pour la jouer"),
@@ -843,38 +862,43 @@ namespace toybox
             m_refusal = toyboxlink::refusal::Real;
             return false;
         }
-        int index = FindFigure(path);
-        if (index < 0)
+        if (refusal == puton::Refusal::Unknown)
         {
             m_refusal = toyboxlink::refusal::Unknown;
             return false;
         }
         // A swapper is one card, placed by its top: both halves go on the portal.
-        const Card card = collection::CardOf(figures, size_t(index));
+        const Card card = collection::CardOf(figures, size_t(FindFigure(path)));
         const Figure f = *card.first;
         const std::string cardPath = f.path;
         SeatState& target = seats[seatIndex];
-        if (target.physical)
+        switch (refusal)
         {
+        case puton::Refusal::RealFigure:
             Toast(L("A real figure is there: lift it off the portal first",
                 "Une vraie figurine y est : retirez-la d'abord du portail"));
             m_refusal = toyboxlink::refusal::Real;
             return false;
-        }
-        for (const Figure* half : card.Halves())
-        {
-            if (half->lock.Busy())
+        case puton::Refusal::Busy:
+            for (const Figure* half : card.Halves())
             {
-                Toast(std::string(L("In use by ", "Utilisée par ")) + LockOwner(half->lock));
-                m_refusal = toyboxlink::refusal::Busy;
-                return false;
+                if (half->lock.Busy())
+                {
+                    Toast(std::string(L("In use by ", "Utilisée par ")) + LockOwner(half->lock));
+                    break;
+                }
             }
-            if (!Accepts(target, *half) || (half->toy != nullptr && !Catalogue::Get().Accepts(game, half->type)))
-            {
-                Toast(GameName() + L(" cannot read ", " ne lit pas ") + FigureName(f));
-                m_refusal = toyboxlink::refusal::CannotRead;
-                return false;
-            }
+            m_refusal = toyboxlink::refusal::Busy;
+            return false;
+        case puton::Refusal::CannotRead:
+            Toast(GameName() + L(" cannot read ", " ne lit pas ") + FigureName(f));
+            m_refusal = toyboxlink::refusal::CannotRead;
+            return false;
+        case puton::Refusal::WrongSeat:
+            Toast(FigureName(f) + L(" doesn't go on ", " ne va pas en ") + SeatLabel(seatIndex));
+            m_refusal = toyboxlink::refusal::CannotRead;
+            return false;
+        default: break;
         }
         int other = SeatOf(cardPath);
         // Put on its own seat again: lifted and placed once more. The way out when the game read a figure and dropped
@@ -960,6 +984,18 @@ namespace toybox
             Refocus(keep);
         }
         return true;
+    }
+
+    void Model::DropCard(int seatIndex, const std::string& path) { PutOn(seatIndex, path); }
+
+    void Model::DropSeat(int from, int to)
+    {
+        if (from < 0 || from >= int(seats.size()) || from == to)
+            return;
+        if (to < 0)
+            TakeOff(from);
+        else
+            PutOn(to, seats[size_t(from)].path);
     }
 
     void Model::TakeOff(int seatIndex)

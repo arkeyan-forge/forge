@@ -84,16 +84,55 @@ namespace toybox
             bool hover = true; // outlined under the pointer (not a backdrop that only catches clicks)
             std::string target; // script proof: card, F3 row or Commands cell, independent of keyboard focus
             std::function<void()> focus; // the pointer moving onto it moves the focus there (Pointer)
+            std::string dragPath; // a press may drag this card (a shelf card, or the figure of dragSeat)
+            int dragSeat = -1;
         };
         std::vector<Hit> g_hits;
         ImVec2 g_pointer; // the mouse in canvas pixels (Pointer)
         bool g_pointerIn;
         int g_hovered = -1; // the hit under it, as last computed
 
+        // Where a dragged card can be dropped: a seat, or the shelf (seat -1).
+        struct Drop
+        {
+            ImVec2 min, max;
+            int seat = -1;
+            float radius = 0;
+        };
+        std::vector<Drop> g_drops;
+
+        // A press on a draggable hit; it becomes a drag once the pointer moved DragStart canvas pixels, so clicks and
+        // double clicks stay as they are.
+        constexpr float DragStart = 6;
+        struct DragState
+        {
+            bool pressed = false, active = false;
+            ImVec2 from;
+            std::string path;
+            int seat = -1;
+        };
+        DragState g_drag;
+
+        // The drop area under a canvas point; null: none.
+        const Drop* DropAt(float x, float y)
+        {
+            for (const Drop& drop : g_drops)
+            {
+                if (drop.seat >= 0 && x >= drop.min.x && y >= drop.min.y && x < drop.max.x && y < drop.max.y)
+                    return &drop;
+            }
+            for (const Drop& drop : g_drops)
+            {
+                if (drop.seat < 0 && x >= drop.min.x && y >= drop.min.y && x < drop.max.x && y < drop.max.y)
+                    return &drop;
+            }
+            return nullptr;
+        }
+
         // The topmost hit under the pointer that shows a hover outline, -1: none.
         int HoveredHit()
         {
-            if (!g_pointerIn)
+            if (!g_pointerIn || g_drag.active)
                 return -1;
             int i = HitAt(std::span<const Hit>(g_hits), g_pointer.x, g_pointer.y);
             return i >= 0 && g_hits[size_t(i)].hover ? i : -1;
@@ -482,7 +521,7 @@ namespace toybox
                 min = ImVec2(std::max(min.x, clipMin.x), std::max(min.y, clipMin.y));
                 max = ImVec2(std::max(min.x, std::min(max.x, clipMax.x)), std::max(min.y, std::min(max.y, clipMax.y)));
             }
-            g_hits.push_back({ min, max, std::move(left), std::move(right), std::move(twice), true, {}, {} });
+            g_hits.push_back({ min, max, std::move(left), std::move(right), std::move(twice), true, {}, {}, {}, -1 });
         }
 
         // --- Pictures -------------------------------------------------------------------------------------------------
@@ -1519,6 +1558,8 @@ namespace toybox
                     [&model, i] { model.ActivateCell(int(i)); });
                 g_hits.back().target = "card=" + std::to_string(i);
                 g_hits.back().focus = [&model, i] { model.FocusCell(int(i), false); };
+                if (!wheelList)
+                    g_hits.back().dragPath = f.path;
             }
             g_draw->PopClipRect();
             if (ringRadius >= 0)
@@ -1713,7 +1754,7 @@ namespace toybox
         constexpr float SeatTop = look::PageTop + 46, SeatHeight = 92, SeatWidth = 260, SeatGap = 14;
 
         // A seat's pointer area: a click focuses it, a right click its options, a double click takes its figure off (as
-        // Delete; not a real toy) or, empty, chooses for it.
+        // Delete; not a real toy) or, empty, chooses for it. A drop area too; a virtual figure on it can be dragged.
         void SeatHit(Model& model, int index, ImVec2 a, ImVec2 b)
         {
             const SeatState& seat = model.seats[size_t(index)];
@@ -1728,7 +1769,16 @@ namespace toybox
                     model.FocusColumnRow(index);
                     model.Run(takeOff ? Command::Delete : Command::Accept);
                 });
+            if (takeOff)
+            {
+                g_hits.back().dragPath = seat.path;
+                g_hits.back().dragSeat = index;
+            }
+            g_drops.push_back({ a, b, index, look::Radius::Card });
         }
+
+        // The shelf's area: a seat's figure dropped there is taken off.
+        void ShelfDrop(ImVec2 min, ImVec2 max) { g_drops.push_back({ min, max, -1, look::Radius::Card }); }
 
         // Add a figure's backdrop, under every other hit: a click on none of them (a gap, the header) closes the versions
         // shown, so the cards light up under the pointer again. The versions panel keeps them: its own area is over this one.
@@ -1950,6 +2000,8 @@ namespace toybox
             choosing += " \xC2\xB7 " + Upper(FigureCount(model.shownCount, French()));
             TextMiddle(g_black, 12, min.x, min.y + 20, Look::TextDim, choosing);
             float listTop = DrawShelfBar(model, min, max);
+            if (!model.filtersOpen)
+                ShelfDrop(ImVec2(min.x, listTop), max);
             DrawList(model, ImVec2(min.x, listTop), max,
                 model.homeRow == Model::Row::Grid && model.screen == Screen::Home && !model.filtersOpen, false);
             if (model.shownCount == 0 && model.FiltersActive())
@@ -3978,6 +4030,39 @@ namespace toybox
             return new imgui_software::Texture{ CanvasWidth, CanvasHeight,
                 std::vector<uint32_t>(size_t(CanvasWidth) * CanvasHeight, pixel) };
         }
+
+        // While a card is dragged: the seats that would refuse it greyed, the one under the pointer outlined (the shelf
+        // too, for a seat's figure), its round picture under the pointer.
+        void DrawDrag(const Model& model)
+        {
+            const Drop* under = g_pointerIn ? DropAt(g_pointer.x, g_pointer.y) : nullptr;
+            for (const Drop& drop : g_drops)
+            {
+                if (drop.seat < 0 || drop.seat == g_drag.seat)
+                    continue;
+                if (model.Refuses(drop.seat, g_drag.path) != puton::Refusal::None)
+                    RoundRect(drop.min, drop.max, look::Colour::Page, drop.radius, 0.6f);
+                else if (&drop == under)
+                    FocusRing(drop.min, drop.max, drop.radius);
+            }
+            if (under != nullptr && under->seat < 0 && g_drag.seat >= 0)
+                FocusRing(under->min, under->max, under->radius);
+            const Figure* figure = nullptr;
+            for (const Figure& f : model.figures)
+            {
+                if (f.path == g_drag.path)
+                    figure = &f;
+            }
+            if (figure == nullptr)
+                return;
+            const int first = g_draw->VtxBuffer.Size;
+            CardPortrait(model, *figure, g_pointer, 64);
+            for (int i = first; i < g_draw->VtxBuffer.Size; i++)
+            {
+                ImU32& col = g_draw->VtxBuffer[i].col;
+                col = (col & ~IM_COL32_A_MASK) | (ImU32(((col >> IM_COL32_A_SHIFT) & 0xFF) * 0.8f) << IM_COL32_A_SHIFT);
+            }
+        }
     }
 
     bool DrawInit()
@@ -4016,6 +4101,9 @@ namespace toybox
         ImGui::NewFrame();
         g_draw = ImGui::GetBackgroundDrawList();
         g_hits.clear();
+        g_drops.clear();
+        if (g_drag.pressed && (!model.open || model.screen != Screen::Home || !model.dialogs.empty()))
+            g_drag = {};
         bool overGame = !model.open || model.screen == Screen::Wheel || model.screen == Screen::WheelList ||
                         model.screen == Screen::Menu;
         if (overGame)
@@ -4063,6 +4151,8 @@ namespace toybox
                 look::Colour::KeyOutline,
                 std::min({ 15.0f, (hit.max.x - hit.min.x) / 2 + 3, (hit.max.y - hit.min.y) / 2 + 3 }), 1);
         }
+        if (g_drag.active)
+            DrawDrag(model);
         if (!model.open) // it would sit on the corner buttons of the full-screen pages
             DrawFps(model);
         ImGui::Render();
@@ -4076,6 +4166,41 @@ namespace toybox
         imgui_software::Render(ImGui::GetDrawData(), canvas);
         canvas.pixels.swap(pixels);
     }
+
+    void Press(float x, float y)
+    {
+        g_drag = {};
+        if (int i = HitAt(std::span<const Hit>(g_hits), x, y); i >= 0 && !g_hits[size_t(i)].dragPath.empty())
+            g_drag = { true, false, ImVec2(x, y), g_hits[size_t(i)].dragPath, g_hits[size_t(i)].dragSeat };
+    }
+
+    bool Drag(float x, float y)
+    {
+        if (!g_drag.pressed)
+            return false;
+        g_pointer = ImVec2(x, y);
+        if (!g_drag.active && std::hypot(x - g_drag.from.x, y - g_drag.from.y) >= DragStart)
+            g_drag.active = true;
+        return g_drag.active;
+    }
+
+    bool Release(Model& model, float x, float y, bool inside)
+    {
+        const DragState drag = std::exchange(g_drag, {});
+        if (!drag.active)
+            return false;
+        if (const Drop* drop = inside ? DropAt(x, y) : nullptr)
+        {
+            if (drag.seat >= 0 && drop->seat != drag.seat)
+                model.DropSeat(drag.seat, drop->seat);
+            else if (drag.seat < 0 && drop->seat >= 0)
+                model.DropCard(drop->seat, drag.path);
+        }
+        model.Touch();
+        return true;
+    }
+
+    bool CancelDrag() { return std::exchange(g_drag, {}).active; }
 
     void Click(Model& model, float x, float y, int button, bool twice)
     {
