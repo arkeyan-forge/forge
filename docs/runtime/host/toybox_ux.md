@@ -80,6 +80,16 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
   `SKY_TOYBOX_SCRIPT` `drag=x1/y1/x2/y2`.
 - **The figure sheet** (X, F2, right click; a click in the launcher when no seat is being chosen): picture, name, the
   level for this game and its bar, gold and play time, last played, where it sits; actions below.
+- **One card** (2026-11-20; launcher issue 189): the picture in the middle, the name below it, the level line below the
+  name, after the figure's type as text (`Giant · Level 15`; `Trap Master`, `SuperCharger`, `Sensei`, `Mini`,
+  `Swapper`); top left the element's icon from a disc (a disc in its colour until one is read) and below it the icon of the type
+  that differs between figures of one category: a swapper's bottom movement, a Sensei's or a made crystal's battle
+  class, a vehicle's or a SuperCharger's ride (Wheels, Waves, Wings), a Trap Master's T, a Giant's or a
+  Mini's mark; top right the
+  badges: the seat tag or padlock, then the favourite star. No variant badge: the variant is in the name. The Add
+  screen keeps its small cards, the same corners in a row: the two icons in a column on the left, then the picture,
+  the name and the type then "owned" (`Trap Master · owned ×2`, `Swapper · not owned`), the versions' count on the
+  right. The icons: [game_art.md](game_art.md) (`icons`).
 - **Add a figure**: the catalogue of the game (all six in the launcher), one card per character, the versions in a side
   panel, "owned x2"; the launcher's category chips became the same Type menu as the bar. A toy with versions wears a
   "+3" badge (the count leaves out the toy's own "base" entry); the side panel is titled "Versions", starts with

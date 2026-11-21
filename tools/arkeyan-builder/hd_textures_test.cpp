@@ -3,7 +3,10 @@
 // [Lux] disc reader (a synthetic APKF stream). No game data. Argument: a scratch folder.
 #include "hd_textures.h"
 #include "host/dds.h"
+#include "host/art/game_art.h"
 #include "host/texture_pack.h"
+#include "vfs.h"
+#include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -413,6 +416,31 @@ namespace
         CHECK(hdtex::MaxSide(hdtex::Mode::Auto, 4ull << 30) == 512 &&
               hdtex::MaxSide(hdtex::Mode::Auto, 8ull << 30) == 1024);
     }
+
+    // [TrapTeam] With TRAPTEAM_ISO: the Trap Masters' T, found among Jawbreaker's pictures by its pack hash and cut out
+    // (games/trapteam/art.json, art::ExtractHashedIcons), into a scratch data folder.
+    void TestHashedIcon(const std::filesystem::path& scratch)
+    {
+        const char* iso = getenv("TRAPTEAM_ISO"); // NOLINT(concurrency-mt-unsafe)
+        if (iso == nullptr || *iso == '\0')
+            return;
+        DiscFileSystem disc;
+        CHECK(disc.Open(iso));
+        std::filesystem::path data = scratch / "hashed-icon";
+        std::filesystem::remove_all(data);
+        SDL_setenv_unsafe("SKYLANDERS_DATA", data.string().c_str(), 1);
+        SDL_unsetenv_unsafe("SKY_PORTRAITS");
+        auto hashOf = [](const art::alchemy::IgzFile& file, const art::alchemy::IgzFile::Picture& picture) -> uint64_t {
+            hdtex::Source source;
+            return hdtex::SourceOf(file, picture, source) ? source.hash : 0;
+        };
+        CHECK(art::ExtractHashedIcons("trapteam", art::ReadFrom(disc), hashOf) == 1);
+        SDL_Surface* icon = SDL_LoadPNG((art::IconFolder("trapteam") / "type_trapmaster.png").string().c_str());
+        CHECK(icon != nullptr && icon->w == 64 && icon->h == 64); // the 64x55 crop on a disc of 64
+        SDL_DestroySurface(icon);
+        CHECK(art::ExtractHashedIcons("trapteam", art::ReadFrom(disc), hashOf) == 0); // kept
+        std::filesystem::remove_all(data);
+    }
 }
 
 int main(int argc, char** argv)
@@ -425,6 +453,7 @@ int main(int argc, char** argv)
     TestEncoders();
     TestPack(scratch);
     TestLux();
+    TestHashedIcon(scratch);
     printf(failures ? "ArkeyanHdTexturesTest: %d FAILED\n" : "ArkeyanHdTexturesTest: all passed\n", failures);
     return failures ? 1 : 0;
 }

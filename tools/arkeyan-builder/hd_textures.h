@@ -45,6 +45,8 @@ namespace hdtex
     // The DXT pictures of an IGZ file whose layout is known, as Sources (smaller than 32 texels a side: skipped, their
     // top level may sit in the packed mip tail).
     void PicturesOf(const art::alchemy::IgzFile& file, std::vector<Source>& out);
+    // One picture of it as a Source, false when PicturesOf would skip it.
+    bool SourceOf(const art::alchemy::IgzFile& file, const art::alchemy::IgzFile::Picture& picture, Source& out);
 
     // [Lux] The DXT textures of an unpacked "strm" stream (levels/<name>/mission.str, the UI streams) or of a bare APKF
     // file (textures/*.apk), as Sources, with the same rule.

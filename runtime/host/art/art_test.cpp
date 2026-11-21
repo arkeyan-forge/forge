@@ -771,7 +771,7 @@ namespace
         SDL_DestroySurface(logo);
     }
 
-    void TestDisc(const char* game, const char* iso, int minimumPortraits)
+    void TestDisc(const char* game, const char* iso, int minimumPortraits, int icons)
     {
         DiscFileSystem disc;
         CHECK(disc.Open(iso));
@@ -786,6 +786,16 @@ namespace
             first, cached);
         CHECK(got.logo && got.background && got.titleIcon && got.portraits >= minimumPortraits);
         CHECK(again.portraits == got.portraits && again.logo && cached < first);
+        // Every icon of the manifest, each a small square picture (the cards' corners).
+        printf("  %d icons in %s\n", got.icons, datadir::Text(art::IconFolder(game)).c_str());
+        CHECK(got.icons == icons && again.icons == icons);
+        std::error_code none;
+        for (const auto& entry : std::filesystem::directory_iterator(art::IconFolder(game), none))
+        {
+            SDL_Surface* surface = SDL_LoadPNG(datadir::Text(entry.path()).c_str());
+            CHECK(surface != nullptr && surface->w >= 16 && surface->w <= 512 && surface->h >= 16 && surface->h <= 512);
+            SDL_DestroySurface(surface);
+        }
         auto size = [](const std::string& path, int& w, int& h) {
             SDL_Surface* surface = path.empty() ? nullptr : SDL_LoadPNG(path.c_str());
             w = surface != nullptr ? surface->w : 0, h = surface != nullptr ? surface->h : 0;
@@ -1149,17 +1159,17 @@ int main(int argc, char** argv)
 #endif
     TestPortraitRule(scratch);
     if (const char* iso = getenv("SSA_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
-        TestDisc("ssa", iso, 70);
+        TestDisc("ssa", iso, 70, 11);
     if (const char* iso = getenv("GIANTS_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
-        TestDisc("giants", iso, 123);
+        TestDisc("giants", iso, 123, 12);
     if (const char* iso = getenv("SWAPFORCE_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
-        TestDisc("swapforce", iso, 208);
+        TestDisc("swapforce", iso, 208, 16);
     if (const char* iso = getenv("TRAPTEAM_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
-        TestDisc("trapteam", iso, 347);
+        TestDisc("trapteam", iso, 347, 0);
     if (const char* iso = getenv("SUPERCHARGERS_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
-        TestDisc("superchargers", iso, 469);
+        TestDisc("superchargers", iso, 469, 17);
     if (const char* iso = getenv("IMAGINATORS_ISO"); iso != nullptr && *iso) // NOLINT(concurrency-mt-unsafe)
-        TestDisc("imaginators", iso, 565);
+        TestDisc("imaginators", iso, 565, 22);
     if (keep)
         printf("kept in %s\n", datadir::Text(scratch).c_str());
     else if (temporary)
