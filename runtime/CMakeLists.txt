@@ -254,9 +254,11 @@ function(arkeyan_layout_record target)
     endif()
 endfunction()
 arkeyan_layout_record(ArkeyanRuntime)
-# Linux's C library has its own byteswap.h, found before a SYSTEM directory.
+# Linux's C library has its own byteswap.h, found before a SYSTEM directory. The executable's functions go in its
+# dynamic symbol table so that a fault report names the recompiled function (dladdr), as on macOS.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_compile_options(ArkeyanRuntime PRIVATE "SHELL:-iquote ${ARKEYAN_XENON_UTILS}")
+    set_target_properties(ArkeyanRuntime PROPERTIES ENABLE_EXPORTS ON)
 endif()
 
 # The launcher window: SDL_Renderer drawing, a small TrueType atlas (stb_truetype, MIT/public domain) and two
@@ -409,6 +411,12 @@ target_include_directories(ArkeyanHeapViewTest PRIVATE .)
 # The perf log's clock counts nanoseconds: ./ArkeyanClockTest
 add_executable(ArkeyanClockTest platform/clock_test.cpp)
 target_include_directories(ArkeyanClockTest PRIVATE .)
+
+# A fault report names the recompiled function it stopped in (dladdr finds sub_XXXXXXXX): ./ArkeyanCrashSymbolsTest
+if(NOT WIN32)
+    add_executable(ArkeyanCrashSymbolsTest platform/crash_symbols_test.cpp)
+    set_target_properties(ArkeyanCrashSymbolsTest PROPERTIES ENABLE_EXPORTS ON)
+endif()
 
 # The buffer cache's range hash (chunks shared by overlapping ranges): ./ArkeyanRangeHashTest
 add_executable(ArkeyanRangeHashTest gpu/range_hash_test.cpp)
