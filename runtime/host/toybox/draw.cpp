@@ -538,6 +538,12 @@ namespace toybox
         }
 
         std::map<std::string, collection::Image> g_artworks; // the figure sheet's artworks, by path
+        struct CornerIcon
+        {
+            std::string path;
+            uint64_t lookedAt = 0; // SDL_GetTicks
+        };
+        std::map<std::string, CornerIcon> g_cornerIcons; // the corner icons' files, by "e<element>" / "t<type>"
 
         // `villain`: the one a trap holds (collection::TrapPicture), 0 for any other figure.
         const collection::Image& IconOf(const Toy* toy, VariantKind kind, uint16_t variant, uint16_t villain = 0)
@@ -703,6 +709,7 @@ namespace toybox
             g_pictureGeneration = generation;
             g_icons.clear();
             g_artworks.clear();
+            g_cornerIcons.clear();
             g_stacks.clear();
             for (auto baked = g_baked.begin(); baked != g_baked.end();)
             {
@@ -1443,7 +1450,44 @@ namespace toybox
             }
         }
 
-        // One figure's card, the same as Arkeyan Launcher's: picture, name, level for this game, star, seat tag, lock.
+        // The card's top left corner: the element's icon at `element` (a disc in its colour until a disc with icons is
+        // added), the figure type's icon `step` below it when there is one (a swapper's: its bottom half's movement).
+        void CornerIcons(
+            const Toy* toy, const Toy* typed, ImVec2 element, float step = 24, int size = 22, int battleClass = 0)
+        {
+            if (toy == nullptr || typed == nullptr)
+                return;
+            // A missing icon is looked for again once a second: another game may read its disc meanwhile.
+            auto cached = [](const std::string& key, auto find) -> const std::string& {
+                CornerIcon& icon = g_cornerIcons[key];
+                uint64_t now = SDL_GetTicks();
+                if (icon.lookedAt == 0 || (icon.path.empty() && now - icon.lookedAt >= 1000))
+                {
+                    icon.path = find();
+                    icon.lookedAt = now;
+                }
+                return icon.path;
+            };
+            const std::string& elementIcon =
+                cached("e" + (!toy->elementIcon.empty() ? toy->elementIcon
+                                 : toy->category == Category::MagicItem || toy->category == Category::Adventure
+                                     ? std::to_string(100 + int(toy->category))
+                                     : std::to_string(int(toy->element))),
+                    [toy] { return collection::ElementIconPath(ARKEYAN_GAME_ID, *toy); });
+            if (!PictureAt(elementIcon, element, size, false))
+                Disc(element, size * 2 / 3, ColourOf(toy));
+            // A made creation crystal: its class (the toy itself has none).
+            const std::string& typeIcon =
+                battleClass != 0
+                    ? cached("c" + std::to_string(battleClass),
+                          [battleClass] { return collection::ClassIconPath(ARKEYAN_GAME_ID, battleClass); })
+                    : cached("t" + std::to_string(typed->type),
+                          [typed] { return collection::TypeIconPath(ARKEYAN_GAME_ID, *typed); });
+            PictureAt(typeIcon, ImVec2(element.x, element.y + step), size, false);
+        }
+
+        // One figure's card, the same as Arkeyan Launcher's: picture, name, level for this game; the element and type
+        // icons top left; the seat tag or padlock, then the star, top right.
         void Card(Model& model, const Figure& f, ImVec2 a, ImVec2 b, bool cursor, bool grey)
         {
             float width = b.x - a.x, cx = (a.x + b.x) / 2;
@@ -1454,36 +1498,33 @@ namespace toybox
                 OutOfHealthCross(picture, 24);
             TextCentered(g_black, 14, ImVec2(cx, a.y + 102), grey ? Look::TextDimmer : Look::Text,
                 Fit(g_black, 14, model.FigureName(f), width - 16));
-            // The level line after a dot in the element's colour (the launcher's card).
-            std::string line = Fit(g_bold, 12, model.LevelLine(f), width - 34);
+            std::string line = Fit(g_bold, 12, model.LevelLine(f), width - 16);
             if (!line.empty())
-            {
-                float lineWidth = Measure(g_bold, 12, line).x + (f.toy != nullptr ? 14 : 0);
-                float x = cx - lineWidth / 2;
-                if (f.toy != nullptr)
-                {
-                    Disc(ImVec2(x + 4, a.y + 124), 8, ColourOf(f.toy));
-                    x += 14;
-                }
-                TextMiddle(g_bold, 12, x, a.y + 124, model.CardBusy(f) ? Look::DangerText : Look::TextSoft, line);
-            }
-            if (f.favourite)
-                Star(ImVec2(a.x + 18, a.y + 18), 9, Look::Gold);
+                TextCentered(
+                    g_bold, 12, ImVec2(cx, a.y + 124), model.CardBusy(f) ? Look::DangerText : Look::TextSoft, line);
+            collection::Card card = model.CardFor(f);
+            CornerIcons(
+                f.toy, card.Swapper() ? card.second->toy : f.toy, ImVec2(a.x + 18, a.y + 18), 24, 22, f.battleClass);
+            float right = b.x - 8;
             if (int on = model.SeatOf(f.path); on >= 0)
             {
                 // P1, P2; "On" for the shared seats (their names are too long for a tag).
                 std::string tag = model.seats[on].seat.player > 0 ? model.SeatTag(on) : L("On", "Posé");
                 float w = Measure(g_black, 11, tag).x + 20;
-                Pill(ImVec2(b.x - 8 - w / 2, a.y + 17), tag, Look::Bar, Look::Night, 11);
+                Pill(ImVec2(right - w / 2, a.y + 17), tag, Look::Bar, Look::Night, 11);
+                right -= w + 6;
             }
             else if (model.CardBusy(f))
             {
                 // A padlock.
-                ImVec2 lock(b.x - 26, a.y + 10);
+                ImVec2 lock(right - 18, a.y + 10);
                 g_draw->AddRect(ImVec2(lock.x + 3, lock.y), ImVec2(lock.x + 13, lock.y + 10), Rgb(Look::DangerText),
                     4.0f, ImDrawFlags_None, 2.0f);
                 Fill(ImVec2(lock.x, lock.y + 7), ImVec2(lock.x + 16, lock.y + 18), Look::DangerText);
+                right -= 24;
             }
+            if (f.favourite)
+                Star(ImVec2(right - 10, a.y + 18), 9, Look::Gold);
         }
 
         // Your figures for the seat: the shelf (no header: the line above the grid says what it is for), then the
@@ -2917,21 +2958,31 @@ namespace toybox
                 const Toy* toy = model.addToys[cell.figure];
                 ImVec2 a(x, y), b(x + cardWidth, y + cardHeight);
                 bool cursor = int(i) == grid.cursor;
-                // The toy whose versions show stays lit while the focus is in them.
+                // The toy whose versions show stays lit while the focus is in them. The shelf card's corners in a row:
+                // the element and type icons in a column on the left, the versions' count on the right.
                 Box(a, b, cursor ? Look::CardSelected : Look::Raised, Look::CardBorder, 14, 1);
-                if (!SwapperStackOfToy(toy, 0, ImVec2(x + 34, y + cardHeight / 2), 52))
-                    Portrait(toy, toy->edition, ImVec2(x + 34, y + cardHeight / 2), 48);
+                const Toy* bottom =
+                    toy->category == Category::SwapTop ? Catalogue::Get().Find(toy->type - 1000) : nullptr;
+                CornerIcons(toy, bottom != nullptr ? bottom : toy, ImVec2(x + 16, y + 17), cardHeight - 34, 20);
+                if (!SwapperStackOfToy(toy, 0, ImVec2(x + 60, y + cardHeight / 2), 52))
+                    Portrait(toy, toy->edition, ImVec2(x + 60, y + cardHeight / 2), 48);
                 const size_t versionCount = Catalogue::Get().VersionsFor(model.game, *toy).size();
-                Text(g_black, 14, ImVec2(x + 66, y + 12), Look::Text,
-                    Fit(g_black, 14, Model::AddName(*toy), cardWidth - 74));
+                Text(g_black, 14, ImVec2(x + 92, y + 12), Look::Text,
+                    Fit(g_black, 14, Model::AddName(*toy), cardWidth - 100));
                 int owned = 0;
                 for (const Figure& f : model.figures)
                     owned += f.type == toy->type ? 1 : 0;
                 std::string line = owned == 0   ? L("not owned", "pas à vous")
                                    : owned == 1 ? L("owned", "à vous")
                                                 : std::string(L("owned ×", "à vous ×")) + std::to_string(owned);
-                Text(g_bold, 12, ImVec2(x + 66, y + 34), owned > 0 ? Look::Bar : Look::TextDimmer,
-                    Fit(g_bold, 12, line, cardWidth - 74 - (versionCount == 0 ? 0 : 44)));
+                // The type as on the shelf's level line ("Trap Master · owned ×2").
+                if (std::string title = collection::CategoryTitle(toy->category, French()); !title.empty())
+                {
+                    line.insert(0, " · ");
+                    line.insert(0, title);
+                }
+                Text(g_bold, 12, ImVec2(x + 92, y + 34), owned > 0 ? Look::Bar : Look::TextDimmer,
+                    Fit(g_bold, 12, line, cardWidth - 100 - (versionCount == 0 ? 0 : 44)));
                 // It has versions this game tells apart: a small badge with their count, on the second line so that the
                 // name keeps the card's width.
                 if (versionCount != 0)

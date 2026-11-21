@@ -116,7 +116,7 @@ Proof: 5 styles of "Press (X) to Attack." and the PlayStation "Select"/"Back" of
 
 The manifest [games/swapforce/art.json](../art.json): logo and background are `{archive, entry}` (the texture's first
 picture); portraits and artworks are `"materials": [{archive, folder, ending}]`: every material instance of the archive
-under `folder` (and ending with `ending`: the face-off folder also holds 8 element icons) names its texture, decoded and
+under `folder` (and ending with `ending`: the face-off folder also holds 8 element materials, whose textures are particle pictures, not icons) names its texture, decoded and
 written as `<material>.png` in `<data>/SwapForce/portraits/` (`artworks/` for the artworks). The reader
 (`runtime/host/art/alchemy_archive.cpp`, the IGZ v7 row of its table; `game_art.cpp`, `AlchemyMaterials`) is the one
 Giants uses; nothing in it is Swap Force's but the table row.

@@ -125,10 +125,12 @@ add_test(NAME ArkeyanToolchainFetchTest COMMAND ArkeyanToolchainFetchTest ${CMAK
 set_tests_properties(ArkeyanToolchainFetchTest PROPERTIES TIMEOUT 120)
 
 # The HD texture pass on synthetic pictures (analysis, the 2x, BC1/BC3 round trips, the pack file): no game data.
-add_executable(ArkeyanHdTexturesTest hd_textures_test.cpp ${ARKEYAN_BUILDER_HD_SOURCES})
+add_executable(ArkeyanHdTexturesTest hd_textures_test.cpp ${ARKEYAN_BUILDER_HD_SOURCES}
+    ${CMAKE_SOURCE_DIR}/runtime/host/stb_impl.cpp)
 target_include_directories(ArkeyanHdTexturesTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime)
-target_include_directories(ArkeyanHdTexturesTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
-target_link_libraries(ArkeyanHdTexturesTest PRIVATE ArkeyanArtReader)
+target_include_directories(ArkeyanHdTexturesTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash
+    ${CMAKE_SOURCE_DIR}/thirdparty/stb)
+target_link_libraries(ArkeyanHdTexturesTest PRIVATE ArkeyanHostFiles)
 sky_quality(ArkeyanHdTexturesTest)
 add_test(NAME ArkeyanHdTexturesTest COMMAND ArkeyanHdTexturesTest ${CMAKE_CURRENT_BINARY_DIR}/hd-textures-test)
 set_tests_properties(ArkeyanHdTexturesTest PROPERTIES TIMEOUT 120)

@@ -26,5 +26,8 @@
     { "archive": "misc/UI_Collection_Champions.arc", "folder": "collection_images/skylander_toys/" },
     { "archive": "misc/ui_collection_traps.arc", "folder": "collection_images/traps/square/" },
     { "archive": "misc/ui_villainvault_stream.arc", "folder": "collection_images/villains/captured/" },
-    { "archive": "misc/ui_villainvault_stream.arc", "folder": "collection_images/villains/escaped/" } ] }
+    { "archive": "misc/ui_villainvault_stream.arc", "folder": "collection_images/villains/escaped/" } ] },
+  "icons": {
+    "type_trapmaster": { "archive": "character/470_tech_bruteforce.bld", "entry": "level.bld",
+                         "hash": "6f4b30cc7a1007e1", "crop": [311, 764, 64, 55] } }
 }

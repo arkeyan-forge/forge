@@ -131,25 +131,30 @@ namespace hdtex
         }
     }
 
+    bool SourceOf(const art::alchemy::IgzFile& file, const art::alchemy::IgzFile::Picture& picture, Source& out)
+    {
+        art::Texture texture;
+        if (!art::alchemy::TextureFormatOf(picture.format, texture))
+            return false;
+        texture.width = picture.width;
+        texture.height = picture.height;
+        texture.endian = art::TextureEndian::In16; // 8-in-16, the DXT formats' endian
+        if (!Wanted(texture))
+            return false;
+        std::vector<uint8_t> pixels = file.Pixels(picture);
+        // The storage as the console lays it out: tiled rows of 32-block tiles, or linear rows 32 blocks apart
+        // (alchemy_archive.cpp, DecodePicture).
+        uint32_t pitchBlocks = (texture.width + 3) / 4;
+        pitchBlocks = (pitchBlocks + 31) / 32 * 32;
+        return FromConsole(pixels.data(), pixels.size(), texture, pitchBlocks, picture.name, out);
+    }
+
     void PicturesOf(const art::alchemy::IgzFile& file, std::vector<Source>& out)
     {
         for (const auto& picture : file.Pictures())
         {
-            art::Texture texture;
-            if (!art::alchemy::TextureFormatOf(picture.format, texture))
-                continue;
-            texture.width = picture.width;
-            texture.height = picture.height;
-            texture.endian = art::TextureEndian::In16; // 8-in-16, the DXT formats' endian
-            if (!Wanted(texture))
-                continue;
-            std::vector<uint8_t> pixels = file.Pixels(picture);
-            // The storage as the console lays it out: tiled rows of 32-block tiles, or linear rows 32 blocks apart
-            // (alchemy_archive.cpp, DecodePicture).
-            uint32_t pitchBlocks = (texture.width + 3) / 4;
-            pitchBlocks = (pitchBlocks + 31) / 32 * 32;
             Source source;
-            if (FromConsole(pixels.data(), pixels.size(), texture, pitchBlocks, picture.name, source))
+            if (SourceOf(file, picture, source))
                 out.push_back(std::move(source));
         }
     }

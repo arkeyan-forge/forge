@@ -1588,7 +1588,9 @@ namespace toybox
         switch (section.kind)
         {
         case Section::Kind::Shelf: return L("Your figures", "Vos figurines");
-        case Section::Kind::Element: return ElementLabel(Element(section.value));
+        case Section::Kind::Element:
+            // The only character without an element is Kaos (Imaginators' Kaos element).
+            return Element(section.value) == Element::None ? std::string("Kaos") : ElementLabel(Element(section.value));
         case Section::Kind::Category:
             if (Category(section.value) == Category::MagicItem)
                 return L("My magic items", "Mes objets magiques");
@@ -3557,8 +3559,9 @@ namespace toybox
             std::vector<const Toy*> toys;
         };
         std::vector<Group> groups;
+        // None last: a character outside the ten elements (Imaginators' Kaos) has a group of its own.
         static const Element Elements[] = { Element::Magic, Element::Earth, Element::Water, Element::Air, Element::Fire,
-            Element::Life, Element::Undead, Element::Tech, Element::Light, Element::Dark };
+            Element::Life, Element::Undead, Element::Tech, Element::Light, Element::Dark, Element::None };
         for (Element e : Elements)
         {
             Group group{ Section::Kind::Element, int(e) };

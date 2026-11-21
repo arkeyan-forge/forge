@@ -593,6 +593,23 @@ namespace
         return 0;
     }
 
+    // The cards' element and type icons into the game's data folder (art::Icons), so that every installed game's Toy Box
+    // and the launcher show them before this game is first played. Not needed to build: a failure is only logged.
+    void CardIcons(const Build& build)
+    {
+        DiscFileSystem fileSystem;
+        if (!fileSystem.Open(Slashes(build.options.iso).c_str()))
+            return;
+        art::Extraction found = art::Extract(build.game.id, art::ReadFrom(fileSystem), {}, art::Icons);
+        // The icons found by their texture's pack hash, as the HD step names textures.
+        int hashed = art::ExtractHashedIcons(build.game.id, art::ReadFrom(fileSystem),
+            [](const art::alchemy::IgzFile& file, const art::alchemy::IgzFile::Picture& picture) -> uint64_t {
+                hdtex::Source source;
+                return hdtex::SourceOf(file, picture, source) ? source.hash : 0;
+            });
+        Log("card icons: " + std::to_string(found.icons + hashed) + " in " + Slashes(art::IconFolder(build.game.id)));
+    }
+
     void ReadDisc(Build& build)
     {
         Step("disc", "Reading the disc");
@@ -2041,6 +2058,7 @@ int main(int argc, char** argv)
         build.vars["GAME"] = build.game.id;
         PrepareToolchain(build);
         ReadDisc(build);
+        CardIcons(build);
         TranslateCode(build);
         LayoutRecord(build);
         TranslateShaders(build);
