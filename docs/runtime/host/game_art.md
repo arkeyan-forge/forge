@@ -90,8 +90,12 @@ material instances instead (`"materials": [{archive, folder, ending}]`, below).
   Sensei's `battle_class`, a made creation crystal's), `ride_<land|sea|sky>` (a vehicle's or a SuperCharger's `ride`),
   `type_trapmaster`, `type_giant`, `type_mini`. The category is also written as text (`CategoryTitle`: `Giant · Level
   15`). `"tint"`: `white` draws the shape in white (Giants' pet mask), `glyph` keeps the light glyph of a dark badge alone,
-  in white (Imaginators' class icons: about 70 % of each badge is near black, the glyph near white), `element` gives a grey mask its element's colour (Giants' element icons: one grey picture the game
-  colours per element), alpha kept. Written as `<portraits>/icons/<key>.png`; `collection::ElementIconPath` /
+  in white (Imaginators' class icons: about 70 % of each badge is near black, the glyph near white; the badge's lit rim,
+  past 0.63 of the half-size, and the frame's grey highlights inside it, from 0.45 out with a chroma under 96, are left
+  out), `element` gives a grey mask its element's colour (Giants' element icons: one grey picture the game
+  colours per element), `black` draws the shape in black, alpha kept. `"under": {archive, entry}`: a plate the picture
+  is drawn on, scaled to its size (Swap Force's movement symbols on the swap-zone HUD's yellow hexagon,
+  `juicestandard_turbo_hud_bg` of `archives/juicedomain_permanent.pak`). Written as `<portraits>/icons/<key>.png`; `collection::ElementIconPath` /
   `TypeIconPath` take the viewed game's, else the newest game's that has one. Arkeyan-Builder reads them when it builds
   a game, the Toy Box when it first opens (and looks again once a second for a missing one).
   Each disc's: SSA's eight `elementicon*` and `elementiconpet` (`uigameimage.str`); Giants' `elementalicons/<element>_64.png`

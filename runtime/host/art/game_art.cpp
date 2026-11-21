@@ -340,7 +340,8 @@ namespace art
             std::string package, file; // ...or a JPEG or PNG file of an STFS package on the disc (stfs.h: `nxeart`)
             uint64_t hash = 0; // [icons] ...or the entry's picture of this pack hash (ExtractHashedIcons)...
             int crop[4] = {}; // ...cut to x, y, width, height
-            std::string tint; // [icons] "white", "glyph", "element": Tint
+            std::string tint; // [icons] "white", "glyph", "element", "black": Tint
+            std::string underArchive, underEntry; // [icons] a plate drawn under it (Swap Force's hexagon): Under
         };
 
         // [Alchemy] A folder of material instances in an archive, each naming its texture, an entry of the same archive
@@ -457,6 +458,8 @@ namespace art
                         Source source = ReadSource(icon);
                         source.hash = strtoull(icon["hash"].AsString().c_str(), nullptr, 16);
                         source.tint = icon["tint"].AsString();
+                        source.underArchive = icon["under"]["archive"].AsString();
+                        source.underEntry = icon["under"]["entry"].AsString();
                         for (size_t i = 0; i < 4 && i < icon["crop"].Items().size(); i++)
                             source.crop[i] = int(icon["crop"].Items()[i].AsInt());
                         m.icons[key] = source;
@@ -833,18 +836,38 @@ namespace art
 
         // The manifest's "tint" (Source::tint): "white", the shape in white (Giants' grey pet mask); "glyph", the light
         // glyph of a dark badge alone, in white (Imaginators' class icons: about 70 % of the badge is near black, the
-        // glyph near white); "element", a grey mask in the element's colour (Giants' element icons).
+        // glyph near white); "element", a grey mask in the element's colour (Giants' element icons); "black", the shape in
+        // black (Swap Force's movement symbols, drawn on their hexagon).
         void Tint(Image& image, const std::string& tint, const std::string& key)
         {
             if (tint == "glyph")
             {
-                for (uint32_t& pixel : image.rgba)
+                // The badge's lit rim is as light as the glyph: only what its dark ring encloses is kept (the glyph
+                // reaches 0.6 of the picture's half-size, the rim starts at 0.65). Inside the ring, the frame's grey
+                // highlights (top left, bottom right, from 0.49 out) are told from the glyph by their colour: a chroma
+                // under 96, where the glyph's is mostly higher.
+                const float centreX = float(image.width) / 2, centreY = float(image.height) / 2,
+                            inside = 0.63f * std::min(centreX, centreY), frame = 0.45f * std::min(centreX, centreY);
+                for (size_t i = 0; i < image.rgba.size(); i++)
                 {
+                    uint32_t& pixel = image.rgba[i];
                     uint32_t r = pixel & 0xFF, g = pixel >> 8 & 0xFF, b = pixel >> 16 & 0xFF,
                              luma = (r * 3 + g * 6 + b) / 10;
                     uint32_t keep = luma <= 64 ? 0 : luma >= 192 ? 255 : (luma - 64) * 2;
+                    const size_t row = i / image.width, column = i % image.width;
+                    const float dx = float(column) + 0.5f - centreX, dy = float(row) + 0.5f - centreY;
+                    const float distance = dx * dx + dy * dy;
+                    const uint32_t chroma = std::max({ r, g, b }) - std::min({ r, g, b });
+                    if (distance > inside * inside || (distance > frame * frame && chroma < 96))
+                        keep = 0;
                     pixel = ((pixel >> 24) * keep / 255) << 24 | 0xFFFFFF;
                 }
+                return;
+            }
+            if (tint == "black")
+            {
+                for (uint32_t& pixel : image.rgba)
+                    pixel &= 0xFF000000u;
                 return;
             }
             uint32_t rgb = 0xFFFFFF;
@@ -863,6 +886,25 @@ namespace art
                     out |= ((rgb >> (16 - 8 * c) & 0xFF) * scale / 255) << (8 * c);
                 pixel = (pixel & 0xFF000000u) | out;
             }
+        }
+
+        // `image` drawn over `plate`, scaled to the plate's size: Swap Force's HUD puts its movement symbols on a hexagon.
+        Image Under(const Image& image, const Image& plate)
+        {
+            Image out = plate;
+            for (uint32_t y = 0; y < out.height; y++)
+                for (uint32_t x = 0; x < out.width; x++)
+                {
+                    const uint32_t top =
+                        image.rgba[size_t(y * image.height / out.height) * image.width + x * image.width / out.width];
+                    uint32_t& bottom = out.rgba[size_t(y) * out.width + x];
+                    const uint32_t a = top >> 24, keep = 255 - a;
+                    uint32_t mixed = std::max(a, bottom >> 24) << 24;
+                    for (int shift = 0; shift < 24; shift += 8)
+                        mixed |= ((top >> shift & 0xFF) * a + (bottom >> shift & 0xFF) * keep) / 255 << shift;
+                    bottom = mixed;
+                }
+            return out;
         }
 
         // The manifest's icons missing from `folder`, each written as <key>.png; the number of icons there afterwards.
@@ -897,6 +939,15 @@ namespace art
                     else
                         AlchemyPicture(disc, source, source.picture, image);
                     Tint(image, source.tint, key);
+                    if (!source.underArchive.empty() && !image.rgba.empty())
+                    {
+                        Source under;
+                        under.archive = source.underArchive;
+                        under.entry = source.underEntry;
+                        Image plate;
+                        if (AlchemyPicture(disc, under, {}, plate) && !plate.rgba.empty())
+                            image = Under(image, plate);
+                    }
                     if (image.rgba.empty() || !SavePng(image, path))
                         continue;
                 }

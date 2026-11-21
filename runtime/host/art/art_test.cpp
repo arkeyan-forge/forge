@@ -16,6 +16,7 @@
 #include "vfs.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -771,6 +772,53 @@ namespace
         SDL_DestroySurface(logo);
     }
 
+    // [Imaginators] A Sensei's class icon is the badge's glyph alone: nothing of the badge's lit rim past the dark ring
+    // around the glyph, nor of the frame's grey highlight inside it (an arc at the top left). [SwapForce] A swapper's
+    // movement icon as the HUD shows it: the black symbol on the yellow hexagon.
+    void TestIconLooks(const char* game)
+    {
+        auto load = [game](const char* name) {
+            return collection::LoadPng(datadir::Text(art::IconFolder(game) / (std::string(name) + ".png")));
+        };
+        if (strcmp(game, "imaginators") == 0)
+            for (const char* name : { "class_ninja", "class_knight", "class_sorcerer", "class_quickshot" })
+            {
+                const collection::Image icon = load(name);
+                size_t rim = 0, glyph = 0, arc = 0;
+                for (int y = 0; y < icon.height; y++)
+                    for (int x = 0; x < icon.width; x++)
+                    {
+                        if ((icon.rgba[size_t(y) * size_t(icon.width) + size_t(x)] >> 24) <= 32)
+                            continue;
+                        const float dx = float(x) + 0.5f - float(icon.width) / 2,
+                                    dy = float(y) + 0.5f - float(icon.height) / 2;
+                        const float distance = std::sqrt(dx * dx + dy * dy) / (float(icon.width) / 2);
+                        (distance > 0.64f ? rim : glyph)++;
+                        arc += distance >= 0.49f && dx < 0 && dy < 0 && std::fabs(dx - dy) < float(icon.width) / 5;
+                    }
+                printf("  %s: %zu glyph, %zu rim and %zu arc pixels\n", name, glyph, rim, arc);
+                CHECK(!icon.Empty() && glyph > 100 && rim == 0 && arc < 60);
+            }
+        if (strcmp(game, "swapforce") == 0)
+            for (const char* name : { "swap_climber", "swap_bouncer", "swap_teleporter" })
+            {
+                const collection::Image icon = load(name);
+                size_t opaque = 0, yellow = 0, black = 0;
+                for (uint32_t pixel : icon.rgba)
+                {
+                    if ((pixel >> 24) < 128)
+                        continue;
+                    const uint32_t r = pixel & 0xFF, g = pixel >> 8 & 0xFF, b = pixel >> 16 & 0xFF;
+                    opaque++;
+                    yellow += r > 140 && g > 120 && b < 120;
+                    black += r < 64 && g < 64 && b < 64;
+                }
+                printf("  %s: %zu opaque, %zu yellow, %zu black\n", name, opaque, yellow, black);
+                CHECK(!icon.Empty() && opaque * 10 >= icon.rgba.size() * 4 && yellow * 10 >= opaque * 3 &&
+                      black * 20 >= opaque);
+            }
+    }
+
     void TestDisc(const char* game, const char* iso, int minimumPortraits, int icons)
     {
         DiscFileSystem disc;
@@ -796,6 +844,7 @@ namespace
             CHECK(surface != nullptr && surface->w >= 16 && surface->w <= 512 && surface->h >= 16 && surface->h <= 512);
             SDL_DestroySurface(surface);
         }
+        TestIconLooks(game);
         auto size = [](const std::string& path, int& w, int& h) {
             SDL_Surface* surface = path.empty() ? nullptr : SDL_LoadPNG(path.c_str());
             w = surface != nullptr ? surface->w : 0, h = surface != nullptr ? surface->h : 0;
