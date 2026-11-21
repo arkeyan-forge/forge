@@ -369,8 +369,21 @@ case in `ArkeyanPortalTest` and `ArkeyanReadbackQueueTest` (the one asked, not t
 at once); each failed first. With the read-back fix, two SSA instances in lockstep, both dumping frames, agreed on 190 of 190
 checks to frame 5700.
 
-[?] Not measured: the four other games, a 10-minute Giants pair, Windows and Linux, a real portal (sessions use the
-emulated one).
+[V] The four other games (2026-11-21, same machine and schedule, a generic route of presses recorded then replayed
+twice) did not reach their first frame in deterministic mode; three causes, fixed:
+
+| Cause | Where it showed | Fix |
+|---|---|---|
+| Before the game's first frame the host's main thread presents a stand-in every 16 ms, holding the GPU's producer lock through its vsync wait; a render thread that clears its targets meanwhile waited for the lock while holding the baton | Swap Force: the watchdog at boot, the render thread in `gpu::ClearColor` | Online, the stand-in presents only a new image (`host/display.cpp`) |
+| The Alchemy games' wait for a swap's blank (`WaitForInterruptHandled`, from the swap-wait hooks) comes before the next frame's swap, and online the interrupts come only with the frames | Swap Force, Trap Team, SuperChargers, Imaginators: every thread blocked, no frame | The wait grants what the flip would: the GPU's interrupts for the commands submitted so far (`gpu::SynchronizeGuestInterrupts`), then one blank (`kernel/video.cpp`) |
+| Bink's async decode thread polls its mailbox in a loop with no kernel call and no clock read | The watchdog with `BinkAsy*` holding the baton, 2 s at a time | A poll that found nothing yields online (`engines/alchemy/bink_poll.cpp`, `BinkAsync_Poll` in each game's `addresses.h`; Giants has no such thread) |
+
+[V] Then every compared frame agrees, the event logs too: Swap Force 49 frames to 1470, Trap Team 108 to 3240,
+SuperChargers 70 to 2100, Imaginators 319 to 9570. SuperChargers runs slowly online: a loading thread ("MagicMoment
+Loading Thread") computes for over 2 s without a kernel call while every other thread waits for the baton [?].
+
+[?] Not measured: longer pairs of those four, a 10-minute Giants pair, Windows and Linux, a real portal (sessions use
+the emulated one).
 
 ### Tracing host-sourced loads (how the portal was found)
 

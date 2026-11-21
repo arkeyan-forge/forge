@@ -2,6 +2,7 @@
 #include "host/video_driver.h"
 #include "host/window_size.h"
 #include "gpu/gpu.h"
+#include "netplay/scheduler.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <chrono>
@@ -306,6 +307,14 @@ void PresentDisplayFrame()
         }
     }
 
+    // Online, one guest thread runs at a time: a present holds the GPU's producer lock through its vsync wait, and a
+    // guest thread that needs the lock meanwhile (a render thread clearing its targets before the game's first frame)
+    // stalls every other guest thread. Present only a new image then, not the same one again every 16 ms.
+    if (pixels.empty() && netplay::Cooperative())
+    {
+        SDL_Delay(16);
+        return;
+    }
     if (!pixels.empty())
     {
         if (g_texture == nullptr || g_textureWidth != width || g_textureHeight != height)

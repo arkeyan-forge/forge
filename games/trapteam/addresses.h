@@ -117,3 +117,7 @@ namespace game
     // The running script (ScriptVariable_Get's lis 0x8285 / lwz -8768): its values' list at +20.
     constexpr uint32_t ScriptContext = 0x8284DDC0;
 }
+
+// Bink's async decode thread polls its mailbox (engines/alchemy/bink_poll.cpp): (thread, wait, out, size) -> 0 while no
+// message came; its caller loops on it with no kernel call in between.
+#define GAME_HOOK_BinkAsync_Poll sub_821C1808
