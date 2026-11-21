@@ -70,6 +70,11 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
 - **Below, the figures**: in game, those the game reads that go on the chosen seat; in the launcher, the whole shelf
   (the bar narrows it), or, while choosing for a seat, only what goes there and the game reads.
 - **Two steps**: pick the seat (A, click), pick the figure (A, click). LB/RB moves to the previous/next seat.
+- **An empty seat's +** (both apps, 2026-11-21): a click on the + of an empty virtual seat opens Add a figure for that
+  seat (X with a pad, its hint `X  Add a figure`); the rest of the seat still chooses. A figure made there goes straight
+  onto that seat and Add a figure closes; one the seat refuses stays off it, with the usual "Put it on ..." offer. Add a
+  figure opened any other way puts nothing on a seat. A right click on an empty seat keeps its options. Unit check:
+  `runtime/host/toybox/mouse_test.cpp` (`tools/regress/f3mouse_unit.py`).
 - **Drag and drop** (both apps): a card dragged onto a seat goes on it; a seat's figure dragged onto the shelf is taken
   off. In the game also: a seat's figure dragged onto an empty seat moves there, onto a taken player seat it asks "Swap
   players?". A drag starts past 6 canvas pixels, so clicks stay clicks; Escape cancels it. While dragging, the seats
@@ -400,12 +405,12 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 | Screen | Gamepad | Keyboard | Mouse |
 |---|---|---|---|
 | In game | hold View: wheel; View + Y: Toy Box | hold Tab: wheel; F6 (or tap Tab): Toy Box; F7: add the folder's next figure; F8: clear the portal (the three are editable, below) | — |
-| Toy Box: seats (top row) | left/right: seat (it is chosen at once), then Add a figure and Manage (one above the other: up/down between them); A: choose for it; X: options; down: the bar; B: close | arrows, Enter, Delete: take off, Tab / Shift+Tab: next / previous row, Escape | click a seat; double click: take its figure off (as Delete; not a real toy), an empty one: choose for it; right click: options; drag its figure onto the shelf or another seat |
+| Toy Box: seats (top row) | left/right: seat (it is chosen at once), then Add a figure and Manage (one above the other: up/down between them); A: choose for it; X: options, on an empty seat Add a figure for it; down: the bar; B: close | arrows, Enter, Delete: take off, Tab / Shift+Tab: next / previous row, Escape | click a seat; click an empty seat's +: Add a figure for it; double click: take its figure off (as Delete; not a real toy), an empty one: choose for it; right click: options; drag its figure onto the shelf or another seat |
 | Toy Box: bar (search, Filters) | left/right: the search field, Filters; A: the on-screen keyboard / the Filters panel; up: the seats; down: the figures; LB/RB: other seat; B: clear the search, else close | arrows, Enter, Tab, Escape; typing goes into the field from any row | click the field, Filters, a tag's x |
 | Toy Box: figures | d-pad: move (left/right stay in the row; up/down keep the column); up from the first row: the bar; A: put on the seat; X: the figure; LB/RB: other seat; Y: search; Start: Filters; B: close | arrows, Enter, F2, Page Up/Down, F3, F4: Filters, Tab, type: search, Escape: clear / close | click: focus; double click: place; drag onto a seat: place there; right click: the figure; wheel: scroll |
 | Figure | up/down: action; A: do it; B: back (out of More first); LB/RB: previous/next figure | arrows, Enter, Escape | click |
 | Wheel | either stick: aim; release or A: swap; B: cancel; Y: list; LB/RB: other seat; hold X: pin | arrows, the keys bound to either stick (WASD, IJKL) or 1-8; release Tab or Enter; Escape | point, click |
-| Launcher Collection | d-pad (down from a seat to the shelf, up from its first row to the seats, the bar's search, Filters and tags on the way), A, B: stop choosing / clear the search, X: the sheet, Y: the search, LB/RB: choose for the other seat | Tab, arrows, Enter, Delete (seat), F2, F3, Page Up/Down, Escape | click, right click, drag a card onto a seat or a seat onto the shelf |
+| Launcher Collection | d-pad (down from a seat to the shelf, up from its first row to the seats, the bar's search, Filters and tags on the way), A, B: stop choosing / clear the search, X: the sheet (on a seat: take it off; an empty seat: Add a figure for it), Y: the search, LB/RB: choose for the other seat | Tab, arrows, Enter, Delete (seat), F2, F3, Page Up/Down, Escape | click, click an empty seat's +: Add a figure for it, right click, drag a card onto a seat or a seat onto the shelf |
 
 - **Mouse everywhere in the Toy Box and the F3 menu** (2026-11-02): every card, seat, button, row and field is a click target, and
   the one under the pointer gets a soft outline. The wheel scrolls the lists (Edit stats: steps; the F3 menu: moves the focus).

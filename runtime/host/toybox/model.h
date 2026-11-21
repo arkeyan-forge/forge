@@ -341,6 +341,7 @@ namespace toybox
         std::vector<const collection::Toy*> addToys; // per cell (Cell::figure indexes it)
         bool addVersions = false;
         int addVersion = 0;
+        int addSeat = -1; // opened from that seat's +: the figure made goes onto it (-1: none)
         std::vector<Version> versions;
         NameEntry name;
         ManageState manage;
@@ -476,6 +477,15 @@ namespace toybox
         // --- Actions the drawing's mouse areas call ----------------------------------------------------------------
         void FocusSeat(int index);
         void FocusColumnRow(int row);
+        // An empty seat of the virtual portal: its + opens Add a figure for it (AddForSeat).
+        bool OpenSeat(int index) const
+        {
+            const SeatState& s = seats[size_t(index)];
+            return !realPortal && !s.physical && s.path.empty();
+        }
+        // Add a figure for that seat: the figure made there goes straight onto it.
+        void AddForSeat(int index);
+        void SeatOptions(int seatIndex); // a seat's right click
         void FocusBar(int index); // the search field (0) or Filters (1), without opening them
         void FocusCell(int cell, bool scroll = true); // the pointer passing over a card does not scroll
         void ActivateCell(int cell); // double click: put on
@@ -601,7 +611,6 @@ namespace toybox
         void TakeOff(int seatIndex);
         bool SwapPlayers();
         void ClearPortal();
-        void SeatOptions(int seatIndex);
         // Reuses the slots being replaced (available), excluding the slots already planned for another half.
         int FreeSlot(int seatIndex, int half, uint32_t available, uint32_t planned) const;
         // Prepares all cards, then replaces their slots together. Failure keeps every seat and figure intact.

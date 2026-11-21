@@ -1820,7 +1820,7 @@ namespace toybox
                 a, b, [&model, index] { model.FocusColumnRow(index); },
                 [&model, index] {
                     model.FocusColumnRow(index);
-                    model.Run(Command::Options);
+                    model.SeatOptions(index); // the menu even on an empty seat, where X opens Add a figure
                 },
                 [&model, index, takeOff] {
                     model.FocusColumnRow(index);
@@ -1832,6 +1832,23 @@ namespace toybox
                 g_hits.back().dragSeat = index;
             }
             g_drops.push_back({ a, b, index, look::Radius::Card });
+        }
+
+        // A seat's pointer areas: the card, and over it an empty seat's + (its picture), which opens Add a figure for it.
+        void SeatHits(Model& model, int index, ImVec2 a, ImVec2 b, ImVec2 picture, float pictureSize)
+        {
+            SeatHit(model, index, a, b);
+            if (!model.OpenSeat(index))
+                return;
+            const float r = pictureSize / 2;
+            AddHit(
+                ImVec2(picture.x - r, picture.y - r), ImVec2(picture.x + r, picture.y + r),
+                [&model, index] { model.AddForSeat(index); },
+                [&model, index] {
+                    model.FocusColumnRow(index);
+                    model.SeatOptions(index);
+                });
+            g_hits.back().target = "seat-add=" + std::to_string(index);
         }
 
         // The shelf's area: a seat's figure dropped there is taken off.
@@ -1981,7 +1998,7 @@ namespace toybox
                         Fit(g_bold, 13, line, tw));
                 if (focused)
                     FocusRing(a, b, look::Radius::Card);
-                SeatHit(model, int(i), a, b);
+                SeatHits(model, int(i), a, b, picture, float(pictureSize));
             }
             float h = (SeatHeight - 8) / 2;
             for (size_t r = 0; r < rows.size(); r++)
@@ -2105,7 +2122,9 @@ namespace toybox
             else if (model.column < int(model.seats.size()))
             {
                 hints.push_back({ 'A', L("Choose", "Choisir") });
-                if (!model.seats[model.column].path.empty())
+                if (model.OpenSeat(model.column))
+                    hints.push_back({ 'X', L("Add a figure", "Ajouter une figurine") });
+                else if (!model.seats[model.column].path.empty())
                     hints.push_back({ 'X', L("Options", "Options") });
                 hints.push_back({ 'B', back });
             }

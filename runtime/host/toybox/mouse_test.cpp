@@ -10,6 +10,8 @@ void toybox::Model::Run(Command command) { g_calls.push_back("run=" + std::to_st
 void toybox::Model::FocusAddCell(int cell) { g_calls.push_back("focus add=" + std::to_string(cell)); }
 void toybox::Model::HoverAddCell(int cell) { g_calls.push_back("hover add=" + std::to_string(cell)); }
 void toybox::Model::FocusColumnRow(int row) { g_calls.push_back("seat=" + std::to_string(row)); }
+void toybox::Model::AddForSeat(int index) { g_calls.push_back("add for seat=" + std::to_string(index)); }
+void toybox::Model::SeatOptions(int index) { g_calls.push_back("options seat=" + std::to_string(index)); }
 void toybox::Model::DropCard(int seatIndex, const std::string& path)
 {
     g_calls.push_back("drop " + path + " on " + std::to_string(seatIndex));
@@ -159,6 +161,50 @@ int main()
     g_calls.clear();
     Click(model, 5, 205, 1, true);
     check(g_calls == std::vector<std::string>{ "seat=0", accept });
+    // An empty seat's + opens Add a figure for that seat; the rest of the card still chooses (a double click: Accept), a
+    // right click anywhere on it gives the seat's options. A seat with a figure, a real portal's or a real figure's +
+    // has no area of its own.
+    model.seats.assign(2, {});
+    model.seats[0].path = "a.bin";
+    model.realPortal = false;
+    auto seatAdds = [&] {
+        g_hits.clear();
+        g_hovered = -1;
+        SeatHits(model, 0, { 0, 200 }, { 20, 220 }, { 10, 210 }, 10);
+        SeatHits(model, 1, { 30, 200 }, { 50, 220 }, { 40, 210 }, 10);
+    };
+    seatAdds();
+    const std::string options1 = "options seat=1";
+    g_calls.clear();
+    Click(model, 40, 210, 1, false);
+    check(g_calls == std::vector<std::string>{ "add for seat=1" });
+    Pointer(40, 210, true);
+    check(HoverTarget() == "seat-add=1");
+    g_calls.clear();
+    Click(model, 31, 201, 1, false);
+    check(g_calls == std::vector<std::string>{ "seat=1" });
+    g_calls.clear();
+    Click(model, 31, 201, 1, true);
+    check(g_calls == std::vector<std::string>{ "seat=1", accept });
+    g_calls.clear();
+    Click(model, 40, 210, 3, false);
+    Click(model, 31, 201, 3, false);
+    check(g_calls == std::vector<std::string>{ "seat=1", options1, "seat=1", options1 });
+    g_calls.clear();
+    Click(model, 10, 210, 1, false);
+    check(g_calls == std::vector<std::string>{ "seat=0" });
+    model.seats[1].physical = true;
+    seatAdds();
+    g_calls.clear();
+    Click(model, 40, 210, 1, false);
+    check(g_calls == std::vector<std::string>{ "seat=1" });
+    model.seats[1].physical = false;
+    model.realPortal = true;
+    seatAdds();
+    g_calls.clear();
+    Click(model, 40, 210, 1, false);
+    check(g_calls == std::vector<std::string>{ "seat=1" });
+    model.realPortal = false;
     // Drag and drop: a press on a shelf card or a seat's figure, a move past the threshold, a release on a seat or on the
     // shelf. Under the threshold it was only the press's click; released on nothing, nothing happens.
     model.seats.assign(2, {});
@@ -212,10 +258,11 @@ int main()
     homeHits();
     check(drag(5, 205, 50, 350) == std::pair(false, false) && g_calls.empty());
     model.realPortal = false;
-    printf("%d checks, %d failures\n", 37, failures);
+    printf("%d checks, %d failures\n", 45, failures);
     puts(failures
              ? "FAIL: menu pointer and click"
              : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus, Add "
-               "cards' hover and a click beside them while versions show, a seat's double click, drag and drop");
+               "cards' hover and a click beside them while versions show, a seat's double click, an empty seat's +, "
+               "drag and drop");
     return failures ? 1 : 0;
 }
