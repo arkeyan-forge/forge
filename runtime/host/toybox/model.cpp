@@ -853,7 +853,10 @@ namespace toybox
     {
         for (const auto& card : cards)
             if (!SeatWritable(card.first))
+            {
+                fprintf(stderr, "[toybox] %s: not this player's seat\n", SeatTag(card.first).c_str());
                 return false;
+            }
         std::vector<PortalFigureChange> changes;
         uint32_t available = 0, planned = 0;
         auto change = [&](int slot, const std::string& path) {
@@ -891,14 +894,22 @@ namespace toybox
             {
                 int index = FindFigure(path);
                 if (index < 0)
+                {
+                    fprintf(
+                        stderr, "[toybox] %s: the figure is no longer in the collection\n", SeatTag(seatIndex).c_str());
                     return false;
+                }
                 Card card = collection::CardOf(figures, size_t(index));
                 int halfIndex = 0;
                 for (const Figure* half : card.Halves())
                 {
                     int slot = FreeSlot(seatIndex, halfIndex, available, planned);
                     if (slot < 0)
+                    {
+                        fprintf(stderr, "[toybox] %s: no free portal slot%s\n", SeatTag(seatIndex).c_str(),
+                            netplay::Online() ? " (online: this seat has no slot of its own)" : "");
                         return false;
+                    }
                     planned |= uint32_t(1) << slot;
                     change(slot, half->path);
                     (halfIndex == 0 ? s.slot : s.slot2) = slot;
@@ -1047,7 +1058,11 @@ namespace toybox
             cards.push_back({ other, {} });
         if (!ReplaceCards(cards))
         {
-            Toast(L("The portal is full", "Le portail est plein"));
+            // Online, a refused change is rarely a full portal: the game log says why.
+            Toast(netplay::Online()
+                      ? L("Couldn't put this figure on the online portal: see the game log",
+                            "Impossible de poser cette figurine sur le portail en ligne : voir le journal du jeu")
+                      : L("The portal is full", "Le portail est plein"));
             m_refusal = toyboxlink::refusal::Full;
             return false;
         }

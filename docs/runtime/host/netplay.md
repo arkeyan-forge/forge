@@ -638,6 +638,40 @@ real screen, two machines, other platforms. Repair copies hashed guest bytes; it
 registers, kernel objects, GPU and audio state) or make a persistently nondeterministic game deterministic: such a
 desync comes back at the next checkpoints and ends in the solo path.
 
+## Step 5: speed, the Toy Box online, the version [Xbox] [SSA]
+
+[V] The scheduler's handover. Each context waits on its own condition variable and a handover wakes the new holder
+only (`Scheduler::Dispatch`); when no context holds the baton, every context polls again each millisecond for a host
+completion, as before. Waking every context at each handover made SSA's forty threads queue on the scheduler's mutex:
+a 5-second `sample` of an online session found guest code in 71 of about 22,500 samples, the rest in waits. The switch
+order is unchanged (the 200 replays of `ArkeyanSchedulerTest` still match). `IdleWakes()` counts the wake-ups of a
+context that is not the holder; the test that failed first ping-pongs two contexts 2000 times beside 16 parked ones and
+asks for fewer than 100 (the old wake-up gave thousands).
+
+[V] The state hash. `HashBytes` runs four independent multiply chains (one chain waits for each multiply), and
+`HashAllocations` cuts every allocation of the checkpoint into its blocks first, then hashes them on four threads in
+shares of equal bytes; each block's hash is the same whatever the thread count. The heap walk goes from one allocation
+to the next (`GuestHeap::NextAllocation`, `AllocationAtOrAfter`) instead of page by page through free space.
+
+[V] Measured 2026-11-22 on an M1 Pro, SSA's front end, Europe disc, cooperative schedule, offscreen:
+
+| | Before | After |
+|---|---|---|
+| one game alone, no hashing | 19 FPS (53 ms frames) | 29.9 FPS (the 30 limit) |
+| one checkpoint's hash, one game alone | 88 ms | 16 ms (the same 48 totals) |
+| one game alone, hashing every 30th frame | 26.7 FPS | 29.8 FPS |
+
+[V] The Toy Box online. A figure put on the portal from the Toy Box is copied into the session folder
+(`online-figures/<player>-<n>.sky`) before it is sent; `SaveFigure` only rewrites a dump that exists, so the copy was
+never written and every change was refused, shown as "The portal is full". `WriteNewFigure` creates the copies (the
+sender's and the receiver's); `SaveFigure` still never creates a file. Every refusal now logs its reason
+(`[portal] online: change refused: ...`, `[toybox] P1: ...`), and the Toy Box says the change failed instead of a full
+portal. Live: the host put Gill Grunt on slot 0 from the Toy Box; the guest received its copy and the 63 checkpoints
+(30 to 1890) were equal on both sides.
+
+[V] The version. A game that plays online takes a minor version (SSA 0.10.0). In an online session the window title and
+the F3 menu show `-o` after it (`netplay::VersionLabel`); the room compares the plain version.
+
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one
    world, one shared camera, each player on his own PC). Free exploration (each player his own camera, the 2026-11-04

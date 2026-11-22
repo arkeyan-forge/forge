@@ -3,6 +3,7 @@
 #include "netplay/events.h"
 #include "netplay/inputs.h"
 #include "netplay/state_hash.h"
+#include "heap_walk.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -180,6 +181,33 @@ namespace
             Check(netplay::HashBytes(host, 0x100, excluded) == netplay::HashBytes(guest, 0x100, excluded),
                 "packed repair restores the hashed state");
         }
+        {
+            // Every byte counts, whichever of the four lanes reads it, and words do not trade lanes unseen.
+            std::vector<uint8_t> lanes(96);
+            for (size_t i = 0; i < lanes.size(); ++i)
+                lanes[i] = uint8_t(i * 13 + 1);
+            const uint64_t base = netplay::HashBytes(lanes, 0x2000, {});
+            bool all = true;
+            for (size_t i = 0; i < lanes.size(); ++i)
+            {
+                lanes[i] ^= 0x40;
+                all = all && netplay::HashBytes(lanes, 0x2000, {}) != base;
+                lanes[i] ^= 0x40;
+            }
+            Check(all, "a change at any offset of the lanes changes the hash");
+            std::swap_ranges(lanes.begin(), lanes.begin() + 8, lanes.begin() + 8);
+            Check(netplay::HashBytes(lanes, 0x2000, {}) != base, "two words swapped between lanes change the hash");
+        }
+        {
+            // The probe's walk over a heap: the allocation holding the address, else the next one.
+            const std::map<uint32_t, uint32_t> used = { { 0x10000, 0x2000 }, { 0x40000, 0x1000 } };
+            Check(AllocationAtOrAfter(used, 0x10000)->first == 0x10000 &&
+                      AllocationAtOrAfter(used, 0x11FFF)->first == 0x10000 &&
+                      AllocationAtOrAfter(used, 0x12000)->first == 0x40000 &&
+                      AllocationAtOrAfter(used, 0x0)->first == 0x10000 &&
+                      AllocationAtOrAfter(used, 0x41000) == used.end(),
+                "allocation at or after an address");
+        }
         const uint64_t original = netplay::HashBytes(bytes, 0x1FFFF, skips);
         Check(original == netplay::HashBytes(bytes, 0x1FFFF, skips), "stable hash");
         bytes[10] ^= 1;
@@ -195,6 +223,24 @@ namespace
         bytes[0] ^= 1;
         Check(skipped != netplay::HashBytes(bytes, 0x1FFFF, skips), "range begins precisely");
         std::vector<netplay::Block> blocks;
+        {
+            // A large allocation is hashed on several threads: the same blocks, in order, as one block at a time.
+            std::vector<uint8_t> large(5u << 20);
+            for (size_t i = 0; i < large.size(); ++i)
+                large[i] = uint8_t(i * 2654435761u >> 13);
+            const std::vector<netplay::Range> holes = { { 0x40123456, 0x40123500 } };
+            std::vector<netplay::Block> threaded;
+            netplay::HashAllocation(large, 0x40100000, netplay::Heap::Physical, holes, threaded);
+            bool same = threaded.size() == large.size() / 0x10000;
+            for (size_t i = 0; same && i < threaded.size(); ++i)
+            {
+                const uint32_t at = 0x40100000 + uint32_t(i) * 0x10000;
+                same =
+                    threaded[i].address == at && threaded[i].heap == netplay::Heap::Physical &&
+                    threaded[i].hash == netplay::HashBytes(std::span(large).subspan(i * 0x10000, 0x10000), at, holes);
+            }
+            Check(same, "threaded block hashes equal one block at a time");
+        }
         netplay::HashAllocation(bytes, 0x1FFFF, netplay::Heap::Virtual4K, {}, blocks);
         Check(blocks.size() == 4 && blocks[0].address == 0x1FFFF && blocks[1].address == 0x20000 &&
                   blocks[2].address == 0x30000 && blocks[3].address == 0x40000,

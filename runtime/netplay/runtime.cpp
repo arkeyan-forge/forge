@@ -267,6 +267,8 @@ namespace netplay
             double totalMs = 0, maxMs = 0;
             std::vector<Range> skips, imageRanges;
             std::vector<Block> blocks;
+            std::vector<netplay::Allocation> allocations; // of the hash being made
+            std::vector<uint64_t> ends;                   // each block's end, while locating blocks
             std::vector<Range> repairRanges;
             bool locatingBlocks = false;
 
@@ -482,15 +484,7 @@ namespace netplay
             void Allocation(uint32_t address, uint32_t size, Heap heap)
             {
                 const auto* bytes = static_cast<const uint8_t*>(g_memory.Translate(address));
-                const size_t first = blocks.size();
-                HashAllocation(std::span(bytes, size), address, heap, skips, blocks, uint32_t(blockBytes));
-                if (locatingBlocks)
-                    for (size_t i = first; i < blocks.size(); ++i)
-                    {
-                        const uint64_t at = blocks[i].address;
-                        const uint64_t end = std::min(uint64_t(address) + size, (at & ~(blockBytes - 1)) + blockBytes);
-                        repairRanges.push_back({ at, end });
-                    }
+                allocations.push_back({ std::span(bytes, size), address, heap });
             }
 
             // SKY_NETPLAY_TEST_DESYNC=<frame> (a session test, SKY_NETPLAY_TEST=1): the guest flips one hashed byte at
@@ -539,16 +533,14 @@ namespace netplay
 
             void Scan(const GuestHeap& heap, Heap kind, uint32_t begin)
             {
-                // FindAllocation avoids the allocating map copy made by ForEachAllocation while the guest is held.
+                // NextAllocation avoids the allocating map copy made by ForEachAllocation while the guest is held, and
+                // goes from one allocation to the next instead of page by page through the free space.
                 for (uint64_t at = begin; at <= UINT32_MAX && heap.Contains(uint32_t(at));)
                 {
                     uint32_t size = 0;
-                    const uint32_t base = heap.FindAllocation(uint32_t(at), &size);
-                    if (!base)
-                    {
-                        at += heap.PageSize();
-                        continue;
-                    }
+                    const uint32_t base = heap.NextAllocation(uint32_t(at), &size);
+                    if (!base || !heap.Contains(base))
+                        break;
                     const uint32_t address = kind == Heap::Physical ? PhysicalToGuest(base) : base;
                     if (address)
                         Allocation(address, size, kind);
@@ -607,6 +599,11 @@ namespace netplay
                 Scan(g_physicalHeap, Heap::Physical, 0x00010000);
                 for (const auto range : imageRanges)
                     Allocation(uint32_t(range.begin), uint32_t(range.end - range.begin), Heap::Image);
+                HashAllocations(allocations, skips, blocks, uint32_t(blockBytes), locatingBlocks ? &ends : nullptr);
+                allocations.clear();
+                if (locatingBlocks)
+                    for (size_t i = 0; i < blocks.size(); ++i)
+                        repairRanges.push_back({ blocks[i].address, ends[i] });
                 uint64_t total = HashSeed;
                 for (const auto& block : blocks)
                 {

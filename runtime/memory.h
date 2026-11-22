@@ -5,6 +5,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include "heap_walk.h"
 #include <atomic>
 #include <mutex>
 #include <type_traits>
@@ -73,6 +74,9 @@ public:
     uint32_t Free(uint32_t address);
     // Base of the allocation containing `address`, 0 if none.
     uint32_t FindAllocation(uint32_t address, uint32_t* size = nullptr) const;
+    // Base of the allocation containing `address`, else of the next one; 0 if none. A walk over the allocations that
+    // neither copies the map nor visits the free pages between them.
+    uint32_t NextAllocation(uint32_t address, uint32_t* size = nullptr) const;
     // Calls `visit(base, size)` for every allocation, in address order (on a copy: `visit` may allocate or free).
     void ForEachAllocation(const std::function<void(uint32_t base, uint32_t size)>& visit) const;
 

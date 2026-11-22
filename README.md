@@ -23,7 +23,7 @@ status page (written by `tools/game_status.py` from those pages).
 <!-- game-status:begin -->
 | Game | Engine | Version | Played on | Known limits |
 |---|---|---|---|---|
-| [Spyro's Adventure (SSA, 2011)](games/ssa/docs/status.md) | Lux | 0.9.17 | macOS, Windows, Linux | Some bosses and Heroic Challenges not yet confirmed (#58) |
+| [Spyro's Adventure (SSA, 2011)](games/ssa/docs/status.md) | Lux | 0.10.0 | macOS, Windows, Linux | Some bosses and Heroic Challenges not yet confirmed (#58) |
 | [Giants (2012)](games/giants/docs/status.md) | Alchemy | 0.8.17 | macOS, Windows, Linux | A few challenge levels crash (#54) |
 | [Swap Force (2013)](games/swapforce/docs/status.md) | Alchemy | 0.5.16 | macOS, Windows, Linux | A plain green picture after some minutes in Wildwoods (#84): fixed 2026-11-22, to confirm on players' machines; not every mode played |
 | [Trap Team (2014)](games/trapteam/docs/status.md) | Alchemy | 0.1.11 | macOS, Windows | Linux not tried yet; Spy Rise dark on macOS (#50); separate voice language and LB fixed in 0.9.6, to confirm (#51) |

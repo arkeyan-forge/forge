@@ -43,6 +43,17 @@ namespace netplay
         std::span<const uint8_t> memory, uint32_t address, std::span<const Range> skips, std::vector<uint8_t>& bytes);
     bool ApplyBlock(
         std::span<uint8_t> memory, uint32_t address, std::span<const Range> skips, std::span<const uint8_t> bytes);
+    struct Allocation
+    {
+        std::span<const uint8_t> bytes;
+        uint32_t address;
+        Heap heap;
+    };
+    // Threads hashing 4 MB or more (the guest is held meanwhile: they only read).
+    inline constexpr size_t HashThreads = 4;
+    // Appends the blocks of `allocations`, in order, and with `ends` each block's end address.
+    void HashAllocations(std::span<const Allocation> allocations, std::span<const Range> skips,
+        std::vector<Block>& blocks, uint32_t blockBytes = 0x10000, std::vector<uint64_t>* ends = nullptr);
     void HashAllocation(std::span<const uint8_t> bytes, uint32_t address, Heap heap, std::span<const Range> skips,
         std::vector<Block>& blocks, uint32_t blockBytes = 0x10000);
     // A decimal count in [min, max] (a power of two when asked): the probe's block size and sampling period.

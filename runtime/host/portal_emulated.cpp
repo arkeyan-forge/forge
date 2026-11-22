@@ -44,6 +44,11 @@ bool SaveFigure(const std::string& path, const FigureData& data)
     return SDL_CloseIO(file) && written;
 }
 
+bool WriteNewFigure(const std::string& path, const FigureData& data)
+{
+    return SDL_SaveFile(path.c_str(), data.data(), data.size());
+}
+
 bool EmulatedPortal::IsActive()
 {
     std::lock_guard lock(m_mutex);

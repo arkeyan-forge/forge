@@ -1,4 +1,5 @@
 #include "netplay/clock.h"
+#include "netplay/session_runtime.h"
 #include "host/audio.h"
 #include "host/collection/collection.h"
 #include "host/collection/datadir.h"
@@ -444,7 +445,8 @@ int main(int argc, char** argv)
             .backend = settings.gpuBackend };
         gpu::SetFirstFrameFallback(SwitchToVulkan);
         // The game's name and its version (games/<id>/game.txt): "Skylanders: Spyro's Adventure v0.9.1".
-        const std::string title = std::string(g_gameInfo.name) + " v" + ARKEYAN_GAME_VERSION;
+        const std::string title =
+            std::string(g_gameInfo.name) + " v" + netplay::VersionLabel(ARKEYAN_GAME_VERSION, netplay::Online());
         const windowsize::Size size = windowsize::Choose(settings.windowSize, settings.windowLast, {});
         window = CreateDisplayWindow(title.c_str(), size.width, size.height, settings.fullscreen);
 #ifndef __APPLE__ // macOS: the bundle's icon (Arkeyan-Builder's BundleIcon)
@@ -518,7 +520,7 @@ int main(int argc, char** argv)
         datadir::FromText(portable::OwnPack()));
     presence::Begin(progress::Folder(game.id));
     PortalInit();
-    gamemenu::Init(settings, window, ARKEYAN_GAME_VERSION);
+    gamemenu::Init(settings, window, netplay::VersionLabel(ARKEYAN_GAME_VERSION, netplay::Online()).c_str());
     // fps_auto_fallback never set (0.9.5 and earlier: on for everyone): the GPU's default, written to the game's video
     // section once, so the launcher's page and the F3 menu show what runs.
     if (!settings.fpsAutoFallbackSet && window != nullptr)

@@ -2,6 +2,7 @@
 
 #include "netplay/clock.h"
 #include <chrono>
+#include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -36,6 +37,8 @@ namespace netplay
         void Diagnose(const std::function<void()>& location, const std::function<void()>& capture);
         bool Active() const;
         void NetworkWait(bool waiting);
+        // Times a waiting context woke while another held the baton (the test of the handover's wake-up).
+        uint64_t IdleWakes() const { return m_idleWakes.load(std::memory_order_relaxed); }
 
     private:
         struct Context;
@@ -51,6 +54,7 @@ namespace netplay
         Id m_holder = None, m_head = None, m_tail = None;
         std::chrono::steady_clock::time_point m_handover;
         bool m_networkWait = false;
+        std::atomic<uint64_t> m_idleWakes{ 0 };
         std::jthread m_watchdog;
         static thread_local Scheduler* t_scheduler;
         static thread_local Id t_context;
