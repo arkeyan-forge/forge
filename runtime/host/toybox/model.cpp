@@ -1918,7 +1918,10 @@ namespace toybox
             }
             break;
         case Command::Options:
-            if (column < int(seats.size()))
+            // X: an empty seat's Add a figure, else the seat's options.
+            if (column < int(seats.size()) && OpenSeat(column))
+                AddForSeat(column);
+            else if (column < int(seats.size()))
                 SeatOptions(column);
             break;
         case Command::Delete:
@@ -3546,8 +3549,19 @@ namespace toybox
         return name;
     }
 
+    void Model::AddForSeat(int index)
+    {
+        if (index < 0 || index >= int(seats.size()) || !OpenSeat(index))
+            return;
+        FocusColumnRow(index);
+        BuildAdd();
+        addSeat = index;
+        screen = Screen::Add;
+    }
+
     void Model::BuildAdd(Element element)
     {
+        addSeat = -1; // every way into Add a figure but AddForSeat
         const Catalogue& catalogue = Catalogue::Get();
         std::vector<const Toy*> toys = catalogue.Accepted(game);
         Grid grid;
@@ -3740,6 +3754,7 @@ namespace toybox
             addVersion = 0;
             break;
         case Command::Back:
+            addSeat = -1;
             screen = Screen::Home;
             BuildList();
             break;
@@ -3787,6 +3802,21 @@ namespace toybox
             if (index < 0)
                 return;
             Toast(FigureName(figures[index]) + L(" is in My Skylanders", " est dans Mes Skylanders"));
+            // Made from a seat's +: straight onto that seat when it takes it, and back to the seats.
+            const int from = addSeat;
+            addSeat = -1;
+            if (from >= 0 && from < int(seats.size()) && OpenSeat(from) && Accepts(seats[from], figures[index]) &&
+                Catalogue::Get().Accepts(game, figures[index].type))
+            {
+                seat = from;
+                if (PutOn(from, path))
+                {
+                    screen = Screen::Home;
+                    BuildList();
+                    FocusColumnRow(from);
+                }
+                return;
+            }
             // Offer the seat it fits: the focused one, else the first that takes it.
             int target = Accepts(seats[seat], figures[index]) ? seat : -1;
             for (size_t i = 0; target < 0 && i < seats.size(); i++)
