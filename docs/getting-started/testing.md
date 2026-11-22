@@ -290,8 +290,9 @@ skipped), `format` and `tidy` (clang-format 23.1.3 and clang-tidy on the files c
 natively), and in `tools/ci/checks.Dockerfile` (amd64, as the build runs the x86_64 dxc; an ordinary user): `linux`,
 `sanitizers` (AddressSanitizer) and `windows` (llvm-mingw, the tests under Wine). `--only job,job` runs some; `--quick` is `format,macos`, which the
 `pre-push` hook runs (`git config core.hooksPath tools/git-hooks`) after `tools/leak_scan.py` (no game data, no
-personal information in the tree; the names it looks for are in the git-ignored `private/kit_scan_words.txt`) and a
-check of the pushed commits' identity. The jobs run at the same time (`--serial`: one after the other; a job that
+personal information in the tree; the names it looks for are in the git-ignored `private/kit_scan_words.txt`, each
+matched as a whole word, and a list word that is also an ordinary word of one file is let through by a `path:word` line of
+the git-ignored `private/leak_scan_allow.txt`) and a check of the pushed commits' identity. The jobs run at the same time (`--serial`: one after the other; a job that
 fails among them runs again alone); a job that already passed on the same tree (commits, uncommitted and untracked
 files but the docs, submodule commits, options) is skipped (`--force` runs it again). Logs in `.scratch/checks/`; each job keeps its
 build in a Docker volume, so a second run is incremental. Under emulation a few tests are left out (`tools/ci/job.sh`

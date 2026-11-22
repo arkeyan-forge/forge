@@ -31,7 +31,8 @@ The licence holder is the Arkeyan contributors. Keep third-party attribution and
 - Every compile maps the checkout path to `.` (`-ffile-prefix-map`, `-fmacro-prefix-map`, `-fdebug-prefix-map`);
   binaries and libraries are stripped.
 - **`tools/kit_scan.sh <kit dir>` must pass** (`make_kit.sh` runs it before zipping): it fails on the build machine's
-  user or paths, the words of the local list `private/kit_scan_words.txt` (untracked), and e-mail addresses; binaries
+  user as a folder of a path (`/Users/<user>`, `C:\Users\<user>`: a short name is spelled by chance in a binary's bytes),
+  the words of the local list `private/kit_scan_words.txt` (untracked) as whole words, and e-mail addresses; binaries
   are read with `strings` (UTF-16 too), archives decompressed first, file names count.
   In the Linux kit's container the user has no name, so `make_kit.sh` passes the host's (`KIT_SCAN_USER`).
 

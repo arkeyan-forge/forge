@@ -129,6 +129,7 @@ build_and_test() { # <section> <build dir> <cmake args...>
     check "$section" "unit public headers" python3 -I "$root/tools/abi/headers.py" check \
         --emitter "$root/$dir/tools/abi/ArkeyanPublicHeaders"
     check "$section" "unit tree parity" python3 -I "$root/tools/tree_parity.py" --self-test
+    check "$section" "unit leak scan words" python3 -I "$root/tools/leak_scan.py" --self-test
 }
 
 # run_game <game> <disc> <seconds> <press> <snapshot from frame> <extra env assignment>...
