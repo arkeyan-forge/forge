@@ -513,7 +513,9 @@ for platform in $platforms; do
         # (SSSE3, SSE4.1/4.2, POPCNT: every x86-64 CPU since 2009) is the kit's Linux baseline; the flags reach the
         # player's game code through the compile templates (docs/release/launcher/kit_contract.md). zig's spelling:
         # -march=x86-64-v2 reads as the CPU "x86".
-        march="-mcpu=x86_64_v2"
+        # zig's clang also writes debug info at -O2 (zig c++ -###): -g0, or the player's compile takes 10-27 % longer and
+        # its objects are 3-6x larger (docs/tools/arkeyan-builder.md, "Compile memory").
+        march="-mcpu=x86_64_v2 -g0"
         # The target is x86-64 on any build machine: zstd's assembly and the libdxcompiler.so XenosRecomp links follow
         # CMAKE_SYSTEM_PROCESSOR, the build machine's unless CMAKE_SYSTEM_NAME is set. Not a cross build all the same:
         # the x86-64 programs run here (emulated on arm64), as the try_run probes and the build steps expect.

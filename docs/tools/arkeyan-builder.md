@@ -20,7 +20,7 @@ is [../release/launcher/kit_contract.md](../release/launcher/kit_contract.md); t
 
     Arkeyan-Builder --iso <disc .iso or copied game data folder> --out <game folder> [--kit <kit folder>] [--jobs N] [--toolchain <folder>] [--icon-only] [--hd-textures off|2x|auto]
 
-`--kit` defaults to Arkeyan-Builder's own folder; `--jobs` to what the CPU and memory allow (2 GB per compiler); `--toolchain`
+`--kit` defaults to Arkeyan-Builder's own folder; `--jobs` to what the CPU and memory allow (1 GB per compiler, 2 GB left free; [Compile memory](#compile-memory)); `--toolchain`
 is needed only for a Windows kit run on another OS (an llvm-mingw folder); on Windows and Linux it may also name an
 extracted compiler (llvm-mingw, zig) or the folder to cache the download in. A second run redoes only what changed. `--icon-only` makes the game's icon alone and stops (a check, no build). `Arkeyan-Builder --iso <disc> --menu-music <file.wav> [--kit <kit folder>]` decodes the game's main menu theme into a looping WAV and stops (Arkeyan Launcher's game page; [game_music.md](../runtime/host/game_music.md); the kit's Arkeyan-Builder links the static FFmpeg for it).
 `--hd-textures off|2x|auto` (optional, off when absent) doubles the game's textures from the player's disc into the pack
@@ -155,6 +155,30 @@ run and stops with an `@error` saying so when they are missing, or when that run
 To check a Windows kit on the Mac: copy `arkeyan-work/{disc,ppc,shaders}` of a native (macOS) run made with `SKY_WINDOWS_SHADERS=1` into a new game folder's `arkeyan-work/`, then run the
 **macOS kit's** `Arkeyan-Builder --iso <disc> --out <new folder> --kit <the Windows kit> --toolchain <llvm-mingw 20260922, macOS build>`: it compiles and links
 `"Skylanders Spyro's Adventure.exe"` / `"Skylanders Giants.exe"` with the Windows kit's libraries and templates (~2 min), which `tools/windows/wine_smoke_test.sh` (`EXE=`) then runs.
+
+## Compile memory
+
+The compile step runs one compiler per thread while the memory allows (`compile_budget.h`): it counts the memory less 2 GB
+in 1 GB units; a game code file holds one unit while it compiles, the shader cache about 24 times its string-literal copy
+(`shader_cache_literals.h`), at most every unit. Files take their units in their order, largest first, so the shader
+cache waits for its units instead of being overtaken. Up to kit 0.9.10b1 the rule was 2 GB per compiler: a 16 GB PC with 12
+threads compiled with 7 jobs. [V] `ArkeyanBuilderTest` (`TestCompileBudget`).
+
+Peak memory per compiler (2026-11-22, measured on a Mac with the players' compilers: llvm-mingw 20260922 and zig 0.17.0,
+clang 22; Apple clang 21; the kit's flags; 315 files of the six games: the 25 largest of each and every 8th of the rest):
+
+| File | Peak |
+|---|---|
+| Game code, median per game | 200-300 MB |
+| Game code, largest (SSA, 12 MB of source) | 741 MB |
+| Giants' shader cache, Windows (DXIL and SPIR-V, 48 MB literal copy) | 1.2 GB |
+| Giants' shader cache with the Metal shaders too (189 MB literal copy) | 4.2 GB |
+
+The shader cache costs about 65 bytes of compiler memory per byte of compressed shaders whatever its form: a list of
+numbers takes 3.0 GB for the Windows file above, string literals 1.2 GB, `#embed` about the same as literals; literals
+compile fastest. The Linux kit compiles with `-g0`: zig's clang writes debug info at `-O2` otherwise, which costs 10-27 %
+more compile time, 7-31 % more memory and objects 3-6x larger (SuperChargers' game: 343 MB on Linux, 94 MB on
+Windows).
 
 ## Compatibility checks
 
