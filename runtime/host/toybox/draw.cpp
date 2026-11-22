@@ -13,6 +13,7 @@
 #include "host/profiles.h"
 #include "host/toybox.h"
 #include "host/toybox/look.h"
+#include "host/toybox/strip.h"
 #include "host/toybox/trap_villain.h"
 #include "language.h"
 #include <SDL3/SDL.h>
@@ -1391,7 +1392,7 @@ namespace toybox
             TextMiddle(g_bold, 14, x + Measure(g_black, 17, model.prompt).x + 10, c.y, Colour::TextSoft, tail);
         }
 
-        // The section names as a strip, the current one lit; scrolled so that it shows.
+        // The section names as a strip, the current one lit, wrapped onto as many rows as it needs.
         std::string StripLabel(Model& model, Grid& grid, const ListSection& section)
         {
             if (section.kind == Section::Kind::Foreign)
@@ -1401,59 +1402,53 @@ namespace toybox
             return model.SectionLabel(section);
         }
 
-        void SectionStrip(Model& model, Grid& grid, ImVec2 at, float width)
+        // Returns the strip's height.
+        float SectionStrip(Model& model, Grid& grid, ImVec2 at, float width)
         {
             if (grid.sections.empty())
-                return;
+                return 0;
             int current = grid.cells.empty() ? 0 : grid.cells[grid.cursor].section;
+            std::vector<std::string> labels;
             std::vector<float> widths;
+            labels.reserve(grid.sections.size());
             widths.reserve(grid.sections.size());
             for (const ListSection& section : grid.sections)
-                widths.push_back(Measure(g_black, 13, StripLabel(model, grid, section)).x + 22);
-            float offset = 0, before = 0;
-            for (int i = 0; i < current; i++)
-                before += widths[i] + 6;
-            if (before + widths[current] > width - 40)
-                offset = before + widths[current] - (width - 40);
-            float x = at.x - offset;
+            {
+                labels.push_back(StripLabel(model, grid, section));
+                widths.push_back(Measure(g_black, 13, labels.back()).x + 22);
+            }
+            const strip::Layout layout = strip::Wrap(widths, width, 6, 26);
             for (size_t i = 0; i < grid.sections.size(); i++)
             {
-                std::string label = StripLabel(model, grid, grid.sections[i]);
-                if (x + widths[i] > at.x && x < at.x + width)
+                bool lit = int(i) == current;
+                ImVec2 min(at.x + layout.chips[i].x, at.y + layout.chips[i].y), max(min.x + widths[i], min.y + 26);
+                RoundRect(min, max, lit ? Look::Gold : Look::Chip, 13);
+                TextCentered(g_black, 13, ImVec2((min.x + max.x) / 2, min.y + 13), lit ? Look::GoldInk : Look::ChipText,
+                    labels[i]);
+                int first = -1;
+                for (size_t c = 0; c < grid.cells.size() && first < 0; c++)
                 {
-                    bool lit = int(i) == current;
-                    ImVec2 min(x, at.y), max(x + widths[i], at.y + 26);
-                    if (min.x >= at.x && max.x <= at.x + width)
-                    {
-                        RoundRect(min, max, lit ? Look::Gold : Look::Chip, 13);
-                        TextCentered(g_black, 13, ImVec2((min.x + max.x) / 2, at.y + 13),
-                            lit ? Look::GoldInk : Look::ChipText, label);
-                        int first = -1;
-                        for (size_t c = 0; c < grid.cells.size() && first < 0; c++)
-                        {
-                            if (grid.cells[c].section == int(i))
-                                first = int(c);
-                        }
-                        Grid* target = &grid;
-                        AddHit(min, max, [&model, target, first] {
-                            if (first >= 0)
-                            {
-                                if (target == &model.add)
-                                {
-                                    if (model.add.cursor != first)
-                                        model.FocusAddCell(first); // the versions of the new toy
-                                    return;
-                                }
-                                target->cursor = first;
-                                model.Touch();
-                                if (target == &model.list)
-                                    model.FocusCell(first);
-                            }
-                        });
-                    }
+                    if (grid.cells[c].section == int(i))
+                        first = int(c);
                 }
-                x += widths[i] + 6;
+                Grid* target = &grid;
+                AddHit(min, max, [&model, target, first] {
+                    if (first >= 0)
+                    {
+                        if (target == &model.add)
+                        {
+                            if (model.add.cursor != first)
+                                model.FocusAddCell(first); // the versions of the new toy
+                            return;
+                        }
+                        target->cursor = first;
+                        model.Touch();
+                        if (target == &model.list)
+                            model.FocusCell(first);
+                    }
+                });
             }
+            return layout.height;
         }
 
         // The card's top left corner: the element's icon at `element` (a disc in its colour until a disc with icons is
@@ -3008,8 +3003,8 @@ namespace toybox
             AddBackdropHit(model);
             Grid& grid = model.add;
             ImVec2 min(32, 88), max(824, 664);
-            SectionStrip(model, grid, min, max.x - min.x);
-            ImVec2 listMin(min.x, min.y + 40);
+            float strip = SectionStrip(model, grid, min, max.x - min.x);
+            ImVec2 listMin(min.x, min.y + std::max(strip, 26.0f) + 14);
             grid.visibleHeight = int(max.y - listMin.y);
             float gap = 10, cardWidth = (max.x - min.x - gap * (Model::AddColumns - 1)) / Model::AddColumns,
                   cardHeight = float(grid.rowHeight - 8);
@@ -4175,8 +4170,9 @@ namespace toybox
             if (now != nullptr)
                 TextMiddle(g_bold, 16, min.x + 28 + w + 20, min.y + 36, Look::TextDim,
                     std::string(L("Now: ", "Maintenant : ")) + model.FigureName(*now));
-            SectionStrip(model, model.list, ImVec2(min.x + 28, min.y + 70), max.x - min.x - 56);
-            DrawList(model, ImVec2(min.x + 28, min.y + 110), ImVec2(max.x - 28, max.y - 56), true, true);
+            float strip = SectionStrip(model, model.list, ImVec2(min.x + 28, min.y + 70), max.x - min.x - 56);
+            float listTop = min.y + 70 + std::max(strip, 26.0f) + 14;
+            DrawList(model, ImVec2(min.x + 28, listTop), ImVec2(max.x - 28, max.y - 56), true, true);
             Hints(max.x - 28, max.y - 28,
                 { { 'A', L("Swap", "Changer") }, { 'L', L("Section", "Section") },
                     { 'B', L("Back to the game", "Retour au jeu") } });

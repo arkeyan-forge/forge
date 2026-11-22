@@ -110,7 +110,9 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
   `collection::BestPicturePath` (a variant's own artwork, else the toy's, else the round portrait): `ArtworkPicture` in
   `toybox/draw.cpp` fits the not-square artwork into its box. The shelf's small cards keep the round portraits (an
   artwork cropped to a circle at 80 px loses the figure's silhouette). Clicking a section chip in Add a figure now
-  refreshes the Versions column (it showed the previous toy's).
+  refreshes the Versions column (it showed the previous toy's). The section chips above Add a figure and the wheel's
+  list wrap onto as many rows as they need, so every section shows (Imaginators has about fourteen); the list starts
+  below the last row (`toybox::strip::Wrap`, `ArkeyanToyboxStripTest`).
   **Upgrades** (2026-10-26): the Edit sheet's "Upgrades" row (count, e.g. "4 of 11") opens its own screen
   (`Screen::Upgrades`, `DrawUpgrades`, `RunUpgrades`): the toy's upgrades by name from `collection::Upgrades`, the basic
   ones (with the Soul Gem and the Wow Pow under them) beside the two paths, the chosen path lit and the other greyed;
