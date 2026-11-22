@@ -15,6 +15,7 @@
 #include "host/toybox/look.h"
 #include "host/toybox/nav.h"
 #include "host/toybox/put_on.h"
+#include "host/toybox/seat_rows.h"
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -285,6 +286,8 @@ namespace toybox
         // Where the drawing put each row's things (x extents), so that Up and Down keep the column: the seats row's
         // places, the bar's two, the grid's columns.
         std::vector<nav::Span> seatSpans, starterSpans, barSpans, gridSpans;
+        // The seats as drawn, row by row (seat_rows::Rows); empty before the first frame: one row.
+        std::vector<std::vector<int>> seatRows;
         // The game's starter pack (collection::OffersStarterPack), worked out by Reload: not per frame.
         bool starterOffered = false;
         std::string starterNames; // "Wash Buckler, Blast Zone, Ninja Stealth Elf"; empty: the game has no pack
