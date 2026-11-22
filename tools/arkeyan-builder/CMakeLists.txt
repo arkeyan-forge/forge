@@ -18,7 +18,7 @@ add_library(ArkeyanBuilderMiniz STATIC ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecom
 target_compile_definitions(ArkeyanBuilderMiniz PRIVATE MINIZ_NO_STDIO MINIZ_NO_TIME MINIZ_NO_ARCHIVE_APIS MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
 target_include_directories(ArkeyanBuilderMiniz SYSTEM INTERFACE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz)
 # runtime/guest_layout.cpp: the code layout record's checks, the runtime's own (#72).
-add_executable(Arkeyan-Builder main.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp
+add_executable(Arkeyan-Builder main.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp compile_budget.cpp
     ${ARKEYAN_BUILDER_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
     ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${ARKEYAN_BUILDER_PLATFORM})
 target_include_directories(Arkeyan-Builder PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
@@ -30,7 +30,7 @@ if(WIN32)
     target_link_libraries(Arkeyan-Builder PRIVATE winmm winhttp)
 endif()
 add_executable(ArkeyanVersionResourceTest version_resource_test.cpp accents_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp
-    igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp ${ARKEYAN_BUILDER_HD_SOURCES}
+    igz_shaders.cpp game_icon.cpp menu_music.cpp shader_cache_literals.cpp compile_budget.cpp ${ARKEYAN_BUILDER_HD_SOURCES}
     ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${ARKEYAN_BUILDER_PLATFORM})
 target_include_directories(ArkeyanVersionResourceTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)
 target_include_directories(ArkeyanVersionResourceTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
@@ -47,7 +47,7 @@ if(WIN32)
     target_link_libraries(ArkeyanVersionResourceTest PRIVATE winmm winhttp)
 endif()
 
-add_executable(ArkeyanBuilderTest arkeyan_builder_test.cpp igz_shaders.cpp sha256.cpp shader_cache_literals.cpp game_icon.cpp)
+add_executable(ArkeyanBuilderTest arkeyan_builder_test.cpp igz_shaders.cpp sha256.cpp shader_cache_literals.cpp compile_budget.cpp game_icon.cpp)
 target_include_directories(ArkeyanBuilderTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
 target_link_libraries(ArkeyanBuilderTest PRIVATE ArkeyanArtReader)
 sky_quality(ArkeyanBuilderTest)
@@ -70,7 +70,7 @@ target_link_libraries(ArkeyanBuilderMusicTest PRIVATE ArkeyanHostFiles)
 arkeyan_setup_ffmpeg(ArkeyanBuilderMusicTest)
 
 # Real install steps with synthetic inputs and a fake child runner; never launches a game.
-add_executable(ArkeyanBuilderGuardTest install_guard_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp shader_cache_literals.cpp game_icon.cpp menu_music.cpp
+add_executable(ArkeyanBuilderGuardTest install_guard_test.cpp edition.cpp fingerprint.cpp process.cpp sha256.cpp toolchain_fetch.cpp igz_shaders.cpp shader_cache_literals.cpp compile_budget.cpp game_icon.cpp menu_music.cpp
     ${ARKEYAN_BUILDER_HD_SOURCES} ${CMAKE_SOURCE_DIR}/runtime/host/xex_title.cpp
     ${CMAKE_SOURCE_DIR}/runtime/guest_layout.cpp ${ARKEYAN_BUILDER_PLATFORM})
 target_include_directories(ArkeyanBuilderGuardTest PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${CMAKE_SOURCE_DIR}/runtime/platform/win32)

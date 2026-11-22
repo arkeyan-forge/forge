@@ -5,7 +5,11 @@
 #include "igz_shaders.h"
 #include "sha256.h"
 #include "shader_cache_literals.h"
+#include "compile_budget.h"
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -203,6 +207,72 @@ static void TestShaderCacheLiterals()
         longest = std::max(longest, (end = std::min(out.find('\n', at), out.size())) - at);
     CHECK(longest < 4 * 4096 + 8);
     CHECK(ShaderCacheLiterals("const uint8_t g_x Cache[] = {1, 2};") == "const uint8_t g_x Cache[] = {1, 2};");
+}
+
+static void TestCompileBudget()
+{
+    using namespace compile_budget;
+    constexpr uint64_t GB = 1ull << 30;
+    // The testers' machines: 16 GB with 15.8 usable and 12 threads (7 jobs at 2 GB each), 8 GB, 32 GB with 16 threads.
+    CHECK(Jobs(12, uint64_t(15.8 * double(GB))) == 12);
+    CHECK(Jobs(8, uint64_t(7.8 * double(GB))) == 5);
+    CHECK(Jobs(16, 32 * GB) == 16);
+    CHECK(Jobs(0, 0) == 1); // nothing known: one compiler
+    CHECK(Units(2 * GB) == 1);
+    // Game code: one unit. The shader cache: about 24 times its literal copy, never more than all of them.
+    CHECK(FileUnits(12 << 20, false, 12) == 1);
+    CHECK(FileUnits(48 << 20, true, 12) == 2);
+    CHECK(FileUnits(189 << 20, true, 12) == 5);
+    CHECK(FileUnits(189 << 20, true, 3) == 3);
+    CHECK(FileUnits(1, true, 12) == 1);
+
+    // Never more units in use than the pool holds.
+    {
+        Pool pool(4);
+        std::vector<unsigned> cost = { 4, 1, 1, 3, 1, 2, 1, 1, 4, 1, 1, 1 };
+        std::atomic<size_t> next = 0;
+        std::atomic<unsigned> used = 0, peak = 0;
+        std::vector<std::thread> threads;
+        for (unsigned t = 0; t < 4; t++)
+            threads.emplace_back([&]() {
+                for (size_t index; (index = next++) < cost.size();)
+                {
+                    pool.Take(index, cost[index]);
+                    unsigned now = used += cost[index];
+                    for (unsigned seen = peak; now > seen && !peak.compare_exchange_weak(seen, now);)
+                    {}
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    used -= cost[index];
+                    pool.Give(cost[index]);
+                }
+            });
+        for (auto& thread : threads)
+            thread.join();
+        CHECK(peak <= 4);
+    }
+    // A large file waiting for its units is not overtaken by a small one behind it, though a unit is free.
+    {
+        Pool pool(2);
+        pool.Take(0, 1);
+        std::atomic<bool> large = false, small = false;
+        std::thread waitsLarge([&]() {
+            pool.Take(1, 2);
+            large = true;
+        });
+        std::thread waitsSmall([&]() {
+            pool.Take(2, 1);
+            small = true;
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        CHECK(!large && !small);
+        pool.Give(1);
+        waitsLarge.join();
+        CHECK(large);
+        pool.Give(2);
+        waitsSmall.join();
+        CHECK(small);
+        pool.Give(1);
+    }
 }
 
 static void TestGames(const fs::path& root)
@@ -415,6 +485,7 @@ int main(int argc, char** argv)
         CHECK(refused); // a missing/unreadable dependency must not become an empty freshness key
     }
     TestShaderCacheLiterals();
+    TestCompileBudget();
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;
 }

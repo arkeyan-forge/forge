@@ -30,6 +30,7 @@
 #include "apu/xma_decoder.h"
 #include "process.h"
 #include "shader_cache_literals.h"
+#include "compile_budget.h"
 #include "sha256.h"
 #include "toolchain_fetch.h"
 #include "version_resource.h"
@@ -223,6 +224,7 @@ namespace
         fs::path kit;
         fs::path toolchain;
         unsigned jobs = 0;
+        bool jobsGiven = false; // --jobs: that many compilers, whatever the memory
         bool iconOnly = false; // --icon-only: make the game's icon (GameIcon) and stop; a check, no build
         fs::path
             menuMusic; // --menu-music <file.wav>: write the game's main menu theme there (MenuMusic) and stop; no build
@@ -1282,6 +1284,7 @@ namespace
             uintmax_t size;
             fs::path keyFile;
             std::string key;
+            bool shaderCache;
         };
         std::vector<Job> jobs;
         for (const fs::path& source : sources)
@@ -1308,7 +1311,7 @@ namespace
                 fs::remove(keyFile);
                 if (cache)
                     WriteText(obj / "shader_cache_literals.cpp", ShaderCacheLiterals(ReadText(source)));
-                jobs.push_back({ source, args, fs::file_size(source), keyFile, key });
+                jobs.push_back({ source, args, fs::file_size(source), keyFile, key, cache });
             }
         }
         build.vars.erase("SRC");
@@ -1327,6 +1330,11 @@ namespace
             std::to_string(build.options.jobs) + " jobs");
         Progress(done, total);
 
+        // An explicit --jobs is one unit per compiler, memory unchecked.
+        unsigned units = build.options.jobsGiven ? build.options.jobs : compile_budget::Units(PhysicalMemoryBytes());
+        compile_budget::Pool pool(units);
+        std::error_code literalError;
+        uintmax_t literalSize = fs::file_size(obj / "shader_cache_literals.cpp", literalError);
         std::atomic<size_t> next = 0;
         std::atomic<size_t> finished = done;
         std::atomic<bool> failed = false;
@@ -1342,6 +1350,16 @@ namespace
                     if (index >= jobs.size())
                         return;
                     const Job& job = jobs[index];
+                    unsigned held = compile_budget::FileUnits(literalError ? 0 : literalSize, job.shaderCache, units);
+                    pool.Take(index, held);
+                    struct GiveBack
+                    {
+                        compile_budget::Pool& pool;
+                        unsigned units;
+                        ~GiveBack() { pool.Give(units); }
+                    } giveBack{ pool, held };
+                    if (failed)
+                        return;
                     try
                     {
                         RunOptions run;
@@ -1954,7 +1972,10 @@ int main(int argc, char** argv)
         else if (arg == "--menu-music" && hasValue)
             options.menuMusic = PathFromUtf8(argv[++i]);
         else if (arg == "--jobs" && hasValue)
+        {
             options.jobs = unsigned(std::max(1, atoi(argv[++i])));
+            options.jobsGiven = true;
+        }
         else if (arg == "--hd-textures" && hasValue)
             options.hdTextures = argv[++i];
         else
@@ -2024,13 +2045,8 @@ int main(int argc, char** argv)
             return 0;
         }
 
-        // About 2 GB of memory per compiler on the largest files.
         if (options.jobs == 0)
-        {
-            unsigned threads = std::max(1u, std::thread::hardware_concurrency());
-            unsigned memory = unsigned(PhysicalMemoryBytes() / (2ull << 30));
-            options.jobs = std::max(1u, std::min(threads, memory));
-        }
+            options.jobs = compile_budget::Jobs(std::thread::hardware_concurrency(), PhysicalMemoryBytes());
 
         build.work = WorkFolder(options.out);
         fs::create_directories(build.work / "logs");
