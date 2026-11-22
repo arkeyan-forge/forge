@@ -185,7 +185,7 @@ Every row, button, stepper, cell and card of the F3 menu and the Toy Box is a cl
 pointer gets a soft outline, the pointer moving onto a menu row, a card or a button moves the focus ring there (never a
 still pointer; the Commands page's cells keep the focus to the keys), and a click focuses it and does it
 ([toybox_ux.md](toybox_ux.md), "Navigation"). The
-wheel moves the panel's, Settings', Achievements' and Controls' focus, scrolls the Toy Box's lists, and steps Edit stats. The
+wheel scrolls Settings, Achievements and the Toy Box's lists without moving the focus (the panel and Controls do not scroll), and steps Edit stats. The
 rail's rows and Achievements' tabs are click targets too. Keyboard and pad work as before.
 The pointer is shown and free while one of them is open (`ToyboxOverlayOpen`; the game holds it only in play: `host/mouse.h`).
 
@@ -285,10 +285,10 @@ lines, `[ssa.input]` `key_b=K` (no `key_right_down` line), `pad_a=b`, `pad_b=a`,
 B (`0x2000`) and the right stick down after. Shots: `private/runs/commands/ssa/c_menu.png`, `c_page.png`, `c_waitkey.png`, `c_key.png`, `c_waitpad.png`, `c_pad.png`.
 `tools/regress/f3mouse.sh <Spyro's Adventure disc>` (~1 min, 24 scratch figures): through `move=`, `click=`, `rclick=` and `wheel=`
 (each, and each scripted key, logs the focus: `[toybox] script: focus: ...`), the pointer moving onto the panel's Settings row focuses
-it and a click opens the page; wheel ticks move the focus down the list (it scrolls), the pointer moving onto VSync and the FPS
-counter focuses each, a click turns the counter on, a tick up moves the focus; a click on the rail's Controls, its next page, the
+it and a click opens the page; a wheel tick scrolls the list and keeps the focus, nine Down keys reach the FPS counter, the pointer moving onto VSync and the FPS
+counter focuses each, a click turns the counter on, a tick up scrolls back and keeps the focus; a click on the rail's Controls, its next page, the
 Mouse row (on), the first page, B's mouse cell, a right click gives B the right button (X loses it); in the Toy Box the pointer moving onto the fourth card focuses it, a
-click keeps it and three wheel ticks move down the list. It checks the log, `[ssa.input]` `mouse=1`,
+click keeps it and three wheel ticks scroll the list, the focus kept. It checks the log, `[ssa.input]` `mouse=1`,
 `mouse_b=Mouse Right`, `mouse_x=none`, and the running game taking them. Shots: `private/runs/commands/mouse/m_*.png` (`m_hover`,
 `m_settings`, `m_settings_fps`, `m_page`, `m_waitmouse`, `m_mouse`, `m_card_hover`, `m_card`, `m_scrolled`). `ArkeyanCommandsTest` also covers the mouse lines, the
 switch, the Toy Box keys and their conflicts, and Reset.
