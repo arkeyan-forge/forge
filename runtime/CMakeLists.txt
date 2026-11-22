@@ -309,6 +309,11 @@ if(WIN32)
     target_compile_definitions(ArkeyanDebugScreenTest PRIVATE _WIN32_WINNT=0x0A00)
 endif()
 
+# The CPU ImGui renderer at a framebuffer scale (the Toy Box on high-density screens): ./ArkeyanImguiSoftwareTest
+add_executable(ArkeyanImguiSoftwareTest host/imgui_software_test.cpp host/imgui_software.cpp)
+target_include_directories(ArkeyanImguiSoftwareTest PRIVATE .)
+target_link_libraries(ArkeyanImguiSoftwareTest PRIVATE imgui)
+
 # Launcher checks without UI: ArkeyanRuntimeLauncherTest <game disc .iso> <scratch dir> [<damaged copy>...]
 add_executable(ArkeyanRuntimeLauncherTest EXCLUDE_FROM_ALL host/launcher_test.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp ${ARKEYAN_GAME_DIR}/info.cpp)
 target_include_directories(ArkeyanRuntimeLauncherTest PRIVATE .)

@@ -2,7 +2,7 @@
 
 // The Toy Box's look: everything drawn, nothing decided (the logic is model.h). The design's tokens and pure logic are
 // look.h (docs/runtime/host/ingame_ui.md). Drawn with Dear ImGui into a 1280x720 RGBA image on the CPU
-// (host/imgui_software.h), letterboxed over the game like its frames.
+// (host/imgui_software.h), or larger on a large screen, letterboxed over the game like its frames.
 #include "host/toybox/model.h"
 
 namespace toybox
@@ -12,9 +12,10 @@ namespace toybox
     // Fonts, the backdrop. False if the fonts did not load.
     bool DrawInit();
 
-    // The current screen into `pixels` (CanvasWidth x CanvasHeight, RGBA). Over the game (the wheel, its list, a toast
-    // with the Toy Box closed) the image is transparent around what is drawn.
-    void Draw(Model& model, std::vector<uint32_t>& pixels);
+    // The current screen into `pixels` (look::Scaled(CanvasWidth x CanvasHeight, scale), RGBA; the layout stays in
+    // canvas pixels). Over the game (the wheel, its list, a toast with the Toy Box closed) the image is transparent around what
+    // is drawn.
+    void Draw(Model& model, std::vector<uint32_t>& pixels, float scale = 1);
 
     // Mouse, in canvas pixels, on what the last Draw showed: button 1 left, 3 right; `twice` for a double click.
     void Click(Model& model, float x, float y, int button, bool twice);

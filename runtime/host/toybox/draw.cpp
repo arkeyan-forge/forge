@@ -68,7 +68,7 @@ namespace toybox
             }
         }
 
-        imgui_software::Texture* g_background;
+        float g_scale = 1; // target pixels per canvas pixel (look::OverlayScale)
         std::map<std::string, imgui_software::Texture*> g_baked;
         std::map<uint64_t, collection::Image> g_icons; // (type, variant, kind) -> 128x128 picture
         ImFont* g_bold;    // Outfit SemiBold: running text
@@ -227,18 +227,20 @@ namespace toybox
         {
             if (auto found = g_baked.find(key); found != g_baked.end())
                 return found->second;
-            auto* texture =
-                new imgui_software::Texture{ width, height, std::vector<uint32_t>(size_t(width) * size_t(height)) };
-            for (int y = 0; y < height; y++)
+            // `shade` takes canvas pixels from the centre; the texture has about g_scale texels for each.
+            const int w = look::Scaled(float(width), g_scale), h = look::Scaled(float(height), g_scale);
+            const float kx = float(width) / float(w), ky = float(height) / float(h);
+            auto* texture = new imgui_software::Texture{ w, h, std::vector<uint32_t>(size_t(w) * size_t(h)) };
+            for (int y = 0; y < h; y++)
             {
-                for (int x = 0; x < width; x++)
+                for (int x = 0; x < w; x++)
                 {
-                    ImVec4 color = shade(x + 0.5f - width / 2.0f, y + 0.5f - height / 2.0f);
+                    ImVec4 color = shade((x + 0.5f) * kx - width / 2.0f, (y + 0.5f) * ky - height / 2.0f);
                     const float channels[] = { color.x, color.y, color.z, color.w };
                     uint32_t pixel = 0;
                     for (int c = 0; c < 4; c++)
                         pixel |= uint32_t(uint8_t(std::lround(std::clamp(channels[c], 0.0f, 1.0f) * 255))) << (c * 8);
-                    texture->pixels[size_t(y) * size_t(width) + size_t(x)] = pixel;
+                    texture->pixels[size_t(y) * size_t(w) + size_t(x)] = pixel;
                 }
             }
             g_baked[key] = texture;
@@ -251,7 +253,11 @@ namespace toybox
             return Bake(key, size, size, shade);
         }
 
-        float Coverage(float radius, float distance) { return std::clamp(radius - distance + 0.5f, 0.0f, 1.0f); }
+        // Antialiased over one target pixel.
+        float Coverage(float radius, float distance)
+        {
+            return std::clamp((radius - distance) * g_scale + 0.5f, 0.0f, 1.0f);
+        }
 
         void Blit(imgui_software::Texture* texture, ImVec2 center, float size)
         {
@@ -685,11 +691,12 @@ namespace toybox
                     ImVec2(center.x + box / 2.0f, center.y + box / 2.0f), Look::Field, 18);
             std::string key = "picture " + path + " " + std::to_string(box);
             collection::Image fitted;
+            const int fw = look::Scaled(float(w), g_scale), fh = look::Scaled(float(h), g_scale);
             if (!g_baked.count(key))
-                fitted = collection::Resize(source, w, h);
+                fitted = collection::Resize(source, fw, fh);
             imgui_software::Texture* texture = Bake(key, w, h, [&](float dx, float dy) {
-                uint32_t pixel = fitted.rgba[size_t(std::clamp(int(dy + h / 2.0f), 0, h - 1)) * w +
-                                             size_t(std::clamp(int(dx + w / 2.0f), 0, w - 1))];
+                uint32_t pixel = fitted.rgba[size_t(std::clamp(int((dy + h / 2.0f) * fh / h), 0, fh - 1)) * fw +
+                                             size_t(std::clamp(int((dx + w / 2.0f) * fw / w), 0, fw - 1))];
                 return ImVec4((pixel & 0xFF) / 255.0f, (pixel >> 8 & 0xFF) / 255.0f, (pixel >> 16 & 0xFF) / 255.0f,
                     (pixel >> 24 & 0xFF) / 255.0f);
             });
@@ -751,11 +758,12 @@ namespace toybox
             int w = std::max(1, int(source.width * scale)), h = std::max(1, int(source.height * scale));
             std::string baked = std::string(key) + " " + std::to_string(box) + (grey ? " grey" : "");
             collection::Image fitted;
+            const int fw = look::Scaled(float(w), g_scale), fh = look::Scaled(float(h), g_scale);
             if (!g_baked.count(baked))
-                fitted = collection::Resize(source, w, h);
+                fitted = collection::Resize(source, fw, fh);
             imgui_software::Texture* texture = Bake(baked, w, h, [&](float dx, float dy) {
-                uint32_t pixel = fitted.rgba[size_t(std::clamp(int(dy + h / 2.0f), 0, h - 1)) * w +
-                                             size_t(std::clamp(int(dx + w / 2.0f), 0, w - 1))];
+                uint32_t pixel = fitted.rgba[size_t(std::clamp(int((dy + h / 2.0f) * fh / h), 0, fh - 1)) * fw +
+                                             size_t(std::clamp(int((dx + w / 2.0f) * fw / w), 0, fw - 1))];
                 ImVec4 color((pixel & 0xFF) / 255.0f, (pixel >> 8 & 0xFF) / 255.0f, (pixel >> 16 & 0xFF) / 255.0f,
                     (pixel >> 24 & 0xFF) / 255.0f);
                 if (grey)
@@ -1088,7 +1096,7 @@ namespace toybox
         // --- The player's profile: SKY_PLAYER_NAME and its picture (host/profiles.h) ------------------------------------
 
         std::array<imgui_software::Texture*, 2>
-            g_avatars{}; // the picture cut round, 64 px; null: the initials on the accent
+            g_avatars{}; // the picture cut round, 64 canvas px; null: the initials on the accent
         std::array<bool, 2> g_avatarsRead{};
 
         // The profile's picture, or its initials, in a circle of `diameter`.
@@ -1107,19 +1115,19 @@ namespace toybox
                 profiles::Picture picture;
                 if (data != nullptr && profiles::DecodePicture(static_cast<const uint8_t*>(data), size, picture))
                 {
-                    // The largest centred square, sampled down to 64 px, outside the circle transparent.
-                    constexpr int Side = 64;
+                    // The largest centred square, sampled down to 64 canvas px, outside the circle transparent.
+                    const int Side = look::Scaled(64, g_scale);
                     int square = std::min(picture.width, picture.height);
                     int x0 = (picture.width - square) / 2, y0 = (picture.height - square) / 2;
-                    g_avatar = new imgui_software::Texture{ Side, Side, std::vector<uint32_t>(Side * Side) };
+                    g_avatar = new imgui_software::Texture{ Side, Side, std::vector<uint32_t>(size_t(Side) * Side) };
                     for (int y = 0; y < Side; y++)
                         for (int x = 0; x < Side; x++)
                         {
                             const uint8_t* px = &picture.rgba[(size_t(y0 + y * square / Side) * size_t(picture.width) +
                                                                   size_t(x0 + x * square / Side)) *
                                                               4];
-                            float dx = x + 0.5f - Side / 2.0f, dy = y + 0.5f - Side / 2.0f;
-                            float cover = Coverage(Side / 2.0f, std::sqrt(dx * dx + dy * dy));
+                            float dx = (x + 0.5f) * 64 / Side - 32, dy = (y + 0.5f) * 64 / Side - 32;
+                            float cover = Coverage(32, std::sqrt(dx * dx + dy * dy));
                             g_avatar->pixels[size_t(y) * Side + size_t(x)] = uint32_t(px[0]) | uint32_t(px[1]) << 8 |
                                                                              uint32_t(px[2]) << 16 |
                                                                              uint32_t(std::lround(px[3] * cover)) << 24;
@@ -1326,7 +1334,9 @@ namespace toybox
                     if (g_toastPictureSerial != model.toastSerial)
                     {
                         g_toastPictureSerial = model.toastSerial;
-                        collection::Image fitted = collection::Resize(model.toastPicture, 48, 48);
+                        const int side = look::Scaled(48, g_scale);
+                        collection::Image fitted = collection::Resize(model.toastPicture, side, side);
+                        g_toastPicture.width = g_toastPicture.height = side;
                         g_toastPicture.pixels = std::move(fitted.rgba);
                     }
                     g_draw->AddImage(imgui_software::Ref(&g_toastPicture), ImVec2(c.x - 24, c.y - 24),
@@ -4248,12 +4258,25 @@ namespace toybox
         }
 
         // The full screens' backdrop: the launcher's page grey.
-        imgui_software::Texture* MakeBackground()
+        constexpr uint32_t BackgroundPixel = 0xFF000000u | (look::Colour::Page & 0xFF) << 16 |
+                                             (look::Colour::Page & 0xFF00) | (look::Colour::Page >> 16 & 0xFF);
+
+        // A new scale: everything baked at the old one is baked again.
+        void SetScale(float scale)
         {
-            const uint32_t rgb = look::Colour::Page;
-            const uint32_t pixel = 0xFF000000u | (rgb & 0xFF) << 16 | (rgb & 0xFF00) | (rgb >> 16 & 0xFF);
-            return new imgui_software::Texture{ CanvasWidth, CanvasHeight,
-                std::vector<uint32_t>(size_t(CanvasWidth) * CanvasHeight, pixel) };
+            if (scale == g_scale)
+                return;
+            g_scale = scale;
+            for (auto& baked : g_baked)
+                delete baked.second;
+            g_baked.clear();
+            for (size_t i = 0; i < g_avatars.size(); i++)
+            {
+                delete g_avatars[i];
+                g_avatars[i] = nullptr;
+                g_avatarsRead[i] = false;
+            }
+            g_toastPictureSerial = 0;
         }
 
         // While a card is dragged: the seats that would refuse it greyed, the one under the pointer outlined (the shelf
@@ -4299,6 +4322,8 @@ namespace toybox
         io.DisplaySize = ImVec2(CanvasWidth, CanvasHeight);
         ImFontConfig config;
         config.FontDataOwnedByAtlas = false;
+        // Glyphs at their drawn size: a wider rasterization is for a GPU's filtering, here it would be resampled.
+        config.OversampleH = 1;
         auto add = [&](const unsigned char* data, size_t size) {
             return io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(data), int(size), 16, &config);
         };
@@ -4308,23 +4333,28 @@ namespace toybox
         g_title = add(g_embeddedBungee, g_embeddedBungeeSize);
         g_mono = io.Fonts->AddFontDefaultBitmap();
         imgui_software::Init();
-        g_background = MakeBackground();
         // The one accent: the running game's colour (Arkeyan Launcher's), readable on the panels.
         const GameInfo* info = FindGame(ARKEYAN_GAME_ID);
         Look::SetAccent(info != nullptr ? info->glow : GameInfo{}.glow);
         return g_bold != nullptr && g_black != nullptr && g_display != nullptr && g_title != nullptr;
     }
 
-    void Draw(Model& model, std::vector<uint32_t>& pixels)
+    void Draw(Model& model, std::vector<uint32_t>& pixels, float scale)
     {
         ImGuiIO& io = ImGui::GetIO();
+        SetScale(scale);
+        io.DisplayFramebufferScale = ImVec2(scale, scale);
+        // Scaled up, lines (the icons) get a one-pixel antialiased edge: ImGui's line texture is sampled at the nearest
+        // texel here, which leaves them jagged.
+        ImGui::GetStyle().AntiAliasedLinesUseTex = scale == 1;
         uint64_t now = SDL_GetTicksNS();
         io.DeltaTime =
             g_frameTime != 0 && now > g_frameTime ? std::max(float(now - g_frameTime) / 1e9f, 1e-4f) : 1.0f / 30;
         g_frameTime = now;
         ForgetChangedPictures();
-        ImGui::NewFrame();
+        imgui_software::NewFrame();
         g_draw = ImGui::GetBackgroundDrawList();
+        g_draw->_FringeScale = 1 / scale; // the edge one target pixel wide, not one canvas pixel
         g_hits.clear();
         g_drops.clear();
         if (g_drag.pressed && (!model.open || model.screen != Screen::Home || !model.dialogs.empty()))
@@ -4399,12 +4429,9 @@ namespace toybox
         }
         ImGui::Render();
         // Into the caller's buffer: once it has its size, a frame (a toast sliding in) allocates nothing.
-        imgui_software::Texture canvas{ CanvasWidth, CanvasHeight };
+        imgui_software::Texture canvas{ look::Scaled(CanvasWidth, scale), look::Scaled(CanvasHeight, scale), {} };
         canvas.pixels.swap(pixels);
-        if (overGame)
-            canvas.pixels.assign(size_t(CanvasWidth) * CanvasHeight, 0);
-        else
-            canvas.pixels.assign(g_background->pixels.begin(), g_background->pixels.end());
+        canvas.pixels.assign(size_t(canvas.width) * size_t(canvas.height), overGame ? 0 : BackgroundPixel);
         imgui_software::Render(ImGui::GetDrawData(), canvas);
         canvas.pixels.swap(pixels);
     }

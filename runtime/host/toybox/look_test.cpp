@@ -33,6 +33,23 @@ int main()
     // The safe area is 5 % of each side of the 1280x720 canvas.
     CHECK(SafeLeft == 64 && SafeRight == 1216 && SafeTop == 36 && SafeBottom == 684);
 
+    // The overlay's drawing scale: the canvas letterboxed in the window's pixels, 1 to 3, and its size at that scale.
+    auto near = [](float a, float b) { return std::fabs(a - b) < 1e-4f; };
+    CHECK(OverlayScale(1280, 720) == 1);
+    CHECK(OverlayScale(800, 600) == 1);
+    CHECK(near(OverlayScale(1920, 1080), 1.5f));
+    CHECK(OverlayScale(2560, 1440) == 2);
+    CHECK(near(OverlayScale(2682, 1514), 2682 / 1280.0f)); // a Retina window: the width letterboxes
+    CHECK(near(OverlayScale(3024, 1964), 3024 / 1280.0f)); // a Retina laptop, full screen
+    CHECK(OverlayScale(3840, 2160) == 3);
+    CHECK(OverlayScale(7680, 4320) == 3);
+    CHECK(OverlayScale(5120, 1440) == 2); // ultrawide: the height letterboxes
+    CHECK(OverlayScale(0, 0) == 1);
+    CHECK(Scaled(CanvasWidth, OverlayScale(2682, 1514)) == 2682);
+    CHECK(Scaled(CanvasHeight, OverlayScale(2682, 1514)) == 1509);
+    CHECK(Scaled(CanvasWidth, OverlayScale(3024, 1964)) == 3024 &&
+          Scaled(CanvasHeight, OverlayScale(3024, 1964)) == 1701);
+
     // The toast, shown at 1 s for 4 s: slides in over ToastIn, rests, fades out over ToastOut.
     const uint64_t since = 1000 * Ms, until = since + 4000 * Ms;
     Motion m = ToastMotion(since, since, until, false);

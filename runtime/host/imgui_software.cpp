@@ -97,7 +97,8 @@ namespace imgui_software
             if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0)
                 return;
             Rect area = Intersect(destination, clip);
-            bool scaled = sw != dw || sh != dh;
+            // Within a pixel of its own size (a fractional scale's rounding), copied texel for texel, not resampled.
+            bool scaled = std::abs(sw - dw) > 1 || std::abs(sh - dh) > 1;
             float stepX = float(sw) / float(dw), stepY = float(sh) / float(dh);
             for (int y = area.y0; y < area.y1; y++)
             {
@@ -107,7 +108,8 @@ namespace imgui_software
                 {
                     Color texel;
                     if (!scaled)
-                        texel = Texel(texture, source.x0 + x - destination.x0, source.y0 + y - destination.y0);
+                        texel = Texel(texture, std::min(source.x0 + x - destination.x0, source.x1 - 1),
+                            std::min(source.y0 + y - destination.y0, source.y1 - 1));
                     else
                     {
                         float sx = source.x0 + (float(x - destination.x0) + 0.5f) * stepX;
@@ -198,7 +200,7 @@ namespace imgui_software
 
         // Two triangles sharing two vertices, of one colour, that are right triangles with axis-aligned sides on the
         // diagonal from the second's top left to its bottom right corner: drawn as that rectangle, at whole pixels
-        // (truncated position and size). The test is SDL's.
+        // (truncated edges). The test is SDL's.
         bool Quad(Texture& target, const Rect& clip, const Texture* texture, const ImDrawVert* vertices,
             const ImDrawIdx* first, const ImDrawIdx* second)
         {
@@ -242,10 +244,9 @@ namespace imgui_software
                         return false;
                 }
             }
-            ImVec2 min = topLeft->pos, max = bottomRight->pos;
-            Rect destination = { int(min.x), int(min.y), 0, 0 };
-            destination.x1 = destination.x0 + int(max.x - min.x);
-            destination.y1 = destination.y0 + int(max.y - min.y);
+            // Each edge to a whole pixel, so that shapes that touch still touch at a fractional scale.
+            const ImVec2 min = topLeft->pos, max = bottomRight->pos;
+            const Rect destination = { int(min.x), int(min.y), int(max.x), int(max.y) };
             Color color = Unpack(v[0]->col);
             if (texture != nullptr)
             {
@@ -303,6 +304,14 @@ namespace imgui_software
         io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
     }
 
+    void NewFrame()
+    {
+        ImGui::NewFrame();
+        const float density = ImGui::GetIO().DisplayFramebufferScale.x;
+        for (ImFont* font : ImGui::GetIO().Fonts->Fonts)
+            font->CurrentRasterizerDensity = density;
+    }
+
     void Render(ImDrawData* data, Texture& target)
     {
         if (data->Textures != nullptr)
@@ -314,16 +323,23 @@ namespace imgui_software
             }
         }
         const Rect bounds = { 0, 0, target.width, target.height };
-        for (const ImDrawList* list : data->CmdLists)
+        const ImVec2 origin = data->DisplayPos, scale = data->FramebufferScale;
+        const bool scaled = scale.x != 1 || scale.y != 1 || origin.x != 0 || origin.y != 0;
+        for (ImDrawList* list : data->CmdLists)
         {
+            // Into target pixels before the whole-pixel rules apply, so a rectangle at scale 2 is the scale-1 one doubled.
+            if (scaled)
+            {
+                for (ImDrawVert& vertex : list->VtxBuffer)
+                    vertex.pos = ImVec2((vertex.pos.x - origin.x) * scale.x, (vertex.pos.y - origin.y) * scale.y);
+            }
             for (const ImDrawCmd& command : list->CmdBuffer)
             {
                 if (command.UserCallback != nullptr || command.ElemCount == 0)
                     continue;
-                Rect clip = { int(command.ClipRect.x), int(command.ClipRect.y), 0, 0 };
-                clip.x1 = clip.x0 + int(command.ClipRect.z - command.ClipRect.x);
-                clip.y1 = clip.y0 + int(command.ClipRect.w - command.ClipRect.y);
-                clip = Intersect(clip, bounds);
+                const ImVec4 r((command.ClipRect.x - origin.x) * scale.x, (command.ClipRect.y - origin.y) * scale.y,
+                    (command.ClipRect.z - origin.x) * scale.x, (command.ClipRect.w - origin.y) * scale.y);
+                const Rect clip = Intersect({ int(r.x), int(r.y), int(r.z), int(r.w) }, bounds);
                 const auto* texture = reinterpret_cast<const Texture*>(intptr_t(command.GetTexID()));
                 const ImDrawVert* vertices = list->VtxBuffer.Data + command.VtxOffset;
                 const ImDrawIdx* indices = list->IdxBuffer.Data + command.IdxOffset;

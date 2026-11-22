@@ -18,6 +18,17 @@ namespace toybox::look
     // inside it; the full screens and the F3 menu's panel reach the edges, as the launcher's pages do.
     constexpr float SafeLeft = 64, SafeTop = 36, SafeRight = CanvasWidth - 64, SafeBottom = CanvasHeight - 36;
 
+    // The overlay is drawn at this multiple of the canvas for a window of `width` x `height` pixels: its letterboxed
+    // size, so the present pass copies it pixel for pixel (sharp text on large and high-density screens). At least 1;
+    // at most 3, as the CPU drawing costs the square of it.
+    inline float OverlayScale(int width, int height)
+    {
+        return std::clamp(std::min(float(width) / CanvasWidth, float(height) / CanvasHeight), 1.0f, 3.0f);
+    }
+
+    // A size in canvas pixels, in whole pixels at `scale`.
+    inline int Scaled(float size, float scale) { return std::max(1, int(std::lround(size * scale))); }
+
     // Colours (0xRRGGBB): Arkeyan Launcher's greys and inks (its launcher_theme.h). The accent is not here: it is the game's.
     namespace Colour
     {
