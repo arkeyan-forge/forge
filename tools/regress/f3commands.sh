@@ -1,6 +1,6 @@
 #!/bin/bash
 # The F3 menu's Commands page (docs/runtime/host/gamemenu.md, "Commands"), through the Toy Box's own script (SKY_TOYBOX_SCRIPT):
-# F3 opens the menu on Commands (its first row, under "Game"), Enter opens the page; Down x7 reaches
+# F3 opens the menu on Commands (its first row, under "Game"), Enter opens the page (on the Mouse row); Down x8 reaches
 # Spyro's Adventure's "Special Power / Back" (B, key X), Enter waits for a key, K is taken (K is "Same", the right stick down:
 # both rows keep it, flagged red); Right, Enter waits for a pad button, the pad's A is taken (A does B's job, B takes A's); Escape, F3.
 # A key held by the script ("hold=K") before and after shows what the game gets from it.
@@ -41,8 +41,8 @@ run() {
     wait "$pid" 2>/dev/null
 }
 
-# F3 opens the panel on Resume; Down x3: Settings, Enter: its first row (Commands), Enter: the Controls page; Down x7: B's row.
-downs=Down:32.8,Down:33,Down:33.2,Down:33.4,Down:33.6,Down:33.8,Down:34
+# F3 opens the panel on Resume; Down x3: Settings, Enter: its first row (Commands), Enter: the Controls page; Down x8: B's row.
+downs=Down:32.6,Down:32.8,Down:33,Down:33.2,Down:33.4,Down:33.6,Down:33.8,Down:34
 script="hold=K*0.6:26,F3:30,shot=menu:31,Down:31.3,Down:31.5,Down:31.7,Return:32,Return:32.4,$downs,shot=page:34.4,Return:35,shot=waitkey:35.5"
 script="$script,K:36,shot=key:37,Right:38,Return:38.5,shot=waitpad:39,pad=a:40,shot=pad:41,Escape:42,F3:43,hold=K*0.6:46"
 echo "== ssa: the Commands page"

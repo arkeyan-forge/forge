@@ -119,7 +119,8 @@ namespace toybox
             MouseColumn,
             ColumnCount
         };
-        // Extra shared controls follow the game rows: mouse switch, Toy Box keys, physical pad shortcuts, Reset, Back.
+        // Shared controls: the mouse's switch is the first line, the others follow the game rows (line rowCount + extra):
+        // Toy Box keys, physical pad shortcuts, Reset, Back. A game row's line is its index + 1.
         enum Extra
         {
             MouseSwitch,
@@ -929,6 +930,7 @@ namespace toybox
     {
         std::vector<CommandLine> lines;
         const bool mouseOn = commands::MouseOn(g_commands, game);
+        lines.push_back({ L("Mouse", "Souris"), {}, mouseOn ? L("On", "Oui") : L("Off", "Non") });
         mouse::Button buttons[mouse::ActionCount];
         mouse::Effective(commands::MouseLines(g_commands, game), ::game::Current().mouseDefaults, buttons);
         const std::span<const commands::Row> rows = InputRows();
@@ -951,7 +953,6 @@ namespace toybox
             line.cells[MouseColumn] = { MouseName(buttons[ActionOf(row)]), mouseOn };
             lines.push_back(std::move(line));
         }
-        lines.push_back({ L("Mouse", "Souris"), {}, mouseOn ? L("On", "Oui") : L("Off", "Non") });
         for (int which = 0; which < commands::ToyboxKeyCount; which++)
         {
             CommandLine line{ ToyboxLabel(which), std::vector<CommandLine::Cell>(ColumnCount), {} };
@@ -1016,9 +1017,9 @@ namespace toybox
             OpenPage(look::PageStep(look::Page::Controls, command == Command::NextSection ? 1 : -1));
             break;
         case Command::Accept:
-            if (commandRow < rowCount)
+            if (commandRow > 0 && commandRow <= rowCount)
             {
-                const commands::Row& row = InputRows()[size_t(commandRow)];
+                const commands::Row& row = InputRows()[size_t(commandRow - 1)];
                 if (commandColumn == PadColumn && row.pad == nullptr)
                 {
                     Toast(L("A stick's directions keep their stick", "Les directions d'un stick restent sur le stick"));
@@ -1039,7 +1040,7 @@ namespace toybox
                     row.action);
                 break;
             }
-            switch (commandRow - rowCount)
+            switch (commandRow == 0 ? MouseSwitch : commandRow - rowCount)
             {
             case MouseSwitch:
             {
@@ -1097,8 +1098,8 @@ namespace toybox
         if (waiting != Waiting::Key || keyName == nullptr || *keyName == 0)
             return;
         const size_t rowCount = InputRows().size();
-        // Slots: the game's rows, then the Toy Box's keys (one line further down, after the mouse's switch).
-        const size_t slot = size_t(commandRow) < rowCount ? size_t(commandRow) : size_t(commandRow) - 1;
+        // Slots: the game's rows, then the Toy Box's keys, one line below theirs (the mouse's switch comes first).
+        const size_t slot = size_t(commandRow) - 1;
         // F3 opens this menu; Tab opens the Toy Box while its own key is not set.
         if (scancode == SDL_SCANCODE_F3 ||
             (scancode == SDL_SCANCODE_TAB && commands::ToyboxTab(g_commands) && slot != rowCount))
@@ -1172,7 +1173,7 @@ namespace toybox
             settle = true;
             return;
         }
-        const commands::Row& row = InputRows()[size_t(commandRow)];
+        const commands::Row& row = InputRows()[size_t(commandRow - 1)];
         const int job = PadButtonIndex(row.pad);
         int other = -1;
         bool saved = ChangeCommands(
@@ -1196,7 +1197,7 @@ namespace toybox
     {
         if (waiting != Waiting::MouseButton || button <= mouse::None || button >= mouse::Count)
             return;
-        const commands::Row& row = InputRows()[size_t(commandRow)];
+        const commands::Row& row = InputRows()[size_t(commandRow - 1)];
         const size_t action = ActionOf(row);
         int other = -1;
         bool saved = ChangeCommands([&](LauncherConfig& config) {

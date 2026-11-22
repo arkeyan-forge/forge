@@ -79,8 +79,8 @@ screen), `model.cpp` / `menu.cpp` (the state), `toybox.cpp` (`ToyboxAchievement`
 - **Achievements** (`DrawAchievements`): the 84 px ring (the accent arc over raised2, the share in Bungee), the title, "6 of
   38 · 60 / 1000 G", the tabs as a segmented control; cards 196 px high in four columns: the medal (the accent and a trophy
   unlocked, raised2 and a lock locked), the points, the name, the description, the date in the success colour or "Locked".
-- **Controls** (`DrawCommands`, `look::Commands`): rows 44 px apart (11 a page), cells in three device columns, the page
-  buttons at the top right.
+- **Controls** (`DrawCommands`, `look::Commands`, `look::CommandsCellLeft`): rows 44 px apart (11 a page), cells in three
+  device columns, the mouse's On/Off cell in the Keyboard column (the accent when on), the page buttons at the top right.
 - **Toy Box** (`DrawHome`, `DrawSeats`, `Card`): "On the portal" and its one-line help, the game's seats in a row (92 px; the
   chosen one raised with its name in the accent, an empty one dashed; + Add and Manage stacked at the end), "FOR PLAYER 1 · 12
   FIGURES", the search field and Sort and filter, the sort's titled sections, six columns of cards (the portrait, the name, the level after a dot in the element's
@@ -102,7 +102,8 @@ screen), `model.cpp` / `menu.cpp` (the state), `toybox.cpp` (`ToyboxAchievement`
 
 - `ArkeyanToyboxLookTest` (in `tools/test_all.sh`): the toast's curve with and without reduced motion, each game's accent at
   4.5:1 (never darkened) and the greys' contrast, the F3 panel's rows in order above its hints, the rail, `PageStep`, the
-  Settings list's scroll, the Achievements grid's rows, and Controls paging with and without a notice.
+  Settings list's scroll, the Achievements grid's rows, Controls paging with and without a notice, and its
+  columns and the mouse's On/Off cell.
 - Shots of every screen: `private/runs/overlay/shoot.sh <game> <en|fr> <glyphs>` (git-ignored; Imaginators and Trap Team,
   English and French, pad, PlayStation and keyboard glyphs, in `private/runs/overlay/<game>-<lang>/`).
 - Shots: `SKY_TOYBOX_SCRIPT` with `shot=<name>` and the test aid **`achievement`** (the title's first achievement announced as
