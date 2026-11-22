@@ -672,6 +672,18 @@ portal. Live: the host put Gill Grunt on slot 0 from the Toy Box; the guest rece
 [V] The version. A game that plays online takes a minor version (SSA 0.10.0). In an online session the window title and
 the F3 menu show `-o` after it (`netplay::VersionLabel`); the room compares the plain version.
 
+## Testing a bad network
+
+With `SKY_NETPLAY_TEST=1`, set
+`SKY_NETPLAY_TEST_NET=delay=150,jitter=20,loss=2,dup=1,cut=30000-35000,cut=60000-120000,seed=7`
+to delay outgoing datagrams by 150 ± 20 ms, lose 2%, duplicate 1%, and cut both sending and receiving during the
+specified intervals in milliseconds since the transport opened (start included, end excluded). Any subset is valid;
+omitted values are zero. Jitter is uniform, negative delays clamp to zero, and datagrams may reorder. Only sending
+is delayed: set the switch on both games to affect both directions. The same seed reproduces the random choices
+for the same sends and clock schedule. Set `SKY_NETPLAY_TEST_SLOW=40` on one game to add a 40 ms sleep each frame,
+simulating a PC that cannot keep up. Malformed values refuse the session; both switches are removed unless
+`SKY_NETPLAY_TEST=1`. Use separate save and figure folders under `.scratch/` for each game.
+
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one
    world, one shared camera, each player on his own PC). Free exploration (each player his own camera, the 2026-11-04

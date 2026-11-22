@@ -103,6 +103,12 @@ namespace netplay
         stats.backInSync = m_resyncs && now - m_lastResync < 2000 && m_failure.reason == EndReason::None;
         stats.repairing = m_repair && !m_repair->done && m_failure.reason == EndReason::None;
         stats.waiting = m_waiting && m_failure.reason == EndReason::None;
+        stats.connectionLost = m_connectionLost && m_failure.reason == EndReason::None;
+        stats.askContinue = m_askContinue && m_failure.reason == EndReason::None;
+        stats.lostMs = m_connectionLost ? now - m_lostSince : 0;
+        stats.reconnects = m_reconnects;
+        stats.waitedMs = stats.waiting ? now - m_waitSince : 0;
+        stats.answerMs = m_config.timeoutMs;
         const auto second = now / 1000;
         uint64_t frames = 0, wait = 0, minPing = UINT64_MAX;
         for (const auto& bucket : m_seconds)
@@ -138,6 +144,55 @@ namespace netplay
         }
         return stats;
     }
+    void Session::ContinueAlone()
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_failure.reason != EndReason::None)
+            return;
+        fprintf(stderr, "[netplay] the player chose to continue alone\n");
+        End(EndReason::Timeout);
+    }
+
+    void Session::KeepWaiting()
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_askContinue)
+            return;
+        m_askContinue = false;
+        m_lostSince = m_config.now();
+        fprintf(stderr, "[netplay] the player waits %llu s more for the other player\n",
+            static_cast<unsigned long long>(m_config.timeoutMs / 1000));
+    }
+
+    // Under the lock, from the session thread: a silent peer is a lost connection, not the end of the session.
+    void Session::CheckSilence()
+    {
+        if (m_failure.reason != EndReason::None)
+            return;
+        const uint64_t now = m_config.now(), silent = now - m_lastReceive;
+        if (!m_ready || !m_config.askBeforeEnding)
+        {
+            if (silent >= m_config.timeoutMs)
+                End(EndReason::Timeout);
+            return;
+        }
+        if (!m_connectionLost && silent >= m_config.lostMs)
+        {
+            m_connectionLost = true;
+            m_lostSince = m_lastReceive;
+            fprintf(stderr, "[netplay] connection lost: nothing received for %llu ms; trying to reconnect\n",
+                static_cast<unsigned long long>(silent));
+            m_changed.notify_all();
+        }
+        if (m_connectionLost && !m_askContinue && now - m_lostSince >= m_config.timeoutMs)
+        {
+            m_askContinue = true;
+            fprintf(stderr, "[netplay] still no answer after %llu s: asking the player\n",
+                static_cast<unsigned long long>((now - m_lostSince) / 1000));
+            m_changed.notify_all();
+        }
+    }
+
     void Session::SetMenuOpen(bool open)
     {
         std::lock_guard lock(m_mutex);
@@ -197,14 +252,18 @@ namespace netplay
                 return true;
             }
             const uint64_t elapsed = m_config.now() - start;
-            if (m_failure.reason == EndReason::None && elapsed >= m_config.timeoutMs)
-                End(m_repair && !m_repair->done ? EndReason::Desync : EndReason::Timeout, m_hashFrame, m_hash,
-                    m_peerHash);
+            // A peer that answers but does not advance (a long load on a slower PC) is waited for when the player
+            // decides; a repair keeps its own limit.
+            const bool repairing = m_repair && !m_repair->done;
+            if (m_failure.reason == EndReason::None && elapsed >= m_config.timeoutMs &&
+                (repairing || !m_config.askBeforeEnding))
+                End(repairing ? EndReason::Desync : EndReason::Timeout, m_hashFrame, m_hash, m_peerHash);
             if (!warned && m_failure.reason == EndReason::None && elapsed >= m_config.waitingMs)
             {
                 fprintf(stderr, "[netplay] waiting for the other player\n");
                 warned = true;
                 m_waiting = true;
+                m_waitSince = start;
             }
             const auto before = m_config.now();
             m_changed.wait_for(lock, std::chrono::milliseconds(2));
@@ -705,7 +764,17 @@ namespace netplay
             return;
         if (!AcceptSequence(packet.sequence))
             return;
+        // An authenticated, new packet from another address: the peer's address changed (a router that restarted).
+        if (m_transport->AcceptPeer())
+            fprintf(stderr, "[netplay] the other player's address changed; following it\n");
         m_lastReceive = m_config.now();
+        if (m_connectionLost)
+        {
+            fprintf(stderr, "[netplay] reconnected after %.1f s\n", double(m_lastReceive - m_lostSince) / 1000.0);
+            m_connectionLost = m_askContinue = false;
+            ++m_reconnects;
+            m_changed.notify_all();
+        }
         switch (packet.type)
         {
         case PacketType::BlockList:
@@ -858,8 +927,7 @@ namespace netplay
             if (!m_transport->Healthy())
                 End(EndReason::Transport);
             SendRepair();
-            if (m_config.now() - m_lastReceive >= m_config.timeoutMs)
-                End(EndReason::Timeout);
+            CheckSilence();
             if ((!m_ready || m_failure.reason != EndReason::None) && (m_havePeer || !m_config.hello.host))
             {
                 Packet hello;

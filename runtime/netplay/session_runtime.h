@@ -33,5 +33,8 @@ namespace netplay
     const char* SessionEndMessage();
     void LeaveSession();
     void SetMenuOpen(bool open);
+    // The player's answer while the other player is lost or stuck (the game's banner).
+    void ContinueAlone();
+    void KeepWaiting();
     bool QueuePortalEvents(std::span<const PortalEvent> events);
 }

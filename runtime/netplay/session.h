@@ -19,7 +19,8 @@ namespace netplay
         virtual ~Transport() = default;
         virtual bool Send(std::span<const uint8_t> bytes) = 0;
         virtual size_t Receive(std::span<uint8_t> bytes) = 0;
-        virtual void AcceptPeer() {}
+        // The last datagram's sender becomes the peer; true when that changed the peer's address.
+        virtual bool AcceptPeer() { return false; }
         virtual bool Healthy() const { return true; }
         virtual uint16_t Port() const { return 0; }
     };
@@ -39,6 +40,11 @@ namespace netplay
         uint32_t delay = 0;
         bool peerMenuOpen = false;
         bool repairing = false, backInSync = false, waiting = false;
+        // No packet for lostMs: both games hold, the session keeps sending and resumes on the first packet back.
+        bool connectionLost = false, askContinue = false;
+        uint64_t lostMs = 0, reconnects = 0;
+        uint64_t waitedMs = 0;     // how long the game has been held for the other player's input, while waiting
+        uint64_t answerMs = 60000; // the wait before the player is asked (SessionConfig::timeoutMs)
         std::array<float, 60> pingMs{};
         size_t pingCount = 0;
     };
@@ -48,6 +54,11 @@ namespace netplay
         std::string password;
         uint32_t delay = 0;
         uint64_t timeoutMs = 15000, waitingMs = 1000;
+        // A silence of lostMs is a lost connection. With askBeforeEnding, a peer silent for timeoutMs, or alive but not
+        // advancing, does not end the session: the player is asked (ContinueAlone or KeepWaiting); without it (tests,
+        // the handshake) the session ends after timeoutMs as before.
+        uint64_t lostMs = 3000;
+        bool askBeforeEnding = false;
         std::function<uint64_t()> now;
         std::function<void(const SessionFailure&)> ended;
         std::array<uint8_t, 16> slotPlayers{};
@@ -71,6 +82,9 @@ namespace netplay
         uint64_t Dropped() const;
         SessionStats Stats() const;
         void SetMenuOpen(bool open);
+        // The player's answer to a lost connection: end the session and play alone, or wait timeoutMs more.
+        void ContinueAlone();
+        void KeepWaiting();
         bool ContinuingSolo() const;
         void Stop();
 
@@ -92,6 +106,9 @@ namespace netplay
         std::array<uint64_t, 2> m_repairTimes{};
         uint64_t m_repairAttempts = 0, m_resyncs = 0, m_lastResync = 0;
         bool m_waiting = false;
+        bool m_connectionLost = false, m_askContinue = false;
+        uint64_t m_lostSince = 0, m_reconnects = 0, m_waitSince = 0;
+        void CheckSilence();
         struct Second
         {
             uint64_t stamp = UINT64_MAX, sent = 0, received = 0, sentBytes = 0, receivedBytes = 0;

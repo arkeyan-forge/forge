@@ -48,14 +48,16 @@ namespace netplay
             ~Udp() override { Close(m_socket); }
             uint16_t Port() const override { return m_port; }
             bool Healthy() const override { return m_healthy; }
-            void AcceptPeer() override
+            bool AcceptPeer() override
             {
-                if (!m_accepted && m_candidateLength)
-                {
-                    m_peer = m_candidate;
-                    m_peerLength = m_candidateLength;
-                    m_accepted = true;
-                }
+                if (!m_candidateLength)
+                    return false;
+                const bool moved = m_accepted && (m_candidateLength != m_peerLength ||
+                                                     std::memcmp(&m_candidate, &m_peer, size_t(m_peerLength)) != 0);
+                m_peer = m_candidate;
+                m_peerLength = m_candidateLength;
+                m_accepted = true;
+                return moved;
             }
             bool Send(std::span<const uint8_t> bytes) override
             {
@@ -84,8 +86,8 @@ namespace netplay
                     m_healthy = WouldBlock();
                     return NoDatagram;
                 }
-                if (m_accepted && (length != m_peerLength || std::memcmp(&address, &m_peer, size_t(length)) != 0))
-                    return bytes.size() + 1;
+                // Another address may be the peer after its router restarted: the session follows it only once the
+                // datagram proves to be an authenticated, new packet (AcceptPeer); anything else is dropped there.
                 m_candidate = address;
                 m_candidateLength = length;
                 return size_t(got);

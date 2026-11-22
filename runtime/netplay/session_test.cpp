@@ -1,6 +1,7 @@
 #include "netplay/session.h"
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -398,6 +399,130 @@ namespace
         link.time += 61000;
         Check(first.Stats().waitedFrames == 0 && first.Stats().waitMs == 0, "input waits expire after sixty seconds");
     }
+    // A dropped connection pauses both games and resumes on its own; after the wait the player is asked, and a peer
+    // that answers but does not advance is waited for.
+    void Reconnection()
+    {
+        using namespace netplay;
+        Link link;
+        std::atomic<uint64_t> time{ 0 };
+        const auto configure = [&](bool host) {
+            auto config = Config(host);
+            config.now = [&] { return time.load(); };
+            config.delay = 2;
+            config.timeoutMs = 60000;
+            config.lostMs = 3000;
+            config.askBeforeEnding = true;
+            return config;
+        };
+        Session host(configure(true), std::make_unique<Wire>(link, 0));
+        Session guest(configure(false), std::make_unique<Wire>(link, 1));
+        Check(host.WaitReady() && guest.WaitReady(), "ready before the drop");
+        std::atomic<uint64_t> hostFrame{ 0 }, guestFrame{ 0 };
+        std::atomic<bool> stop{ false };
+        const auto play = [&](Session& session, size_t seat, std::atomic<uint64_t>& frame) {
+            InputFrame pads;
+            while (!stop && session.Failure().reason == EndReason::None)
+            {
+                if (!session.Exchange(frame, Pad(frame, seat), pads))
+                    break;
+                ++frame;
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+            }
+        };
+        std::jthread a([&] { play(host, 0, hostFrame); });
+        std::jthread b([&] { play(guest, 1, guestFrame); });
+        const auto until = [&](const std::function<bool()>& done) {
+            for (unsigned i = 0; i < 20000 && !done(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            return done();
+        };
+        Check(until([&] { return hostFrame > 100 && guestFrame > 100; }), "frames advance before the drop");
+        {
+            std::lock_guard lock(link.mutex);
+            link.silent = true;
+        }
+        // Ten seconds without a packet: both hold, report a lost connection, and nothing ends.
+        for (unsigned i = 0; i < 100; ++i)
+        {
+            time.fetch_add(100);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        Check(until([&] { return host.Stats().connectionLost && guest.Stats().connectionLost; }),
+            "a silence of lostMs is a lost connection on both sides");
+        const uint64_t held = hostFrame;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        Check(hostFrame <= held + 3 && host.Failure().reason == EndReason::None && !host.Stats().askContinue,
+            "a lost connection holds the game without ending it");
+        {
+            std::lock_guard lock(link.mutex);
+            link.silent = false;
+        }
+        Check(until([&] {
+            return !host.Stats().connectionLost && !guest.Stats().connectionLost && hostFrame > held + 100;
+        }),
+            "the connection comes back on its own and frames advance again");
+        Check(host.Stats().reconnects == 1 && guest.Stats().reconnects == 1, "each side counts the reconnection");
+        // A minute and more: the player is asked; waiting more clears the question, continuing alone ends.
+        {
+            std::lock_guard lock(link.mutex);
+            link.silent = true;
+        }
+        for (unsigned i = 0; i < 700; ++i)
+        {
+            time.fetch_add(100);
+            std::this_thread::sleep_for(std::chrono::microseconds(300));
+        }
+        Check(until([&] { return host.Stats().askContinue; }) && host.Failure().reason == EndReason::None,
+            "after timeoutMs the player is asked, the session still open");
+        host.KeepWaiting();
+        Check(!host.Stats().askContinue && host.Stats().connectionLost, "waiting more clears the question");
+        host.ContinueAlone();
+        Check(host.Failure().reason == EndReason::Timeout, "continuing alone ends the session for the solo path");
+        stop = true;
+        guest.Stop();
+    }
+
+    // A peer that answers but does not advance (a long load on a slower PC) is not a lost connection and ends nothing.
+    void SlowPeer()
+    {
+        using namespace netplay;
+        Link link;
+        std::atomic<uint64_t> time{ 0 };
+        const auto configure = [&](bool host) {
+            auto config = Config(host);
+            config.now = [&] { return time.load(); };
+            config.delay = 2;
+            config.timeoutMs = 5000;
+            config.askBeforeEnding = true;
+            return config;
+        };
+        Session host(configure(true), std::make_unique<Wire>(link, 0));
+        Session guest(configure(false), std::make_unique<Wire>(link, 1));
+        Check(host.WaitReady() && guest.WaitReady(), "ready before the slow peer");
+        std::jthread clock([&](const std::stop_token& stop) {
+            while (!stop.stop_requested())
+            {
+                time.fetch_add(50);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+        InputFrame pads;
+        // The guest never sends frame 2 and on: the host waits through many timeouts, with pings answered meanwhile.
+        std::jthread waiting([&] {
+            for (uint64_t frame = 0; frame < 10 && host.Failure().reason == EndReason::None; ++frame)
+                host.Exchange(frame, Pad(frame, 0), pads);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        const auto stats = host.Stats();
+        Check(host.Failure().reason == EndReason::None && stats.waiting && !stats.connectionLost,
+            "a peer that answers but does not advance is waited for, not lost");
+        host.ContinueAlone();
+        Check(host.Failure().reason == EndReason::Timeout, "the waiting player may continue alone");
+        clock.request_stop();
+        guest.Stop();
+    }
+
     void RemoteDeparture()
     {
         using namespace netplay;
@@ -596,6 +721,8 @@ int main()
     for (const auto text : { "", ":123", "::1:123", "[::1]", "host:0", "host:65536", "host:+2", "host:12x" })
         Check(!ParseEndpoint(text, endpointHost, port), "invalid endpoint refused");
     OnlineMenuAndStats();
+    Reconnection();
+    SlowPeer();
     RemoteDeparture();
     RoundTrips();
     Bursts();

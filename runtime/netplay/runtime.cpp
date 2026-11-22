@@ -2,6 +2,7 @@
 #include "netplay/scheduler.h"
 #include "netplay/events.h"
 #include "netplay/inputs.h"
+#include "netplay/net_sim.h"
 #include "netplay/state_hash.h"
 #ifdef ARKEYAN_NETPLAY_TRACE
 #include "netplay/trace.h"
@@ -55,6 +56,8 @@ namespace netplay
             uint32_t delay = 0;
             std::string address, password, dump, error;
             uint64_t testDesync = 0;
+            uint32_t testSlowMs = 0;
+            std::optional<NetSim> testNet;
             EndReason errorReason = EndReason::Invalid;
 
             NetworkOptions()
@@ -121,6 +124,24 @@ namespace netplay
                     dump = value;
                 if (const char* value = skyenv::Get("SKY_NETPLAY_TEST_DESYNC"))
                     testDesync = std::strtoull(value, nullptr, 10);
+                if (const char* value = skyenv::Get("SKY_NETPLAY_TEST_NET"))
+                {
+                    testNet.emplace();
+                    if (!ParseNetSim(value, *testNet, error))
+                    {
+                        error = "SKY_NETPLAY_TEST_NET: " + error;
+                        return;
+                    }
+                }
+                if (const char* value = skyenv::Get("SKY_NETPLAY_TEST_SLOW"))
+                {
+                    if (!ParseCount(value, 0, UINT32_MAX, false, number))
+                    {
+                        error = "SKY_NETPLAY_TEST_SLOW must be milliseconds from 0 to 4294967295";
+                        return;
+                    }
+                    testSlowMs = uint32_t(number);
+                }
                 crossPlatform = is("SKY_NETPLAY_CROSS_PLATFORM", "1");
             }
         };
@@ -361,6 +382,10 @@ namespace netplay
                         byte = uint8_t(random());
                     config.password = Network().password;
                     config.delay = Network().delay;
+                    // A lost connection holds both games and resumes on its own; after a minute the player decides.
+                    config.timeoutMs = 60000;
+                    config.lostMs = 3000;
+                    config.askBeforeEnding = true;
                     config.slotPlayers = PortalOnlinePlayers();
                     config.prepareEvent = PortalPrepareOnline;
                     config.applyEvents = PortalApplyOnline;
@@ -380,6 +405,12 @@ namespace netplay
                         g_probe.store(this, std::memory_order_release);
                         return;
                     }
+                    if (Network().testNet)
+                        transport = SimulateNetwork(std::move(transport), *Network().testNet, [] {
+                            return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch())
+                                    .count());
+                        });
                     session = std::make_unique<Session>(std::move(config), std::move(transport));
                     g_activeSession.store(session.get(), std::memory_order_release);
                 }
@@ -677,6 +708,16 @@ namespace netplay
         if (auto* session = g_activeSession.load(std::memory_order_acquire))
             session->SetMenuOpen(open);
     }
+    void ContinueAlone()
+    {
+        if (auto* session = g_activeSession.load(std::memory_order_acquire))
+            session->ContinueAlone();
+    }
+    void KeepWaiting()
+    {
+        if (auto* session = g_activeSession.load(std::memory_order_acquire))
+            session->KeepWaiting();
+    }
     void LeaveSession()
     {
         g_leftLocally = true;
@@ -724,6 +765,8 @@ namespace netplay
         park();
         if (probe.finished)
             return;
+        if (Network().testSlowMs)
+            std::this_thread::sleep_for(std::chrono::milliseconds(Network().testSlowMs));
         if (probe.events && !probe.events->EndFrame(probe.frames))
             Refuse("event log write failed");
 #ifdef ARKEYAN_NETPLAY_TRACE

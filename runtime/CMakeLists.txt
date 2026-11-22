@@ -344,6 +344,10 @@ target_include_directories(ArkeyanToyboxRealCopyTest PRIVATE .)
 # Which refusal a seat gives a card, for the toast and the seats a drag greys out (host/toybox/put_on.h): ./ArkeyanToyboxPutOnTest
 add_executable(ArkeyanToyboxPutOnTest host/toybox/put_on_test.cpp)
 target_include_directories(ArkeyanToyboxPutOnTest PRIVATE .)
+# What the game shows of an online session, banner and chip (host/toybox/online_banner.h): ./ArkeyanToyboxOnlineBannerTest
+add_executable(ArkeyanToyboxOnlineBannerTest host/toybox/online_banner_test.cpp)
+target_include_directories(ArkeyanToyboxOnlineBannerTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxOnlineBannerTest PRIVATE ArkeyanNetplay)
 
 # The section strip's chips wrapping onto rows (host/toybox/strip.h): ./ArkeyanToyboxStripTest
 add_executable(ArkeyanToyboxStripTest host/toybox/strip_test.cpp)
