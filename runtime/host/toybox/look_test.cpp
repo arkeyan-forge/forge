@@ -1,12 +1,14 @@
 // Checks the in-game interface's pure logic (host/toybox/look.h, nav.h): the toast's slide and fade, with and without
 // reduced motion, the game's accent and the greys' contrast, the F3 menu's panel, the rail, the Settings list's scroll,
-// the Achievements grid, Controls' pages, and the Toy Box's focus moves. usage:
+// the Achievements grid, Controls' pages, the Toy Box's focus moves and its seats' rows. usage:
 // ArkeyanToyboxLookTest
 #include "host/toybox/look.h"
 #include "host/toybox/nav.h"
+#include "host/toybox/seat_rows.h"
 #include <cmath>
 #include <cstdio>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -210,6 +212,45 @@ int main()
 
     // LB / RB: the seat before or after, never round the end (no jump from Player 1 to the last seat).
     CHECK(SeatStep(0, -1, 5) == 0 && SeatStep(4, 1, 5) == 4 && SeatStep(2, 1, 5) == 3 && SeatStep(2, -1, 5) == 1);
+
+    // The seats' rows. The page's 976 px less a 140 px button column; a 46 px picture leaves a seat's text 82 px less.
+    {
+        auto textRoom = [](float width) { return width - 82; };
+        constexpr float Room = 976 - 140, Gap = 14, Max = 260, Label = 70; // the widest label, about "ADVENTURE"
+        // Imaginators: p1, p2, item, adventure, trap, vehicle1, vehicle2. On one row a seat keeps 23 px of text: two
+        // rows, the players' seats first, every label whole.
+        const std::vector<bool> imaginators = { true, true, false, false, false, true, true };
+        toybox::seat_rows::Layout two = toybox::seat_rows::Fit(imaginators, Room, Gap, Max, Label, textRoom);
+        CHECK(two.rows.size() == 2);
+        CHECK((two.rows[0] == std::vector<int>{ 0, 1, 5, 6 }) && (two.rows[1] == std::vector<int>{ 2, 3, 4 }));
+        CHECK(textRoom(two.seatWidth) >= Label);
+        // Spyro's Adventure: four seats fit on one row, in the game's order.
+        const std::vector<bool> ssa = { true, true, false, false };
+        toybox::seat_rows::Layout one = toybox::seat_rows::Fit(ssa, Room, Gap, Max, Label, textRoom);
+        CHECK(one.rows.size() == 1 && (one.rows[0] == std::vector<int>{ 0, 1, 2, 3 }));
+        CHECK(textRoom(one.seatWidth) >= Label && one.seatWidth <= Max);
+        // SuperChargers: p1, vehicle1, p2, vehicle2, item, trap; with a French label too wide for one row.
+        const std::vector<bool> superchargers = { true, true, true, true, false, false };
+        toybox::seat_rows::Layout sc = toybox::seat_rows::Fit(superchargers, Room, Gap, Max, 100, textRoom);
+        CHECK(sc.rows.size() == 2 && (sc.rows[0] == std::vector<int>{ 0, 1, 2, 3 }));
+        // Only shared seats or only players' seats: one row, even cut.
+        CHECK(toybox::seat_rows::Rows({ true, true }, true).size() == 1);
+
+        // Pad moves on Imaginators' two rows, the spans as drawn (by seat index).
+        const std::vector<Span> spans = { { 268, 463 }, { 477, 672 }, { 268, 463 }, { 477, 672 }, { 686, 881 },
+            { 686, 881 }, { 895, 1090 } };
+        using toybox::seat_rows::Move;
+        CHECK(Move(two.rows, spans, 1, toybox::nav::Move::Right) == 5); // Player 2, then Vehicle 1
+        CHECK(Move(two.rows, spans, 6, toybox::nav::Move::Right) == -1); // the first row's end: the buttons
+        CHECK(Move(two.rows, spans, 4, toybox::nav::Move::Right) == 4); // the second row's end: stays
+        CHECK(Move(two.rows, spans, 2, toybox::nav::Move::Left) == 2); // a row's start: stays
+        CHECK(Move(two.rows, spans, 5, toybox::nav::Move::Down) == 4); // Vehicle 1: Trap under it
+        CHECK(Move(two.rows, spans, 6, toybox::nav::Move::Down) == 4); // Vehicle 2: nothing under, the nearest
+        CHECK(Move(two.rows, spans, 3, toybox::nav::Move::Up) == 1); // Adventure: Player 2 above
+        CHECK(Move(two.rows, spans, 0, toybox::nav::Move::Up) == -1); // the first row: leaves
+        CHECK(Move(two.rows, spans, 3, toybox::nav::Move::Down) == -1); // the last row: on to the shelf
+        CHECK(Move(one.rows, spans, 1, toybox::nav::Move::Down) == -1); // one row: as before
+    }
 
     printf(g_failures == 0 ? "PASS\n" : "FAIL\n");
     return g_failures == 0 ? 0 : 1;

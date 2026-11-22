@@ -1975,22 +1975,29 @@ namespace toybox
             default: return;
             }
         }
-        // The top row: the seats, then Add a figure and Manage (one above the other at its end). Down goes to the bar.
+        // The top rows: the seats (one row or two, as drawn), then Add a figure and Manage (one above the other at the
+        // first row's end). Down from the last seats row goes to the bar.
         int buttons = int(ColumnRows().size());
         bool onButtons = column >= int(seats.size());
+        std::vector<std::vector<int>> rows = seatRows;
+        if (rows.empty())
+            rows = seat_rows::Rows(std::vector<bool>(seats.size(), true), false);
+        auto seatMove = [&](nav::Move move) { return seat_rows::Move(rows, seatSpans, column, move); };
         switch (command)
         {
         case Command::Left:
-            if (onButtons)
-                FocusColumnRow(int(seats.size()) - 1);
-            else if (column > 0)
-                FocusColumnRow(column - 1);
+        {
+            int next = onButtons ? (rows.front().empty() ? -1 : rows.front().back()) : seatMove(nav::Move::Left);
+            if (next >= 0)
+                FocusColumnRow(next);
             break;
+        }
         case Command::Right:
-            if (column < int(seats.size()) - 1)
-                FocusColumnRow(column + 1);
-            else if (!onButtons)
-                FocusColumnRow(int(seats.size()));
+            if (!onButtons)
+            {
+                int next = seatMove(nav::Move::Right);
+                FocusColumnRow(next < 0 ? int(seats.size()) : next);
+            }
             break;
         case Command::PreviousSection:
         case Command::NextSection:
@@ -2000,10 +2007,14 @@ namespace toybox
         case Command::Up:
             if (onButtons && column > int(seats.size()))
                 column--;
+            else if (!onButtons && seatMove(nav::Move::Up) >= 0)
+                FocusColumnRow(seatMove(nav::Move::Up));
             break;
         case Command::Down:
             if (onButtons && column < columnCount - 1 && buttons > 1)
                 column++;
+            else if (!onButtons && seatMove(nav::Move::Down) >= 0)
+                FocusColumnRow(seatMove(nav::Move::Down));
             else if (OwnsAnything())
                 HomeStep(1, false);
             else

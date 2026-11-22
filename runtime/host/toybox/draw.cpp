@@ -1882,29 +1882,45 @@ namespace toybox
                 g_hits.back().focus = [&model, index] { model.HoverAddCell(index); };
         }
 
-        void DrawSeats(Model& model)
+        // The seats, and returns their bottom.
+        float DrawSeats(Model& model)
         {
             constexpr float Left = look::PageLeft, Right = look::PageRight;
-            // Add a figure and Manage, one above the other at the end of the row, as wide as the longer label; the seats
-            // share the rest (five in Trap Team).
+            // Add a figure and Manage, one above the other at the end of the first row, as wide as the longer label; the
+            // seats share the rest (five in Trap Team), on two rows when a seat's label would be cut on one (seven in
+            // Imaginators).
             std::vector<std::string> rows = model.ColumnRows();
             for (size_t r = 0; r + 1 < rows.size(); r++)
                 rows[r] = "+ " + rows[r];
             float buttonWidth = 0;
             for (const std::string& row : rows)
                 buttonWidth = std::max(buttonWidth, std::ceil(Measure(g_black, 14, row).x) + 28);
-            const size_t seatCount = model.seats.size();
-            const float seatWidth =
-                std::min(SeatWidth, std::floor((Right - Left - buttonWidth - SeatGap * float(seatCount)) /
-                                               float(std::max<size_t>(seatCount, 1))));
+            std::vector<bool> playerSeat;
+            float widest = 0;
+            for (size_t i = 0; i < model.seats.size(); i++)
+            {
+                playerSeat.push_back(model.seats[i].seat.player != 0);
+                widest = std::max(widest, Measure(g_black, 12, Upper(model.SeatLabel(int(i)))).x);
+            }
+            // The text starts after the picture (46 px under 200 px of seat, else 58) and its margins.
+            auto textRoom = [](float width) { return width - (width < 200 ? 46 : 58) - 36; };
+            const seat_rows::Layout layout =
+                seat_rows::Fit(playerSeat, Right - Left - buttonWidth, SeatGap, SeatWidth, widest, textRoom);
+            const float seatWidth = layout.seatWidth;
             bool rowFocused = model.homeRow == Model::Row::Seats && model.screen == Screen::Home;
-            model.seatSpans.clear();
+            model.seatRows = layout.rows;
+            model.seatSpans.assign(model.seats.size(), {});
+            std::vector<ImVec2> at(model.seats.size());
+            for (size_t r = 0; r < layout.rows.size(); r++)
+                for (size_t k = 0; k < layout.rows[r].size(); k++)
+                    at[size_t(layout.rows[r][k])] =
+                        ImVec2(Left + float(k) * (seatWidth + SeatGap), SeatTop + float(r) * (SeatHeight + SeatGap));
             for (size_t i = 0; i < model.seats.size(); i++)
             {
                 const SeatState& s = model.seats[i];
-                float x = Left + i * (seatWidth + SeatGap), y = SeatTop;
+                float x = at[i].x, y = at[i].y;
                 ImVec2 a(x, y), b(x + seatWidth, y + SeatHeight);
-                model.seatSpans.push_back({ a.x, b.x });
+                model.seatSpans[i] = { a.x, b.x };
                 bool focused = rowFocused && model.column == int(i);
                 bool lit = model.seat == int(i);
                 const Figure* f = model.SeatFigure(int(i));
@@ -2022,6 +2038,7 @@ namespace toybox
                 });
                 g_hits.back().focus = [&model, row] { model.FocusColumnRow(row); };
             }
+            return SeatTop + float(layout.rows.size()) * (SeatHeight + SeatGap) - SeatGap;
         }
 
         // The banner's button: the pointer focuses it, a click creates the pack (Accept on its row).
@@ -2097,8 +2114,7 @@ namespace toybox
             TextMiddle(g_bold, 14, look::PageLeft + titleWidth + 14, look::PageTop + 17, Look::TextDim,
                 model.realPortal ? L("Change the toys on your portal", "Changez les jouets sur votre portail")
                                  : L("Choose a place, then a figure", "Choisissez une place, puis une figurine"));
-            DrawSeats(model);
-            ImVec2 min(look::PageLeft, SeatTop + SeatHeight + 20), max(look::PageRight, look::FooterTop - 8);
+            ImVec2 min(look::PageLeft, DrawSeats(model) + 20), max(look::PageRight, look::FooterTop - 8);
             if (!model.OwnsAnything())
             {
                 DrawEmpty(model, min, max);

@@ -459,7 +459,13 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
   Back); a key held before it opened stays the game's (Backspace held for the wheel: its release swaps). `toybox::KeyMask`
   (`runtime/host/toybox/key_mask.h`, checked by `ArkeyanToyboxKeyMaskTest`), applied by `ToyboxKeyboardState`.
 - **Buttons whole**: "+ Add" and "Manage" are as wide as their longer label in the game's language; the seats share the rest
-  (five in Trap Team, six in SuperChargers and seven in Imaginators: a smaller picture). On Add a figure the "+N" versions badge sits on the card's second line, so the name keeps the card's width.
+  (five in Trap Team: a smaller picture). **Two seat rows** (launcher #190) when the widest seat label would be cut on one
+  (SuperChargers, Imaginators; a long French label too): the players' seats first (players and vehicles), then the
+  shared ones (item, adventure, trap), every seat as wide as on the first row so that they line up; Add a figure and Manage
+  stay at the first row's end and the shelf starts under the second row. Measured in the game's language, never keyed to a
+  game (`runtime/host/toybox/seat_rows.h`). Only the drawing order changes: seat indices, LB/RB and the session file keep
+  the game's order. With a pad Left and Right stay in a seat row (Right from the first row's end goes to the buttons),
+  Up and Down move between the two rows on the seat nearest under the focus, then on to the bar. On Add a figure the "+N" versions badge sits on the card's second line, so the name keeps the card's width.
 - Proof: `ArkeyanToyboxLookTest` (the moves), `tools/regress/toybox_nav.sh` (the real game: 32 focus checks, a held key among them, and 12 shots; its
   places follow the 0.9.0 layout, six columns); the before/after screens in English and French: `private/toybox-pass/`
   (`INDEX.md`, not in git); the 0.9.0 screens: `private/runs/overlay/` (not in git).
