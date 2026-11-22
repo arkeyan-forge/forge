@@ -36,5 +36,9 @@ namespace netplay
     // The player's answer while the other player is lost or stuck (the game's banner).
     void ContinueAlone();
     void KeepWaiting();
+    // Leaves the session and quits the game; the launcher sets the room up again for both players.
+    void PlayTogetherAgain();
+    // The other player's name (their launcher profile), for the banner.
+    std::string OtherPlayerName();
     bool QueuePortalEvents(std::span<const PortalEvent> events);
 }

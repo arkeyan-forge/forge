@@ -4451,26 +4451,34 @@ namespace toybox
         // The game is held for the other player: what happens, and the player's way out.
         if (banner != OnlineBanner::None)
         {
-            char detail[96] = {};
+            char detail[96] = {}, titleText[96] = {};
+            const std::string other = netplay::OtherPlayerName();
             const char* title = "";
             const char* hint = "";
             switch (banner)
             {
             case OnlineBanner::Lost:
-                title = L("Connection lost with your friend", "Connexion perdue avec ton ami");
+                snprintf(titleText, sizeof(titleText), L("Connection lost with %s", "Connexion perdue avec %s"),
+                    other.c_str());
+                title = titleText;
                 snprintf(detail, sizeof(detail), L("Reconnecting... %llu s", "Reconnexion... %llu s"),
                     static_cast<unsigned long long>(OnlineSecondsLeft(online)));
-                hint = L("Esc or B: continue alone", "Échap ou B : continuer seul");
+                hint = L("Esc or B: continue alone  ·  R or Y: play together again",
+                    "Échap ou B : continuer seul  ·  R ou Y : rejouer ensemble");
                 break;
             case OnlineBanner::Ask:
-                title = L("Still no answer from your friend", "Toujours pas de réponse de ton ami");
+                snprintf(titleText, sizeof(titleText), L("Still no answer from %s", "Toujours pas de réponse de %s"),
+                    other.c_str());
+                title = titleText;
                 snprintf(detail, sizeof(detail), "%s",
                     L("Wait one more minute, or play on alone.", "Attendre encore une minute, ou jouer seul."));
-                hint = L("Enter or A: wait  ·  Esc or B: continue alone",
-                    "Entrée ou A : attendre  ·  Échap ou B : continuer seul");
+                hint = L("Enter or A: wait  ·  Esc or B: continue alone  ·  R or Y: play together again",
+                    "Entrée ou A : attendre  ·  Échap ou B : seul  ·  R ou Y : rejouer ensemble");
                 break;
             case OnlineBanner::Waiting:
-                title = L("Waiting for your friend's game", "En attente du jeu de ton ami");
+                snprintf(
+                    titleText, sizeof(titleText), L("Waiting for %s's game", "En attente du jeu de %s"), other.c_str());
+                title = titleText;
                 snprintf(detail, sizeof(detail),
                     L("It is still loading or catching up (%llu s).",
                         "Il charge encore ou rattrape son retard (%llu s)."),

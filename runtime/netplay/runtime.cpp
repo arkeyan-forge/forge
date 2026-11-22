@@ -20,6 +20,7 @@
 #include "host/launcher.h"
 #include "host/profiles.h"
 #include "memory.h"
+#include <SDL3/SDL_events.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -719,6 +720,17 @@ namespace netplay
         if (auto* session = g_activeSession.load(std::memory_order_acquire))
             session->KeepWaiting();
     }
+    void PlayTogetherAgain()
+    {
+        if (!WriteReplayFile(PortalSessionFolder()))
+            fprintf(stderr, "[netplay] cannot write online-replay.txt\n");
+        fprintf(stderr, "[netplay] the player chose to play together again: quitting to the launcher\n");
+        LeaveSession();
+        SDL_Event quit{};
+        quit.type = SDL_EVENT_QUIT;
+        SDL_PushEvent(&quit);
+    }
+    std::string OtherPlayerName() { return profiles::Current()[Hosting() ? 1 : 0].name; }
     void LeaveSession()
     {
         g_leftLocally = true;

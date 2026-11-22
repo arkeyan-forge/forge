@@ -832,7 +832,7 @@ bool ToyboxHandleEvent(const SDL_Event& event)
     if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())
         return true;
     // The online banner's answers while the other player is lost or stuck: Escape or B continues alone, Enter or A
-    // waits a minute more once the game asks.
+    // waits a minute more once the game asks, R or Y quits for the launcher to set the room up again.
     if (netplay::Online() && !M().open)
     {
         const auto online = netplay::SessionStatus();
@@ -844,6 +844,13 @@ bool ToyboxHandleEvent(const SDL_Event& event)
                 (key && event.key.key == SDLK_ESCAPE) || (button && event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST);
             const bool wait = (key && (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER)) ||
                               (button && event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH);
+            const bool again =
+                (key && event.key.key == SDLK_R) || (button && event.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH);
+            if (again)
+            {
+                netplay::PlayTogetherAgain();
+                return true;
+            }
             if (alone)
             {
                 netplay::ContinueAlone();
