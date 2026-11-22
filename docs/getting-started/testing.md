@@ -221,10 +221,11 @@ Other recipes:
   checks are listed at the top of the script. `SWAPPER_ART_DATA=<scratch data folder>` (where `ArkeyanArtTest` ran with
   `SWAPFORCE_ISO`, or the launcher read the disc) copies the halves' pictures in, and the run checks the stacked picture
   (`[toybox] swapper picture ...: stacked`); `search_toybox.sh` takes it too.
-- **Search, Filters and sort in the Toy Box** [SwapForce]: `SWAPFORCE_ISO=<disc> [LANGUAGE=fr] tools/regress/search_toybox.sh`
+- **Search, Sort and filter in the Toy Box** [SwapForce]: `SWAPFORCE_ISO=<disc> [LANGUAGE=fr] tools/regress/search_toybox.sh`
   (~2 min, `build-swapforce/`, isolated under `private/runs/search_toybox_<en|fr>`): 14 dumps (two swappers) in a scratch
-  collection; at the portal prompt it types into the field ("fire", "niveau 20", a typo), opens Filters by the pad's Start,
-  sets Fire, Swap Force and Sort by Name, removes a tag by click and Clear all, and saves the window's screenshots
+  collection; at the portal prompt it types into the field ("fire", "niveau 20", a typo), opens Sort and filter by the pad's Start,
+  sets Category then Name, Fire and Works in Swap Force, removes a tag by click, checks that Clear all keeps the sort
+  and that it is saved, and saves the window's screenshots
   (`shots_*.png`); the log's `[toybox] shelf: N found for ...` lines are what it checks.
 - **The Toy Box's focus** [TrapTeam]: `TRAPTEAM_ISO=<disc> tools/regress/toybox_nav.sh` (~75 s, `build-trapteam/`, isolated under
   `private/runs/toybox_nav`): ten scratch figures, keys, Tab and the pointer through `SKY_TOYBOX_SCRIPT`; each scripted key logs

@@ -34,6 +34,7 @@ rm -rf "${r:?}"; mkdir -p "$r/collection"
 for toy in $(seq 0 23); do
     "$make" --make "$r/collection/new_$toy.sky" "$toy" > /dev/null || { echo "FAIL: cannot make the dump of $toy" >&2; exit 2; }
 done
+printf '{ "format": 1, "sorts": { "game": "recent" } }\n' > "$r/collection/collection.json" # one untitled shelf
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 

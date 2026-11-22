@@ -1534,8 +1534,8 @@ namespace toybox
                 Star(ImVec2(right - 10, a.y + 18), 9, Look::Gold);
         }
 
-        // Your figures for the seat: the shelf (no header: the line above the grid says what it is for), then the
-        // unknown toys and the folded "Not for this game"; `focused` draws the cursor.
+        // Your figures for the seat: the sort's titled sections with their count, or one shelf (no header: the line
+        // above the grid says what it is for), then the unknown toys; `focused` draws the cursor.
         void DrawList(Model& model, ImVec2 min, ImVec2 max, bool focused, bool wheelList)
         {
             Grid& grid = model.list;
@@ -1561,7 +1561,7 @@ namespace toybox
                 if (section.titled && y + grid.headerHeight >= min.y - 40 && y < max.y &&
                     section.kind != Section::Kind::Foreign)
                     TextMiddle(g_black, 12, min.x, y + 18, section.foreign ? Look::TextDimmer : Look::TextDim,
-                        Upper(model.SectionLabel(section)));
+                        Upper(model.SectionLabel(section)) + " \xC2\xB7 " + std::to_string(section.count));
             }
             const SeatState& seat = model.seats[wheelList ? model.wheel.seat : model.seat];
             for (size_t i = 0; i < grid.cells.size(); i++)
@@ -1651,7 +1651,7 @@ namespace toybox
             }
         }
 
-        // --- The shelf's bar: the search field, the Filters button, the tags and the count ---------------------------------
+        // --- The shelf's bar: the search field, Sort and filter, the tags and the count ------------------------------------
 
         // A magnifying glass.
         void Magnifier(ImVec2 center, uint32_t rgb)
@@ -1670,19 +1670,21 @@ namespace toybox
         }
 
         // The bar sits on the line of "Choose for ...": the search field (typing on a keyboard goes straight into it, Y opens
-        // the pad's), the Filters button; under them, when anything is on, its tags with an x, Clear all and the count.
+        // the pad's), Sort and filter; under them, when anything is on, its tags with an x, Clear all and the count.
         // Returns where the grid starts.
         float DrawShelfBar(Model& model, ImVec2 min, ImVec2 max)
         {
             const float cy = min.y + 20, rowHeight = 40;
-            // The Filters button.
+            // Sort and filter: what it is set to, as wide as its longest text so that it does not move.
             std::vector<Model::Tag> tags = model.Tags();
-            ImVec2 fa(max.x - 132, cy - rowHeight / 2), fb(max.x, cy + rowHeight / 2);
+            float buttonWidth = 0;
+            for (int sort = 0; sort < int(Sort::Count); sort++)
+                buttonWidth = std::max(buttonWidth,
+                    std::ceil(Measure(g_black, 14, model.SortButtonLabel(Sort(sort), Model::FilterRows - 1)).x) + 28);
+            ImVec2 fa(max.x - buttonWidth, cy - rowHeight / 2), fb(max.x, cy + rowHeight / 2);
             bool on = !tags.empty() || model.filtersOpen;
             Box(fa, fb, Look::Button, on ? Look::Gold : look::Colour::Border, look::Radius::Control, on ? 2 : 1);
-            std::string label = tags.empty()
-                                    ? std::string(L("Filters", "Filtres"))
-                                    : std::string(L("Filters", "Filtres")) + " · " + std::to_string(tags.size());
+            std::string label = model.SortButtonLabel(model.sort, int(tags.size()));
             TextCentered(g_black, 14, ImVec2((fa.x + fb.x) / 2, cy), on ? Look::GoldText : Look::Text,
                 Fit(g_black, 14, label, fb.x - fa.x - 20));
             AddHit(fa, fb, [&model] { model.filtersOpen ? model.CloseFilters() : model.OpenFilters(); });
@@ -1745,12 +1747,12 @@ namespace toybox
             return bottom + 36;
         }
 
-        // The Filters panel, over the shelf: Element, Game, Type, Sort by (a value each: Left and Right, or a click, change
-        // it) and Clear all.
+        // The Sort and filter panel, over the shelf: Sort by, a divider, "Show only" over Element, Works in and Type (a
+        // value each: Left and Right, or a click, change it), then Clear all.
         void DrawFiltersPanel(Model& model, float top, ImVec2 max)
         {
-            const float rowH = 46, width = 460;
-            float height = 14 + (Model::FilterRows + 1) * rowH + 6;
+            const float rowH = 46, width = 460, groupH = 38;
+            float height = 14 + (Model::FilterRows + 1) * rowH + groupH + 6;
             ImVec2 pa(max.x - width, top + 4), pb(max.x, top + 4 + height);
             // A click outside closes it (the hits after this one are on the panel).
             AddHit(ImVec2(0, 0), ImVec2(1280, 720), [&model] { model.CloseFilters(); });
@@ -1758,9 +1760,13 @@ namespace toybox
             Panel(pa, pb);
             AddHit(pa, pb, [] {});
             g_hits.back().hover = false;
+            const float groupY = pa.y + 14 + rowH;
+            Fill(ImVec2(pa.x + 12, groupY + 3), ImVec2(pb.x - 12, groupY + 4), look::Colour::Border);
+            TextMiddle(g_black, 12, pa.x + 14, groupY + 22, Look::TextDim, L("SHOW ONLY", "AFFICHER SEULEMENT"));
             for (int row = 0; row <= Model::FilterRows; row++)
             {
-                ImVec2 a(pa.x + 12, pa.y + 14 + row * rowH), b(pb.x - 12, a.y + rowH - 6);
+                const float below = row == Model::SortRow ? 0 : groupH;
+                ImVec2 a(pa.x + 12, pa.y + 14 + row * rowH + below), b(pb.x - 12, a.y + rowH - 6);
                 bool focused = model.filterRow == row;
                 float cy = (a.y + b.y) / 2;
                 if (row == Model::FilterRows)
@@ -1783,13 +1789,12 @@ namespace toybox
                 if (focused)
                     FocusRing(a, b, 12);
                 TextMiddle(g_bold, 14, a.x + 14, cy, focused ? Look::Text : Look::TextDim, model.FilterRowLabel(row));
-                float vx = a.x + 130;
+                float vx = a.x + 150;
                 float valueRight = b.x - 34;
                 std::string value = model.FilterValueLabel(row);
-                bool set = row == 3 ? model.sort != Sort::Recent
-                                    : (row == 0      ? model.filterElement >= 0
-                                          : row == 1 ? !model.filterGame.empty()
-                                                     : model.filterCategory >= 0);
+                bool set = (row == Model::ElementRow && model.filterElement >= 0) ||
+                           (row == Model::WorksInRow && !model.filterGame.empty()) ||
+                           (row == Model::TypeRow && model.filterCategory >= 0);
                 g_draw->AddTriangleFilled(ImVec2(vx, cy), ImVec2(vx + 7, cy - 6), ImVec2(vx + 7, cy + 6),
                     Rgb(focused ? Look::Text : Look::TextDimmer));
                 g_draw->AddTriangleFilled(ImVec2(b.x - 14, cy), ImVec2(b.x - 21, cy - 6), ImVec2(b.x - 21, cy + 6),
@@ -2168,7 +2173,8 @@ namespace toybox
             }
             else if (model.homeRow == Model::Row::Bar)
             {
-                hints.push_back({ 'A', model.barColumn == 0 ? L("Search", "Rechercher") : L("Filters", "Filtres") });
+                hints.push_back({ 'A',
+                    model.barColumn == 0 ? L("Search", "Rechercher") : L("Sort and filter", "Trier et filtrer") });
                 if (model.seats.size() > 1)
                     hints.push_back({ 'L', L("Place", "Place") });
                 hints.push_back({ 'B', model.search.empty() ? back : L("Clear", "Effacer") });

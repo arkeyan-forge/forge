@@ -1,5 +1,6 @@
 #!/bin/bash
-# Swap Force's Toy Box shelf: the search field, the Filters panel, the tags with an x, Clear all, the count and the sort
+# Swap Force's Toy Box shelf: the search field, the Sort and filter panel, the tags with an x, Clear all, the count, the
+# sort, its sections and its saving
 # (docs/runtime/host/toybox_ux.md "Search, filters and sort"). A collection of 14 dumps (Blast Zone and Doom Stone are
 # swappers, one card each: 12 cards on Player 1's shelf); the run starts the game on an empty portal, takes the Toy Box at the portal prompt and types and
 # presses the pad through the script. Screenshots of the game's window (offscreen output) go to <run>/shots_*.png; the log's
@@ -41,15 +42,18 @@ cat > "$R/collection/collection.json" <<'JSON'
 JSON
 
 press="a:14,a:16,a:18,a:20,a:22,a:24,a:26"
-# The prompt opens the Toy Box. Typing goes straight into the field ("fire", "level 20", with a typo); Start opens Filters (Right
-# changes a value, Down the row: Element Fire, Game Swap Force, Sort Name), B closes the panel, the tag's x and Clear all are clicked.
+# The prompt opens the Toy Box. Typing goes straight into the field ("fire", "level 20", with a typo); Start opens Sort and
+# filter (Right changes a value, Down the row: Sort by Category, then Name, Element Fire, Works in Swap Force), B closes the
+# panel, the tag's x is clicked and Clear all pressed.
 erase=""; for i in $(seq ${#fire}); do erase+=",Backspace:79.$i"; done # one Backspace per letter (one more would close the Toy Box)
 script="shot=home:74,type=$fire:76,shot=fire:78$erase,type=niveau 20:81,shot=level:83"
 script+=",Backspace:84,Backspace:84.2,Backspace:84.4,Backspace:84.6,Backspace:84.8,Backspace:85,Backspace:85.2,Backspace:85.4,Backspace:85.6"
 script+=",type=swaper:87,shot=typo:89,Backspace:90,Backspace:90.2,Backspace:90.4,Backspace:90.6,Backspace:90.8,Backspace:91"
-script+=",pad=start:92,shot=filters:93,pad=right*0.1:94,pad=right*0.1:94.5,pad=right*0.1:95,pad=right*0.1:95.5,pad=right*0.1:96"
-script+=",pad=down*0.1:97,pad=right*0.1:98,pad=right*0.1:98.5,pad=right*0.1:99,pad=down*0.1:100,pad=down*0.1:101,pad=right*0.1:102"
-script+=",shot=filters_set:103,pad=b:104,shot=tags:105,click=290/254:106,shot=one_tag_less:107,pad=start:108,pad=up*0.1:109,pad=a:110,pad=b:111,shot=cleared:112"
+script+=",pad=start:92,shot=filters:93,pad=right*0.1:93.5,pad=right*0.1:94,pad=right*0.1:94.5,shot=category:95,pad=right*0.1:95.5"
+script+=",pad=down*0.1:96,pad=right*0.1:96.5,pad=right*0.1:97,pad=right*0.1:97.5,pad=right*0.1:98,pad=right*0.1:98.5"
+script+=",pad=down*0.1:99,pad=right*0.1:99.5,pad=right*0.1:100,pad=right*0.1:100.5"
+script+=",shot=filters_set:103,pad=b:104,shot=tags:105,click=290/254:106,shot=one_tag_less:107"
+script+=",pad=start:108,pad=down*0.1:108.5,pad=down*0.1:109,pad=a:110,pad=b:111,shot=cleared:112"
 env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=disk SDL_AUDIO_DISK_OUTPUT_FILE=/dev/null SKY_LANGUAGE=$language \
   SKYLANDERS_DATA="$R/data" SKY_SETTINGS="$R/none.ini" SKY_LAUNCHER_INI="$R/none.ini" SKY_COLLECTION="$R/collection" \
   SKY_SAVE_DIR="$R/save" SKY_LOG="$R/game.log" SKY_SKIP_MOVIES=1 SKY_PRESS="$press" SKY_PORTAL=emulated \
@@ -72,8 +76,12 @@ check "'niveau 20' finds Scratch only" "[toybox] shelf: 1 found for \"niveau 20\
 check "the typo 'swaper' still finds the 2 swappers" "[toybox] shelf: 2 found for \"swaper\""
 check "the panel's filters: Fire, Swap Force, sorted by name" "(element 2, game swapforce, type -1, sort name)"
 check "removing a tag keeps the others" "(element -1, game swapforce, type -1, sort name)"
+check "the Category sort" "sort category)"
+check "Clear all keeps the sort" "(element -1, game , type -1, sort name)"
 check "Clear all" "[toybox] script: shot=cleared"
-for shot in home fire level typo filters filters_set tags one_tag_less cleared; do
+if tr -d ' \n' < "$R/collection/collection.json" | grep -qF '"sorts":{"game":"name"}'; then echo "ok:   the sort is saved"
+else echo "FAIL: the sort is not saved"; fails=$((fails + 1)); fi
+for shot in home fire level typo filters category filters_set tags one_tag_less cleared; do
     if [ -s "${R}/shots_$shot.png" ]; then echo "ok:   shot $shot"; else echo "FAIL: shot $shot is missing"; fails=$((fails + 1)); fi
 done
 [ "$fails" = 0 ] && echo "search Toy Box check: PASS" || echo "search Toy Box check: $fails FAILED (logs in $R)"

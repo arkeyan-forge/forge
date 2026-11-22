@@ -258,11 +258,11 @@ namespace toybox
         bool foreignOpen = false; // "Not for this game" unfolded
         // The shelf's filters and sort (docs/runtime/host/toybox_ux.md "Search, filters and sort"); -1 or empty: all.
         int filterElement = -1; // a collection::Element
-        std::string filterGame; // the game a toy came with ("giants")
+        std::string filterGame; // a game that reads the toy ("giants": Works in)
         int filterCategory = -1; // a collection::Category
-        collection::Sort sort = collection::Sort::Recent;
-        bool filtersOpen = false; // the Filters panel is open over the shelf
-        int filterRow = 0; // its focused row: Element, Game, Type, Sort, Clear all
+        collection::Sort sort = collection::DefaultSort; // Init reads the saved one (collection::GetSort)
+        bool filtersOpen = false; // the Sort and filter panel is open over the shelf
+        int filterRow = 0; // its focused row (PanelRow)
         int shownCount = 0; // the cards the shelf shows (BuildList)
 
         // --- Navigation ------------------------------------------------------------------------------------------------
@@ -274,12 +274,12 @@ namespace toybox
         {
             Seats, // the seats, then Add a figure and Manage
             Banner, // the starter pack's button, while it is offered (ShowsStarter)
-            Bar, // the search field, Filters
+            Bar, // the search field, Sort and filter
             Grid // your figures for the chosen seat
         };
         Row homeRow = Row::Grid;
         int column = 0; // the top row's place: the seats, then Add a figure, Manage
-        int barColumn = -1; // 0 the search field, 1 Filters; -1: not visited yet (nav::Land)
+        int barColumn = -1; // 0 the search field, 1 Sort and filter; -1: not visited yet (nav::Land)
         bool gridKnown =
             true; // the grid kept its place (false: rebuilt for another seat while the focus was elsewhere)
         static constexpr int BarCount = 2;
@@ -514,9 +514,17 @@ namespace toybox
         int EmptyChoices() const { return starterNames.empty() ? 2 : 3; } // Add, Import, the starter pack
         void FocusStarter();
         void CreateStarter();
-        // The Filters panel: four rows (Element, Game, Type, Sort) and Clear all. Left and Right change a row's value
-        // (the first is "All"), Accept changes it to the next.
-        static constexpr int FilterRows = 4;
+        // The Sort and filter panel: Sort by, then under "Show only" Element, Works in and Type, then Clear all. Left
+        // and Right change a row's value (a filter's first is "All"), Accept changes it to the next.
+        enum PanelRow
+        {
+            SortRow,
+            ElementRow,
+            WorksInRow,
+            TypeRow,
+            FilterRows // Clear all
+        };
+        std::string SortButtonLabel(collection::Sort shown, int filters) const; // "Sort: Element (2)"
         std::string FilterRowLabel(int row) const;
         std::string FilterValueLabel(int row) const; // the value now, "All elements"...
         void CycleFilter(int row, int step);
@@ -531,8 +539,8 @@ namespace toybox
         };
         std::vector<Tag> Tags() const;
         void RemoveTag(int index);
-        bool FiltersActive() const; // a search, a filter or a sort other than Recent
-        void ClearFilters(); // all of them
+        bool FiltersActive() const; // a search or a filter: the sort is neither
+        void ClearFilters(); // all of them; the sort stays
         int OwnedCount(uint16_t type, uint16_t variant, const std::string& edition) const;
         std::string SectionLabel(const ListSection& section) const;
         std::string GameName() const;
