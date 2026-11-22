@@ -30,9 +30,6 @@ namespace toybox
     // The pointer in canvas pixels (`inside` false: off the canvas): what is under it gets a hover outline. True when that
     // changed since the last Draw (draw again).
     bool Pointer(float x, float y, bool inside);
-    // The view moved under a still pointer (the wheel), after the Draw that shows it: what is under the pointer now
-    // takes the focus.
-    void Rehover();
     // The hoverable hit under the pointer, not the keyboard's selected row/card; "none" for a miss or backdrop.
     std::string HoverTarget();
     // The wheel's place under a canvas point (-1 the centre, -2 outside it).

@@ -136,6 +136,13 @@ int main()
     CHECK(ListScroll(100, 150, 900, 500, 150) == 100); // back up: its top (or its heading's) at the top
     CHECK(ListScroll(850, 900, 900, 500, 0) == 400); // the last row: the end at the bottom
     CHECK(ListScroll(200, 250, 300, 500, 80) == 0); // a short list never scrolls
+    // The wheel scrolls the shelf by whole steps without moving the focus, never past its ends.
+    CHECK(WheelScroll(0, 150, 900, 500) == 150);
+    CHECK(WheelScroll(300, 150, 900, 500) == 400); // the end at the bottom
+    CHECK(WheelScroll(100, -150, 900, 500) == 0);
+    CHECK(WheelScroll(0, 150, 300, 500) == 0); // a short list never scrolls
+    CHECK(WheelScroll(380.0f, 0.0f, 900.0f, 600.0f) == 300.0f); // kept, within the ends once the list shrinks
+    CHECK(WheelScroll(2, 1, 5, 3) == 2); // a grid by whole rows
     // ...and the room it has holds the rows under the title.
     CHECK(SettingsListTop + 6 * (SettingsRowHeight + SettingsRowGap) < FooterTop);
     CHECK(PageRight - PageLeft - SettingsDetailWidth - SettingsDetailGap >= 560);

@@ -344,6 +344,8 @@ namespace toybox
         int SettingsRowTotal() const;
         int settingsRow = 0;
         float settingsScroll = 0;
+        // The row the list last scrolled to: the wheel's scroll stays until the focus moves (-1: follow it now).
+        int settingsFollowed = -1;
         void FocusSettingsRow(int row, int step); // the mouse: focus it, then step -1 / +1 or 0 (do it)
         // A page beside the rail (from the F3 menu, the rail or LB / RB). `fromMenu`: B comes back to the panel.
         void OpenPage(look::Page page);
@@ -354,6 +356,9 @@ namespace toybox
         // (0 all, 1 unlocked, 2 locked), the focused card among the tab's and the first grid row shown.
         std::vector<ToyboxAchievementRow> achievementRows;
         int achievementTab = 0, achievementCursor = 0, achievementFirstRow = 0;
+        int achievementFollowed = -1; // as settingsFollowed
+        // The wheel (down > 0) on Settings or Achievements: the list scrolls, the focus stays.
+        void ScrollPage(float rows);
         std::vector<int> AchievementsShown() const; // indexes of achievementRows in the tab
         int AchievementsUnlocked() const;
         void FocusAchievement(int index); // the mouse: an index of AchievementsShown
@@ -457,7 +462,7 @@ namespace toybox
         void FocusCell(int cell, bool scroll = true); // the pointer passing over a card does not scroll
         void ActivateCell(int cell); // double click: put on
         void OptionsCell(int cell); // right click: Figure page
-        bool ScrollList(int rows); // the wheel: false when the view did not move
+        bool ScrollList(int rows); // the wheel: the view moves, the focus stays; false when it did not move
         void FocusAction(int index);
         void FocusAddCell(int cell);
         void HoverAddCell(int cell); // focus only (a click on the focused card opens its versions)

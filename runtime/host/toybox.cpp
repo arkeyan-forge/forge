@@ -67,7 +67,6 @@ namespace
     std::vector<uint32_t> g_pixels;
     bool g_overlayShown;
     bool g_wasOpen;
-    bool g_rehover; // the wheel moved a list: once drawn, the card under the pointer takes the focus
     bool g_portraitsLoaded;
 
     // Gamepad.
@@ -405,9 +404,9 @@ namespace
         else if (model.screen == Screen::Stats || model.screen == Screen::Creation)
             model.Run(up > 0 ? Command::Right : Command::Left);
         else if (model.screen == Screen::Home || model.screen == Screen::Add || model.screen == Screen::WheelList)
-            g_rehover = model.ScrollList(up > 0 ? -1 : 1) || g_rehover;
-        else if (MenuScreen(model))
-            model.Run(up > 0 ? Command::Up : Command::Down);
+            model.ScrollList(up > 0 ? -1 : 1);
+        else if (model.screen == Screen::Settings || model.screen == Screen::Achievements)
+            model.ScrollPage(-up);
     }
 
     // The pointer moved to a canvas point: the wheel aims, the rest shows what is under it.
@@ -538,9 +537,10 @@ namespace
                                                                   : model.list.cursor;
         fprintf(stderr,
             "[toybox] script: focus: screen %d, menu row %d, commands row %d column %d, settings row %d, "
-            "achievement %d, card %d, home %s %d seat %d, hover %s\n",
+            "settings scroll %d, achievement %d, shelf scroll %d, card %d, home %s %d seat %d, hover %s\n",
             int(model.screen), model.menuRow, model.commandRow, model.commandColumn, model.settingsRow,
-            model.achievementCursor, model.list.cursor, row, place, model.seat, toybox::HoverTarget().c_str());
+            int(model.settingsScroll), model.achievementCursor, model.list.scroll, model.list.cursor, row, place,
+            model.seat, toybox::HoverTarget().c_str());
     }
 
     // SKY_TOYBOX_CLOCK=frames: the script's times and its pad and key holds count the frames the game presented, 30 a
@@ -761,8 +761,6 @@ namespace
         uint64_t start = std::exchange(g_debugRedraw, false) && !model.open ? SDL_GetTicksNS() : 0;
         toybox::Draw(model, g_pixels);
         model.Clean();
-        if (std::exchange(g_rehover, false))
-            toybox::Rehover(); // a focus change marks the model dirty: drawn again next frame
         if (g_texture == nullptr)
             g_texture = gpu::CreateTexture({ .width = toybox::CanvasWidth,
                 .height = toybox::CanvasHeight,

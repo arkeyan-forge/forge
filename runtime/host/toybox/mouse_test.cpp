@@ -289,8 +289,8 @@ int main()
     check(grid.ScrollRows(2) && grid.scroll == 200 && grid.cursor == 2);
     check(grid.ScrollRows(9) && grid.scroll == 600);
     check(!grid.ScrollRows(1) && grid.scroll == 600);
-    // After a scroll the card under the still pointer takes the focus, though the pointer did not move and the drawn
-    // frame already outlines it; with the pointer off every card nothing does.
+    // After a scroll the card under the still pointer gets the outline, not the focus: a small move on it changes
+    // nothing, the pointer moving onto another card focuses that one.
     g_hits.clear();
     g_hovered = -1;
     g_calls.clear();
@@ -304,12 +304,6 @@ int main()
     g_hovered = HoveredHit();
     Pointer(6, 406, true);
     check(g_calls == std::vector<std::string>{ "focus card=0" });
-    Rehover();
-    check(g_calls == std::vector<std::string>{ "focus card=0", "focus card=4" });
-    g_calls.clear();
-    Pointer(50, 450, true);
-    Rehover();
-    check(g_calls.empty());
     // A section badge puts its section's header at the top, as LB / RB do, even when the section is further down.
     auto sections = [](Grid& target) {
         target = {};
@@ -336,12 +330,12 @@ int main()
     g_calls.clear();
     PickSection(model, model.add, 2);
     check(model.add.scroll == model.add.HeaderY(2) && g_calls == std::vector<std::string>{ "focus add=16" });
-    printf("%d checks, %d failures\n", 56, failures);
+    printf("%d checks, %d failures\n", 54, failures);
     puts(failures
              ? "FAIL: menu pointer and click"
              : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus, Add "
                "cards' hover and a click beside them while versions show, a seat's double click, an empty seat's +, "
-               "drag and drop, the starter pack's button, the wheel's scroll and the focus under a still pointer, the "
+               "drag and drop, the starter pack's button, the wheel's scroll leaving the focus, the "
                "section badges' scroll");
     return failures ? 1 : 0;
 }

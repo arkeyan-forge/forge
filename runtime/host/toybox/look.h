@@ -234,6 +234,14 @@ namespace toybox::look
         return std::clamp(scroll, 0.0f, std::max(0.0f, end - visible));
     }
 
+    // A list scrolled `step` by the mouse wheel (down > 0), the focus left where it is: the offset to use, within the
+    // list's ends (pixels, or whole rows for a grid).
+    template <typename T>
+    inline T WheelScroll(T scroll, T step, T end, T visible)
+    {
+        return std::clamp(scroll + step, T(0), std::max(T(0), end - visible));
+    }
+
     // --- Achievements: the ring and the count, the tabs, a grid of four columns ---------------------------------------------
 
     constexpr int AchievementColumns = 4;

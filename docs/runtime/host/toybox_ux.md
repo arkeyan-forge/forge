@@ -75,6 +75,12 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
   onto that seat and Add a figure closes; one the seat refuses stays off it, with the usual "Put it on ..." offer. Add a
   figure opened any other way puts nothing on a seat. A right click on an empty seat keeps its options. Unit check:
   `runtime/host/toybox/mouse_test.cpp` (`tools/regress/f3mouse_unit.py`).
+- **The mouse wheel** (2026-11-22): it scrolls, it never moves the focus. On the shelf, Add a figure and the wheel's
+  list a tick scrolls one row of cards; in the F3 menu's Settings one row, in
+  Achievements one row of cards; the panel and Controls do not scroll. The focus may leave the view: the next key press
+  or the pointer moving onto a row brings the view back to it. Unit checks: `look_test.cpp` (`WheelScroll`),
+  `mouse_test.cpp` (`Grid::ScrollRows`, a still pointer after a scroll); in a game:
+  `tools/regress/f3mouse.sh`.
 - **Drag and drop** (both apps): a card dragged onto a seat goes on it; a seat's figure dragged onto the shelf is taken
   off. In the game also: a seat's figure dragged onto an empty seat moves there, onto a taken player seat it asks "Swap
   players?". A drag starts past 6 canvas pixels, so clicks stay clicks; Escape cancels it. While dragging, the seats
@@ -426,9 +432,8 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 | Launcher Collection | d-pad (down from a seat to the shelf, up from its first row to the seats, the bar's search, Filters and tags on the way), A, B: stop choosing / clear the search, X: the sheet (on a seat: take it off; an empty seat: Add a figure for it), Y: the search, LB/RB: choose for the other seat | Tab, arrows, Enter, Delete (seat), F2, F3, Page Up/Down, Escape | click, click an empty seat's +: Add a figure for it, right click, drag a card onto a seat or a seat onto the shelf |
 
 - **Mouse everywhere in the Toy Box and the F3 menu** (2026-11-02): every card, seat, button, row and field is a click target, and
-  the one under the pointer gets a soft outline. The wheel scrolls the lists (Edit stats: steps; the F3 menu: moves the focus).
-  In the figure lists (the shelf, Add a figure, the wheel's list) a tick moves the view one row and leaves the focus;
-  once drawn, the card now under a still pointer takes the focus (#115; unit check: `runtime/host/toybox/mouse_test.cpp`).
+  the one under the pointer gets a soft outline. The wheel scrolls the lists without moving the focus (Edit stats:
+  steps), see "The mouse wheel" above.
   Script checks: `SKY_TOYBOX_SCRIPT` `move=x/y`, `wheel=up|down`, `drag=x1/y1/x2/y2` beside `click=x/y` (`tools/regress/f3mouse.sh`;
   [gamemenu.md](gamemenu.md)).
 - **No system on-screen keyboard** (#17): opening the Toy Box or the F3 menu starts SDL's text input so a real

@@ -3797,8 +3797,15 @@ namespace toybox
             }
             model.settingsRow = std::clamp(model.settingsRow, 0, int(rows.size()) - 1);
             const size_t focus = size_t(model.settingsRow);
-            model.settingsScroll = ListScroll(headingTop[focus] >= 0 ? headingTop[focus] : rowTop[focus],
-                rowTop[focus] + SettingsRowHeight, y - SettingsRowGap, listBottom - listTop, model.settingsScroll);
+            if (model.settingsFollowed != model.settingsRow)
+            {
+                model.settingsScroll = ListScroll(headingTop[focus] >= 0 ? headingTop[focus] : rowTop[focus],
+                    rowTop[focus] + SettingsRowHeight, y - SettingsRowGap, listBottom - listTop, model.settingsScroll);
+                model.settingsFollowed = model.settingsRow;
+            }
+            else
+                model.settingsScroll =
+                    WheelScroll(model.settingsScroll, 0.0f, y - SettingsRowGap, listBottom - listTop);
             const float scroll = model.settingsScroll;
             g_draw->PushClipRect(ImVec2(listLeft - 2, listTop), ImVec2(listRight + 2, listBottom), true);
             for (size_t i = 0; i < rows.size(); i++)
@@ -4021,8 +4028,14 @@ namespace toybox
                                : L("Keep playing.", "Continuez à jouer."));
             }
             model.achievementCursor = std::clamp(model.achievementCursor, 0, std::max(0, int(shown.size()) - 1));
-            model.achievementFirstRow = GridFirstRow(
-                model.achievementCursor / AchievementColumns, model.achievementFirstRow, visible, rowCount);
+            if (model.achievementFollowed != model.achievementCursor)
+            {
+                model.achievementFirstRow = GridFirstRow(
+                    model.achievementCursor / AchievementColumns, model.achievementFirstRow, visible, rowCount);
+                model.achievementFollowed = model.achievementCursor;
+            }
+            else
+                model.achievementFirstRow = WheelScroll(model.achievementFirstRow, 0, rowCount, visible);
             g_draw->PushClipRect(ImVec2(PageLeft - 2, top - 2), ImVec2(PageRight + 2, bottom), true);
             ImVec2 ringMin, ringMax;
             bool ringShown = false;
@@ -4418,13 +4431,6 @@ namespace toybox
         if (hovered != g_hovered && hovered >= 0 && g_hits[size_t(hovered)].focus)
             g_hits[size_t(hovered)].focus();
         return hovered != g_hovered;
-    }
-
-    void Rehover()
-    {
-        // Draw already outlines the new hit, so Pointer's change test would never focus it.
-        if (int hovered = HoveredHit(); hovered >= 0 && g_hits[size_t(hovered)].focus)
-            g_hits[size_t(hovered)].focus();
     }
 
     std::string HoverTarget()
