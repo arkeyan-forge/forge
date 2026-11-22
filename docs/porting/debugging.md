@@ -89,7 +89,8 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_NETPLAY_PASSWORD=<text>` | optional shared password for nonce-derived SipHash-128 packet authentication |
 | `SKY_NETPLAY_DELAY=<frames>` | 1–8; host override wins, otherwise clamp(ceil(RTT / 2 / frame time) + 1, 1, 8) from five ping/pong probes |
 | `SKY_NETPLAY_CROSS_PLATFORM=1` | allow different OS/CPU identities only when both peers opt in; unverified |
-| `SKY_NETPLAY_DESYNC_DUMP=<file>` | on a 30-frame checkpoint mismatch, write that frame's blocks in `SKYBLK01` format before exit; compare both dumps with `tools/netplay/hash_diff.py`; [step 1](../runtime/host/netplay.md#step-1-lockstep-on-one-machine) |
+| `SKY_NETPLAY_TEST_DESYNC=<frame>` | with `SKY_NETPLAY_TEST=1` on both games: the guest flips one hashed byte at that 30-frame checkpoint, to test the repair of a short desync; [step 4](../runtime/host/netplay.md#step-4-repairing-a-short-desync) |
+| `SKY_NETPLAY_DESYNC_DUMP=<file>` | when a 30-frame checkpoint mismatch cannot be repaired, write that frame's blocks in `SKYBLK01` format before both continue alone; compare both dumps with `tools/netplay/hash_diff.py`; [step 1](../runtime/host/netplay.md#step-1-lockstep-on-one-machine) |
 
 ### Renderer, GPU, performance
 | Variable | Effect |

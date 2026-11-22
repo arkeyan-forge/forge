@@ -24,6 +24,8 @@ namespace
         std::array<std::deque<netplay::Datagram>, 2> queues;
         std::mt19937 random{ 283 };
         bool chaos = false, silent = false, virtualTime = false, corrupt = false;
+        bool stallRepair = false;
+        uint64_t repairRequests = 0, repairChunks = 0;
         std::atomic<uint64_t> time{ 2000 };
         std::array<std::atomic<bool>, 2> healthy{ true, true };
     };
@@ -36,6 +38,17 @@ namespace
             std::lock_guard lock(m_link.mutex);
             if (m_link.virtualTime)
                 ++m_link.time;
+            if (bytes.size() > 10)
+            {
+                const auto type = netplay::PacketType(bytes[10]);
+                m_link.repairRequests += type == netplay::PacketType::BlockRequest;
+                if (type == netplay::PacketType::BlockList || type == netplay::PacketType::BlockData)
+                {
+                    ++m_link.repairChunks;
+                    if (m_link.stallRepair)
+                        return true;
+                }
+            }
             if (m_link.silent || (m_link.chaos && m_link.random() % 5 == 0))
                 return true;
             netplay::Datagram packet{};
@@ -199,6 +212,153 @@ namespace
         for (unsigned wait = 0; wait < 1000 && !second.RoundTripMs(); ++wait)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         Check(first.RoundTripMs() > 0 && second.RoundTripMs() > 0, "both peers measure the round trip for F3");
+    }
+
+    struct Blocks : netplay::BlockSource
+    {
+        std::vector<netplay::Block> blocks;
+        std::vector<std::vector<uint8_t>> bytes;
+        bool refuseWrite = false;
+        explicit Blocks(size_t count = 3)
+        {
+            for (size_t i = 0; i < count; ++i)
+            {
+                blocks.push_back({ uint32_t(0x10000 + i * 0x10000), netplay::Heap::Virtual4K, 0 });
+                bytes.emplace_back(4097, uint8_t(i));
+            }
+            TotalHash();
+        }
+        std::span<const netplay::Block> ListBlocks() override { return blocks; }
+        bool ReadBlock(size_t index, std::vector<uint8_t>& result) override
+        {
+            result = bytes.at(index);
+            return true;
+        }
+        bool WriteBlock(size_t index, std::span<const uint8_t> value) override
+        {
+            if (value.size() != bytes.at(index).size())
+                return false;
+            if (!refuseWrite)
+                std::copy(value.begin(), value.end(), bytes[index].begin());
+            return true;
+        }
+        uint64_t TotalHash() override
+        {
+            uint64_t total = netplay::HashSeed;
+            for (size_t i = 0; i < blocks.size(); ++i)
+            {
+                blocks[i].hash = netplay::HashBytes(bytes[i], blocks[i].address, {});
+                total = netplay::Mix(total, (uint64_t(blocks[i].address) << 32) | uint32_t(blocks[i].heap));
+                total = netplay::Mix(total, blocks[i].hash);
+            }
+            return total;
+        }
+    };
+
+    void Repair(bool chaos, size_t differences = 1, bool layout = false, bool badTotal = false, unsigned attempts = 1,
+        bool expire = false, bool stall = false)
+    {
+        using namespace netplay;
+        Link link;
+        link.chaos = chaos;
+        link.stallRepair = stall;
+        Blocks hostBlocks(std::max(size_t(80), differences)), guestBlocks = hostBlocks;
+        if (differences == 64)
+            for (size_t i = 0; i < differences; ++i)
+            {
+                hostBlocks.bytes[i].resize(65536, uint8_t(i));
+                guestBlocks.bytes[i] = hostBlocks.bytes[i];
+            }
+        guestBlocks.refuseWrite = badTotal;
+        if (layout)
+            guestBlocks.blocks.back().heap = Heap::Physical;
+        auto host = Config(true), guest = Config(false);
+        std::atomic<uint64_t> time{ 2000 };
+        host.now = guest.now = [&] { return time.load(); };
+        host.timeoutMs = guest.timeoutMs = 100000;
+        host.blocks = &hostBlocks;
+        guest.blocks = &guestBlocks;
+        Session first(host, std::make_unique<Wire>(link, 0));
+        Session second(guest, std::make_unique<Wire>(link, 1));
+        Check(first.WaitReady() && second.WaitReady(), "repair session ready");
+        uint64_t frame = 0;
+        for (unsigned attempt = 0; attempt < attempts; ++attempt)
+        {
+            for (size_t i = 0; i < differences; ++i)
+                guestBlocks.bytes[i][0] ^= 0x80;
+            const auto hostHash = hostBlocks.TotalHash(), guestHash = guestBlocks.TotalHash();
+            auto advance = [&](Session& session, size_t seat) {
+                InputFrame pads;
+                for (uint64_t f = frame; f < frame + 30; ++f)
+                    Check(session.Exchange(f, Pad(f, seat), pads), "frames advance before repair");
+            };
+            std::thread a([&] { advance(first, 0); });
+            std::thread b([&] { advance(second, 1); });
+            a.join();
+            b.join();
+            frame += 30;
+            std::array<bool, 2> repaired{};
+            std::thread c([&] { repaired[0] = first.CheckHash(frame, hostHash); });
+            std::thread d([&] { repaired[1] = second.CheckHash(frame, guestHash); });
+            if (stall)
+            {
+                bool requested = false;
+                for (unsigned wait = 0; wait < 1000; ++wait)
+                {
+                    {
+                        std::lock_guard lock(link.mutex);
+                        requested = link.repairRequests > 0 && link.repairChunks > 0;
+                    }
+                    if (requested && first.Stats().repairing && second.Stats().repairing)
+                        break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                Check(requested && first.Stats().repairing && second.Stats().repairing,
+                    "both games remain held during repair");
+                time += 5001;
+            }
+            c.join();
+            d.join();
+            const bool failed = layout || differences > 64 || badTotal || (attempt == 2 && !expire) || stall;
+            Check(repaired[0] == !failed && repaired[1] == !failed, "both peers agree on repair outcome");
+            if (failed)
+            {
+                for (auto* session : { &first, &second })
+                {
+                    Check(session->Failure().reason == EndReason::Desync && session->ContinuingSolo(),
+                        "failed repair continues solo with desync reason");
+                    InputFrame pads;
+                    Check(session->Exchange(frame, Pad(frame, 0), pads), "failed repair releases frame barrier");
+                }
+                break;
+            }
+            Check(first.Stats().resyncs == attempt + 1 && second.Stats().resyncs == attempt + 1,
+                "successful repairs counted on both peers");
+            Check(hostBlocks.bytes == guestBlocks.bytes && first.Stats().backInSync && second.Stats().backInSync,
+                "repair copies complete blocks and shows back in sync");
+            time += 2000;
+            Check(!first.Stats().backInSync && !second.Stats().backInSync, "back in sync expires after two seconds");
+            if (expire)
+                time += 60000;
+            std::thread e([&] { advance(first, 0); });
+            std::thread f([&] { advance(second, 1); });
+            e.join();
+            f.join();
+            frame += 30;
+            std::thread g(
+                [&] { Check(first.CheckHash(frame, hostBlocks.TotalHash()), "host stays in sync after repair"); });
+            std::thread h(
+                [&] { Check(second.CheckHash(frame, guestBlocks.TotalHash()), "guest stays in sync after repair"); });
+            g.join();
+            h.join();
+            Check(first.Stats().resyncs == attempt + 1 && second.Stats().resyncs == attempt + 1,
+                "ordinary checkpoints do not count as repairs");
+        }
+        if (!layout && differences <= 64 && attempts == 1)
+        {
+            std::lock_guard lock(link.mutex);
+            Check(link.repairRequests > 0 && link.repairChunks > 0, "repair uses requested chunks");
+        }
     }
 
     void OnlineMenuAndStats()
@@ -420,6 +580,15 @@ namespace
 int main()
 {
     using namespace netplay;
+    Repair(false);
+    Repair(true);
+    Repair(true, 64);
+    Repair(false, 1, true);
+    Repair(false, 65);
+    Repair(false, 1, false, true);
+    Repair(false, 1, false, false, 3);
+    Repair(false, 1, false, false, 3, true);
+    Repair(false, 64, false, false, 1, false, true);
     std::string endpointHost;
     uint16_t port = 0;
     for (const auto text : { "127.0.0.1:47640", "[::1]:47640", "localhost:47640" })

@@ -5,6 +5,53 @@
 
 namespace netplay
 {
+    namespace
+    {
+        template <typename F>
+        size_t Included(size_t size, uint32_t address, std::span<const Range> skips, F&& visit)
+        {
+            uint64_t at = address, end = at + size;
+            size_t count = 0;
+            const auto segment = [&](uint64_t stop) {
+                if (at < stop)
+                {
+                    const auto length = size_t(stop - at);
+                    visit(size_t(at - address), length, count);
+                    count += length;
+                }
+            };
+            for (const auto& range : skips)
+            {
+                if (range.end <= at)
+                    continue;
+                if (range.begin >= end)
+                    break;
+                segment(std::min(range.begin, end));
+                at = std::max(at, range.end);
+            }
+            segment(end);
+            return count;
+        }
+    }
+    void PackBlock(
+        std::span<const uint8_t> memory, uint32_t address, std::span<const Range> skips, std::vector<uint8_t>& bytes)
+    {
+        bytes.clear();
+        Included(memory.size(), address, skips, [&](size_t offset, size_t length, size_t) {
+            const auto part = memory.subspan(offset, length);
+            bytes.insert(bytes.end(), part.begin(), part.end());
+        });
+    }
+    bool ApplyBlock(
+        std::span<uint8_t> memory, uint32_t address, std::span<const Range> skips, std::span<const uint8_t> bytes)
+    {
+        if (Included(memory.size(), address, skips, [](size_t, size_t, size_t) {}) != bytes.size())
+            return false;
+        Included(memory.size(), address, skips, [&](size_t offset, size_t length, size_t packed) {
+            std::memcpy(memory.data() + offset, bytes.data() + packed, length);
+        });
+        return true;
+    }
     uint64_t Mix(uint64_t hash, uint64_t word)
     {
         hash ^= word;

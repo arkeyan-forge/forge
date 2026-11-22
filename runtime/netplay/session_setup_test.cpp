@@ -126,16 +126,22 @@ int main()
     Check(!saves.Allowed(), "guest stops saving after host vanishes");
     saves.End(true, true, netplay::EndReason::None, false);
     Check(!saves.Allowed(), "save suppression persists for the remainder of the run");
-    for (auto reason : { netplay::EndReason::Quit, netplay::EndReason::Timeout, netplay::EndReason::Transport })
+    for (auto reason : { netplay::EndReason::Quit, netplay::EndReason::Timeout, netplay::EndReason::Transport,
+             netplay::EndReason::Desync })
     {
         netplay::SavePolicy guest;
         guest.End(false, true, reason, false);
         Check(!guest.Allowed(), "all remote departure reasons suppress guest saves");
+        netplay::SavePolicy host;
+        host.End(true, true, reason, false);
+        Check(host.Allowed(), "host saves survive solo continuation");
         Check(netplay::ContinueSolo(true, reason, false) && !netplay::ContinueSolo(true, reason, true) &&
                   !netplay::ContinueSolo(false, reason, false),
             "only established remote departures continue");
     }
-    Check(!netplay::ContinueSolo(true, netplay::EndReason::Desync, false), "desync remains fatal");
+    Check(std::string_view(netplay::EndMessage(netplay::EndReason::Desync)).find("continue alone") !=
+              std::string_view::npos,
+        "desync message explains solo continuation");
     netplay::SessionStats stats;
     stats.roundTripMs = 42;
     stats.delay = 3;
@@ -163,7 +169,7 @@ int main()
               std::string_view(panel.rows[2].value) == "1.25 ms per frame  7 frames waited (60 s)" &&
               std::string_view(panel.rows[3].value) == "tx 120  rx 98  lost 4  bad tag 2" &&
               std::string_view(panel.rows[4].value) == "tx 10.50  rx 8.25 KB per s" &&
-              std::string_view(panel.rows[5].value) == "frame 300  10 good checks",
+              std::string_view(panel.rows[5].value) == "frame 300  10 good checks  0 repaired",
         "full online formatting");
     netplay::EndScreenClock clock;
     Check(!clock.QuitDue(123), "no quit before the end screen is shown");

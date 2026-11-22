@@ -312,8 +312,9 @@ namespace debugscreen
         panel.Add(Group::Online, "packets per second", value);
         snprintf(value, sizeof(value), "tx %.2f  rx %.2f KB per s", stats.sentKB, stats.receivedKB);
         panel.Add(Group::Online, "data rate", value);
-        snprintf(value, sizeof(value), "frame %llu  %llu good checks", static_cast<unsigned long long>(stats.goodHash),
-            static_cast<unsigned long long>(stats.goodChecks));
+        snprintf(value, sizeof(value), "frame %llu  %llu good checks  %llu repaired",
+            static_cast<unsigned long long>(stats.goodHash), static_cast<unsigned long long>(stats.goodChecks),
+            static_cast<unsigned long long>(stats.resyncs));
         panel.Add(Group::Online, "hash", value);
     }
 

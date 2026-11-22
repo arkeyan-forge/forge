@@ -8,7 +8,7 @@
 
 namespace netplay
 {
-    inline constexpr uint16_t ProtocolVersion = 1;
+    inline constexpr uint16_t ProtocolVersion = 2;
     using Key = std::array<uint8_t, 16>;
     using Nonce = std::array<uint8_t, 16>;
     enum class PacketType : uint8_t
@@ -19,7 +19,11 @@ namespace netplay
         Ready,
         Frames,
         End,
-        Event
+        Event,
+        BlockList,
+        BlockData,
+        BlockRequest,
+        RepairResult
     };
     enum class EndReason : uint8_t
     {
@@ -74,6 +78,27 @@ namespace netplay
         Pad pad{};
         uint64_t events = 0;
     };
+    enum class RepairStream : uint8_t
+    {
+        List = 1,
+        Data
+    };
+    enum class RepairPhase : uint8_t
+    {
+        Verify = 1,
+        Commit,
+        Ack
+    };
+    inline constexpr uint32_t RepairChunkBytes = 1024;
+    inline constexpr uint32_t MaxRepairBlocks = 64;
+    inline constexpr uint32_t MaxBlockListBytes = 4 + (1u << 20) * 16;
+    inline constexpr uint32_t MaxBlockDataBytes = 4 + MaxRepairBlocks * (8 + 65536);
+    struct RepairChunk
+    {
+        uint32_t total = 0, index = 0;
+        uint16_t size = 0;
+        std::array<uint8_t, RepairChunkBytes> bytes{};
+    };
     struct Packet
     {
         PacketType type = PacketType::Hello;
@@ -85,6 +110,9 @@ namespace netplay
         uint64_t eventAck = 0;
         PortalEvent event{};
         EndReason reason = EndReason::None;
+        RepairChunk chunk{};
+        RepairStream stream = RepairStream::List;
+        RepairPhase phase = RepairPhase::Verify;
     };
     struct Datagram
     {

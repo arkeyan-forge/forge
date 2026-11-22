@@ -2,6 +2,7 @@
 
 #include "netplay/protocol.h"
 #include "netplay/session_end.h"
+#include "netplay/state_hash.h"
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -33,9 +34,11 @@ namespace netplay
     {
         uint64_t roundTripMs = 0, minPingMs = 0, maxPingMs = 0, goodHash = 0, goodChecks = 0;
         uint64_t lost = 0, rejected = 0, waitedFrames = 0;
+        uint64_t resyncs = 0;
         double waitMs = 0, sentPerSecond = 0, receivedPerSecond = 0, sentKB = 0, receivedKB = 0;
         uint32_t delay = 0;
         bool peerMenuOpen = false;
+        bool repairing = false, backInSync = false, waiting = false;
         std::array<float, 60> pingMs{};
         size_t pingCount = 0;
     };
@@ -50,6 +53,7 @@ namespace netplay
         std::array<uint8_t, 16> slotPlayers{};
         std::function<bool(bool, const PortalEvent&)> prepareEvent;
         std::function<bool(const FrameEvents&)> applyEvents;
+        BlockSource* blocks = nullptr;
     };
     class Session
     {
@@ -78,6 +82,16 @@ namespace netplay
         void End(EndReason reason, uint64_t frame = 0, uint64_t local = 0, uint64_t remote = 0);
         void SetDelay(uint32_t delay);
         bool Solo(uint64_t frame, const Pad& local, InputFrame& pads, FrameEvents* events);
+        struct Repair;
+        void StartRepair();
+        void ReceiveRepair(const Packet& packet);
+        void SendRepair();
+        void PrepareRepair();
+        void CompleteRepair();
+        std::unique_ptr<Repair> m_repair;
+        std::array<uint64_t, 2> m_repairTimes{};
+        uint64_t m_repairAttempts = 0, m_resyncs = 0, m_lastResync = 0;
+        bool m_waiting = false;
         struct Second
         {
             uint64_t stamp = UINT64_MAX, sent = 0, received = 0, sentBytes = 0, receivedBytes = 0;

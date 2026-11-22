@@ -26,9 +26,23 @@ namespace netplay
         uint64_t hash;
         bool operator==(const Block&) const = default;
     };
+    class BlockSource
+    {
+    public:
+        virtual ~BlockSource() = default;
+        virtual std::span<const Block> ListBlocks() = 0;
+        // Bytes are packed in address order, excluding the same ranges as the hash.
+        virtual bool ReadBlock(size_t index, std::vector<uint8_t>& bytes) = 0;
+        virtual bool WriteBlock(size_t index, std::span<const uint8_t> bytes) = 0;
+        virtual uint64_t TotalHash() = 0;
+    };
     inline constexpr uint64_t HashSeed = 0x6A09E667F3BCC909ull;
     uint64_t Mix(uint64_t hash, uint64_t word);
     uint64_t HashBytes(std::span<const uint8_t> bytes, uint64_t address, std::span<const Range> skips);
+    void PackBlock(
+        std::span<const uint8_t> memory, uint32_t address, std::span<const Range> skips, std::vector<uint8_t>& bytes);
+    bool ApplyBlock(
+        std::span<uint8_t> memory, uint32_t address, std::span<const Range> skips, std::span<const uint8_t> bytes);
     void HashAllocation(std::span<const uint8_t> bytes, uint32_t address, Heap heap, std::span<const Range> skips,
         std::vector<Block>& blocks, uint32_t blockBytes = 0x10000);
     // A decimal count in [min, max] (a power of two when asked): the probe's block size and sampling period.

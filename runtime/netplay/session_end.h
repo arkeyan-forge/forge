@@ -10,7 +10,8 @@ namespace netplay
     inline bool ContinueSolo(bool established, EndReason reason, bool leftLocally)
     {
         return established && !leftLocally &&
-               (reason == EndReason::Quit || reason == EndReason::Timeout || reason == EndReason::Transport);
+               (reason == EndReason::Quit || reason == EndReason::Timeout || reason == EndReason::Transport ||
+                   reason == EndReason::Desync);
     }
 
     class SavePolicy
@@ -86,7 +87,7 @@ namespace netplay
         {
         case EndReason::Quit: return "The other player left the game";
         case EndReason::Timeout: return "The other player stopped responding";
-        case EndReason::Desync: return "The games went out of sync";
+        case EndReason::Desync: return "The games went out of sync. Both players continue alone.";
         case EndReason::Transport: return "The connection was lost";
         case EndReason::Invalid: return "The session received invalid data";
         default: return "The online session was refused";

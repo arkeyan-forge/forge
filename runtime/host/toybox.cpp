@@ -741,9 +741,10 @@ namespace
     void Present()
     {
         toybox::Model& model = M();
+        const auto online = netplay::SessionStatus();
         bool visible = (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues()) ||
                        model.open || !model.toast.empty() || !model.fps.empty() || gamemenu::Current().debugScreen ||
-                       (netplay::Online() && netplay::SessionStatus().peerMenuOpen);
+                       (netplay::Online() && (online.peerMenuOpen || online.backInSync));
         if (!visible)
         {
             if (g_overlayShown)
@@ -1349,11 +1350,13 @@ void ToyboxUpdate()
     RunScript();
     toybox::Model& model = M();
     netplay::SetMenuOpen(model.open && (MenuScreen(model) || model.fromMenu));
-    static bool peerMenu = false;
-    const bool peerMenuNow = netplay::Online() && netplay::SessionStatus().peerMenuOpen;
-    if (peerMenuNow != peerMenu)
+    static unsigned onlineNotice = 0;
+    const auto online = netplay::SessionStatus();
+    const unsigned noticeNow =
+        netplay::Online() ? unsigned(online.peerMenuOpen) | (unsigned(online.backInSync) << 1) : 0;
+    if (noticeNow != onlineNotice)
     {
-        peerMenu = peerMenuNow;
+        onlineNotice = noticeNow;
         model.Touch();
     }
     if (netplay::Online() && model.open && model.screen == Screen::Menu)

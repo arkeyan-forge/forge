@@ -54,6 +54,7 @@ namespace netplay
             uint16_t port = 0;
             uint32_t delay = 0;
             std::string address, password, dump, error;
+            uint64_t testDesync = 0;
             EndReason errorReason = EndReason::Invalid;
 
             NetworkOptions()
@@ -118,6 +119,8 @@ namespace netplay
                     password = value;
                 if (const char* value = skyenv::Get("SKY_NETPLAY_DESYNC_DUMP"))
                     dump = value;
+                if (const char* value = skyenv::Get("SKY_NETPLAY_TEST_DESYNC"))
+                    testDesync = std::strtoull(value, nullptr, 10);
                 crossPlatform = is("SKY_NETPLAY_CROSS_PLATFORM", "1");
             }
         };
@@ -147,7 +150,10 @@ namespace netplay
             {
                 g_savePolicy.End(Hosting(), true, failure.reason, false);
                 PortalPeerLeft();
-                if (Hosting())
+                if (failure.reason == EndReason::Desync)
+                    snprintf(g_endMessage.data(), g_endMessage.size(), "%s%s", EndMessage(failure.reason),
+                        Hosting() ? "" : " Nothing will be saved.");
+                else if (Hosting())
                     snprintf(g_endMessage.data(), g_endMessage.size(), "%s left the game",
                         profiles::Current()[1].name.c_str());
                 else
@@ -247,7 +253,7 @@ namespace netplay
             }
         }
 
-        struct Probe
+        struct Probe : BlockSource
         {
             std::mutex mutex;
             Replay replay;
@@ -261,6 +267,8 @@ namespace netplay
             double totalMs = 0, maxMs = 0;
             std::vector<Range> skips, imageRanges;
             std::vector<Block> blocks;
+            std::vector<Range> repairRanges;
+            bool locatingBlocks = false;
 
             Probe()
             {
@@ -354,6 +362,7 @@ namespace netplay
                     config.slotPlayers = PortalOnlinePlayers();
                     config.prepareEvent = PortalPrepareOnline;
                     config.applyEvents = PortalApplyOnline;
+                    config.blocks = this;
                     config.ended = [](const SessionFailure& failure) {
                         // A desync is handled at its hash barrier, where the guest's block dump is still available.
                         if (failure.reason != EndReason::Desync)
@@ -375,7 +384,7 @@ namespace netplay
                 g_probe.store(this, std::memory_order_release);
             }
 
-            ~Probe() { Finish(); }
+            ~Probe() override { Finish(); }
 
             void Finish()
             {
@@ -473,7 +482,59 @@ namespace netplay
             void Allocation(uint32_t address, uint32_t size, Heap heap)
             {
                 const auto* bytes = static_cast<const uint8_t*>(g_memory.Translate(address));
+                const size_t first = blocks.size();
                 HashAllocation(std::span(bytes, size), address, heap, skips, blocks, uint32_t(blockBytes));
+                if (locatingBlocks)
+                    for (size_t i = first; i < blocks.size(); ++i)
+                    {
+                        const uint64_t at = blocks[i].address;
+                        const uint64_t end = std::min(uint64_t(address) + size, (at & ~(blockBytes - 1)) + blockBytes);
+                        repairRanges.push_back({ at, end });
+                    }
+            }
+
+            // SKY_NETPLAY_TEST_DESYNC=<frame> (a session test, SKY_NETPLAY_TEST=1): the guest flips one hashed byte at
+            // that frame's barrier, which the repair must put back before any guest code runs again.
+            void BreakOneBlock()
+            {
+                ListBlocks();
+                std::vector<uint8_t> bytes;
+                const size_t index = repairRanges.size() / 2;
+                if (repairRanges.empty() || !ReadBlock(index, bytes) || bytes.empty())
+                    return;
+                bytes[0] ^= 0x5A;
+                if (WriteBlock(index, bytes))
+                    fprintf(stderr, "[netplay] test: changed one byte at %08llx\n",
+                        static_cast<unsigned long long>(repairRanges[index].begin));
+            }
+
+            std::span<const Block> ListBlocks() override
+            {
+                // Extents come from the probe's allocations, never from a peer-supplied address or size.
+                repairRanges.clear();
+                locatingBlocks = true;
+                TotalHash();
+                locatingBlocks = false;
+                return blocks;
+            }
+
+            bool ReadBlock(size_t index, std::vector<uint8_t>& bytes) override
+            {
+                if (index >= repairRanges.size())
+                    return false;
+                const auto range = repairRanges[index];
+                const auto* memory = static_cast<const uint8_t*>(g_memory.Translate(uint32_t(range.begin)));
+                PackBlock({ memory, size_t(range.end - range.begin) }, uint32_t(range.begin), skips, bytes);
+                return true;
+            }
+
+            bool WriteBlock(size_t index, std::span<const uint8_t> bytes) override
+            {
+                if (index >= repairRanges.size())
+                    return false;
+                const auto range = repairRanges[index];
+                auto* memory = static_cast<uint8_t*>(g_memory.Translate(uint32_t(range.begin)));
+                return ApplyBlock({ memory, size_t(range.end - range.begin) }, uint32_t(range.begin), skips, bytes);
             }
 
             void Scan(const GuestHeap& heap, Heap kind, uint32_t begin)
@@ -538,7 +599,7 @@ namespace netplay
                 ExitSession(failure);
             }
 
-            uint64_t TotalHash()
+            uint64_t TotalHash() override
             {
                 blocks.clear();
                 Scan(g_virtualHeap4K, Heap::Virtual4K, 0x00010000);
@@ -562,6 +623,8 @@ namespace netplay
                 if (!networkHash && !fileHash)
                     return;
                 const auto start = std::chrono::steady_clock::now();
+                if (networkHash && !Hosting() && Network().testDesync != 0 && frames == Network().testDesync)
+                    BreakOneBlock();
                 const uint64_t total = TotalHash();
                 if (fileHash)
                 {

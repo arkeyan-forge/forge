@@ -58,9 +58,12 @@ loops) as yield points; the step-0 probe finds any loop that hangs.
 
 ## 4. Desyncs, input delay, rollback
 - **Desync detection**: every 30 frames, each PC hashes the game's state (the guest heaps, without GPU-written memory and
-  audio buffers; a fast hash, under a millisecond) and sends it; a mismatch stops the session at once with a clear
-  message to both players and, with a debug switch, a dump of the frame's state on both sides for a diff (the tool that
-  finds a desync's cause).
+  audio buffers) and sends it. On a mismatch both games hold that checkpoint while the guest sends its block hashes.
+  With identical layouts and at most 64 different blocks, the host supplies their hashed bytes and both verify the
+  repaired total. Success resumes the session with **Back in sync** for two seconds. A changed layout, too many blocks,
+  an unequal final total, five seconds without completing repair or a third repair within sixty seconds ends online
+  play: both continue alone; the host can save, the guest cannot. The optional desync block dump remains available on
+  failure. See step 4 for the transfer and validation rules.
 - **Input delay**: inputs are sent for frame N + D; D = 2 frames at 30 FPS (67 ms) by default, chosen at the start from
   the measured round trip (D = ceil(RTT / 2 / frame) + 1), shown in the lobby. A co-op platformer with a shared camera
   hides 60-100 ms well.
@@ -426,7 +429,8 @@ ends the session after fifteen seconds. Normal play adds no frame logs or frame 
 | `SKY_NETPLAY_PASSWORD=<text>` | optional shared password used to derive packet keys |
 | `SKY_NETPLAY_DELAY=<frames>` | 1–8; the host's override wins; otherwise five ping/pong probes select D = clamp(ceil(RTT / 2 / frame time) + 1, 1, 8), using the minimum measured round trip |
 | `SKY_NETPLAY_CROSS_PLATFORM=1` | both peers must opt in to allow different OS/CPU identities |
-| `SKY_NETPLAY_DESYNC_DUMP=<file>` | write the stopped checkpoint's blocks as a `SKYBLK01` sidecar before logging the desync and exiting |
+| `SKY_NETPLAY_TEST_DESYNC=<frame>` | session tests only (removed unless `SKY_NETPLAY_TEST=1`): the guest flips one hashed byte at that checkpoint's barrier (a multiple of 30), before hashing, for the repair to put back |
+| `SKY_NETPLAY_DESYNC_DUMP=<file>` | on failed repair, write the held checkpoint's blocks as a `SKYBLK01` sidecar before continuing solo |
 
 [V] Startup rejects HOST together with JOIN, record or replay, and requires all three of
 `SKY_NETPLAY_DETERMINISTIC=1`, `SKY_NETPLAY_DELIVERY=frame` and `SKY_NETPLAY_SCHEDULE=cooperative`.
@@ -434,11 +438,11 @@ The hello checks session protocol version, game id, the decrypted/decompressed e
 (using the same `Sha256Hex` as the loader), runtime version, OS/CPU and FPS limit. Each side supplies a fresh
 128-bit nonce. A mismatch is reported on both sides as `[netplay] session refused: <reason>`.
 Every thirtieth checkpoint uses the same total and block selection as `SKY_NETPLAY_HASH`, even without a hash
-output file. Both peers wait for that checkpoint's hash before progressing, so a mismatch stops both at that frame
-and logs its frame, local hash and remote hash. Dumps can be compared with
+output file. Both peers wait for that checkpoint's hash before progressing. A mismatch holds both at that frame for
+step 4's repair; a failed repair logs its frame, local hash and remote hash. Dumps can be compared with
 `python3 -I tools/netplay/hash_diff.py <host-dump> <join-dump>`. Quits, refusals, timeouts and desyncs send an end
-packet repeatedly when possible. Step 3 replaces the original immediate session exit with an end overlay and the
-runtime's normal quit path.
+packet repeatedly when possible (a desync only after repair fails). Step 3 adds the end overlay and solo continuation;
+step 4 extends continuation to failed repairs.
 
 [V] All integer fields are little-endian. The original step-1 format below was bounded to 512 bytes, with packets
 at most 280 bytes; step 3 extends frames and adds the reliable event channel:
@@ -541,14 +545,15 @@ Figure writes remain enabled. Local session copies are flushed to their source f
 are retargeted without lifting the figures; later solo writes go directly to those sources. Finalization retries any
 copy whose handoff failed.
 
-Refusal, desync and a local leave keep the existing four-second end screen/quit path (the menu's confirmed local
-leave posts the normal quit event directly). A desync still parks the cooperative guest at the hash barrier, suspends
-its watchdog and writes a requested block dump; neither divergent game continues. The host can present that end
-screen independently of guest flips.
+Refusal and a local leave keep the existing four-second end screen/quit path (the menu's confirmed local leave posts
+the normal quit event directly). A desync holds the cooperative guest at the hash barrier with its watchdog suspended
+while step 4 attempts repair. Failed repair writes the requested block dump and releases both games into solo play.
+The end notice says **The games went out of sync. Both players continue alone.** The guest also sees **Nothing will
+be saved.** The same persistent title-save suppression and figure handoff used for a remote departure apply.
 
 Every session end writes `<SKY_SAVE_DIR>/online-ended.txt` as `reason=<code>`, including solo continuation: **quit**
-for a peer's leave, **timeout** for a timeout or lost connection. Startup refusal and fatal codes remain `protocol`,
-`game`, `image`, `runtime`, `platform`, `fps`, `seats`, `desync`, `transport` and `invalid`. Setup removes a stale end
+for a peer's leave, **timeout** for a timeout or lost connection, **desync** for a failed repair. Startup refusal and
+other end codes remain `protocol`, `game`, `image`, `runtime`, `platform`, `fps`, `seats`, `transport` and `invalid`. Setup removes a stale end
 marker. In solo F3, **Play online** confirms before writing `<save dir>/open-online.txt` (the game id and newline)
 and posting the normal quit event, so the launcher can open this game's Online page.
 
@@ -572,6 +577,66 @@ lossy transport does not need real sockets. This step does not transfer saves or
 integrate router mapping or build launcher UI. The determinism residue from step 0c still needs the game runs
 described there. Both games must use this session implementation; the extended frame layout does not interoperate
 with earlier frame layouts.
+
+## Step 4: repairing a short desync
+
+Protocol version **2** adds four authenticated messages. Each includes the checkpoint frame, so delayed packets from
+an earlier repair cannot change a later one. The existing tag, sequence window, exact length checks and 1200-byte
+datagram ceiling apply to all four.
+
+| Message | Payload, little-endian |
+|---|---|
+| BlockList | frame (8), total stream bytes (4), chunk index (4), chunk length (2), up to 1024 bytes |
+| BlockData | same chunk envelope as BlockList |
+| BlockRequest | frame (8), stream (1: list or data), first chunk index (4), missing-chunk bitmap (8) |
+| RepairResult | frame (8), phase (1: verify, commit or acknowledge), total hash (8) |
+
+The guest's list starts with its block count (u32), then `(address u32, heap u32, hash u64)` in the probe's deterministic
+order. The host checks every address and heap against its own list, including unchanged blocks. It sends a data stream containing a block count
+and, for each differing block, its local list index, packed byte count (both u32) and packed bytes. Only bytes outside
+the probe's sorted, merged `skips` are packed. The guest resolves each index through its own allocation extents, checks
+the packed length and preserves all excluded bytes. Neither a peer address nor a peer length selects a memory mapping.
+The runtime adapter uses the same virtual heaps, physical mappings and writable image ranges as `Probe::Allocation`.
+`BlockSource` lets session tests supply ordinary byte vectors instead of guest memory.
+
+The receiver requests missing chunks, up to four windows of 64 at once, and asks again only after a round trip
+(counted in session loops of 2 ms, so a test clock held still does not stall it): asking every loop would have the
+sender repeat each chunk dozens of times over a slow link. It marks each received chunk once. Requests and
+chunks may be lost, duplicated or reordered. The complete list is limited to 1,048,576 blocks; repair data is limited
+to 64 blocks of at most 64 KiB each. Stream sizes, chunk boundaries, final-chunk lengths, ordered unique data indices
+and whole-transfer lengths are checked before use. The complete data stream is parsed before the first block write.
+The guest recomputes its total and repeats **verify** until the host sends **commit** with the matching total. The guest
+acknowledges commit; the host holds its barrier until that acknowledgement. Commit and its acknowledgement remain
+repeatable after success, so losing either does not strand the peer. Successful repairs increment `SessionStats::resyncs`
+once on each side, and the F3 debug screen's hash row shows the count. **Back in sync** shows for two seconds in the
+upper-left notice area (where **in the menu** shows), once the game runs again: during the repair the picture holds,
+as for any wait.
+
+Each side allows two repair attempts in a sliding sixty-second window. A third attempt, a different layout, more than
+64 differing blocks, invalid block bytes, a still-different total or a repair taking five seconds sends repeated
+`End(Desync)`. Both games then use the established solo-continuation path: local input keeps its original seat, the
+departed pad disconnects, remote figures leave and local figure writes continue. Host title saves remain enabled;
+guest title saves stay disabled for the rest of the process. No repair buffers are created at ordinary checkpoints;
+the regular frame path retains its fixed buffers and the probe's reserved hash list.
+
+[V] Tests were written first and failed against the missing packet/source APIs.
+`ArkeyanNetplaySessionTest` covers one repaired block, loss/duplicates/reordering, the 64-block boundary with full
+64-KiB blocks, continuing through a later matching checkpoint, layout mismatch, 65 differing blocks, an unchanged
+bad total, a third repair within sixty seconds, expiry of that limit and a five-second stalled transfer. It checks
+both peers' repair counters and the two-second notice clock. `ArkeyanNetplayProtocolTest` round-trips all four
+messages and rejects truncated, oversized and incorrectly bounded chunks. `ArkeyanNetplaySetupTest` checks desync
+solo continuation, persistent guest save refusal, host saves and the end message. `ArkeyanNetplayTest` verifies packed
+byte repair across skip boundaries, preservation of excluded bytes and rejection of a short write before mutation.
+
+[V] macOS host tests: 95 of 95 pass. Live, two SSA instances on one Mac (loopback, offscreen, 30 FPS,
+`SKY_NETPLAY_TEST=1` on both, `SKY_NETPLAY_TEST_DESYNC=900` on the guest): the guest flipped one hashed byte at frame
+900; that checkpoint's totals differed in both hash logs, the repair ran at the barrier, and the 96 later checkpoints
+(930 to 2910) were equal on both sides; the session ran on until the host was stopped.
+
+[?] Not yet seen: a desync the game itself makes (the test flips a byte the game had not read yet), the notice on a
+real screen, two machines, other platforms. Repair copies hashed guest bytes; it cannot restore host objects (thread
+registers, kernel objects, GPU and audio state) or make a persistently nondeterministic game deterministic: such a
+desync comes back at the next checkpoints and ends in the solo path.
 
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one
