@@ -1,12 +1,14 @@
 #!/bin/bash
 # The mouse in the F3 menu, its Commands page and the Toy Box (docs/runtime/host/gamemenu.md, "Commands"; toybox_ux.md), through
 # the Toy Box's own script (SKY_TOYBOX_SCRIPT: move=, click=, rclick=, wheel=). Spyro's Adventure, 24 figures in a scratch
-# collection. F3 (the side panel); the pointer onto Settings (hover: the focus), a click (the page); nine wheel ticks down (the
-# focus to the FPS counter, the list scrolls), the pointer onto VSync then the FPS counter (each takes the focus), a click (the
-# counter goes on), a wheel tick up; a click on the rail's Controls; on the page the next page's button, the first page again,
-# a click on the Mouse row, the first (the switch goes on), a click on B's mouse cell, a right click (B gets the right button, X loses
-# it), Escape, F3; F6 opens the Toy Box, the pointer off the cards, then onto a card (it takes the focus), a click on it, three
-# wheel ticks down (the cursor moves a row each), F6 closes it. Coordinates: look.h's layout (docs/runtime/host/gamemenu.md).
+# collection. F3 (the side panel); the pointer onto Settings (hover: the focus), a click (the page); a wheel tick down
+# (the list scrolls, the focus stays), nine Down keys (the focus to the FPS counter), the pointer onto VSync then the
+# FPS counter (each takes the focus), a click (the counter goes on), a wheel tick up (the list scrolls, the focus
+# stays); a click on the rail's Controls; on the page the next page's button, the first page again, a click on the
+# Mouse row, the first (the switch goes on), a click on B's mouse cell, a right click (B gets the right button, X loses it), Escape, F3;
+# F6 opens the Toy Box, the pointer off the cards, then onto a card (it takes the focus), a click on it, three wheel
+# ticks down (the list scrolls, the focus stays), F6 closes it. Coordinates: look.h's layout
+# (docs/runtime/host/gamemenu.md).
 # Checks: the log lines, the focus after each scripted action, [ssa.input] mouse=1, mouse_b=Mouse Right, mouse_x=none, the
 # running game taking them; shots.
 #
@@ -32,12 +34,13 @@ rm -rf "${r:?}"; mkdir -p "$r/collection"
 for toy in $(seq 0 23); do
     "$make" --make "$r/collection/new_$toy.sky" "$toy" > /dev/null || { echo "FAIL: cannot make the dump of $toy" >&2; exit 2; }
 done
+printf '{ "format": 1, "sorts": { "game": "recent" } }\n' > "$r/collection/collection.json" # one untitled shelf
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 
 menu="F3:30,shot=menu:31,move=1000/380:31.5,shot=hover:32,click=1000/380:32.5,shot=settings:33"
-ticks=$(awk 'BEGIN { for (i = 0; i < 9; i++) printf ",wheel=down:%.1f", 33.2 + i * 0.1 }')
-menu="$menu$ticks,move=500/365:34.2,move=500/623:34.5,shot=settings_fps:34.8,click=500/623:35,wheel=up:35.3,click=116/245:35.6"
+downs=$(awk 'BEGIN { for (i = 0; i < 9; i++) printf ",Down:%.1f", 33.2 + i * 0.1 }')
+menu="$menu,wheel=down:33.1$downs,move=500/365:34.2,move=500/623:34.5,shot=settings_fps:34.8,click=500/623:35,wheel=up:35.3,click=116/245:35.6"
 page="click=1224/52:36,click=1180/52:36.3,click=500/155:36.6,shot=page:36.9,move=1146/507:37.2,click=1146/507:37.5"
 page="$page,shot=waitmouse:37.8,rclick=600/600:38.1,move=630/363:38.4,shot=mouse:38.7,Escape:39,F3:39.5"
 toybox="F6:41,shot=toybox:43,move=640/30:43.2,move=838/307:43.5,shot=card_hover:44,click=838/307:44.5,shot=card:45,wheel=down:46,wheel=down:46.5"
@@ -74,12 +77,15 @@ focus_after() {
 }
 focus_after move=1000/380 | grep -q 'menu row 4,.*hover menu=4$' || bad "the pointer moving onto Settings did not focus it"
 grep -q '^\[gamemenu\] settings opened' "$log" || bad "a click on Settings did not open the page"
-focus_after wheel=down | grep -q 'settings row 1,' || bad "a wheel tick did not move the Settings focus down"
+focus_after wheel=down | grep -q 'settings row 0, settings scroll [1-9]' ||
+    bad "a wheel tick did not scroll Settings, or moved its focus"
 focus_after move=500/365 | grep -q 'settings row 6,.*hover settings=6$' || bad "the pointer moving onto VSync did not focus it"
 focus_after move=500/623 | grep -q 'settings row 9,.*hover settings=9$' || bad "the pointer moving onto the FPS row did not focus it"
 grep -q '^\[gamemenu\] show_fps = 1' "$log" || bad "a click on the FPS counter row did not turn it on"
 focus_after click=500/623 | grep -q 'settings row 9,' || bad "the click did not keep the FPS counter row"
-focus_after wheel=up | grep -q 'settings row 8,' || bad "a wheel tick up did not move the focus up"
+kept=$(focus_after click=500/623 | sed -E 's/.*settings scroll ([0-9]+),.*/\1/')
+up=$(focus_after wheel=up | sed -E 's/.*settings row 9, settings scroll ([0-9]+),.*/\1/')
+[ -n "$up" ] && [ "$up" -lt "$kept" ] 2>/dev/null || bad "a wheel tick up did not scroll Settings up, or moved its focus ($kept, $up)"
 focus_after move=1146/507 | grep -q 'hover commands=8/2$' || bad "hover did not hit the Commands mouse cell"
 grep -q '^\[gamemenu\] commands opened' "$log" || bad "a click on the rail's Controls did not open the page"
 grep -q '^\[gamemenu\] mouse = 1' "$log" || bad "a click on the Mouse row did not turn the mouse on"
@@ -92,10 +98,10 @@ for line in mouse=1 "mouse_b=Mouse Right" mouse_x=none; do
 done
 focus_after move=838/307 | grep -q 'card 3, home grid 3 seat 0, hover card=3$' || bad "the pointer moving onto the fourth card did not focus it"
 clicked=$(focus_after click=838/307 | sed -E 's/.*card ([0-9]+),.*/\1/')
-scrolled=$(grep '^\[toybox\] script: focus:' "$log" | tail -1 | sed -E 's/.*card ([0-9]+),.*/\1/')
+scrolled=$(grep '^\[toybox\] script: focus:' "$log" | tail -1)
 focus_after click=838/307 | grep -q 'screen 0,' || bad "the Toy Box was not open for the card click"
 [ "$clicked" = 3 ] || bad "the click did not select the fourth card (card $clicked)"
-[ -n "$scrolled" ] && [ "$scrolled" -gt "$clicked" ] 2>/dev/null || bad "the wheel did not move down the list (card $scrolled)"
+echo "$scrolled" | grep -q 'shelf scroll [1-9][0-9]*, card 3,' || bad "the wheel did not scroll the shelf, or moved its focus"
 grep -E '^\[gamemenu\]|^\[input\] bindings|script: focus' "$log"
 for shot in menu hover settings settings_fps page waitmouse mouse toybox card_hover card scrolled; do
     [ -s "$r/m_$shot.png" ] || bad "missing screenshot: $shot"

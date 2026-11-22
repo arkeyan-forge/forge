@@ -123,7 +123,9 @@ collection::OnWheel(game, file); collection::SetOnWheel(game, file, on);  // the
 collection::GetWheelSkipped(game, seat);                                    // taken off: the recents do not bring it back
 Catalogue::Get().Read(game, toy, variant); VersionsFor(game, toy); KindIn / NameIn  // what a game makes of a figure (collection.md)
 collection::Group(list, GroupBy::Smart, OrderBy::Recent, "ssa");    // the shelf: one section, each figure once, then Unknown, Foreign
-collection::Shelf(list, Sort::Name, "ssa");                          // Group's shelf in the player's sort: Recent (default), Name, Level, Element, Game
+collection::Shelf(list, Sort::Game, "ssa");                          // the player's sort: Game (default), Element, Category: titled sections; Recent, Name, Level, Favorites: one shelf
+collection::Shelf(list, Sort::Game, "", "ssa");                      // no Foreign section (the launcher), the 4th argument's game first
+collection::GetSort("game"); collection::SetSort("game", SortId(sort)); // each app's saved sort ("game", "launcher"), in collection.json
 collection::SearchMatches("niveau 10 feu", card, "ssa");             // the smart search (search.h): names, elements, games, types, versions, levels, typos
 collection::LevelText(f, "ssa");                     // the card's level line: "Level 6", "Level 10 (15)", "New", "" (items)
 collection::StandardVariant(toy); collection::VersionCount(toy);   // the "base" entry's id (0: none) and the other versions: "Standard" is made under that id

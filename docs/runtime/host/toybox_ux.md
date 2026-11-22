@@ -53,9 +53,10 @@ Toy Box (game, 1280x720; 0.9.0: beside the rail)          Collection (Arkeyan La
 ┌ rail │ ON THE PORTAL  Choose a place, then a figure   COLLECTION  14 figures       [+ Add a figure] [...]
 │ Toy  │ [Player 1][Player 2][Magic item][Adventure] [+ Add] PORTAL AT THE NEXT START [Spyro's Adventure v]  Click a seat...
 │ Box  │                                             [Manage][Player 1][Player 2][Magic item][Adventure]
-│ ...  │ FOR PLAYER 1 · 12 FIGURES      [Search....] [Filters] [Search........] [Element v] [Game v] [Type v]
-│      │ [card][card][card][card][card][card]       (Choose a figure for Player 1 · Cancel)  while choosing
-│ PM   │ ...                                          Not for this game (2) [card]... (Arkeyan Launcher only)
+│ ...  │ FOR PLAYER 1 · 12 FIGURES  [Search...] [Sort: Game]   [Search................] [Sort: Game v]
+│      │ SKYLANDERS: GIANTS · 4                     (Choose a figure for Player 1 · Cancel)  while choosing
+│      │ [card][card][card][card]                   SKYLANDERS: GIANTS  4 figures
+│ PM   │ SKYLANDERS: SPYRO'S ADVENTURE · 8 ...      [card][card][card][card]   (greyed: not for this game)
 └      │ A Put on Player 1  X Details  Y Search  LB RB Place  B Back
 ```
 
@@ -75,6 +76,12 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
   onto that seat and Add a figure closes; one the seat refuses stays off it, with the usual "Put it on ..." offer. Add a
   figure opened any other way puts nothing on a seat. A right click on an empty seat keeps its options. Unit check:
   `runtime/host/toybox/mouse_test.cpp` (`tools/regress/f3mouse_unit.py`).
+- **The mouse wheel** (2026-11-22): it scrolls, it never moves the focus. On the shelf, Add a figure and the wheel's
+  list a tick scrolls one row of cards; in the F3 menu's Settings one row, in
+  Achievements one row of cards; the panel and Controls do not scroll. The focus may leave the view: the next key press
+  or the pointer moving onto a row brings the view back to it. Unit checks: `look_test.cpp` (`WheelScroll`),
+  `mouse_test.cpp` (`Grid::ScrollRows`, a still pointer after a scroll); in a game:
+  `tools/regress/f3mouse.sh`.
 - **Drag and drop** (both apps): a card dragged onto a seat goes on it; a seat's figure dragged onto the shelf is taken
   off. In the game also: a seat's figure dragged onto an empty seat moves there, onto a taken player seat it asks "Swap
   players?". A drag starts past 6 canvas pixels, so clicks stay clicks; Escape cancels it. While dragging, the seats
@@ -113,6 +120,9 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
   refreshes the Versions column (it showed the previous toy's). The section chips above Add a figure and the wheel's
   list wrap onto as many rows as they need, so every section shows (Imaginators has about fourteen); the list starts
   below the last row (`toybox::strip::Wrap`, `ArkeyanToyboxStripTest`).
+  A section chip (in every list) puts its section's header at the top, as LB / RB do (`Grid::ShowSection`,
+  `host/toybox/grid.h`; the last sections stop where the list ends); moving the cursor scrolls the least that shows it
+  (`Grid::Fix`). Checked by `ArkeyanToyboxGridTest` and `runtime/host/toybox/mouse_test.cpp`.
   **Upgrades** (2026-10-26): the Edit sheet's "Upgrades" row (count, e.g. "4 of 11") opens its own screen
   (`Screen::Upgrades`, `DrawUpgrades`, `RunUpgrades`): the toy's upgrades by name from `collection::Upgrades`, the basic
   ones (with the Soul Gem and the Wow Pow under them) beside the two paths, the chosen path lit and the other greyed;
@@ -127,18 +137,33 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
 
 ## 3. The shelf: order, filters, search
 
-One order everywhere, `collection::Group(list, GroupBy::Smart, OrderBy::Recent, game)` (section `Kind::Shelf`):
+`collection::Shelf(list, sort, game, first)` cuts the shelf (2026-11-22). **Game** (the default), **Element** and
+**Category** give titled sections, each with its count and none foldable; **Recent**, **Name**, **Level** and
+**Favorites** stay one untitled shelf. Inside a section, and in Recent, the order is `Group`'s
+(`GroupBy::Smart, OrderBy::Recent`):
 
 1. **favourites** (a star on the card), newest use first;
 2. then the figures **this game took**, newest first (`Figure::LastUsedIn`);
 3. then the rest **by element** in the menus' order (Magic, Earth, Water, Air, Fire, Life, Undead, Tech, Light, Dark),
    then by category (items, adventure packs...); a character's variants next to it (Spyro, then Legendary Spyro).
 
+| Sort | Sections |
+|---|---|
+| Game | a game per section, the running (launcher: chosen) game's first, then the release order; a re-release goes to the game it came out with (`Catalogue::Origin`, as the starter banner) |
+| Element | the ten elements in the menus' order, then the toys without one, by family |
+| Category | nine families: Skylanders (Giants, swappers, Trap Masters, SuperChargers, Senseis included), Minis, Creation Crystals, Traps, Vehicles, Magic Items, Adventure Packs, Trophies, Villains |
+| Recent | none: the order above |
+| Name | none: A to Z, accents ignored |
+| Level | none: highest first, toys with no level last, ties by name |
+| Favorites | none: favourites first, then the Recent order |
+
+An empty section is not shown. A swapper is one card in every sort, placed as its top. In the Toy Box the `+ Add a
+figure` card follows the last known figure.
+
 **Every figure shows once**; what is on the portal is marked (P1, P2, "On" for the shared seats) and shown in its seat
-tile, not repeated. After the shelf: **Unknown toys** (a type the catalogue lacks), then, **in Arkeyan Launcher only**, **Not for this game**
-(titled and greyed), so a player who owns Giants figures does not think they are lost. **The in-game Toy Box hides what its game
-cannot read** (a Swap Force figure in Giants; 2026-10-28, `Model::BuildList`): the figures stay in the collection and show in
-Arkeyan Launcher, whose Filters row **Works in** keeps the toys one game reads. A figure the game does not tell apart shows as the game
+tile, not repeated. **Unknown toys** (a type the catalogue lacks) come last. **The in-game Toy Box hides what its game
+cannot read** (a Swap Force figure in Giants; 2026-10-28, `Model::BuildList`); **Arkeyan Launcher greys it in its
+section**, and its **Works in** filter keeps the toys one game reads. A figure the game does not tell apart shows as the game
 sees it (a LightCore Warnado in Giants is "Warnado"; [collection.md](collection.md#what-each-game-reads-compatibility-2026-10-28)).
 **Add a figure**: the plain toy is one row, named as the toy is (no "Standard" row), then only the versions that game tells apart.
 
@@ -146,28 +171,25 @@ Filters:
 - **Toy Box**: the chosen seat decides the family (a player seat shows characters, Magic item shows items...); the bar
   below.
 - **Launcher**: the same bar, below.
-- The View menu (group by element, game, category, series, level, name; order; show) is gone from both screens: the
-  shelf's order serves play, the bar serves browsing. `collection::GetView`/`SetView` and the other `GroupBy` values
-  stay in the library (tested, stored in `collection.json`), unused by the screens.
+- The View menu (group by element, game, category, series, level, name; order; show) is gone from both screens.
+  `collection::GetView`/`SetView` and the `GroupBy` values stay in the library (tested, stored in `collection.json`),
+  unused by the screens: the sort alone gives the sections.
 
-### Search, filters and sort (2026-10-27, the user's four wishes and "lighter")
+### Search, filters and sort (2026-10-27; one Sort and filter button, 2026-11-22)
 
-**One bar, the same words and order in both apps**: the search field first and wide, then one **Filters** button.
-Nothing else sits on the line (the Element, Game and Type menus are gone from it).
+**One bar, the same words and order in both apps**: the search field first and wide, then one **Sort and filter**
+button that says the sort and how many filters are on ("Sort: Element (2)").
 
 | | Toy Box | Launcher |
 |---|---|---|
 | Field | a field with a magnifier and "Name, element, game, level..." / "Nom, élément, jeu, niveau..." (the pad's **Y** glyph, F3 on a keyboard, shown inside it); **typing on a keyboard goes straight into it**, Y or a click opens the on-screen keyboard; an x clears it | an ImGui field, same hint; Y, F3 or a click focus it |
-| Filters | a button (**Start** on the pad, F4, or a click): "Filters · 2" when two are on | a button with the same label, opening a popup |
-| The panel | four rows, **Element, Game, Type, Sort by**, then **Clear all**; Up/Down: row; Left/Right (or A, or a click on an arrow): the value, "All..." first; B or Start closes; a click outside closes | the same rows, each a drop-down; the panel closes on a click outside or B |
-| Tags | under the bar, only when something is on: one small tag per filter with an x ("Fire x", "Swap Force x", "Sort: Name x"); then **Clear all** and the count at the right ("12 figures", "1 figure"; French "12 figurines", "0 figurine"); no "+ Add a figure" card among results; nothing found: "No figure matches" | the same, tags are focusable (A removes) |
+| The button | **Start** on the pad, F4, or a click | a click or A; its tooltip "Sort and filter" |
+| The panel | **Sort by**, a divider, **Show only** over **Element, Works in, Type**, then **Clear all**; Up/Down: row; Left/Right (or A, or a click on an arrow): the value, a filter's "All..." first; B or Start closes; a click outside closes | the same rows, each a drop-down; the panel closes on a click outside or B |
+| Tags | under the bar, only when a search or a filter is on: one small tag per filter with an x ("Fire x", "Works in Swap Force x"); then **Clear all** and the count at the right ("12 figures", "1 figure"; French "12 figurines", "0 figurine"); no "+ Add a figure" card among results; nothing found: "No figure matches" | the same, tags are focusable (A removes) |
 | Pad | Start: the panel; B clears a typed search, else closes the Toy Box; tags have no pad focus (Clear all or the panel) | tags and Clear all are in the D-pad's reach (Up from the shelf: the bar) |
 
-**Sort** (`collection::Sort`, in the panel as **Sort by**): **Recent** (the default and today's shelf: favourites first,
-then what the game took last, then by element), **Name** (A to Z, accents ignored), **Level** (highest first, toys with
-no level last), **Element** (the menus' order), **Game** (the catalogue's order, SSA first). The other four ignore
-favourites; ties by name. Sort is not a filter, but it shows as a tag when it is not Recent, and Clear all resets it.
-A swapper is one card in every order.
+**The sort is saved per app** (`collection::GetSort`/`SetSort`: `collection.json`'s `sorts`, "game" for the six Toy
+Boxes, "launcher"), across restarts and openings. It is not a filter: no tag, and Clear all keeps it.
 
 **The smart search** is `collection::SearchMatches(query, card, game)` (`search.h`, one function, unit-tested in
 `ArkeyanCollectionTest`; the Toy Box and the launcher both call it). The query is words, **all** must match; case and accents
@@ -185,7 +207,8 @@ do not matter ("Étincelle" = "etincelle"). Both languages are always understood
 A swapper matches on either half (its top's name, the bottom's name, its toy types, both halves' versions); the card
 stays one. "magic item" and "swap force" are read as the toy type and the game, not as the element Magic.
 
-Checked: `ArkeyanCollectionTest` (`TestSearch`: ~150 EN/FR, accent, typo, level, swapper and sort cases),
+Checked: `ArkeyanCollectionTest` (`TestSearch`: ~150 EN/FR, accent, typo, level, swapper and sort cases;
+`TestShelfSections`: the sections and the saved sort),
 `tools/regress/search_toybox.sh` (Swap Force through the real game: typing, the panel by pad, a tag's x, Clear all, with
 screenshots EN/FR; the log's "[toybox] shelf: N found for ..." lines give each step's count) and Arkeyan Launcher's
 `ArkeyanLauncherTest` (the shelf's search and sort through `CollectionModel::Shelf`; screenshots `47-` to `52-`).
@@ -416,16 +439,15 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 | In game | hold View: wheel; View + Y: Toy Box | hold Tab: wheel; F6 (or tap Tab): Toy Box; F7: add the folder's next figure; F8: clear the portal (the three are editable, below) | — |
 | Toy Box: seats (top row) | left/right: seat (it is chosen at once), then Add a figure and Manage (one above the other: up/down between them); A: choose for it; X: options, on an empty seat Add a figure for it; down: the starter pack's banner when it shows, else the bar; B: close | arrows, Enter, Delete: take off, Tab / Shift+Tab: next / previous row, Escape | click a seat; click an empty seat's +: Add a figure for it; double click: take its figure off (as Delete; not a real toy), an empty one: choose for it; right click: options; drag its figure onto the shelf or another seat |
 | Toy Box: starter pack's banner | A: create the pack; up: the seats; down: the bar; LB/RB: other seat; B: close | arrows, Enter, Tab, Escape | click the button |
-| Toy Box: bar (search, Filters) | left/right: the search field, Filters; A: the on-screen keyboard / the Filters panel; up: the banner when it shows, else the seats; down: the figures; LB/RB: other seat; B: clear the search, else close | arrows, Enter, Tab, Escape; typing goes into the field from any row | click the field, Filters, a tag's x |
-| Toy Box: figures | d-pad: move (left/right stay in the row; up/down keep the column); up from the first row: the bar; A: put on the seat; X: the figure; LB/RB: other seat; Y: search; Start: Filters; B: close | arrows, Enter, F2, Page Up/Down, F3, F4: Filters, Tab, type: search, Escape: clear / close | click: focus; double click: place; drag onto a seat: place there; right click: the figure; wheel: scroll |
+| Toy Box: bar (search, Sort and filter) | left/right: the search field, Sort and filter; A: the on-screen keyboard / the panel; up: the banner when it shows, else the seats; down: the figures; LB/RB: other seat; B: clear the search, else close | arrows, Enter, Tab, Escape; typing goes into the field from any row | click the field, Sort and filter, a tag's x |
+| Toy Box: figures | d-pad: move (left/right stay in the row; up/down keep the column); up from the first row: the bar; A: put on the seat; X: the figure; LB/RB: other seat; Y: search; Start: Sort and filter; B: close | arrows, Enter, F2, Page Up/Down, F3, F4: Sort and filter, Tab, type: search, Escape: clear / close | click: focus; double click: place; drag onto a seat: place there; right click: the figure; wheel: scroll |
 | Figure | up/down: action; A: do it; B: back (out of More first); LB/RB: previous/next figure | arrows, Enter, Escape | click |
 | Wheel | either stick: aim; release or A: swap; B: cancel; Y: list; LB/RB: other seat; hold X: pin | arrows, the keys bound to either stick (WASD, IJKL) or 1-8; release Tab or Enter; Escape | point, click |
-| Launcher Collection | d-pad (down from a seat to the shelf, up from its first row to the seats, the bar's search, Filters and tags on the way), A, B: stop choosing / clear the search, X: the sheet (on a seat: take it off; an empty seat: Add a figure for it), Y: the search, LB/RB: choose for the other seat | Tab, arrows, Enter, Delete (seat), F2, F3, Page Up/Down, Escape | click, click an empty seat's +: Add a figure for it, right click, drag a card onto a seat or a seat onto the shelf |
+| Launcher Collection | d-pad (down from a seat to the shelf, up from its first row to the seats, the bar's search, Sort and filter and tags on the way), A, B: stop choosing / clear the search, X: the sheet (on a seat: take it off; an empty seat: Add a figure for it), Y: the search, LB/RB: choose for the other seat | Tab, arrows, Enter, Delete (seat), F2, F3, Page Up/Down, Escape | click, click an empty seat's +: Add a figure for it, right click, drag a card onto a seat or a seat onto the shelf |
 
 - **Mouse everywhere in the Toy Box and the F3 menu** (2026-11-02): every card, seat, button, row and field is a click target, and
-  the one under the pointer gets a soft outline. The wheel scrolls the lists (Edit stats: steps; the F3 menu: moves the focus).
-  In the figure lists (the shelf, Add a figure, the wheel's list) a tick moves the view one row and leaves the focus;
-  once drawn, the card now under a still pointer takes the focus (#115; unit check: `runtime/host/toybox/mouse_test.cpp`).
+  the one under the pointer gets a soft outline. The wheel scrolls the lists without moving the focus (Edit stats:
+  steps), see "The mouse wheel" above.
   Script checks: `SKY_TOYBOX_SCRIPT` `move=x/y`, `wheel=up|down`, `drag=x1/y1/x2/y2` beside `click=x/y` (`tools/regress/f3mouse.sh`;
   [gamemenu.md](gamemenu.md)).
 - **No system on-screen keyboard** (#17): opening the Toy Box or the F3 menu starts SDL's text input so a real
@@ -436,7 +458,7 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 ### Navigation (2026-11-02, the owner's Xbox-style spec)
 
 - **Rows, top to bottom**: the seats (then Add a figure and Manage); the starter pack's banner, while it is offered
-  (`Row::Banner`); the bar (the search field, Filters); the grid. The Toy Box still opens on the grid. Up and Down
+  (`Row::Banner`); the bar (the search field, Sort and filter); the grid. The Toy Box still opens on the grid. Up and Down
   change row; each row **remembers its place** (`Model::column`, `barColumn`, `list.cursor`) and is entered there; a row not
   visited yet, or the grid rebuilt for another seat while the focus was above it, takes the thing **nearest under the focus**
   (the drawing records each row's x extents: `seatSpans`, `barSpans`, `gridSpans`). In the grid Left and Right stay in the row,
@@ -459,7 +481,13 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
   Back); a key held before it opened stays the game's (Backspace held for the wheel: its release swaps). `toybox::KeyMask`
   (`runtime/host/toybox/key_mask.h`, checked by `ArkeyanToyboxKeyMaskTest`), applied by `ToyboxKeyboardState`.
 - **Buttons whole**: "+ Add" and "Manage" are as wide as their longer label in the game's language; the seats share the rest
-  (five in Trap Team, six in SuperChargers and seven in Imaginators: a smaller picture). On Add a figure the "+N" versions badge sits on the card's second line, so the name keeps the card's width.
+  (five in Trap Team: a smaller picture). **Two seat rows** (launcher #190) when the widest seat label would be cut on one
+  (SuperChargers, Imaginators; a long French label too): the players' seats first (players and vehicles), then the
+  shared ones (item, adventure, trap), every seat as wide as on the first row so that they line up; Add a figure and Manage
+  stay at the first row's end and the shelf starts under the second row. Measured in the game's language, never keyed to a
+  game (`runtime/host/toybox/seat_rows.h`). Only the drawing order changes: seat indices, LB/RB and the session file keep
+  the game's order. With a pad Left and Right stay in a seat row (Right from the first row's end goes to the buttons),
+  Up and Down move between the two rows on the seat nearest under the focus, then on to the bar. On Add a figure the "+N" versions badge sits on the card's second line, so the name keeps the card's width.
 - Proof: `ArkeyanToyboxLookTest` (the moves), `tools/regress/toybox_nav.sh` (the real game: 32 focus checks, a held key among them, and 12 shots; its
   places follow the 0.9.0 layout, six columns); the before/after screens in English and French: `private/toybox-pass/`
   (`INDEX.md`, not in git); the 0.9.0 screens: `private/runs/overlay/` (not in git).
@@ -487,7 +515,7 @@ and covered by `ArkeyanToyboxPadBindingsTest`; shared settings and warnings by `
 ## 9. Mapping to the collection API (`collection_api.md`)
 
 Seats (`Game::seats`), ownership and the tidy (`UntouchedStarter`, `Tidy`), recents (`Touch`, `Recent`,
-`LastUsedIn`), the shelf (`Group`, `Section::Kind::Shelf`), the card's level (`LevelText`, `HasProgress`), trash,
+`LastUsedIn`), the shelf (`Shelf`, `GetSort`/`SetSort`), the card's level (`LevelText`, `HasProgress`), trash,
 duplicate, reset, kept backups, import, export, the wheel's places (`GetWheel`/`SetWheel`), pictures (`PortraitPath`,
 `GameKindPicturePath`, `KindGlyph`, `GeneratedIcon`), the portal at a glance (`PortalOverview`). The launcher's own
 model adds `ShelfFilter` and `CollectionModel::Shelf` (the bar's filters and "choosing for a seat", tested by
@@ -545,8 +573,8 @@ which does not pause; one card per figure; a real portal is read-only with "Save
 
 | Part | Where |
 |---|---|
-| The shelf, the card's level, the family pictures and marks | `runtime/host/collection/collection.*` (`Group` Smart, `LevelText`, `HasProgress`), `icons.*` (`GameKindPicturePath`, `KindGlyph`), `catalogue.*` (`kind_pictures`), `resources/collection/catalogue.json` (SSA's family pictures; Giants' runtime), `art/game_art.cpp` (extracts them) |
-| Toy Box logic | `runtime/host/toybox/model.*`: the top row (seats, Add a figure, Manage), the grid (one shelf section, untitled; the fold on its own row), LB/RB = other seat, Y = search (`OpenSearch`), the Figure page's main actions, More, Details |
+| The shelf, the card's level, the family pictures and marks | `runtime/host/collection/search.*` (`Shelf`), `collection.*` (`Group` Smart, `LevelText`, `HasProgress`), `icons.*` (`GameKindPicturePath`, `KindGlyph`), `catalogue.*` (`kind_pictures`), `resources/collection/catalogue.json` (SSA's family pictures; Giants' runtime), `art/game_art.cpp` (extracts them) |
+| Toy Box logic | `runtime/host/toybox/model.*`: the top row (seats, Add a figure, Manage), the grid (the sort's titled sections, or one untitled shelf), LB/RB = other seat, Y = search (`OpenSearch`), the Figure page's main actions, More, Details |
 | Toy Box look | `runtime/host/toybox/draw.cpp`: the seats row, `Card` (the shared card), the empty states, the wheel's level lines |
 | Launcher | Arkeyan Launcher `docs/collection_ui.md` |
 

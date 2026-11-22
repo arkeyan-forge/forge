@@ -181,6 +181,7 @@ namespace toybox
             tidied = collection::Tidy();
         if (int purged = PurgeTrash(30))
             fprintf(stderr, "[toybox] %d figure(s) deleted more than 30 days ago removed from the trash\n", purged);
+        sort = ParseSort(GetSort("game"));
         Reload();
         RefreshSeats(SDL_GetTicksNS());
     }
@@ -262,7 +263,8 @@ namespace toybox
         gridKnown = true;
         figureMore = figureDetails = false;
         BuildList();
-        // The first card that is not on the portal: favourites and recent come first, so "swap to the last one" is A.
+        // The first card that is not on the portal: favourites and recent lead each section, so "swap to the last one"
+        // is A.
         list.cursor = 0;
         for (size_t i = 0; i < list.cells.size(); i++)
         {
@@ -1492,7 +1494,7 @@ namespace toybox
             const Toy* toy = f.toy;
             return (filterElement < 0 || (toy != nullptr && int(toy->element) == filterElement)) &&
                    (filterCategory < 0 || (toy != nullptr && int(toy->category) == filterCategory)) &&
-                   (filterGame.empty() || (toy != nullptr && toy->game == filterGame));
+                   (filterGame.empty() || (toy != nullptr && Catalogue::Get().Accepts(filterGame, f.type)));
         };
         for (size_t i = 0; i < figures.size(); i++)
         {
@@ -1508,13 +1510,13 @@ namespace toybox
             shown.push_back(f);
             map.push_back(int(i));
         }
-        // The shelf, as in Arkeyan Launcher: every figure once; favourites first, then the ones this game took, newest first
-        // (Recent), or in the player's sort.
+        // The shelf, as in Arkeyan Launcher: every figure once, in the player's sort and its sections, the running game's
+        // first.
         std::vector<Section> sections = Shelf(shown, sort, game);
         shownCount = 0;
         for (const Section& section : sections)
             shownCount += int(section.items.size());
-        if (FiltersActive())
+        if (FiltersActive() || sort != DefaultSort)
             fprintf(stderr, "[toybox] shelf: %d found for \"%s\" (element %d, game %s, type %d, sort %s)\n", shownCount,
                 search.c_str(), filterElement, filterGame.c_str(), filterCategory, SortId(sort));
 
@@ -1558,34 +1560,30 @@ namespace toybox
                 push({ Cell::Kind::Add, -1, 0, 0, 0, Element::Count });
             grid.rows++;
         };
-        bool shelf = false;
-        for (const Section& section : sections)
+        // The + card follows the last known figure, before the unknown toys.
+        const size_t known = size_t(std::count_if(sections.begin(), sections.end(), [](const Section& section) {
+            return section.kind != Section::Kind::Unknown && section.kind != Section::Kind::Foreign;
+        }));
+        const bool addCard = !narrowed && !realPortal;
+        // Nothing for this seat yet: the + card first ("Not owned yet" is one line, drawn beside it).
+        if (known == 0 && addCard)
+            addSection({ Section::Kind::Shelf, 0, {}, 0, false, false, false }, {}, true);
+        for (size_t s = 0; s < sections.size(); s++)
         {
+            const Section& section = sections[s];
             std::vector<int> items;
             items.reserve(section.items.size());
             for (size_t i : section.items)
                 items.push_back(map[i]);
             ListSection header{ section.kind, section.value, section.game };
-            if (section.kind != Section::Kind::Shelf && !shelf && !narrowed && !realPortal)
-            {
-                // Nothing for this seat yet: the + card first ("Not owned yet" is one line, drawn beside it).
-                shelf = true;
-                addSection({ Section::Kind::Shelf, 0, {}, 0, false, false, false }, {}, true);
-            }
-            if (section.kind == Section::Kind::Shelf)
-            {
-                shelf = true;
-                header.titled = false;
-            }
+            header.titled = section.kind != Section::Kind::Shelf;
             if (section.kind == Section::Kind::Foreign)
             {
                 header.foreign = true;
                 header.folded = !foreignOpen;
             }
-            addSection(header, items, section.kind == Section::Kind::Shelf && !narrowed && !realPortal);
+            addSection(header, items, addCard && s + 1 == known);
         }
-        if (!shelf && !narrowed && !realPortal)
-            addSection({ Section::Kind::Shelf, 0, {}, 0, false, false, false }, {}, true);
         grid.rowHeight = 150;
         grid.headerHeight = 40;
         grid.visibleHeight = 420;
@@ -1619,29 +1617,7 @@ namespace toybox
         FixGrid(list, 0);
     }
 
-    int Grid::HeaderY(int section) const
-    {
-        const ListSection& s = sections[section];
-        return RowY(s.firstRow) - (s.titled ? headerHeight : 0);
-    }
-
-    void Model::FixGrid(Grid& grid, int)
-    {
-        if (grid.cells.empty())
-        {
-            grid.cursor = 0;
-            grid.scroll = 0;
-            return;
-        }
-        grid.cursor = std::clamp(grid.cursor, 0, int(grid.cells.size()) - 1);
-        const Cell& cell = grid.cells[grid.cursor];
-        int top = grid.RowY(cell.row), bottom = grid.RowY(cell.row) + grid.rowHeight;
-        // The section's header stays in view with its first row.
-        if (cell.row == grid.sections[cell.section].firstRow)
-            top = grid.HeaderY(cell.section);
-        grid.scroll = std::clamp(grid.scroll, bottom - grid.visibleHeight, top);
-        grid.scroll = std::clamp(grid.scroll, 0, grid.MaxScroll());
-    }
+    void Model::FixGrid(Grid& grid, int) { grid.Fix(); }
 
     bool Model::MoveGrid(Grid& grid, Command command)
     {
@@ -1671,17 +1647,7 @@ namespace toybox
     {
         if (grid.cells.empty())
             return;
-        int section = std::clamp(grid.cells[grid.cursor].section + step, 0, int(grid.sections.size()) - 1);
-        for (size_t i = 0; i < grid.cells.size(); i++)
-        {
-            if (grid.cells[i].section == section)
-            {
-                grid.cursor = int(i);
-                break;
-            }
-        }
-        grid.scroll = grid.HeaderY(section);
-        FixGrid(grid, 0);
+        grid.ShowSection(std::clamp(grid.cells[grid.cursor].section + step, 0, int(grid.sections.size()) - 1));
         m_dirty = true;
     }
 
@@ -1695,11 +1661,8 @@ namespace toybox
             // The only character without an element is Kaos (Imaginators' Kaos element).
             return Element(section.value) == Element::None ? std::string("Kaos") : ElementLabel(Element(section.value));
         case Section::Kind::Category:
-            if (Category(section.value) == Category::MagicItem)
-                return L("My magic items", "Mes objets magiques");
-            if (Category(section.value) == Category::Adventure)
-                return L("My adventure packs", "Mes packs d'aventure");
-            return CategoryLabel(Category(section.value));
+            return Category(section.value) == Category::Mini ? std::string("Minis")
+                                                             : CategoryLabel(Category(section.value));
         case Section::Kind::Game:
         {
             const Game* g = Catalogue::Get().FindGame(section.game);
@@ -1975,22 +1938,29 @@ namespace toybox
             default: return;
             }
         }
-        // The top row: the seats, then Add a figure and Manage (one above the other at its end). Down goes to the bar.
+        // The top rows: the seats (one row or two, as drawn), then Add a figure and Manage (one above the other at the
+        // first row's end). Down from the last seats row goes to the bar.
         int buttons = int(ColumnRows().size());
         bool onButtons = column >= int(seats.size());
+        std::vector<std::vector<int>> rows = seatRows;
+        if (rows.empty())
+            rows = seat_rows::Rows(std::vector<bool>(seats.size(), true), false);
+        auto seatMove = [&](nav::Move move) { return seat_rows::Move(rows, seatSpans, column, move); };
         switch (command)
         {
         case Command::Left:
-            if (onButtons)
-                FocusColumnRow(int(seats.size()) - 1);
-            else if (column > 0)
-                FocusColumnRow(column - 1);
+        {
+            int next = onButtons ? (rows.front().empty() ? -1 : rows.front().back()) : seatMove(nav::Move::Left);
+            if (next >= 0)
+                FocusColumnRow(next);
             break;
+        }
         case Command::Right:
-            if (column < int(seats.size()) - 1)
-                FocusColumnRow(column + 1);
-            else if (!onButtons)
-                FocusColumnRow(int(seats.size()));
+            if (!onButtons)
+            {
+                int next = seatMove(nav::Move::Right);
+                FocusColumnRow(next < 0 ? int(seats.size()) : next);
+            }
             break;
         case Command::PreviousSection:
         case Command::NextSection:
@@ -2000,10 +1970,14 @@ namespace toybox
         case Command::Up:
             if (onButtons && column > int(seats.size()))
                 column--;
+            else if (!onButtons && seatMove(nav::Move::Up) >= 0)
+                FocusColumnRow(seatMove(nav::Move::Up));
             break;
         case Command::Down:
             if (onButtons && column < columnCount - 1 && buttons > 1)
                 column++;
+            else if (!onButtons && seatMove(nav::Move::Down) >= 0)
+                FocusColumnRow(seatMove(nav::Move::Down));
             else if (OwnsAnything())
                 HomeStep(1, false);
             else
@@ -2046,7 +2020,7 @@ namespace toybox
         }
     }
 
-    // The bar: the search field (A: the on-screen keyboard; a keyboard types into it from anywhere) and Filters.
+    // The bar: the search field (A: the on-screen keyboard; a keyboard types into it from anywhere) and Sort and filter.
     void Model::RunBar(Command command)
     {
         barColumn = std::clamp(barColumn, 0, BarCount - 1);
@@ -2251,7 +2225,7 @@ namespace toybox
         }
     }
 
-    // --- Filters and sort (the Filters panel and the tags above the shelf) -----------------------------------------------
+    // --- Filters and sort (the Sort and filter panel and the tags above the shelf) ---------------------------------------
 
     namespace
     {
@@ -2271,10 +2245,10 @@ namespace toybox
     {
         switch (row)
         {
-        case 0: return L("Element", "Élément");
-        case 1: return L("Game", "Jeu");
-        case 2: return L("Type", "Type");
-        case 3: return L("Sort by", "Trier par");
+        case SortRow: return L("Sort by", "Trier par");
+        case ElementRow: return L("Element", "Élément");
+        case WorksInRow: return L("Works in", "Fonctionne dans");
+        case TypeRow: return L("Type", "Type");
         default: return L("Clear all", "Tout effacer");
         }
     }
@@ -2283,13 +2257,20 @@ namespace toybox
     {
         switch (row)
         {
-        case 0:
+        case SortRow: return SortLabel(sort, French());
+        case ElementRow:
             return filterElement < 0 ? L("All elements", "Tous les éléments") : ElementLabel(Element(filterElement));
-        case 1: return filterGame.empty() ? L("All games", "Tous les jeux") : ShortGame(filterGame);
-        case 2: return filterCategory < 0 ? L("All types", "Tous les types") : CategoryLabel(Category(filterCategory));
-        case 3: return SortLabel(sort, French());
+        case WorksInRow: return filterGame.empty() ? L("All games", "Tous les jeux") : ShortGame(filterGame);
+        case TypeRow:
+            return filterCategory < 0 ? L("All types", "Tous les types") : CategoryLabel(Category(filterCategory));
         default: return {};
         }
+    }
+
+    std::string Model::SortButtonLabel(Sort shown, int filters) const
+    {
+        std::string label = L("Sort: ", "Tri : ") + SortLabel(shown, French());
+        return filters > 0 ? label + " (" + std::to_string(filters) + ")" : label;
     }
 
     void Model::CycleFilter(int row, int step)
@@ -2297,14 +2278,14 @@ namespace toybox
         // The values of a row, "All" first; the types are the ones the player has.
         std::vector<int> values;
         int current = 0;
-        if (row == 0)
+        if (row == ElementRow)
         {
             values.push_back(-1);
             for (Element element : MenuElements)
                 values.push_back(int(element));
             current = filterElement;
         }
-        else if (row == 1)
+        else if (row == WorksInRow)
         {
             values.push_back(-1);
             for (const Game& g : Catalogue::Get().Games())
@@ -2314,7 +2295,7 @@ namespace toybox
                 if (Catalogue::Get().Games()[i].id == filterGame)
                     current = int(i);
         }
-        else if (row == 2)
+        else if (row == TypeRow)
         {
             values.push_back(-1);
             for (int category = 0; category < int(Category::Count); category++)
@@ -2324,7 +2305,7 @@ namespace toybox
                     values.push_back(category);
             current = filterCategory;
         }
-        else if (row == 3)
+        else if (row == SortRow)
         {
             for (int i = 0; i < int(Sort::Count); i++)
                 values.push_back(i);
@@ -2336,14 +2317,18 @@ namespace toybox
         if (at == values.size())
             at = 0;
         int next = values[(at + (step < 0 ? values.size() - 1 : 1)) % values.size()];
-        if (row == 0)
+        if (row == ElementRow)
             filterElement = next;
-        else if (row == 1)
+        else if (row == WorksInRow)
             filterGame = next < 0 ? std::string() : Catalogue::Get().Games()[size_t(next)].id;
-        else if (row == 2)
+        else if (row == TypeRow)
             filterCategory = next;
         else
+        {
             sort = Sort(next);
+            if (!SetSort("game", SortId(sort)))
+                fprintf(stderr, "[toybox] the sort could not be saved\n");
+        }
         BuildList();
         list.cursor = 0;
         FixGrid(list, 0);
@@ -2352,21 +2337,18 @@ namespace toybox
 
     bool Model::FiltersActive() const
     {
-        return !search.empty() || filterElement >= 0 || !filterGame.empty() || filterCategory >= 0 ||
-               sort != Sort::Recent;
+        return !search.empty() || filterElement >= 0 || !filterGame.empty() || filterCategory >= 0;
     }
 
     std::vector<Model::Tag> Model::Tags() const
     {
         std::vector<Tag> tags;
         if (filterElement >= 0)
-            tags.push_back({ FilterValueLabel(0), 0 });
+            tags.push_back({ FilterValueLabel(ElementRow), ElementRow });
         if (!filterGame.empty())
-            tags.push_back({ FilterValueLabel(1), 1 });
+            tags.push_back({ FilterRowLabel(WorksInRow) + " " + FilterValueLabel(WorksInRow), WorksInRow });
         if (filterCategory >= 0)
-            tags.push_back({ FilterValueLabel(2), 2 });
-        if (sort != Sort::Recent)
-            tags.push_back({ std::string(L("Sort: ", "Tri : ")) + FilterValueLabel(3), 3 });
+            tags.push_back({ FilterValueLabel(TypeRow), TypeRow });
         return tags;
     }
 
@@ -2377,10 +2359,10 @@ namespace toybox
             return;
         switch (tags[size_t(index)].row)
         {
-        case 0: filterElement = -1; break;
-        case 1: filterGame.clear(); break;
-        case 2: filterCategory = -1; break;
-        default: sort = Sort::Recent; break;
+        case ElementRow: filterElement = -1; break;
+        case WorksInRow: filterGame.clear(); break;
+        case TypeRow: filterCategory = -1; break;
+        default: break;
         }
         BuildList();
         list.cursor = 0;
@@ -2395,9 +2377,8 @@ namespace toybox
         filterElement = -1;
         filterGame.clear();
         filterCategory = -1;
-        sort = Sort::Recent;
         filtersOpen = false;
-        filterRow = 0;
+        filterRow = SortRow;
         if (changed && screen == Screen::Home)
         {
             BuildList();
@@ -2441,6 +2422,7 @@ namespace toybox
             {
                 ClearFilters();
                 filtersOpen = true; // stays open: the player sees it empty
+                filterRow = FilterRows; // on Clear all: a second press changes nothing
             }
             else
                 CycleFilter(filterRow, 1);

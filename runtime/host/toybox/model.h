@@ -11,9 +11,11 @@
 #include "host/toybox.h"
 #include "host/portal.h"
 #include "host/toybox_link.h"
+#include "host/toybox/grid.h"
 #include "host/toybox/look.h"
 #include "host/toybox/nav.h"
 #include "host/toybox/put_on.h"
+#include "host/toybox/seat_rows.h"
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -87,67 +89,6 @@ namespace toybox
         std::string path2;
         int slot2 = -1;
         int retakes = 0; // put on again since the last change, the game not reading it (host/toybox/retake.h)
-    };
-
-    // One cell of the list: a figure, the "+ Add" card of a section, or the folded "Not for this game" line.
-    struct Cell
-    {
-        enum class Kind
-        {
-            Figure,
-            Add,
-            Fold
-        } kind = Kind::Figure;
-        int figure = -1; // index in Model::figures
-        int section = 0; // index in Model::sections
-        int row = 0, column = 0;
-        collection::Element element = collection::Element::None; // Add: the section's element
-    };
-
-    struct ListSection
-    {
-        collection::Section::Kind kind;
-        int value = 0;
-        std::string game;
-        int count = 0;
-        bool foreign = false; // "Not for this game": greyed, cannot be placed
-        bool titled = true; // a header above its first row (the shelf has none: the screen says what it is for)
-        bool folded = false;
-        int firstRow = 0; // grid rows, the header is drawn above firstRow
-    };
-
-    // The cells of a sectioned grid with a fixed number of columns.
-    struct Grid
-    {
-        std::vector<ListSection> sections;
-        std::vector<Cell> cells;
-        int rows = 0;
-        int cursor = 0; // index in cells
-        // The column Up and Down keep (nav::GridMove), while the cursor stays where the last Up or Down put it.
-        int keep = 0, keptAt = -1;
-        int scroll = 0; // pixels scrolled
-        // Layout in pixels, set by the model for the drawing: a header above the first row of each titled section.
-        int rowHeight = 100, headerHeight = 40, visibleHeight = 400;
-        int RowY(int row) const // top of a row, from the top of the list
-        {
-            int headers = 0;
-            for (const ListSection& section : sections)
-            {
-                if (section.firstRow <= row && section.titled)
-                    headers++;
-            }
-            return row * rowHeight + headers * headerHeight;
-        }
-        int HeaderY(int section) const; // top of a section's header (the row above its first, when titled)
-        int MaxScroll() const { return std::max(RowY(rows - 1) + rowHeight - visibleHeight, 0); }
-        // The mouse wheel: the view moves `count` rows (down when positive), the cursor stays. False at an end.
-        bool ScrollRows(int count)
-        {
-            if (cells.empty())
-                return false;
-            int next = std::clamp(scroll + count * rowHeight, 0, MaxScroll());
-            return std::exchange(scroll, next) != next;
-        }
     };
 
     // A modal question over the current screen.
@@ -317,11 +258,11 @@ namespace toybox
         bool foreignOpen = false; // "Not for this game" unfolded
         // The shelf's filters and sort (docs/runtime/host/toybox_ux.md "Search, filters and sort"); -1 or empty: all.
         int filterElement = -1; // a collection::Element
-        std::string filterGame; // the game a toy came with ("giants")
+        std::string filterGame; // a game that reads the toy ("giants": Works in)
         int filterCategory = -1; // a collection::Category
-        collection::Sort sort = collection::Sort::Recent;
-        bool filtersOpen = false; // the Filters panel is open over the shelf
-        int filterRow = 0; // its focused row: Element, Game, Type, Sort, Clear all
+        collection::Sort sort = collection::DefaultSort; // Init reads the saved one (collection::GetSort)
+        bool filtersOpen = false; // the Sort and filter panel is open over the shelf
+        int filterRow = 0; // its focused row (PanelRow)
         int shownCount = 0; // the cards the shelf shows (BuildList)
 
         // --- Navigation ------------------------------------------------------------------------------------------------
@@ -333,18 +274,20 @@ namespace toybox
         {
             Seats, // the seats, then Add a figure and Manage
             Banner, // the starter pack's button, while it is offered (ShowsStarter)
-            Bar, // the search field, Filters
+            Bar, // the search field, Sort and filter
             Grid // your figures for the chosen seat
         };
         Row homeRow = Row::Grid;
         int column = 0; // the top row's place: the seats, then Add a figure, Manage
-        int barColumn = -1; // 0 the search field, 1 Filters; -1: not visited yet (nav::Land)
+        int barColumn = -1; // 0 the search field, 1 Sort and filter; -1: not visited yet (nav::Land)
         bool gridKnown =
             true; // the grid kept its place (false: rebuilt for another seat while the focus was elsewhere)
         static constexpr int BarCount = 2;
         // Where the drawing put each row's things (x extents), so that Up and Down keep the column: the seats row's
         // places, the bar's two, the grid's columns.
         std::vector<nav::Span> seatSpans, starterSpans, barSpans, gridSpans;
+        // The seats as drawn, row by row (seat_rows::Rows); empty before the first frame: one row.
+        std::vector<std::vector<int>> seatRows;
         // The game's starter pack (collection::OffersStarterPack), worked out by Reload: not per frame.
         bool starterOffered = false;
         std::string starterNames; // "Wash Buckler, Blast Zone, Ninja Stealth Elf"; empty: the game has no pack
@@ -401,6 +344,8 @@ namespace toybox
         int SettingsRowTotal() const;
         int settingsRow = 0;
         float settingsScroll = 0;
+        // The row the list last scrolled to: the wheel's scroll stays until the focus moves (-1: follow it now).
+        int settingsFollowed = -1;
         void FocusSettingsRow(int row, int step); // the mouse: focus it, then step -1 / +1 or 0 (do it)
         // A page beside the rail (from the F3 menu, the rail or LB / RB). `fromMenu`: B comes back to the panel.
         void OpenPage(look::Page page);
@@ -411,6 +356,9 @@ namespace toybox
         // (0 all, 1 unlocked, 2 locked), the focused card among the tab's and the first grid row shown.
         std::vector<ToyboxAchievementRow> achievementRows;
         int achievementTab = 0, achievementCursor = 0, achievementFirstRow = 0;
+        int achievementFollowed = -1; // as settingsFollowed
+        // The wheel (down > 0) on Settings or Achievements: the list scrolls, the focus stays.
+        void ScrollPage(float rows);
         std::vector<int> AchievementsShown() const; // indexes of achievementRows in the tab
         int AchievementsUnlocked() const;
         void FocusAchievement(int index); // the mouse: an index of AchievementsShown
@@ -514,7 +462,7 @@ namespace toybox
         void FocusCell(int cell, bool scroll = true); // the pointer passing over a card does not scroll
         void ActivateCell(int cell); // double click: put on
         void OptionsCell(int cell); // right click: Figure page
-        bool ScrollList(int rows); // the wheel: false when the view did not move
+        bool ScrollList(int rows); // the wheel: the view moves, the focus stays; false when it did not move
         void FocusAction(int index);
         void FocusAddCell(int cell);
         void HoverAddCell(int cell); // focus only (a click on the focused card opens its versions)
@@ -566,9 +514,17 @@ namespace toybox
         int EmptyChoices() const { return starterNames.empty() ? 2 : 3; } // Add, Import, the starter pack
         void FocusStarter();
         void CreateStarter();
-        // The Filters panel: four rows (Element, Game, Type, Sort) and Clear all. Left and Right change a row's value
-        // (the first is "All"), Accept changes it to the next.
-        static constexpr int FilterRows = 4;
+        // The Sort and filter panel: Sort by, then under "Show only" Element, Works in and Type, then Clear all. Left
+        // and Right change a row's value (a filter's first is "All"), Accept changes it to the next.
+        enum PanelRow
+        {
+            SortRow,
+            ElementRow,
+            WorksInRow,
+            TypeRow,
+            FilterRows // Clear all
+        };
+        std::string SortButtonLabel(collection::Sort shown, int filters) const; // "Sort: Element (2)"
         std::string FilterRowLabel(int row) const;
         std::string FilterValueLabel(int row) const; // the value now, "All elements"...
         void CycleFilter(int row, int step);
@@ -583,8 +539,8 @@ namespace toybox
         };
         std::vector<Tag> Tags() const;
         void RemoveTag(int index);
-        bool FiltersActive() const; // a search, a filter or a sort other than Recent
-        void ClearFilters(); // all of them
+        bool FiltersActive() const; // a search or a filter: the sort is neither
+        void ClearFilters(); // all of them; the sort stays
         int OwnedCount(uint16_t type, uint16_t variant, const std::string& edition) const;
         std::string SectionLabel(const ListSection& section) const;
         std::string GameName() const;

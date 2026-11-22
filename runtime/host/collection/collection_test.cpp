@@ -1943,7 +1943,7 @@ namespace
               Fold("d\xE2\x80\x99"
                    "Eon") == "d'eon");
         CHECK(std::string(SortId(Sort::Name)) == "name" && ParseSort("level") == Sort::Level &&
-              ParseSort("nonsense") == Sort::Recent);
+              ParseSort("nonsense") == Sort::Game && ParseSort("") == Sort::Game);
         CHECK(FigureCount(0) == "0 figures" && FigureCount(1) == "1 figure" && FigureCount(12) == "12 figures");
         CHECK(FigureCount(0, true) == "0 figurine" && FigureCount(1, true) == "1 figurine" &&
               FigureCount(12, true) == "12 figurines");
@@ -1954,7 +1954,7 @@ namespace
         auto order = [&](Sort sort) {
             std::vector<std::string> names;
             for (const Section& section : Shelf(list, sort, ""))
-                if (section.kind == Section::Kind::Shelf)
+                if (section.kind != Section::Kind::Unknown && section.kind != Section::Kind::Foreign)
                     for (size_t i : section.items)
                         names.push_back(CardName(CardOf(list, i)));
             return names;
@@ -1993,6 +1993,120 @@ namespace
         (void)terra;
         (void)scratch;
         (void)trapMaster;
+    }
+
+    void TestShelfSections()
+    {
+        using namespace collection;
+        const Catalogue& catalogue = Catalogue::Get();
+        std::vector<Figure> list;
+        auto add = [&](uint16_t type, uint16_t variant = 0) {
+            Figure f;
+            f.type = type;
+            f.variant = variant;
+            f.toy = catalogue.Find(type);
+            f.file = std::to_string(list.size()) + ".sky";
+            list.push_back(f);
+            return list.size() - 1;
+        };
+        const size_t spyro = add(16), gill = add(14), reissue = add(14, 0x2000), swarm = add(101), mini = add(505);
+        const size_t top = add(2003), bottom = add(1003), half = add(1000), trap = add(211), crystal = add(680);
+        const size_t vehicle = add(3220), item = add(200), pack = add(300), trophy = add(3500), villain = add(3440);
+        const size_t stranger = add(65000), whirlwind = add(0);
+        list[top].partner = list[bottom].file;
+        list[bottom].partner = list[top].file;
+        list[whirlwind].favourite = true;
+        list[gill].uses = { { "", "2026-11-20", 1 } };
+        using Kind = Section::Kind;
+        using Items = std::vector<size_t>;
+        auto same = [](Items a, Items b) {
+            std::sort(a.begin(), a.end());
+            std::sort(b.begin(), b.end());
+            return a == b;
+        };
+        auto games = [](const std::vector<Section>& sections) {
+            std::vector<std::string> ids;
+            for (const Section& section : sections)
+                if (section.kind == Section::Kind::Game)
+                    ids.push_back(section.game);
+            return ids;
+        };
+        using Ids = std::vector<std::string>;
+
+        // Game: release order, a re-release with the game it came out with; favorites, then recent, in each.
+        std::vector<Section> byGame = Shelf(list, Sort::Game, "");
+        CHECK(games(byGame) == Ids({ "ssa", "giants", "swapforce", "trapteam", "superchargers", "imaginators" }));
+        CHECK(byGame.size() == 7 && byGame[0].items.size() == 5 && byGame[0].items[0] == whirlwind &&
+              byGame[0].items[1] == gill && same(byGame[0].items, { whirlwind, gill, spyro, item, pack }));
+        CHECK(byGame.size() == 7 && same(byGame[1].items, { swarm, mini }) &&
+              same(byGame[2].items, { reissue, top, half }) && byGame[6].kind == Kind::Unknown &&
+              byGame[6].items == Items({ stranger }));
+        // The chosen game first, also when every figure keeps its section (the launcher).
+        CHECK(games(Shelf(list, Sort::Game, "", "trapteam")) ==
+              Ids({ "trapteam", "ssa", "giants", "swapforce", "superchargers", "imaginators" }));
+        // The running game first; what it cannot read after the unknown toys.
+        std::vector<Section> running = Shelf(list, Sort::Game, "swapforce");
+        CHECK(games(running) == Ids({ "swapforce", "ssa", "giants" }) && running.size() == 5 &&
+              running[3].kind == Kind::Unknown && running[4].kind == Kind::Foreign &&
+              same(running[4].items, { trap, crystal, vehicle, trophy, villain }));
+
+        // Category: the families in their order, villains last.
+        const Sort category = ParseSort("category");
+        CHECK(std::string(SortId(category)) == "category" && SortLabel(category) == "Category" &&
+              SortLabel(category, true) == "Catégorie");
+        std::vector<Section> byFamily = Shelf(list, category, "");
+        const std::pair<Category, Items> families[] = { { Category::Core,
+                                                            { whirlwind, gill, reissue, spyro, swarm, top, half } },
+            { Category::Mini, { mini } }, { Category::CreationCrystal, { crystal } }, { Category::Trap, { trap } },
+            { Category::Vehicle, { vehicle } }, { Category::MagicItem, { item } }, { Category::Adventure, { pack } },
+            { Category::Trophy, { trophy } }, { Category::Villain, { villain } } };
+        CHECK(byFamily.size() == std::size(families) + 1 && byFamily.back().kind == Kind::Unknown);
+        for (size_t i = 0; i < std::min(byFamily.size(), std::size(families)); i++)
+            CHECK(byFamily[i].kind == Kind::Category && byFamily[i].value == int(families[i].first) &&
+                  same(byFamily[i].items, families[i].second));
+
+        // Element: the menus' order, then what has none, by family.
+        std::vector<Section> byElement = Shelf(list, Sort::Element, "");
+        std::vector<int> elements, rest;
+        for (const Section& section : byElement)
+        {
+            if (section.kind == Kind::Element)
+            {
+                CHECK(rest.empty());
+                elements.push_back(section.value);
+                for (size_t i : section.items)
+                    CHECK(int(list[i].toy->element) == section.value);
+            }
+            else if (section.kind == Kind::Category)
+                rest.push_back(section.value);
+        }
+        CHECK(!elements.empty() && elements.front() == int(Element::Magic) &&
+              rest == std::vector<int>({ int(Category::MagicItem), int(Category::Adventure), int(Category::Trophy) }));
+
+        // The others stay one shelf; every card is there once in every sort.
+        for (int s = 0; s < int(Sort::Count); s++)
+        {
+            const Sort sort = Sort(s);
+            const bool titled = sort == Sort::Game || sort == Sort::Element || sort == category;
+            Items all;
+            for (const Section& section : Shelf(list, sort, ""))
+            {
+                CHECK(!section.items.empty());
+                CHECK(section.kind == Kind::Unknown || (section.kind != Kind::Shelf) == titled);
+                all.insert(all.end(), section.items.begin(), section.items.end());
+            }
+            CHECK(all.size() == list.size() - 1 && std::set<size_t>(all.begin(), all.end()).size() == all.size() &&
+                  std::find(all.begin(), all.end(), bottom) == all.end());
+        }
+        CHECK(Shelf({}, Sort::Game, "ssa").empty());
+
+        // Each app keeps its own sort, beside what collection.json already holds.
+        CHECK(GetSort("game").empty() && SetSort("game", "element") && SetSort("launcher", "name"));
+        CHECK(GetSort("game") == "element" && GetSort("launcher") == "name");
+        View view;
+        view.group = "element";
+        CHECK(SetView("ssa", "game", view) && GetSort("game") == "element" && SetSort("game", "recent") &&
+              GetView("ssa", "game") == view && GetSort("launcher") == "name" && GetSort("game") == "recent");
     }
 
     void TestBadIndex()
@@ -2145,6 +2259,7 @@ int main(int argc, char** argv)
     TestPictureRule();
     TestCornerIcons();
     TestSearch();
+    TestShelfSections();
     TestBadIndex();
     TestPortalOverview();
     TestGiants();

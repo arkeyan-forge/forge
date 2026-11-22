@@ -402,6 +402,7 @@ namespace toybox
         case look::Page::Achievements:
             achievementRows = ToyboxAchievements();
             achievementCursor = achievementFirstRow = 0;
+            achievementFollowed = -1;
             open = true;
             screen = Screen::Achievements;
             fprintf(stderr, "[gamemenu] achievements opened (%d of %d unlocked)\n", AchievementsUnlocked(),
@@ -412,6 +413,7 @@ namespace toybox
             screen = Screen::Settings;
             settingsRow = 0;
             settingsScroll = 0;
+            settingsFollowed = -1;
             fprintf(stderr, "[gamemenu] settings opened\n");
             break;
         case look::Page::Controls: OpenCommands(); break;
@@ -822,6 +824,19 @@ namespace toybox
     {
         achievementTab = std::clamp(tab, 0, 2);
         achievementCursor = achievementFirstRow = 0;
+        achievementFollowed = -1;
+        m_dirty = true;
+    }
+
+    void Model::ScrollPage(float rows)
+    {
+        // The drawing keeps both within the list's ends.
+        if (screen == Screen::Settings)
+            settingsScroll += rows * (look::SettingsRowHeight + look::SettingsRowGap);
+        else if (screen == Screen::Achievements)
+            achievementFirstRow = std::max(achievementFirstRow + (rows > 0 ? 1 : -1), 0);
+        else
+            return;
         m_dirty = true;
     }
 
