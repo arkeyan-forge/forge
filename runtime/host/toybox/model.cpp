@@ -1619,29 +1619,7 @@ namespace toybox
         FixGrid(list, 0);
     }
 
-    int Grid::HeaderY(int section) const
-    {
-        const ListSection& s = sections[section];
-        return RowY(s.firstRow) - (s.titled ? headerHeight : 0);
-    }
-
-    void Model::FixGrid(Grid& grid, int)
-    {
-        if (grid.cells.empty())
-        {
-            grid.cursor = 0;
-            grid.scroll = 0;
-            return;
-        }
-        grid.cursor = std::clamp(grid.cursor, 0, int(grid.cells.size()) - 1);
-        const Cell& cell = grid.cells[grid.cursor];
-        int top = grid.RowY(cell.row), bottom = grid.RowY(cell.row) + grid.rowHeight;
-        // The section's header stays in view with its first row.
-        if (cell.row == grid.sections[cell.section].firstRow)
-            top = grid.HeaderY(cell.section);
-        grid.scroll = std::clamp(grid.scroll, bottom - grid.visibleHeight, top);
-        grid.scroll = std::clamp(grid.scroll, 0, grid.MaxScroll());
-    }
+    void Model::FixGrid(Grid& grid, int) { grid.Fix(); }
 
     bool Model::MoveGrid(Grid& grid, Command command)
     {
@@ -1671,17 +1649,7 @@ namespace toybox
     {
         if (grid.cells.empty())
             return;
-        int section = std::clamp(grid.cells[grid.cursor].section + step, 0, int(grid.sections.size()) - 1);
-        for (size_t i = 0; i < grid.cells.size(); i++)
-        {
-            if (grid.cells[i].section == section)
-            {
-                grid.cursor = int(i);
-                break;
-            }
-        }
-        grid.scroll = grid.HeaderY(section);
-        FixGrid(grid, 0);
+        grid.ShowSection(std::clamp(grid.cells[grid.cursor].section + step, 0, int(grid.sections.size()) - 1));
         m_dirty = true;
     }
 
