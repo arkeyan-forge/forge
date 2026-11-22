@@ -138,7 +138,7 @@ namespace
                     stopped[seat] = frame + 1;
                     const auto failure = session.Failure();
                     fprintf(stderr, "session stopped: seat=%zu frame=%llu reason=%s\n", seat,
-                        static_cast<unsigned long long>(frame + 1), ReasonText(failure.reason));
+                        static_cast<unsigned long long>(frame) + 1, ReasonText(failure.reason));
                     Check(failure.reason == netplay::EndReason::Desync, "desync reason");
                     Check(failure.frame == 300 && failure.localHash == (seat == 0 ? 300u : 999u) &&
                               failure.remoteHash == (seat == 0 ? 999u : 300u),
@@ -373,7 +373,7 @@ namespace
                 link.silent = true;
                 link.queues = {};
             }
-            std::jthread advance([&](std::stop_token stop) {
+            std::jthread advance([&](const std::stop_token& stop) {
                 while (!stop.stop_requested())
                 {
                     time.fetch_add(1000);

@@ -5,10 +5,25 @@
 #include "netplay/session_runtime.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
+#include <cstdlib>
 #include <string_view>
 
 namespace gameoptions
 {
+    namespace
+    {
+        // skyenv reads the C runtime's environment, which SDL's setters do not reach on Windows: both are cleared.
+        void Unset(const char* name)
+        {
+            SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), name);
+#ifdef _WIN32
+            _putenv_s(name, "");
+#else
+            unsetenv(name); // NOLINT(concurrency-mt-unsafe): before the game's threads start
+#endif
+        }
+    }
+
     void Apply(const game::Adapter& adapter, RuntimeSettings& settings, bool capFps)
     {
         if (netplay::Online())
@@ -28,10 +43,8 @@ namespace gameoptions
                     break;
                 std::string older, unused;
                 skyenv::OlderNames(variable, older, unused);
-                SDL_unsetenv_unsafe(variable);
-                SDL_unsetenv_unsafe(older.c_str());
-                SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), variable);
-                SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), older.c_str());
+                Unset(variable);
+                Unset(older.c_str());
             }
             // The launcher gives both games the host's Nightmare choice; the guest's own settings do not count.
             const char* nightmare = skyenv::Get("SKY_NIGHTMARE_FROM_START");

@@ -358,7 +358,7 @@ int main(int argc, char** argv)
     gamemenu::UpdateDebugScreen();
     CHECK(g_allocations == before);
     CHECK(gamemenu::SwapPerfLog(nullptr) == log);
-    rewind(log);
+    CHECK(fseek(log, 0, SEEK_SET) == 0);
     char line[512];
     int lines = 0, hitches = 0;
     bool header = fgets(line, sizeof(line), log) != nullptr && std::string_view(line) == PerfLogHeader;

@@ -25,7 +25,7 @@ namespace netplay
             m_config.now = Now;
         m_lastReceive = m_config.now();
         m_started = m_pingStart = m_lastReceive;
-        m_thread = std::jthread([this](std::stop_token stop) { Run(stop); });
+        m_thread = std::jthread([this](std::stop_token stop) { Run(std::move(stop)); });
     }
     Session::~Session()
     {

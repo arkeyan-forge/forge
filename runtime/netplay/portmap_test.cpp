@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -346,11 +347,12 @@ namespace
         Check(!ParseNatPmpMap(wrongOp, code, internal, external, lifetime), "nat-pmp wrong opcode");
         // Truncated or random packets never read past their end (the sanitizers job watches this).
         uint8_t noise[16];
+        std::mt19937 random(1);
         for (int i = 0; i < 20000; ++i)
         {
             for (auto& byte : noise)
-                byte = uint8_t(std::rand());
-            const size_t size = size_t(std::rand()) % (sizeof(noise) + 1);
+                byte = uint8_t(random());
+            const size_t size = size_t(random()) % (sizeof(noise) + 1);
             ParseNatPmpAddress(std::span(noise, size), code, ip);
             ParseNatPmpMap(std::span(noise, size), code, internal, external, lifetime);
             std::string text(reinterpret_cast<const char*>(noise), size);

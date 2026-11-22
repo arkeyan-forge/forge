@@ -18,9 +18,30 @@ namespace
         if (!value)
         {
             fprintf(stderr, "FAIL: %s\n", message);
-            std::exit(1);
+            std::exit(1); // NOLINT(concurrency-mt-unsafe): one thread
         }
     }
+
+    // The C runtime's own environment, which skyenv reads (on Windows SDL's setter does not reach it). One thread.
+    void SetEnv(const char* name, const char* value)
+    {
+#ifdef _WIN32
+        _putenv_s(name, value);
+#else
+        setenv(name, value, 1); // NOLINT(concurrency-mt-unsafe)
+#endif
+    }
+
+    void UnsetEnv(const char* name)
+    {
+#ifdef _WIN32
+        _putenv_s(name, "");
+#else
+        unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+#endif
+    }
+
+    const char* GetEnvVar(const char* name) { return std::getenv(name); } // NOLINT(concurrency-mt-unsafe)
 }
 
 bool SetTextLanguage(std::string_view) { return true; }
@@ -57,11 +78,11 @@ int main()
         }
     env = { { "SKY_NETPLAY_JOIN", "1234" } };
     Check(profiles::Parse(lookup, "")[1].signedIn, "session keeps user one signed in with fallback profile");
-    SDL_setenv_unsafe("SKY_NETPLAY_HOST", "1234", 1);
-    SDL_setenv_unsafe("SKY_LEVEL", "stand-in", 1);
-    SDL_setenv_unsafe("SSA_LEVEL", "stand-in", 1);
-    SDL_setenv_unsafe("SKY_PRESS", "stand-in", 1);
-    SDL_setenv_unsafe("SKY_SAVE_DIR", ".scratch/session-tests/save", 1);
+    SetEnv("SKY_NETPLAY_HOST", "1234");
+    SetEnv("SKY_LEVEL", "stand-in");
+    SetEnv("SSA_LEVEL", "stand-in");
+    SetEnv("SKY_PRESS", "stand-in");
+    SetEnv("SKY_SAVE_DIR", ".scratch/session-tests/save");
     RuntimeSettings fixed;
     fixed.fpsLimit = 60;
     fixed.nightmareFromStart = true;
@@ -77,28 +98,26 @@ int main()
     gameoptions::Apply(adapter, fixed, true);
     Check(fixed.fpsLimit == 60 && !fixed.nightmareFromStart && !fixed.skipIntroMovies,
         "game options preserve session FPS and disable cheats");
-    Check(!SDL_getenv_unsafe("SKY_LEVEL") && !SDL_getenv_unsafe("SSA_LEVEL"),
+    Check(!GetEnvVar("SKY_LEVEL") && !GetEnvVar("SSA_LEVEL"),
         "guest-changing debug switches and their legacy aliases are removed");
     // Pads, scripted or not, reach the game through the exchanged inputs: both games see them at the same frame.
-    Check(SDL_getenv_unsafe("SKY_PRESS") != nullptr, "scripted presses are inputs and stay");
+    Check(GetEnvVar("SKY_PRESS") != nullptr, "scripted presses are inputs and stay");
     // The launcher passes the host's Nightmare choice to both games: the session's value, not the guest's settings.
-    SDL_setenv_unsafe("SKY_NIGHTMARE_FROM_START", "1", 1);
+    SetEnv("SKY_NIGHTMARE_FROM_START", "1");
     RuntimeSettings nightmare;
     gameoptions::Apply(adapter, nightmare, true);
     Check(nightmare.nightmareFromStart, "the session's Nightmare from start applies");
-    SDL_unsetenv_unsafe("SKY_NIGHTMARE_FROM_START");
+    UnsetEnv("SKY_NIGHTMARE_FROM_START");
     // Scripted tests of a session set SKY_NETPLAY_TEST=1 on both games: their test switches are kept, the same on both.
-    SDL_setenv_unsafe("SKY_NETPLAY_TEST", "1", 1);
-    SDL_setenv_unsafe("SKY_SKIP_MOVIES", "1", 1);
+    SetEnv("SKY_NETPLAY_TEST", "1");
+    SetEnv("SKY_SKIP_MOVIES", "1");
     RuntimeSettings testing;
     testing.skipIntroMovies = true;
     gameoptions::Apply(adapter, testing, true);
-    Check(testing.skipIntroMovies && SDL_getenv_unsafe("SKY_SKIP_MOVIES") != nullptr,
-        "a session test keeps its switches");
-    SDL_unsetenv_unsafe("SKY_NETPLAY_TEST");
-    SDL_unsetenv_unsafe("SKY_SKIP_MOVIES");
-    Check(
-        std::string(SDL_getenv_unsafe("SKY_SAVE_DIR")) == ".scratch/session-tests/save", "save isolation is preserved");
+    Check(testing.skipIntroMovies && GetEnvVar("SKY_SKIP_MOVIES") != nullptr, "a session test keeps its switches");
+    UnsetEnv("SKY_NETPLAY_TEST");
+    UnsetEnv("SKY_SKIP_MOVIES");
+    Check(std::string(GetEnvVar("SKY_SAVE_DIR")) == ".scratch/session-tests/save", "save isolation is preserved");
     netplay::SavePolicy saves;
     Check(saves.Allowed(), "solo saves initially enabled");
     saves.End(true, true, netplay::EndReason::Quit, false);

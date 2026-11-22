@@ -4327,7 +4327,7 @@ namespace toybox
             g_drops.clear();
             Fill(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), look::Colour::Surface);
             TextCentered(
-                g_black, 26, ImVec2(CanvasWidth / 2, CanvasHeight / 2), Look::Text, netplay::SessionEndMessage());
+                g_black, 26, ImVec2(CanvasWidth / 2.0F, CanvasHeight / 2.0F), Look::Text, netplay::SessionEndMessage());
         }
         ImGui::Render();
         // Into the caller's buffer: once it has its size, a frame (a toast sliding in) allocates nothing.

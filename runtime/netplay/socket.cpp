@@ -190,7 +190,8 @@ namespace netplay
 #if defined(_WIN32)
             error = "cannot open or bind UDP socket: Winsock " + std::to_string(WSAGetLastError());
 #else
-            error = std::string("cannot open or bind UDP socket: ") + std::strerror(errno);
+            error = std::string("cannot open or bind UDP socket: ") +
+                    std::strerror(errno); // NOLINT(concurrency-mt-unsafe): the error of this thread's own call
 #endif
         }
         return result;

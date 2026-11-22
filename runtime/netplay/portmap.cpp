@@ -590,21 +590,21 @@ namespace netplay::portmap
     bool FindWanService(std::string_view xml, const Url& descriptionUrl, WanService& service)
     {
         Url base = descriptionUrl;
-        std::string_view text;
+        std::string_view element;
         size_t next = 0;
-        if (FindElement(xml, "URLBase", 0, text, next) && !Trim(text).empty())
+        if (FindElement(xml, "URLBase", 0, element, next) && !Trim(element).empty())
         {
             Url parsed;
-            if (ParseUrl(XmlUnescape(text), parsed))
+            if (ParseUrl(XmlUnescape(element), parsed))
                 base = parsed;
         }
         bool found = false;
-        for (size_t at = 0; FindElement(xml, "service", at, text, next); at = next)
+        for (size_t at = 0; FindElement(xml, "service", at, element, next); at = next)
         {
             std::string_view type, control;
             size_t ignored = 0;
-            if (!FindElement(text, "serviceType", 0, type, ignored) ||
-                !FindElement(text, "controlURL", 0, control, ignored))
+            if (!FindElement(element, "serviceType", 0, type, ignored) ||
+                !FindElement(element, "controlURL", 0, control, ignored))
                 continue;
             const std::string typeText = XmlUnescape(Trim(type));
             const bool ip = typeText.starts_with("urn:schemas-upnp-org:service:WANIPConnection:");

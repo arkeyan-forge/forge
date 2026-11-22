@@ -250,9 +250,8 @@ PPC_FUNC(__imp__XamContentDelete)
             result = ErrorInvalidName;
         else if (!fs::is_directory(SaveRoot() / type / name, error))
             result = ErrorPathNotFound;
-        else if (!netplay::SaveWritesAllowed())
-            result = ErrorAccessDenied;
-        else if (fs::remove_all(SaveRoot() / type / name, error); error)
+        else if (!netplay::SaveWritesAllowed() ||
+                 fs::remove_all(SaveRoot() / type / name, error) == static_cast<std::uintmax_t>(-1))
             result = ErrorAccessDenied;
         fprintf(stderr, "[content] delete \"%s\" type %s -> %u\n", name.string().c_str(), type, result);
     }
@@ -340,7 +339,7 @@ PPC_FUNC(__imp__XamContentCreateEnumerator)
         put32(item + ContentDataType, contentType);
         for (size_t c = 0; c < names[i].size() && c < ContentDisplayNameLength - 1; c++)
             item[ContentDataDisplayName + c * 2 + 1] = uint8_t(names[i][c]); // big-endian UTF-16
-        memcpy(item + ContentDataFileName, names[i].data(), names[i].size());
+        std::copy(names[i].begin(), names[i].end(), item + ContentDataFileName);
     }
     fprintf(
         stderr, "[content] enumerate type 0x%X on device %u: %zu package(s)\n", contentType, deviceId, names.size());

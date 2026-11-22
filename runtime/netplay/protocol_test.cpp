@@ -11,7 +11,7 @@ namespace
         if (!value)
         {
             fprintf(stderr, "FAIL: %s\n", message);
-            std::exit(1);
+            std::exit(1); // NOLINT(concurrency-mt-unsafe): one thread
         }
     }
 }
