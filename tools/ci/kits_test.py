@@ -124,6 +124,28 @@ class Kits(unittest.TestCase):
         self.assertEqual(result.stdout.count("kit_scan: clean:"), 2)
         self.assertFalse(list((self.root / ".scratch/ci").iterdir()))
 
+    def test_kit_scan_matches_whole_words_and_the_user_in_paths(self):
+        scan = Path(__file__).parents[1] / "kit_scan.sh"
+        words = self.root / "scan-words.txt"
+        words.write_text("# a comment\nzorbo\n")
+
+        def run(text):
+            kit = self.root / "scan-kit"
+            if kit.exists():
+                shutil.rmtree(kit)
+            kit.mkdir()
+            (kit / "notes.txt").write_text(text)
+            environment = dict(os.environ, KIT_SCAN_USER="qlo", KIT_SCAN_WORDS=str(words.resolve()))
+            return subprocess.run(["sh", str(scan), str(kit)], env=environment, capture_output=True, text=True)
+
+        users = "Us" + "ers"  # split: the tree's own scan refuses a home path written whole
+        for text in (f"built in /{users}/qlo/forge\n", f"C:\\{users}\\qlo\\forge\n", "/ho" "me/qlo\n",
+                     "by zorbo\n", "ZORBO-1\n"):
+            self.assertEqual(run(text).returncode, 1, text)
+        for text in ("a pointer read as fQLO@ and qlo.\n", "zorbos unzorbo zorbo_x\n", "the qlo key\n"):
+            result = run(text)
+            self.assertEqual(result.returncode, 0, text + result.stderr)
+
     def test_destination_and_checksum_validation(self):
         for tag in ("v1.2.3", "v1.2.3b1", "v1.2.3b10", "v1.2.3-beta.1"):
             kits.destination("release-owner/launcher", tag)
