@@ -386,6 +386,7 @@ namespace netplay
                     config.timeoutMs = 60000;
                     config.lostMs = 3000;
                     config.askBeforeEnding = true;
+                    config.adaptiveDelay = true;
                     config.slotPlayers = PortalOnlinePlayers();
                     config.prepareEvent = PortalPrepareOnline;
                     config.applyEvents = PortalApplyOnline;

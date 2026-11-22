@@ -1,4 +1,5 @@
 #include "netplay/session.h"
+#include "netplay/net_sim.h"
 #include <algorithm>
 #include <atomic>
 #include <functional>
@@ -483,6 +484,64 @@ namespace
         guest.Stop();
     }
 
+    // Each side moves its own input delay during play: the frames it skips repeat its last input and the input of a
+    // frame that falls on one already sent is dropped, so both games still read the same pads for every frame.
+    void AdaptiveDelay()
+    {
+        using namespace netplay;
+        const auto ms = [] {
+            return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                    .count());
+        };
+        for (const bool network : { true, false })
+        {
+            Link link;
+            const auto configure = [&](bool host) {
+                auto config = Config(host);
+                config.delay = 1;
+                config.timeoutMs = 100000;
+                config.adaptiveDelay = true;
+                return config;
+            };
+            // 60 ms each way with 20 ms of jitter (reordering): a round trip near 140 ms asks for four frames at 30.
+            NetSim sim;
+            sim.delayMs = network ? 60 : 0;
+            sim.jitterMs = network ? 20 : 0;
+            Session host(configure(true), SimulateNetwork(std::make_unique<Wire>(link, 0), sim, ms));
+            Session guest(configure(false), SimulateNetwork(std::make_unique<Wire>(link, 1), sim, ms));
+            Check(host.WaitReady() && guest.WaitReady(), "ready before the adaptive delay");
+            const uint64_t frames = network ? 300 : 600;
+            std::vector<std::pair<uint16_t, uint16_t>> seen[2];
+            uint32_t highest[2] = {};
+            const auto play = [&](Session& session, size_t seat, bool slow) {
+                seen[seat].resize(frames);
+                InputFrame pads;
+                for (uint64_t frame = 0; frame < frames; ++frame)
+                {
+                    if (network)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                    // Without network delay, the guest is a slow PC between frames 100 and 400.
+                    if (slow && frame > 100 && frame < 400)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+                    Check(session.Exchange(frame, Pad(frame, seat), pads), "adaptive exchange");
+                    seen[seat][frame] = { pads[0].state.buttons, pads[1].state.buttons };
+                    highest[seat] = std::max(highest[seat], session.Delay());
+                }
+            };
+            std::jthread a([&] { play(host, 0, false); });
+            play(guest, 1, !network);
+            a.join();
+            Check(seen[0] == seen[1], "both games read the same pads for every frame while the delay moves");
+            if (network)
+                Check(highest[0] >= 3 && highest[1] >= 3, "the delay rises with the round trip");
+            else
+                Check(highest[0] <= 3, "a slower PC's waits add one frame at most");
+            host.Stop();
+            guest.Stop();
+        }
+    }
+
     // A peer that answers but does not advance (a long load on a slower PC) is not a lost connection and ends nothing.
     void SlowPeer()
     {
@@ -722,6 +781,7 @@ int main()
         Check(!ParseEndpoint(text, endpointHost, port), "invalid endpoint refused");
     OnlineMenuAndStats();
     Reconnection();
+    AdaptiveDelay();
     SlowPeer();
     RemoteDeparture();
     RoundTrips();

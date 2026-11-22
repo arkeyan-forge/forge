@@ -43,7 +43,8 @@ namespace netplay
         // No packet for lostMs: both games hold, the session keeps sending and resumes on the first packet back.
         bool connectionLost = false, askContinue = false;
         uint64_t lostMs = 0, reconnects = 0;
-        uint64_t waitedMs = 0;     // how long the game has been held for the other player's input, while waiting
+        uint64_t waitedMs = 0;
+        uint64_t delayChanges = 0;     // how long the game has been held for the other player's input, while waiting
         uint64_t answerMs = 60000; // the wait before the player is asked (SessionConfig::timeoutMs)
         std::array<float, 60> pingMs{};
         size_t pingCount = 0;
@@ -59,6 +60,9 @@ namespace netplay
         // the handshake) the session ends after timeoutMs as before.
         uint64_t lostMs = 3000;
         bool askBeforeEnding = false;
+        // The local input delay follows the round trip and the waits during play (each side its own: the other game
+        // reads the pads by frame number); off, it stays the room's.
+        bool adaptiveDelay = false;
         std::function<uint64_t()> now;
         std::function<void(const SessionFailure&)> ended;
         std::array<uint8_t, 16> slotPlayers{};
@@ -109,6 +113,9 @@ namespace netplay
         bool m_connectionLost = false, m_askContinue = false;
         uint64_t m_lostSince = 0, m_reconnects = 0, m_waitSince = 0;
         void CheckSilence();
+        void AdaptDelay(uint64_t frame);
+        uint32_t m_localDelay = 0, m_calmChecks = 0;
+        uint64_t m_recentWaitMs = 0, m_delayChanges = 0;
         struct Second
         {
             uint64_t stamp = UINT64_MAX, sent = 0, received = 0, sentBytes = 0, receivedBytes = 0;

@@ -57,7 +57,7 @@ namespace netplay
     uint32_t Session::Delay() const
     {
         std::lock_guard lock(m_mutex);
-        return m_delay;
+        return m_localDelay ? m_localDelay : m_delay;
     }
     SessionFailure Session::Failure() const
     {
@@ -94,7 +94,8 @@ namespace netplay
         stats.roundTripMs = m_rtt == UINT64_MAX ? 0 : m_rtt;
         stats.goodHash = m_goodHash;
         stats.goodChecks = m_goodChecks;
-        stats.delay = m_delay;
+        stats.delay = m_localDelay ? m_localDelay : m_delay;
+        stats.delayChanges = m_delayChanges;
         stats.peerMenuOpen = m_peerMenuOpen;
         stats.lost = m_lost;
         stats.rejected = m_rejected;
@@ -279,11 +280,55 @@ namespace netplay
         m_established = true;
         return true;
     }
+    // Every 30 frames: up by one at once when the round trip or the waits ask for it, down by one after five calm
+    // seconds. The worst of the last three round trips covers the jitter.
+    void Session::AdaptDelay(uint64_t frame)
+    {
+        if (!m_config.adaptiveDelay || frame % 30 || frame == 0)
+            return;
+        uint64_t worst = 0;
+        for (size_t i = 0; i < std::min<size_t>(3, m_pingSamplesCount); ++i)
+            worst = std::max(worst, m_pingSamples[(m_pingSamplesCount - 1 - i) % m_pingSamples.size()].ms);
+        const uint32_t fps = std::max<uint32_t>(m_config.hello.fps, 1);
+        const uint32_t network = ChooseDelay(worst, fps);
+        uint32_t wanted = network;
+        // Waits beyond the round trip's share are jitter: one frame more absorbs them. A slower PC waits all the time;
+        // a longer delay would not help it (the pace does), so the waits never add more than that frame.
+        const uint64_t frameMs = 1000 / fps;
+        if (m_recentWaitMs > 3 * frameMs)
+            wanted = std::min(std::max(wanted, m_localDelay + 1), network + 1);
+        const uint32_t before = m_localDelay;
+        if (wanted > m_localDelay && m_localDelay < 8)
+        {
+            ++m_localDelay;
+            m_calmChecks = 0;
+        }
+        else if (wanted < m_localDelay && m_localDelay > 1)
+        {
+            if (++m_calmChecks >= 5)
+            {
+                --m_localDelay;
+                m_calmChecks = 0;
+            }
+        }
+        else
+            m_calmChecks = 0;
+        if (m_localDelay != before)
+        {
+            ++m_delayChanges;
+            fprintf(stderr, "[netplay] input delay %u -> %u frames (round trip %llu ms, waited %llu ms in 30 frames)\n",
+                before, m_localDelay, static_cast<unsigned long long>(worst),
+                static_cast<unsigned long long>(m_recentWaitMs));
+        }
+        m_recentWaitMs = 0;
+    }
+
     void Session::SetDelay(uint32_t delay)
     {
         if (m_delay)
             return;
         m_delay = delay;
+        m_localDelay = delay;
         m_ack = m_remoteAck = delay - 1;
         m_ready = true;
         m_changed.notify_all();
@@ -322,7 +367,8 @@ namespace netplay
         if (m_failure.reason != EndReason::None)
             return Solo(frame, local, pads, events);
         uint64_t inputWait = 0;
-        const uint64_t target = frame + m_delay;
+        AdaptDelay(frame);
+        const uint64_t target = frame + m_localDelay;
         if (!Wait(
                 lock,
                 [&] {
@@ -334,17 +380,28 @@ namespace netplay
             CountInputWait(inputWait);
             return Solo(frame, local, pads, events);
         }
-        for (size_t i = 0; i < m_history->pending.count; ++i)
+        // A lower delay lands this frame's input on a frame already sent: it is dropped and its events wait for the
+        // next one. A higher delay leaves frames without input: they repeat the last one sent, as the other game sees.
+        if (m_latest == UINT64_MAX || target > m_latest)
         {
-            auto event = m_history->pending.events[i];
-            event.sequence = ++m_eventSequence;
-            event.frame = target;
-            m_history->local[event.sequence % m_history->local.size()] = event;
+            if (m_latest != UINT64_MAX)
+                for (uint64_t gap = m_latest + 1; gap < target; ++gap)
+                {
+                    const auto& last = m_local[m_latest % m_local.size()];
+                    m_local[gap % m_local.size()] = { gap, last.pad, last.events };
+                }
+            for (size_t i = 0; i < m_history->pending.count; ++i)
+            {
+                auto event = m_history->pending.events[i];
+                event.sequence = ++m_eventSequence;
+                event.frame = target;
+                m_history->local[event.sequence % m_history->local.size()] = event;
+            }
+            m_history->pending.count = 0;
+            m_local[target % m_local.size()] = { target, local, m_eventSequence };
+            m_latest = target;
+            m_changed.notify_all();
         }
-        m_history->pending.count = 0;
-        m_local[target % m_local.size()] = { target, local, m_eventSequence };
-        m_latest = target;
-        m_changed.notify_all();
         if (!Wait(
                 lock,
                 [&] {
@@ -357,6 +414,7 @@ namespace netplay
             return Solo(frame, local, pads, events);
         }
         CountInputWait(inputWait);
+        m_recentWaitMs += inputWait;
         pads = {};
         if (!events && m_config.applyEvents)
             events = &m_history->application;
