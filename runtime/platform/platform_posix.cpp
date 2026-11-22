@@ -115,10 +115,12 @@ namespace
     constexpr int MaxGuestFrames = 4;
     int g_guestFrames;
     char g_guestNames[MaxGuestFrames][32];
+    int g_namedFrames; // frames dladdr named at all: none means the executable exports no symbols
 
     void PrintCodeAddress(const char* label, uintptr_t address)
     {
         Dl_info info{};
+        // NOLINTNEXTLINE(performance-no-int-to-ptr): an address from the interrupted code
         bool found = address != 0 && dladdr(reinterpret_cast<void*>(address), &info) != 0;
         // The symbol is sub_XXXXXXXX, __imp__sub_XXXXXXXX or the C++ mangling of one: the guest address is the 8 hex digits.
         if (const char* at = found && info.dli_sname != nullptr ? strstr(info.dli_sname, "sub_") : nullptr;
@@ -130,8 +132,11 @@ namespace
                 snprintf(g_guestNames[g_guestFrames++], sizeof(g_guestNames[0]), "%s", name);
         }
         if (found && info.dli_sname != nullptr)
+        {
+            g_namedFrames++;
             fprintf(stderr, "%s 0x%llx %s + %llu (%s)\n", label, (unsigned long long)address, info.dli_sname,
                 (unsigned long long)(address - uintptr_t(info.dli_saddr)), info.dli_fname);
+        }
         else if (found)
             fprintf(stderr, "%s 0x%llx (%s + 0x%llx)\n", label, (unsigned long long)address, info.dli_fname,
                 (unsigned long long)(address - uintptr_t(info.dli_fbase)));
@@ -161,6 +166,7 @@ namespace
             // A frame record is { previous fp, return address }, deeper frames sit at higher addresses.
             if (fp < low || fp + 2 * sizeof(uintptr_t) > high || fp % sizeof(uintptr_t) != 0)
                 break;
+            // NOLINTNEXTLINE(performance-no-int-to-ptr): an address from the interrupted code
             const uintptr_t* record = reinterpret_cast<const uintptr_t*>(fp);
             if (record[1] == 0)
                 break;
@@ -186,8 +192,10 @@ namespace
                 fprintf(stderr, "%s%s", i == 1 ? ", called from " : ", ", g_guestNames[i]);
             fprintf(stderr, "\n");
         }
-        else
+        else if (g_namedFrames > 0)
             fprintf(stderr, "[crash] guest function: none named on the host stack (the fault is in host code)\n");
+        else
+            fprintf(stderr, "[crash] guest function: unknown (no symbol names: the executable exports none)\n");
 
         // Raw addresses can be symbolised later: atos -o <executable> -l <base> <address>...
         Dl_info self{};

@@ -23,12 +23,12 @@ status page (written by `tools/game_status.py` from those pages).
 <!-- game-status:begin -->
 | Game | Engine | Version | Played on | Known limits |
 |---|---|---|---|---|
-| [Spyro's Adventure (SSA, 2011)](games/ssa/docs/status.md) | Lux | 0.9.15 | macOS, Windows, Linux | Some bosses and Heroic Challenges not yet confirmed (#58) |
-| [Giants (2012)](games/giants/docs/status.md) | Alchemy | 0.8.15 | macOS, Windows, Linux | A few challenge levels crash (#54) |
-| [Swap Force (2013)](games/swapforce/docs/status.md) | Alchemy | 0.5.14 | macOS, Windows, Linux | A plain green picture after a figure swap in Wildwoods, still seen after #9, being looked into (#84); not every mode played |
-| [Trap Team (2014)](games/trapteam/docs/status.md) | Alchemy | 0.1.9 | macOS, Windows | Linux not tried yet; Spy Rise dark on macOS (#50); separate voice language and LB fixed in 0.9.6, to confirm (#51) |
-| [SuperChargers (2015)](games/superchargers/docs/status.md) | Alchemy | 0.1.8 | macOS, Windows, Linux | The figure owner fix of 0.9.6 to confirm with a real portal (#28) |
-| [Imaginators (2016)](games/imaginators/docs/status.md) | Alchemy | 0.1.9 | macOS, Windows | Linux not tried yet; a created character's HUD portrait fixed in 0.9.6 (#47) |
+| [Spyro's Adventure (SSA, 2011)](games/ssa/docs/status.md) | Lux | 0.9.17 | macOS, Windows, Linux | Some bosses and Heroic Challenges not yet confirmed (#58) |
+| [Giants (2012)](games/giants/docs/status.md) | Alchemy | 0.8.17 | macOS, Windows, Linux | A few challenge levels crash (#54) |
+| [Swap Force (2013)](games/swapforce/docs/status.md) | Alchemy | 0.5.16 | macOS, Windows, Linux | A plain green picture after a figure swap in Wildwoods, still seen after #9, being looked into (#84); not every mode played |
+| [Trap Team (2014)](games/trapteam/docs/status.md) | Alchemy | 0.1.11 | macOS, Windows | Linux not tried yet; Spy Rise dark on macOS (#50); separate voice language and LB fixed in 0.9.6, to confirm (#51) |
+| [SuperChargers (2015)](games/superchargers/docs/status.md) | Alchemy | 0.1.10 | macOS, Windows, Linux | The figure owner fix of 0.9.6 to confirm with a real portal (#28) |
+| [Imaginators (2016)](games/imaginators/docs/status.md) | Alchemy | 0.1.10 | macOS, Windows | Linux not tried yet; a created character's HUD portrait fixed in 0.9.6 (#47) |
 <!-- game-status:end -->
 
 Per platform: [docs/getting-started/platforms/](docs/getting-started/platforms/README.md). Live status: the per-game status pages above.

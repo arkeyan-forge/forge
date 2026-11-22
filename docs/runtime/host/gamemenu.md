@@ -218,8 +218,11 @@ pc 0x102720fa0 _Z11WaitForFlipj + 164 (...)
   those options still prints them. On a host thread (video, audio, the main loop) it says so.
 - **`[crash] guest function:`** (posix): the recompiled functions on the host stack, innermost first, from the symbol names
   (`sub_XXXXXXXX`, `__imp__sub_XXXXXXXX`, or the C++ mangling of one): `sub_822A95C0` is the guest function at 0x822A95C0 (look it
-  up in `games/<id>/` and the dump). "none named on the host stack" means the fault is in host code. The host stack is the
-  platform's own (`atos -o <executable> -l <base>` for raw addresses).
+  up in `games/<id>/` and the dump). "none named on the host stack" means the fault is in host code; "unknown (no symbol
+  names...)" means no frame was named at all, an executable without exported symbols. The Linux executable is linked with
+  `ENABLE_EXPORTS` for this (`ArkeyanCrashSymbolsTest`); before 0.9.10 every Linux report said "none named". The host stack
+  is the platform's own (`atos -o <executable> -l <base>`, or `addr2line -f -e <executable>` with the offsets, for raw
+  addresses).
 - **Fatal errors**: `SIGABRT` is handled too, so `abort()` (a call into unrecompiled guest code, a full system heap) gives the same
   block. Windows: the same `Fault (` block and `[crash] where:` from the unhandled-exception filter and `SIGABRT`; its frames are
   offsets in the executable, not symbol names, so there is no `guest function` line there (not run on Windows) [?].

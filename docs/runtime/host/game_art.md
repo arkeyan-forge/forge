@@ -84,6 +84,41 @@ material instances instead (`"materials": [{archive, folder, ending}]`, below).
   written as `<portraits>/artworks/<name>.png`, `<name>` from the entry's path (`ui_pvp_sprites/eruptorseries2.png/0x....igz`);
   or `materials` as for the portraits (Swap Force's face-off portraits and the swappers' halves); done when every
   catalogue `artworks` and `halves` file is there (so a cache made before the halves is completed at the next disc check).
+- `icons` (2026-11-20): the cards' corner icons, `{"<key>": picture}` with a picture as for the logo (`{stream, picture}`
+  [Lux]; `{archive, entry, picture}` [Alchemy], `picture` the end of the source path, else the entry's first). Keys:
+  `element_<element id>`; the type slot's `swap_<movement>` (the catalogue's `swap_type`), `class_<battle class>` (a
+  Sensei's `battle_class`, a made creation crystal's), `ride_<land|sea|sky>` (a vehicle's or a SuperCharger's `ride`),
+  `type_trapmaster`, `type_giant`, `type_mini`. The category is also written as text (`CategoryTitle`: `Giant · Level
+  15`). `"tint"`: `white` draws the shape in white (Giants' pet mask), `glyph` keeps the light glyph of a dark badge alone,
+  in white (Imaginators' class icons: about 70 % of each badge is near black, the glyph near white; the badge's lit rim,
+  past 0.63 of the half-size, and the frame's grey highlights inside it, from 0.45 out with a chroma under 96, are left
+  out), `element` gives a grey mask its element's colour (Giants' element icons: one grey picture the game
+  colours per element), `black` draws the shape in black, alpha kept. `"under": {archive, entry}`: a plate the picture
+  is drawn on, scaled to its size (Swap Force's movement symbols on the swap-zone HUD's yellow hexagon,
+  `juicestandard_turbo_hud_bg` of `archives/juicedomain_permanent.pak`). Written as `<portraits>/icons/<key>.png`; `collection::ElementIconPath` /
+  `TypeIconPath` take the viewed game's, else the newest game's that has one. Arkeyan-Builder reads them when it builds
+  a game, the Toy Box when it first opens (and looks again once a second for a missing one).
+  Each disc's: SSA's eight `elementicon*` and `elementiconpet` (`uigameimage.str`); Giants' `elementalicons/<element>_64.png`
+  and `pet_64.png` (`permanent/global.bld`) and the Giant gates' badge `icon_giant.png` (only in level archives:
+  `level/level_200.bld`); Swap Force's `juicestandard_dn_<element>_10` and the swap-zone HUD's eight movement icons
+  `juicestandard_turbo_hud_<type>_*` (`archives/permanent.pak`); SuperChargers' `ElementalIcons!DN_<Element>`
+  (`permanent.pak`) and the collection's ride set `CharactersCollection_Vehicle{Land,Swim,Flight}`
+  (`juicedomain_permanent.pak`); Imaginators' `MenuComponents!ElementIcon_<Element>` and `ClassIcon_<X>`
+  (`juicedomain_permanent.pak`), the classes paired by the game's own `CCYOSCharClassMaterialTable`
+  (`ui/CharacterBar.igz`, keys 1-10 = Sword, Archer, Pistol, Thrown, Fist, Club, Mage, Blades, Doubler, Bazooka; 11
+  Kaos', with `ElementIcon_Kaos` for his element), which agrees with `LooseData/CYOSClassDataList.igz` [V]. Not used:
+  Imaginators' `ClassIcon_Sensei` (a Sensei shows its class); no disc has a SuperCharger mark (names searched,
+  2026-11-20).
+  **Trap Team**: its pictures in `.bld` archives carry no name (the `igImage2` objects' names live elsewhere in the
+  IGZ), so an icon there is given by its texture's pack hash (`"hash"`, the name the texture dump gives it:
+  [texture_packs.md](../gpu/texture_packs.md)) and `"crop": [x, y, width, height]` measured on that dump (its rows run
+  bottom-up from `DecodePicture`'s, so the cut is taken from the other end and stays the dump's way up), cut to a disc
+  of its larger side: `art::ExtractHashedIcons`, which
+  only Arkeyan-Builder runs (it hashes with the HD step's `hdtex::SourceOf`); `Extract` leaves these. The Trap Masters'
+  T (`type_trapmaster`): Jawbreaker's back plate, texture `6f4b30cc7a1007e1` (1024x1024) of
+  `character/470_tech_bruteforce.bld`, cut at 311, 764, 64x55 (measured on the dump, 2026-11-20). Its element icons
+  (`elementalIcons/<element>_64.png` in `permanent/global.bld`) are not read yet: a hash each would do; meanwhile Trap
+  Team's cards use another installed game's, else the element's colour.
 - Dashboard art (2026-11-05): every disc has at its root `nxeart`, an STFS package (`art/stfs.h`) holding the dashboard's
   1920x1080 backdrop `nxebg.jpg` and its tile `nxeslot.jpg`. A picture `{package, file}` reads one of them (JPEG or PNG, stb);
   `scenes` groups take `{package, names}` too. SuperChargers' clouds and Imaginators' night sky come from there (both discs) [V].
@@ -116,6 +151,7 @@ Each: `title_icon.png` is the dashboard icon of `default.xex` (its XDBF resource
 <data>/<Game>/launcher-cache/      logo.png, background.png, title_icon.png, manifest.ini (version=, what was found)
 <data>/<Game>/portraits/           the toys' pictures, named as on the disc
 <data>/<Game>/portraits/artworks/  the large ones (Giants), named as on the disc
+<data>/<Game>/portraits/icons/     the cards' element and type icons, <key>.png
 ```
 - `<data>` is the shared data folder (`datadir.h`, `SKYLANDERS_DATA` for tests); `SKY_PORTRAITS` overrides the
   portraits folder (tests).
@@ -187,6 +223,7 @@ and `CacheVersion` stay unchanged; no re-extraction is needed. Missing art can b
 | Individual swapper halves | `HalfPicturePath`, `PortraitPath`, `BestPicturePath`: own half art, then whole-figure art, then generated icon; a bottom can use its matching top's whole picture |
 | Low-level per-game reads | `GamePortraitPath` and `GameKindPicturePath` intentionally inspect only the requested cache; they do not choose art across games |
 | Villains | `VillainPicturePath` keeps Trap Team's captured/escaped state pictures; these are not interchangeable toy portraits |
+| A trap holding a villain | `TrapPicture`: the trap's picture with the villain's captured picture small at its bottom, centred (Toy Box: `IconOf`, keyed by the villain too) |
 | Traps, magic items and other families | The ordinary shared selector preserves their own variant pictures, then plain art, family glyph and generated fallback |
 
 Previously the launcher and Toy Box already agreed when they called the same API. However, portraits used the viewed
@@ -212,6 +249,15 @@ lists tops only), then the generated icon. One missing half never suppresses the
 image logic, tested on synthetic images (`ArkeyanCollectionTest`, `TestSwapperPicture`). Any top and any bottom work,
 matched or mixed. (Until 2026-10-28 the halves were cropped and stacked at the wider one's width: a gap at the waist and
 two scales.)
+
+**A trap holding a villain** (Trap Team): `collection::TrapPicture(trap, variant, villain, path)` takes the trap's
+picture (`path`, from `PortraitPath` or `BestPicturePath`) and lays the villain's captured picture (`VillainPicturePath`,
+cut to its visible box) at its bottom: fitted into a box of 0.34 of the picture, centred across and at 0.76 down, so its corners
+stay inside the circle the Toy Box crops its portraits to. `villain` is the id the trap stores (1-46), found among its
+own game's `villains`. Empty for an empty trap, a villain with no picture cached, another toy or a card with its own
+picture: the caller keeps the trap's picture. The disc has no smaller villain icon, and where the game draws the
+villain on each of the 60 trap shapes is not known, so the corner is ours, not the game's. Tested on synthetic images
+(`ArkeyanPictureLookupTest`, `TestTrapPicture`).
 
 When only a variant's kind is known (the Toy Box's cards, the collection's), `collection::VariantFor(toy, kind)` picks
 the toy's one variant of that kind. `large` asks for the game's biggest picture (SSA's 512 px "versus" art; Giants has

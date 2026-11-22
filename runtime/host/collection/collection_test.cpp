@@ -542,7 +542,14 @@ namespace
         figures::FigureStats stats;
         figures::SetTotalExperience(stats, figures::LevelExperience[19]);
         CHECK(WriteStats(master, stats) && Read(master, figure) && figure.level == 20 &&
-              LevelText(figure, "trapteam") == "Level 20" && LevelText(figure, "giants") == "Level 15 (20)");
+              LevelText(figure, "trapteam") == "Trap Master · Level 20" &&
+              LevelText(figure, "giants") == "Trap Master · Level 15 (20)" &&
+              LevelText(figure, "trapteam", true) == "Maître du Piège · Niveau 20");
+        // A Giant at level 15 gets its title; a core figure stays plain.
+        std::string giant = Create(102);
+        CHECK(WriteStats(giant, stats) && Read(giant, figure) && figure.toy->category == Category::Giant &&
+              LevelText(figure, "giants") == "Giant · Level 15 (20)" &&
+              LevelText(figure, "trapteam", true) == "Géant · Niveau 20");
         // A trap's villain and evolved switch: the choice is stored, another can follow, a busy dump is refused.
         std::string error;
         CHECK(SetTrapVillain(trap, 9, true) && Read(trap, figure) && figure.state == figures::AreaState::Valid &&
@@ -1050,6 +1057,16 @@ namespace
             if (game == nullptr)
                 continue;
             const auto accepted = catalogue.Accepted(id);
+            for (uint16_t type : { uint16_t(3423), uint16_t(3424) })
+            {
+                const Toy* toy = catalogue.Find(type);
+                CHECK(toy != nullptr);
+                if (toy == nullptr)
+                    continue;
+                CHECK(!catalogue.Accepts(id, type));
+                CHECK(!catalogue.Read(id, toy, StandardVariant(*toy)).works);
+                CHECK(std::find(accepted.begin(), accepted.end(), toy) == accepted.end());
+            }
             std::vector<Figure> accessories;
             std::vector<Figure> excluded;
             for (const Toy& toy : catalogue.Toys())
@@ -1550,6 +1567,106 @@ namespace
 
     // Synthetic, separate per-game caches: the figure's original game first, the newest with the "newest" choice; viewing
     // a game or changing icon size never picks another game's art.
+    // The cards' corner icons: the viewed game's own, else the newest game's that has one; nothing without a disc.
+    void TestCornerIcons()
+    {
+        const std::string data = g_scratch + "/corner-icons";
+        const char* current = getenv("SKYLANDERS_DATA"); // NOLINT(concurrency-mt-unsafe)
+        const std::string oldData = current != nullptr ? current : "";
+        const std::string oldPortraits = skyenv::Get("SKY_PORTRAITS");
+        SetVariable("SKYLANDERS_DATA", data);
+        UnsetVariable("SKY_PORTRAITS");
+        ForgetPictureFolders();
+        const Catalogue& catalogue = Catalogue::Get();
+        const Toy* eruptor = catalogue.Find(9);
+        const Toy* crusher = catalogue.Find(102);
+        const Toy* bottom = catalogue.Find(1004);
+        CHECK(eruptor != nullptr && crusher != nullptr && bottom != nullptr && !bottom->swapType.empty());
+        if (eruptor == nullptr || crusher == nullptr || bottom == nullptr)
+            return;
+        auto write = [&](const char* game, const std::string& key) {
+            std::filesystem::path file = datadir::Game(game) / "portraits" / "icons" / (key + ".png");
+            std::filesystem::create_directories(file.parent_path());
+            CHECK(SavePng({ 8, 8, std::vector<uint32_t>(64, 0xFF0000FFu) }, datadir::Text(file)));
+            return file;
+        };
+        auto same = [](const std::string& a, const std::filesystem::path& b) {
+            return std::filesystem::path(a).lexically_normal() == b.lexically_normal();
+        };
+        CHECK(ElementIconPath("giants", Element::Fire).empty() && TypeIconPath("giants", *crusher).empty());
+        std::filesystem::path giantsFire = write("giants", "element_fire"),
+                              trapFire = write("trapteam", "element_fire");
+        CHECK(same(ElementIconPath("giants", Element::Fire), giantsFire) &&
+              same(ElementIconPath("swapforce", Element::Fire), trapFire) &&
+              same(ElementIconPath("", Element::Fire), trapFire) && ElementIconPath("giants", Element::Water).empty() &&
+              ElementIconPath("giants", Element::None).empty());
+        CHECK(TypeIconPath("giants", *crusher).empty() && TypeIconPath("giants", *eruptor).empty());
+        std::filesystem::path giant = write("giants", "type_giant");
+        CHECK(same(TypeIconPath("trapteam", *crusher), giant) && TypeIconPath("giants", *eruptor).empty());
+        CHECK(TypeIconPath("swapforce", *bottom).empty());
+        std::filesystem::path swap = write("swapforce", "swap_" + bottom->swapType);
+        CHECK(same(TypeIconPath("ssa", *bottom), swap));
+        // A battle class (a Sensei's, a made crystal's): Imaginators' icons, by class.
+        CHECK(ClassIconPath("imaginators", 4).empty() && ClassIconPath("imaginators", 0).empty());
+        std::filesystem::path ninja = write("imaginators", "class_ninja");
+        CHECK(same(ClassIconPath("giants", 4), ninja) && ClassIconPath("giants", 11).empty());
+        // A vehicle's ride: SuperChargers' icons.
+        const Toy* car = catalogue.Find(3227);
+        const Toy* fiesta = catalogue.Find(3400);
+        const Toy* pen = catalogue.Find(601);
+        CHECK(car != nullptr && car->ride == "land" && fiesta != nullptr && fiesta->ride == "land" && pen != nullptr &&
+              pen->battleClass == 5);
+        if (car == nullptr || fiesta == nullptr || pen == nullptr)
+            return;
+        CHECK(TypeIconPath("superchargers", *car).empty());
+        std::filesystem::path land = write("superchargers", "ride_land");
+        CHECK(same(TypeIconPath("trapteam", *car), land) && same(TypeIconPath("superchargers", *fiesta), land));
+        // A Sensei: its class.
+        CHECK(TypeIconPath("imaginators", *pen).empty());
+        std::filesystem::path brawler = write("imaginators", "class_brawler");
+        CHECK(same(TypeIconPath("imaginators", *pen), brawler));
+        // The item families' marks and a trophy's own.
+        const Toy* item = nullptr;
+        for (const Toy& toy : catalogue.Toys())
+            if (toy.category == Category::MagicItem && item == nullptr)
+                item = &toy;
+        const Toy* trophy = catalogue.Find(3500);
+        CHECK(item != nullptr && trophy != nullptr && trophy->elementIcon == "trophy_sky");
+        if (item != nullptr && trophy != nullptr)
+        {
+            CHECK(ElementIconPath("giants", *item).empty());
+            std::filesystem::path mark = write("giants", "element_magicitem"),
+                                  cup = write("superchargers", "element_trophy_sky");
+            CHECK(same(ElementIconPath("ssa", *item), mark) && same(ElementIconPath("ssa", *trophy), cup));
+        }
+        // A Trap Master: the T.
+        const Toy* master = catalogue.Find(450);
+        CHECK(master != nullptr && master->category == Category::TrapMaster);
+        if (master != nullptr)
+        {
+            CHECK(TypeIconPath("trapteam", *master).empty());
+            std::filesystem::path t = write("trapteam", "type_trapmaster");
+            CHECK(same(TypeIconPath("giants", *master), t));
+        }
+        // Kaos: his own element and class icons.
+        const Toy* kaos = catalogue.Find(627);
+        CHECK(kaos != nullptr);
+        if (kaos != nullptr)
+        {
+            std::filesystem::path element = write("imaginators", "element_kaos"),
+                                  kind = write("imaginators", "class_kaos");
+            CHECK(same(ElementIconPath("ssa", *kaos), element) && same(TypeIconPath("ssa", *kaos), kind) &&
+                  ElementIconPath("ssa", *pen).empty());
+        }
+        std::filesystem::remove_all(data);
+        ForgetPictureFolders();
+        SetVariable("SKY_PORTRAITS", oldPortraits);
+        if (oldData.empty())
+            UnsetVariable("SKYLANDERS_DATA");
+        else
+            SetVariable("SKYLANDERS_DATA", oldData);
+    }
+
     void TestPictureRule()
     {
         const std::string data = g_scratch + "/picture-rule";
@@ -1951,6 +2068,7 @@ int main(int argc, char** argv)
     TestSwappers();
     TestSwapperPicture();
     TestPictureRule();
+    TestCornerIcons();
     TestSearch();
     TestBadIndex();
     TestPortalOverview();

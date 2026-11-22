@@ -102,6 +102,7 @@ add_executable(ArkeyanRuntime
     host/toybox/menu.cpp
     host/toybox/model.cpp
     host/toybox/trap_villain.cpp
+    host/toybox/version_game.cpp
     host/toybox_link.cpp
     host/toybox_remote.cpp
     host/toybox_socket.cpp
@@ -254,9 +255,11 @@ function(arkeyan_layout_record target)
     endif()
 endfunction()
 arkeyan_layout_record(ArkeyanRuntime)
-# Linux's C library has its own byteswap.h, found before a SYSTEM directory.
+# Linux's C library has its own byteswap.h, found before a SYSTEM directory. The executable's functions go in its
+# dynamic symbol table so that a fault report names the recompiled function (dladdr), as on macOS.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_compile_options(ArkeyanRuntime PRIVATE "SHELL:-iquote ${ARKEYAN_XENON_UTILS}")
+    set_target_properties(ArkeyanRuntime PROPERTIES ENABLE_EXPORTS ON)
 endif()
 
 # The launcher window: SDL_Renderer drawing, a small TrueType atlas (stb_truetype, MIT/public domain) and two
@@ -370,6 +373,11 @@ add_executable(ArkeyanToyboxTrapTest host/toybox/trap_villain_test.cpp host/toyb
 target_include_directories(ArkeyanToyboxTrapTest PRIVATE .)
 target_link_libraries(ArkeyanToyboxTrapTest PRIVATE ArkeyanArtReader)
 
+# The game Add a figure's versions panel names for each version (host/toybox/version_game.h): ./ArkeyanToyboxVersionGameTest
+add_executable(ArkeyanToyboxVersionGameTest host/toybox/version_game_test.cpp host/toybox/version_game.cpp)
+target_include_directories(ArkeyanToyboxVersionGameTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxVersionGameTest PRIVATE ArkeyanArtReader)
+
 # The remembered "resolution scale auto" step-down's file line: ./ArkeyanAutoScaleTest
 add_executable(ArkeyanAutoScaleTest gpu/auto_scale_test.cpp)
 target_include_directories(ArkeyanAutoScaleTest PRIVATE .)
@@ -413,6 +421,12 @@ sky_add_tests(ArkeyanJmpBufTest)
 add_executable(ArkeyanReadbackQueueTest gpu/readback_queue_test.cpp)
 target_include_directories(ArkeyanReadbackQueueTest PRIVATE .)
 sky_add_tests(ArkeyanReadbackQueueTest)
+
+# A fault report names the recompiled function it stopped in (dladdr finds sub_XXXXXXXX): ./ArkeyanCrashSymbolsTest
+if(NOT WIN32)
+    add_executable(ArkeyanCrashSymbolsTest platform/crash_symbols_test.cpp)
+    set_target_properties(ArkeyanCrashSymbolsTest PROPERTIES ENABLE_EXPORTS ON)
+endif()
 
 # The buffer cache's range hash (chunks shared by overlapping ranges): ./ArkeyanRangeHashTest
 add_executable(ArkeyanRangeHashTest gpu/range_hash_test.cpp)

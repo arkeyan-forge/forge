@@ -48,6 +48,20 @@ namespace collection
     // empty when that game has none cached.
     std::string GameKindPicturePath(const std::string& gameId, Category category);
 
+    // The cards' corner icons, read from a disc (art::IconFolder): `gameId`'s own, else the newest game's that has one.
+    // Empty when no installed game has it (the card draws a disc in the element's colour instead).
+    std::string ElementIconPath(const std::string& gameId, Element element);
+    // The toy's: its own (Toy::elementIcon: Kaos', a trophy's), a magic item's or an adventure pack's mark, else its
+    // element's.
+    std::string ElementIconPath(const std::string& gameId, const Toy& toy);
+    // A swapper half's movement icon (its bottom's: the top has none), a Sensei's battle class icon, a vehicle's or a
+    // SuperCharger's ride (land, sea, sky), the Trap Masters' T, the Giants' and the Minis' marks. Empty for the other toys: their type is the title before the level
+    // (CategoryTitle).
+    std::string TypeIconPath(const std::string& gameId, const Toy& toy);
+    // The battle class's icon (figures::BattleClassName, 1-10: a Sensei's, a made creation crystal's; 11: Kaos'), empty
+    // for 0.
+    std::string ClassIconPath(const std::string& gameId, int battleClass);
+
     // --- Which game's pictures (the player's choice; docs/runtime/host/figures.md, "Which picture") ----------------------
 
     // Kept in the collection folder's pictures/pictures.json with the player's own pictures (pictures/<type>-<variant>.png),
@@ -108,6 +122,11 @@ namespace collection
     // tints it as it draws), so its magenta glass takes the element's colour here, shade kept. `path`: the picture the
     // caller found (BestPicturePath, PortraitPath). Empty for another toy or without a picture.
     Image CrystalPicture(const Toy& toy, const std::string& path);
+    // A trap's picture while it holds a villain: the trap's (`path`, as for CrystalPicture) with the villain's captured
+    // picture (VillainPicturePath) small at its bottom, centred, inside the round crop of the Toy Box's portraits. `villain`:
+    // the id the trap stores (1-46, figures::VillainResourceBase below the catalogue's). Empty for another toy, no
+    // villain, a villain with no picture cached or a card with its own picture: the caller keeps the trap's picture.
+    Image TrapPicture(const Toy& trap, uint16_t variant, uint16_t villain, const std::string& path);
     // PortraitPath with no game being viewed, as for every other view.
     std::string DiscImagePath(const Toy& toy);
 

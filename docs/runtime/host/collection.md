@@ -145,7 +145,8 @@ file name) on **both** halves in `collection.json`.
   bottom (null for any other figure). `CardName` is the top's label if the player gave one, else the swapper's name when
   both halves are the same swapper (`Wash Buckler`), else the mixed swapper's name as the game gives it (`SwapperName`:
   `Nitro Magna Charge` over `Boom Jet` is `Nitro Magna Jet`); `CardLevelText` is the top's
-  `LevelText`; `Card::Busy()` is true when either half is in use; `Card::Halves()` is what goes on the portal and what
+  `LevelText` (a figure with a category title has it first: `Giant · Level 15`, `Trap Master · Level 20`,
+  `Swapper · ...`, `SuperCharger`, `Sensei`, `Mini`: `CategoryTitle`); `Card::Busy()` is true when either half is in use; `Card::Halves()` is what goes on the portal and what
   Delete and Export apply to. `Group()` shows a linked pair once (as its top: the bottom's index is left out of the
   sections), and `List()` with a filter keeps both halves of a pair when either passes (a search for "Fire Kraken"
   finds the swapper whether it matched the top or the bottom).
@@ -206,6 +207,14 @@ the collection folder adds toys or replaces them by toy type, and games by id. F
 - `category`: core, giant, swap_top, swap_bottom (a swapper's two halves are two toys), trap_master, supercharger,
   sensei, mini (minis and sidekicks), trap, villain, vehicle, creation_crystal, magic_item, adventure (adventure packs
   and location pieces), trophy.
+- `swap_type` on a swapper's bottom half: its movement, which the swap zones test (Swap Force's toy data,
+  `_turboType`): bouncer, climber, digger, flyer, sneaker, speeder, teleporter, twister; two bottoms each. The card
+  shows its icon (`TypeIconPath`).
+- `battle_class` on a Sensei: its class, 1-10 as `figures::BattleClassName` (Imaginators'
+  `LooseData/CYOSClassDataList.igz`, whose `eCCC_` ids are the same 1-10; Kaos has his own, 11). `element_icon`: the
+  element icon of a toy outside the ten elements (Kaos: `kaos`, Imaginators' `ElementIcon_Kaos`). `ride` on a
+  vehicle and a SuperCharger: `land`, `sea`, `sky` (SuperChargers' `CVehicleToyData` vehicle type; a SuperCharger takes
+  its vehicle's); the four Nintendo-only toys have none (not on the disc read). The card shows their icons.
 - `edition` on a toy: the toy type itself is special (`legendary`: 404 Legendary Bash; `dark`: 28 Dark Spyro).
 - variant `kind`: legendary, dark, crystal, glow, metallic, gold, silver, chrome, flocked, series, lightcore,
   eons_elite, alt_deco (Polar, Royal, Volcanic, Granite...), event (event and store exclusives), shape (trap and crystal shapes),
@@ -244,7 +253,9 @@ the collection folder adds toys or replaces them by toy type, and games by id. F
 characters, swap halves, traps, vehicles, magic items, battle pieces and expansion pieces; Imaginators also lists
 Senseis and creation crystals among its characters. The `toys` entries' `type` and `class` identify the families:
 every catalogue trap type is listed, as are ordinary and racing-villain vehicle types. Clown Cruiser and Barrel
-Blaster are absent from both Xbox tables; their existing catalogue types are now excluded through `rejects`.
+Blaster are absent from both Xbox tables; their existing catalogue types are now excluded through `rejects`. So are
+their drivers, Turbo Charge Donkey Kong (3423) and Hammer Slam Bowser (3424): the disc has their pictures, but neither
+table defines them, so the game cannot play them. They show under "Not for this game".
 No private table payload is embedded or copied into the catalogue.
 
 [V] The generation rule already admitted traps to both games and vehicles to Imaginators. The missing part was

@@ -129,7 +129,7 @@ namespace
         // This game's portraits (and Imaginators' part names) from the player's disc, cached in its data folder
         // (docs/runtime/host/game_art.md).
         art::Extraction found =
-            art::Extract(ARKEYAN_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits | art::PartNames);
+            art::Extract(ARKEYAN_GAME_ID, art::ReadFrom(g_disc), {}, art::Portraits | art::PartNames | art::Icons);
         fprintf(stderr, "[toybox] %d portraits in %s%s\n", found.portraits,
             art::PortraitFolder(ARKEYAN_GAME_ID).string().c_str(), found.partNames ? ", the parts' names read" : "");
     }
