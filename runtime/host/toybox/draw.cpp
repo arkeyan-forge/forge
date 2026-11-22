@@ -3024,8 +3024,12 @@ namespace toybox
         void DrawAdd(Model& model)
         {
             char subtitle[128];
-            snprintf(subtitle, sizeof(subtitle), L("toys %s reads · %d", "jouets que %s lit · %d"),
-                model.GameName().c_str(), int(model.addToys.size()));
+            if (model.addFits)
+                snprintf(subtitle, sizeof(subtitle), L("for %s · %d", "pour %s · %d"),
+                    model.SeatLabel(model.addSeat).c_str(), int(model.addToys.size()));
+            else
+                snprintf(subtitle, sizeof(subtitle), L("toys %s reads · %d", "jouets que %s lit · %d"),
+                    model.GameName().c_str(), int(model.addToys.size()));
             Header(L("ADD A FIGURE", "AJOUTER UNE FIGURINE"), subtitle);
             Hints(1248, 44, { { 'B', L("Back", "Retour") } });
             AddBackdropHit(model);
@@ -3052,9 +3056,25 @@ namespace toybox
                       y = listMin.y + grid.RowY(cell.row) - grid.scroll;
                 if (y + cardHeight < listMin.y || y > max.y)
                     continue;
+                bool cursor = int(i) == grid.cursor;
+                if (cell.kind == Cell::Kind::Fold)
+                {
+                    // Show all figures: a whole row, like the shelf's "Not for this game" line.
+                    ImVec2 a(listMin.x, y), b(max.x, y + 48);
+                    Box(a, b, cursor ? Look::CardSelected : Look::Chip, Look::CardBorder, 14, 1);
+                    TextMiddle(g_black, 15, a.x + 16, (a.y + b.y) / 2, Look::TextDim,
+                        L("Show all figures", "Voir toutes les figurines"));
+                    if (cursor)
+                    {
+                        ring = true;
+                        ringMin = a;
+                        ringMax = b;
+                    }
+                    AddCardHit(model, int(i), a, b);
+                    continue;
+                }
                 const Toy* toy = model.addToys[cell.figure];
                 ImVec2 a(x, y), b(x + cardWidth, y + cardHeight);
-                bool cursor = int(i) == grid.cursor;
                 // The toy whose versions show stays lit while the focus is in them. The shelf card's corners in a row:
                 // the element and type icons in a column on the left, the versions' count on the right.
                 Box(a, b, cursor ? Look::CardSelected : Look::Raised, Look::CardBorder, 14, 1);
@@ -3100,7 +3120,7 @@ namespace toybox
             ImVec2 pmin(844, 88), pmax(1248, 664);
             Panel(pmin, pmax);
             AddVersionsPanelHit(pmin, pmax);
-            if (!grid.cells.empty())
+            if (!grid.cells.empty() && grid.cells[grid.cursor].kind == Cell::Kind::Figure)
             {
                 const Toy* toy = model.addToys[grid.cells[grid.cursor].figure];
                 float y = pmin.y + 20;
@@ -3148,7 +3168,10 @@ namespace toybox
                     y += rowHeight;
                 }
             }
-            Footer({ { 'A', model.addVersions ? L("Create", "Créer") : L("Choose", "Choisir") },
+            const bool onShowAll = !grid.cells.empty() && grid.cells[grid.cursor].kind == Cell::Kind::Fold;
+            Footer({ { 'A', model.addVersions ? L("Create", "Créer")
+                            : onShowAll       ? L("Show all", "Tout voir")
+                                              : L("Choose", "Choisir") },
                 { 'L', L("Section", "Section") }, { 'B', L("Back", "Retour") } });
         }
 

@@ -2,6 +2,7 @@
 #include "host/collection/json.h"
 #include "host/collection/presence.h"
 #include "host/gamemenu.h"
+#include "host/toybox/add_list.h"
 #include "host/toybox/arrival.h"
 #include "host/toybox/look.h"
 #include "host/toybox/retake.h"
@@ -3637,12 +3638,6 @@ namespace toybox
         return count;
     }
 
-    // A swapper is added as one card (its top): the bottom of the same swapper is made with it.
-    bool Model::HalfMadeWithTop(const Toy& toy) const
-    {
-        return toy.category == Category::SwapBottom && Catalogue::Get().Accepts(game, MatchingHalf(toy.type));
-    }
-
     std::string Model::AddName(const Toy& toy)
     {
         std::string name = toy.name;
@@ -3656,81 +3651,38 @@ namespace toybox
         if (index < 0 || index >= int(seats.size()) || !OpenSeat(index))
             return;
         FocusColumnRow(index);
-        BuildAdd();
-        addSeat = index;
+        BuildAdd(Element::Count, index, true);
         screen = Screen::Add;
     }
 
-    void Model::BuildAdd(Element element)
+    void Model::BuildAdd(Element element, int forSeat, bool fits)
     {
-        addSeat = -1; // every way into Add a figure but AddForSeat
-        const Catalogue& catalogue = Catalogue::Get();
-        std::vector<const Toy*> toys = catalogue.Accepted(game);
-        Grid grid;
-        addToys.clear();
-        struct Group
+        addSeat = forSeat;
+        addFits = fits && forSeat >= 0 && forSeat < int(seats.size());
+        std::vector<AddGroup> groups = AddGroups(game, addFits ? &seats[forSeat].seat.accepts : nullptr);
+        // A seat none of the game's toys fit (a catalogue gap): every toy, rather than an empty list.
+        if (addFits && std::all_of(groups.begin(), groups.end(), [](const AddGroup& g) { return g.toys.empty(); }))
         {
-            Section::Kind kind;
-            int value;
-            std::vector<const Toy*> toys;
-        };
-        std::vector<Group> groups;
-        // None last: a character outside the ten elements (Imaginators' Kaos) has a group of its own.
-        static const Element Elements[] = { Element::Magic, Element::Earth, Element::Water, Element::Air, Element::Fire,
-            Element::Life, Element::Undead, Element::Tech, Element::Light, Element::Dark, Element::None };
-        for (Element e : Elements)
-        {
-            Group group{ Section::Kind::Element, int(e) };
-            for (const Toy* toy : toys)
-            {
-                if (toy->element == e && toy->category != Category::Mini && toy->category <= Category::Sensei &&
-                    !HalfMadeWithTop(*toy))
-                    group.toys.push_back(toy);
-            }
-            groups.push_back(group);
+            addFits = false;
+            groups = AddGroups(game, nullptr);
         }
-        for (Category c : { Category::Mini, Category::Trap, Category::Vehicle, Category::CreationCrystal,
-                 Category::MagicItem, Category::Adventure, Category::Trophy })
-        {
-            Group group{ Section::Kind::Category, int(c) };
-            for (const Toy* toy : toys)
-            {
-                if (toy->category == c)
-                    group.toys.push_back(toy);
-            }
-            groups.push_back(group);
-        }
+        Grid grid = AddGrid(groups, AddColumns, addFits, addToys);
         int jump = -1;
-        for (const Group& group : groups)
+        for (const ListSection& section : grid.sections)
         {
-            if (group.toys.empty())
-                continue;
-            int index = int(grid.sections.size());
-            ListSection section{ group.kind, group.value };
-            section.firstRow = grid.rows;
-            section.count = int(group.toys.size());
-            grid.sections.push_back(section);
-            int col = 0;
-            for (const Toy* toy : group.toys)
-            {
-                if (col == AddColumns)
-                {
-                    col = 0;
-                    grid.rows++;
-                }
-                Cell cell{ Cell::Kind::Figure, int(addToys.size()), index, grid.rows, col++ };
-                addToys.push_back(toy);
-                grid.cells.push_back(cell);
-            }
-            grid.rows++;
             bool wanted = element == Element::Count ? false
                           : element == Element::None
-                              ? group.kind == Section::Kind::Category &&
+                              ? section.kind == Section::Kind::Category &&
                                     std::find(seats[seat].seat.accepts.begin(), seats[seat].seat.accepts.end(),
-                                        Category(group.value)) != seats[seat].seat.accepts.end()
-                              : group.kind == Section::Kind::Element && Element(group.value) == element;
-            if (wanted && jump < 0)
-                jump = int(grid.cells.size()) - section.count;
+                                        Category(section.value)) != seats[seat].seat.accepts.end()
+                              : section.kind == Section::Kind::Element && Element(section.value) == element;
+            if (wanted)
+            {
+                jump = int(std::find_if(grid.cells.begin(), grid.cells.end(), [&](const Cell& cell) {
+                    return cell.row == section.firstRow;
+                }) - grid.cells.begin());
+                break;
+            }
         }
         grid.rowHeight = 72;
         grid.headerHeight = 40;
@@ -3747,7 +3699,7 @@ namespace toybox
     void Model::BuildVersions()
     {
         versions.clear();
-        if (add.cells.empty())
+        if (add.cells.empty() || add.cells[add.cursor].kind != Cell::Kind::Figure)
             return;
         const Toy* toy = addToys[add.cells[add.cursor].figure];
         // The plain toy is one row, named as the toy is: made under the id it is sold with when the catalogue has one (its
@@ -3772,6 +3724,11 @@ namespace toybox
     {
         if (index < 0 || index >= int(add.cells.size()))
             return;
+        if (add.cells[index].kind == Cell::Kind::Fold)
+        {
+            BuildAdd(Element::Count, addSeat, false);
+            return;
+        }
         if (add.cursor == index && !addVersions)
         {
             addVersions = true;
@@ -3852,11 +3809,17 @@ namespace toybox
             BuildVersions();
             break;
         case Command::Accept:
+            if (!add.cells.empty() && add.cells[add.cursor].kind == Cell::Kind::Fold)
+            {
+                BuildAdd(Element::Count, addSeat, false); // Show all figures: the seat stays the target
+                break;
+            }
             addVersions = true;
             addVersion = 0;
             break;
         case Command::Back:
             addSeat = -1;
+            addFits = false;
             screen = Screen::Home;
             BuildList();
             break;

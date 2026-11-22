@@ -308,6 +308,7 @@ namespace toybox
         bool addVersions = false;
         int addVersion = 0;
         int addSeat = -1; // opened from that seat's +: the figure made goes onto it (-1: none)
+        bool addFits = false; // only the toys addSeat takes, then "Show all figures" (the grid's last cell, a Fold)
         std::vector<Version> versions;
         NameEntry name;
         ManageState manage;
@@ -554,8 +555,8 @@ namespace toybox
         void RefreshSeats(uint64_t now);
         void SeatRealToys(); // the real portal's toys on the seats (a real portal, a mixed one)
         void BuildList();
-        bool HalfMadeWithTop(const collection::Toy& toy) const;
-        void BuildAdd(collection::Element element = collection::Element::Count);
+        // `forSeat`: the seat the figure made goes onto (addSeat); `fits`: only the toys it takes.
+        void BuildAdd(collection::Element element = collection::Element::Count, int forSeat = -1, bool fits = false);
         void BuildVersions();
         void FixGrid(Grid& grid, int visibleRows);
         bool MoveGrid(Grid& grid, Command command); // false when the move would leave the grid

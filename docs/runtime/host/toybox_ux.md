@@ -76,6 +76,10 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
   onto that seat and Add a figure closes; one the seat refuses stays off it, with the usual "Put it on ..." offer. Add a
   figure opened any other way puts nothing on a seat. A right click on an empty seat keeps its options. Unit check:
   `runtime/host/toybox/mouse_test.cpp` (`tools/regress/f3mouse_unit.py`).
+- **Add a figure for a seat** (in game, 2026-11-22): opened from a seat's +, it lists only the sections whose toys the
+  seat takes (`Seat::accepts`: a Trap seat its traps, Player 1 every character family), the subtitle reads "for Trap ·
+  12". A last row, "Show all figures", lists every toy again; the seat stays the target. Every other way in lists
+  everything. Unit check: `runtime/host/toybox/add_list_test.cpp`.
 - **The mouse wheel** (2026-11-22): it scrolls, it never moves the focus. On the shelf, Add a figure and the wheel's
   list a tick scrolls one row of cards; in the F3 menu's Settings one row, in
   Achievements one row of cards; the panel and Controls do not scroll. The focus may leave the view: the next key press
