@@ -158,6 +158,45 @@ namespace
         b.join();
         return callbacks;
     }
+
+    // A handover wakes the new holder only. Waking every waiting context at each handover made SSA's forty threads
+    // queue on the scheduler's mutex: online, it ran at 19 FPS with its threads mostly asleep.
+    void WakesOnlyTheHolder()
+    {
+        netplay::Clock clock;
+        netplay::Scheduler scheduler(clock);
+        constexpr int Rounds = 2000;
+        const auto first = scheduler.Register();
+        const auto second = scheduler.Register();
+        std::array<netplay::Scheduler::Id, 16> parked{};
+        for (auto& id : parked)
+            id = scheduler.Register();
+        std::atomic<bool> finished{ false };
+        std::vector<std::thread> threads;
+        threads.reserve(parked.size() + 1);
+        for (const auto id : parked)
+            threads.emplace_back([&, id] {
+                scheduler.Enter(id);
+                scheduler.Block([&] { return finished.load(); });
+                scheduler.Exit();
+            });
+        threads.emplace_back([&] {
+            scheduler.Enter(second);
+            for (int i = 0; i < Rounds; ++i)
+                scheduler.Yield();
+            scheduler.Exit();
+        });
+        scheduler.Enter(first);
+        for (int i = 0; i < Rounds; ++i)
+            scheduler.Yield();
+        const uint64_t idle = scheduler.IdleWakes();
+        finished = true;
+        scheduler.Signal();
+        scheduler.Exit();
+        for (auto& thread : threads)
+            thread.join();
+        Check(idle < 100, "a handover wakes the new holder only, not every waiting context");
+    }
 }
 
 int main(int argc, char** argv)
@@ -183,6 +222,7 @@ int main(int argc, char** argv)
         scheduler.Exit();
         return 0;
     }
+    WakesOnlyTheHolder();
     const auto expected = Replay();
     const auto frameOrder = FrameCallbacks();
     Check(expected == std::vector<unsigned>({ 0, 1, 2, 3, 10, 12, 13, 11 }), "FIFO signals and spin quantum");

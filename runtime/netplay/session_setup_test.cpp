@@ -3,6 +3,7 @@
 #include "host/profiles.h"
 #include "netplay/session_end.h"
 #include "netplay/session_settings.h"
+#include "netplay/session_runtime.h"
 #include "host/debug_screen.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
@@ -48,6 +49,8 @@ bool SetTextLanguage(std::string_view) { return true; }
 
 int main()
 {
+    Check(netplay::VersionLabel("0.10.0", true) == "0.10.0-o" && netplay::VersionLabel("0.10.0", false) == "0.10.0",
+        "an online session shows -o after the game's version");
     Check(netplay::SessionFrameRate("30") == 30 && netplay::SessionFrameRate("60") == 60, "valid session frame rates");
     for (const char* invalid : std::array<const char*, 6>{ nullptr, "", "0", "120", "30x", " 60" })
         Check(netplay::SessionFrameRate(invalid) == 0, "session FPS is required and exact");

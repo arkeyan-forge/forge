@@ -10,6 +10,7 @@
 
 #include "game.h"
 #include "netplay/clock.h"
+#include "netplay/session_runtime.h"
 #include "host/audio.h"
 #include "host/display.h"
 #include "host/gamemenu.h"
@@ -474,7 +475,7 @@ namespace
                 fprintf(stderr, "[uwp] figure collection %s\n", skyenv::Get("SKY_COLLECTION"));
             }
             PortalInit();
-            gamemenu::Init(m_settings, window, ARKEYAN_GAME_VERSION);
+            gamemenu::Init(m_settings, window, netplay::VersionLabel(ARKEYAN_GAME_VERSION, netplay::Online()).c_str());
             ToyboxInit(window);
             ToyboxSetAutoOpen(m_settings.toyboxAutoOpen);
             auto mainThread = CreateGuestThread(g_module.entryPoint, 0, 0, g_module.stackSize, false, 0);

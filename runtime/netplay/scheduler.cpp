@@ -42,6 +42,7 @@ namespace netplay
         uint32_t reads = 0;
         std::function<bool()> ready;
         std::function<void()> location, capture;
+        std::condition_variable turn; // notified when this context becomes the holder
     };
 
     thread_local Scheduler* Scheduler::t_scheduler = nullptr;
@@ -174,18 +175,32 @@ namespace netplay
         }
         if (previousHolder != None || m_holder != None)
             m_handover = std::chrono::steady_clock::now();
-        m_changed.notify_all();
+        // Only the new holder is woken: waking every context at each handover made them all queue on the mutex.
+        // With no holder (every context waits for a host completion), all of them poll again.
+        if (m_holder != None)
+            m_contexts[m_holder - 1]->turn.notify_one();
+        else
+            for (const auto& context : m_contexts)
+                context->turn.notify_one();
     }
 
     void Scheduler::Await(std::unique_lock<std::mutex>& lock, Id id)
     {
         // Only an idle scheduler polls host completion. No running guest can race with these predicates.
+        auto& context = *m_contexts[id - 1];
         while (m_holder != id)
         {
             if (m_holder == None)
                 Dispatch();
-            if (m_holder != id)
-                m_changed.wait_for(lock, std::chrono::milliseconds(1));
+            if (m_holder == id)
+                break;
+            // A held baton comes with a notification; without a holder, a host completion is polled for.
+            if (m_holder == None)
+                context.turn.wait_for(lock, std::chrono::milliseconds(1));
+            else
+                context.turn.wait(lock);
+            if (m_holder != id && m_holder != None)
+                m_idleWakes.fetch_add(1, std::memory_order_relaxed);
         }
     }
 

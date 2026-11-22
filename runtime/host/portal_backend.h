@@ -70,8 +70,10 @@ std::string ProbeUsbPortals(std::vector<PortalProbe>& portals);
 std::vector<std::string> ProbeNotes();
 
 bool LoadFigure(const std::string& path, FigureData& data);
-// Rewrites the first 1 KB of the dump in place.
+// Rewrites the first 1 KB of the dump in place; never creates a file.
 bool SaveFigure(const std::string& path, const FigureData& data);
+// Creates (or replaces) a dump that is a copy of the figure: an online session's copies, never a player's dump.
+bool WriteNewFigure(const std::string& path, const FigureData& data);
 
 class EmulatedPortal final : public PortalBackend, public PortalSlots
 {

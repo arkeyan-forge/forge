@@ -1,5 +1,6 @@
 #include "netplay/state_hash.h"
 #include <algorithm>
+#include <thread>
 #include <charconv>
 #include <cstring>
 
@@ -71,6 +72,20 @@ namespace netplay
             const uint8_t* data = bytes.data() + (begin - address);
             const size_t size = size_t(stop - begin);
             size_t i = 0;
+            // One chain waits for each multiply: four chains side by side hash about four times faster.
+            if (size >= 32)
+            {
+                uint64_t lanes[4] = { hash, hash ^ 1, hash ^ 2, hash ^ 3 };
+                for (; i + 32 <= size; i += 32)
+                {
+                    uint64_t words[4];
+                    std::memcpy(words, data + i, 32);
+                    for (size_t lane = 0; lane < 4; ++lane)
+                        lanes[lane] = Mix(lanes[lane], words[lane]);
+                }
+                for (const uint64_t lane : lanes)
+                    hash = Mix(hash, lane);
+            }
             for (; i + 8 <= size; i += 8)
             {
                 uint64_t word;
@@ -99,20 +114,84 @@ namespace netplay
         return Mix(hash, count);
     }
 
+    void HashAllocations(std::span<const Allocation> allocations, std::span<const Range> skips,
+        std::vector<Block>& blocks, uint32_t blockBytes, std::vector<uint64_t>* ends)
+    {
+        // The blocks first, then their hashes, block by block on several threads: the result is the same whatever the
+        // number of threads.
+        struct Extent
+        {
+            size_t allocation, offset, size;
+        };
+        std::vector<Extent> extents;
+        size_t total = 0;
+        for (size_t index = 0; index < allocations.size(); ++index)
+        {
+            const auto& allocation = allocations[index];
+            size_t offset = 0;
+            while (offset < allocation.bytes.size())
+            {
+                const uint64_t at = uint64_t(allocation.address) + offset;
+                const size_t size =
+                    std::min(allocation.bytes.size() - offset, size_t(blockBytes - (at & (blockBytes - 1))));
+                const bool excluded = std::any_of(skips.begin(), skips.end(),
+                    [=](const Range& range) { return range.begin <= at && range.end >= at + size; });
+                if (!excluded)
+                {
+                    extents.push_back({ index, offset, size });
+                    total += size;
+                }
+                offset += size;
+            }
+        }
+        const size_t first = blocks.size();
+        blocks.resize(first + extents.size());
+        if (ends)
+            ends->resize(first + extents.size());
+        const auto hash = [&](size_t begin, size_t end) {
+            for (size_t i = begin; i < end; ++i)
+            {
+                const auto& extent = extents[i];
+                const auto& allocation = allocations[extent.allocation];
+                const uint64_t at = uint64_t(allocation.address) + extent.offset;
+                blocks[first + i] = { uint32_t(at), allocation.heap,
+                    HashBytes(allocation.bytes.subspan(extent.offset, extent.size), at, skips) };
+                if (ends)
+                    (*ends)[first + i] = at + extent.size;
+            }
+        };
+        constexpr size_t ThreadedBytes = 4 << 20;
+        const size_t threads = total >= ThreadedBytes ? std::min<size_t>(HashThreads, extents.size()) : 1;
+        if (threads <= 1)
+        {
+            hash(0, extents.size());
+            return;
+        }
+        // Shares of equal bytes, not of equal block counts: the image's sections end in short blocks.
+        std::vector<size_t> bounds = { 0 };
+        size_t done = 0;
+        for (size_t i = 0; i < extents.size() && bounds.size() < threads; ++i)
+        {
+            done += extents[i].size;
+            if (done * threads >= total * bounds.size())
+                bounds.push_back(i + 1);
+        }
+        while (bounds.size() <= threads)
+            bounds.push_back(extents.size());
+        std::vector<std::thread> workers;
+        workers.reserve(threads - 1);
+        for (size_t t = 1; t < threads; ++t)
+            workers.emplace_back(hash, bounds[t], bounds[t + 1]);
+        hash(bounds[0], bounds[1]);
+        for (auto& worker : workers)
+            worker.join();
+    }
+
     void HashAllocation(std::span<const uint8_t> bytes, uint32_t address, Heap heap, std::span<const Range> skips,
         std::vector<Block>& blocks, uint32_t blockBytes)
     {
-        size_t offset = 0;
-        while (offset < bytes.size())
-        {
-            const uint64_t at = uint64_t(address) + offset;
-            const size_t size = std::min(bytes.size() - offset, size_t(blockBytes - (at & (blockBytes - 1))));
-            const bool excluded = std::any_of(skips.begin(), skips.end(),
-                [=](const Range& range) { return range.begin <= at && range.end >= at + size; });
-            if (!excluded)
-                blocks.push_back({ uint32_t(at), heap, HashBytes(bytes.subspan(offset, size), at, skips) });
-            offset += size;
-        }
+        const Allocation allocation{ bytes, address, heap };
+        HashAllocations(std::span(&allocation, 1), skips, blocks, blockBytes);
     }
 
     bool ParseCount(std::string_view text, uint64_t min, uint64_t max, bool powerOfTwo, uint64_t& value)

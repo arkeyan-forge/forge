@@ -1,4 +1,6 @@
 #pragma once
+#include <string_view>
+#include <string>
 
 #include "host/env.h"
 #include "netplay/session.h"
@@ -13,6 +15,11 @@ namespace netplay
     {
         static const bool enabled = skyenv::Get("SKY_NETPLAY_HOST") || skyenv::Get("SKY_NETPLAY_JOIN");
         return enabled && !SessionContinues();
+    }
+    // The version the player sees (window title, F3 menu): "-o" after it in an online session.
+    inline std::string VersionLabel(std::string_view version, bool online)
+    {
+        return std::string(version) + (online ? "-o" : "");
     }
     inline bool Hosting()
     {

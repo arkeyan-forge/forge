@@ -18,7 +18,7 @@ void GuestMemory::Reserve()
     if (base == nullptr)
     {
         fprintf(stderr, "Cannot reserve 4 GB of address space for guest memory\n");
-        exit(1);
+        std::_Exit(1); // before any guest thread: nothing to flush or join
     }
 
     // Nothing is mapped at the bottom of the console's address space: trap null pointer accesses.
@@ -127,6 +127,17 @@ uint32_t GuestHeap::FindAllocation(uint32_t address, uint32_t* size) const
     if (address >= it->first + it->second)
         return 0;
 
+    if (size != nullptr)
+        *size = it->second;
+    return it->first;
+}
+
+uint32_t GuestHeap::NextAllocation(uint32_t address, uint32_t* size) const
+{
+    std::lock_guard lock(m_mutex);
+    const auto it = AllocationAtOrAfter(m_used, address);
+    if (it == m_used.end())
+        return 0;
     if (size != nullptr)
         *size = it->second;
     return it->first;

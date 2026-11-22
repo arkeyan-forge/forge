@@ -71,11 +71,16 @@ namespace
     bool QueueOnlineLocked(const std::vector<PortalFigureChange>& changes)
     {
         if (changes.empty() || changes.size() > PortalSlotCount)
+        {
+            fprintf(stderr, "[portal] online: change refused: %zu slots changed at once\n", changes.size());
             return false;
+        }
         std::array<netplay::PortalEvent, PortalSlotCount> events{};
         const size_t previousSize = g_onlineFigures.size();
         std::vector<std::string> acquired;
-        const auto refuse = [&] {
+        const auto refuse = [&](const char* why, const std::string& figure = {}) {
+            fprintf(
+                stderr, "[portal] online: change refused: %s%s%s\n", why, figure.empty() ? "" : ": ", figure.c_str());
             for (const auto& path : acquired)
                 collection::Unlock(path);
             for (size_t index = previousSize; index < g_onlineFigures.size(); ++index)
@@ -90,9 +95,10 @@ namespace
         size_t count = 0;
         for (const auto& change : changes)
         {
-            if (change.slot < 0 || change.slot >= PortalSlotCount || (used >> change.slot & 1) ||
-                !netplay::SeatAllowed(netplay::Hosting(), g_onlinePlayers[change.slot]))
-                return refuse();
+            if (change.slot < 0 || change.slot >= PortalSlotCount || (used >> change.slot & 1))
+                return refuse("no such slot, or the same slot twice");
+            if (!netplay::SeatAllowed(netplay::Hosting(), g_onlinePlayers[change.slot]))
+                return refuse(("slot " + std::to_string(change.slot) + " belongs to the other player").c_str());
             used |= uint32_t(1) << change.slot;
             auto& event = events[count++];
             event.slot = uint8_t(change.slot);
@@ -109,20 +115,22 @@ namespace
                 {
                     event.hasDump = true;
                     if (!LoadFigure(known->path, event.dump))
-                        return refuse();
+                        return refuse("the session's copy of the figure cannot be read", known->path);
                 }
             }
             else
             {
                 FigureData data;
-                if (g_onlineFigures.size() >= 4096 || !LoadFigure(change.path, data))
-                    return refuse();
+                if (g_onlineFigures.size() >= 4096)
+                    return refuse("4096 figures already sent this session");
+                if (!LoadFigure(change.path, data))
+                    return refuse("the figure cannot be read", change.path);
                 figures::MendVirtualToy(data);
                 if (InCollection(change.path))
                 {
                     const bool mine = collection::GetLock(change.path).mine;
                     if (!collection::Lock(change.path, GameId))
-                        return refuse();
+                        return refuse("the figure is in use by another game", change.path);
                     if (!mine)
                         acquired.push_back(change.path);
                 }
@@ -132,8 +140,8 @@ namespace
                 const auto path = OnlinePath(netplay::Hosting(), event.figure);
                 std::error_code error;
                 std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
-                if (error || !SaveFigure(path, data))
-                    return refuse();
+                if (error || !WriteNewFigure(path, data))
+                    return refuse("the session's copy cannot be written", path);
                 g_onlineFigures.push_back({ netplay::Hosting(), event.figure, path, change.path });
             }
         }
@@ -143,7 +151,7 @@ namespace
                     events[index].hasDump = false;
         events[count - 1].last = true;
         if (!netplay::QueuePortalEvents(std::span(events).first(count)))
-            return refuse();
+            return refuse("the session did not take the change (not connected, or its queue is full)");
         for (size_t index = 0; index < count; ++index)
         {
             const auto& change = changes[index];
@@ -888,8 +896,11 @@ bool PortalPrepareOnline(bool host, const netplay::PortalEvent& event)
     const auto path = OnlinePath(host, event.figure);
     std::error_code error;
     std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
-    if (error || !SaveFigure(path, event.dump))
+    if (error || !WriteNewFigure(path, event.dump))
+    {
+        fprintf(stderr, "[portal] online: the other player's figure cannot be copied to %s\n", path.c_str());
         return false;
+    }
     g_onlineFigures.push_back({ host, event.figure, path, {} });
     return true;
 }

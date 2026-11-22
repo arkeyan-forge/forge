@@ -628,6 +628,16 @@ int main()
     }
 
     SDL_RemovePath(path.c_str());
+
+    // An online session's copy of a figure is a new file: a save only updates a dump that exists, a new copy is created.
+    const std::string copy = (std::filesystem::temp_directory_path() / "ArkeyanPortalTest_session_copy.sky").string();
+    SDL_RemovePath(copy.c_str());
+    CHECK(!SaveFigure(copy, figure) && !std::filesystem::exists(copy));
+    CHECK(WriteNewFigure(copy, figure));
+    FigureData copied{};
+    CHECK(LoadFigure(copy, copied) && copied == figure);
+    SDL_RemovePath(copy.c_str());
+
     MixedChecks();
     RenumberChecks();
     printf("portal test: %d checks, %d failures\n", g_checks, g_failures);
