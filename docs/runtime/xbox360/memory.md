@@ -62,7 +62,7 @@ path `memset`s the range). Rules we implemented from observed calls:
   allocation's own window with `PhysicalToGuest`. Found in Imaginators (#47); the other games' locks are not hooked [?].
 - `MmMapIoSpace(type, physical, size, protect)` returns `PhysicalToGuest(physical)`: XMA engine 1 maps its contexts through
   it and writes through the result ([audio_xma_xaudio.md](audio_xma_xaudio.md)).
-- `MmQueryAllocationSize`, `MmQueryAddressProtect` (image or known allocation = `PAGE_READWRITE`, else 0).
+- `MmQueryAllocationSize`, `MmQueryAddressProtect` (a physical allocation: the protection it was allocated with, cache attributes included, `0x404` for write-combined memory, `kernel/address_protect.h`; the image or another known allocation: `PAGE_READWRITE`; else 0). Swap Force copies every render buffer whose memory does not answer `PAGE_WRITECOMBINE`: with a plain `PAGE_READWRITE` its 247 MB pool ran out (the green picture, forge issue #84).
 - `PhysicalToGuest` is called ~4000 times per frame (vertex, index, texture addresses): a **per-thread cache of the last 8
   allocations**, invalidated by a generation counter bumped on every `MmFreePhysicalMemory`, cut it from 247 to 106 profile samples.
 - Known harmless bug: `GuestHeap::Free` zeroes `Translate(base)` where `base` is a *physical heap offset*, so freeing

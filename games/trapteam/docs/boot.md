@@ -62,7 +62,7 @@
 | Import | Calls | What it returns here | What a 512 MB console returns | Does the 160 MB block follow? |
 |---|---|---|---|---|
 | `MmQueryAllocationSize` | 6092 | the allocation's size rounded to its page size: `0x10000` for 6088 calls (the game's small large-page physical allocations of 0x1C-0xB8 bytes), 4 others `0x00050000`, `0x00210000`, `0x00810000`, `0x09020000` (its real big ones) | the same: a large-page block is 64 KB granular [?] (not measured on a console) | no: the queried addresses are the allocations the game just made |
-| `MmQueryAddressProtect` | 10298 | `0x04` (PAGE_READWRITE) every time | `0x04`, or `0x404` for write-combined memory such as the video pool [?] | no |
+| `MmQueryAddressProtect` | 10298 | `0x04` (PAGE_READWRITE) every time; since 2026-11-22 the allocation's protection, `0x404` for write-combined memory (Swap Force needed it, forge issue #84) | `0x04`, or `0x404` for write-combined memory such as the video pool [?] | no |
 | `NtQueryVirtualMemory` | 0 (imported, not called) | n/a | n/a | n/a |
 | `MmQueryStatistics` | not imported | n/a (ours: 512 MB of 4 KB pages, available = total minus allocated) | n/a | n/a |
 

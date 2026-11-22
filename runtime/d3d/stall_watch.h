@@ -51,4 +51,29 @@ namespace d3d
         bool m_drew = false, m_stalled = false;
         uint64_t m_lastDrawn = 0, m_stalledFrom = 0;
     };
+
+    // The game's draw calls and resolves of one frame, as the stall report counts them.
+    struct StallCounts
+    {
+        uint32_t guestDraws, skippedShader, skippedTarget, resolves;
+        uint32_t droppedStep, droppedSizes, droppedIndices, droppedVertices;
+    };
+
+    // Sums into `quiet` the frames that drew nothing since the last one that drew (`draws` the frame's drawn calls).
+    inline void AddQuietFrame(StallCounts& quiet, uint32_t draws, const StallCounts& frame)
+    {
+        if (draws != 0)
+        {
+            quiet = {};
+            return;
+        }
+        quiet.guestDraws += frame.guestDraws;
+        quiet.skippedShader += frame.skippedShader;
+        quiet.skippedTarget += frame.skippedTarget;
+        quiet.resolves += frame.resolves;
+        quiet.droppedStep += frame.droppedStep;
+        quiet.droppedSizes += frame.droppedSizes;
+        quiet.droppedIndices += frame.droppedIndices;
+        quiet.droppedVertices += frame.droppedVertices;
+    }
 }
