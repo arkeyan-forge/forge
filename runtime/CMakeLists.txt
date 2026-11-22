@@ -353,6 +353,10 @@ target_include_directories(ArkeyanToyboxInPlayTest PRIVATE .)
 add_executable(ArkeyanToyboxPutOnTest host/toybox/put_on_test.cpp)
 target_include_directories(ArkeyanToyboxPutOnTest PRIVATE .)
 
+# The section strip's chips wrapping onto rows (host/toybox/strip.h): ./ArkeyanToyboxStripTest
+add_executable(ArkeyanToyboxStripTest host/toybox/strip_test.cpp)
+target_include_directories(ArkeyanToyboxStripTest PRIVATE .)
+
 # The keys the game's bindings see around the Toy Box and the F3 menu (host/toybox/key_mask.h): ./ArkeyanToyboxKeyMaskTest
 add_executable(ArkeyanToyboxKeyMaskTest host/toybox/key_mask_test.cpp)
 target_include_directories(ArkeyanToyboxKeyMaskTest PRIVATE .)
