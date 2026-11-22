@@ -304,7 +304,7 @@ int main(int argc, char** argv)
     if (online)
     {
         CHECK(Value(screen.right, "ping (60 s)") == "42 ms  min 16  max 42");
-        CHECK(Value(screen.right, "hash") == "frame 300  10 good checks");
+        CHECK(Value(screen.right, "hash") == "frame 300  10 good checks  0 repaired");
         CHECK(Has(gamemenu::DebugScreenText(), "ONLINE"));
     }
     CHECK(screen.full && screen.graphCount == 199); // frame 1 began before the measurement

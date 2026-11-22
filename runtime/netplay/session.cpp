@@ -14,7 +14,27 @@ namespace netplay
                 std::chrono::steady_clock::now().time_since_epoch())
                     .count());
         }
+        void Append(std::vector<uint8_t>& bytes, uint64_t value, size_t size)
+        {
+            for (size_t i = 0; i < size; ++i)
+                bytes.push_back(uint8_t(value >> (8 * i)));
+        }
+        uint64_t Take(std::span<const uint8_t> bytes, size_t& at, size_t size)
+        {
+            uint64_t value = 0;
+            for (size_t i = 0; i < size; ++i)
+                value |= uint64_t(bytes[at++]) << (8 * i);
+            return value;
+        }
     }
+    struct Session::Repair
+    {
+        uint64_t frame = 0, start = 0, total = 0;
+        std::vector<Block> blocks;
+        std::vector<uint8_t> outgoing, incoming, received;
+        uint64_t sinceRequest = UINT64_MAX;
+        bool prepared = false, verified = false, done = false;
+    };
     Session::Session(SessionConfig config, std::unique_ptr<Transport> transport)
         : m_config(std::move(config)),
           m_transport(std::move(transport)),
@@ -79,6 +99,10 @@ namespace netplay
         stats.lost = m_lost;
         stats.rejected = m_rejected;
         const auto now = m_config.now();
+        stats.resyncs = m_resyncs;
+        stats.backInSync = m_resyncs && now - m_lastResync < 2000 && m_failure.reason == EndReason::None;
+        stats.repairing = m_repair && !m_repair->done && m_failure.reason == EndReason::None;
+        stats.waiting = m_waiting && m_failure.reason == EndReason::None;
         const auto second = now / 1000;
         uint64_t frames = 0, wait = 0, minPing = UINT64_MAX;
         for (const auto& bucket : m_seconds)
@@ -163,16 +187,24 @@ namespace netplay
         for (;;)
         {
             if (m_failure.reason != EndReason::None && m_endSends >= 16)
+            {
+                m_waiting = false;
                 return false;
+            }
             if (m_failure.reason == EndReason::None && ready())
+            {
+                m_waiting = false;
                 return true;
+            }
             const uint64_t elapsed = m_config.now() - start;
             if (m_failure.reason == EndReason::None && elapsed >= m_config.timeoutMs)
-                End(EndReason::Timeout);
+                End(m_repair && !m_repair->done ? EndReason::Desync : EndReason::Timeout, m_hashFrame, m_hash,
+                    m_peerHash);
             if (!warned && m_failure.reason == EndReason::None && elapsed >= m_config.waitingMs)
             {
                 fprintf(stderr, "[netplay] waiting for the other player\n");
                 warned = true;
+                m_waiting = true;
             }
             const auto before = m_config.now();
             m_changed.wait_for(lock, std::chrono::milliseconds(2));
@@ -334,13 +366,267 @@ namespace netplay
             return false;
         if (m_peerHash != hash)
         {
-            End(EndReason::Desync, frame, hash, m_peerHash);
-            Wait(lock, [] { return false; });
-            return false;
+            StartRepair();
+            if (!Wait(lock, [&] { return m_repair && m_repair->done; }))
+                return false;
         }
         m_goodHash = frame;
         ++m_goodChecks;
         return true;
+    }
+    void Session::StartRepair()
+    {
+        const uint64_t now = m_config.now();
+        if (!m_config.blocks || (m_repairAttempts >= 2 && now - m_repairTimes[m_repairAttempts % 2] < 60000))
+        {
+            End(EndReason::Desync, m_hashFrame, m_hash, m_peerHash);
+            return;
+        }
+        m_repairTimes[m_repairAttempts++ % 2] = now;
+        m_repair = std::make_unique<Repair>();
+        auto& repair = *m_repair;
+        repair.frame = m_hashFrame;
+        repair.start = now;
+        repair.total = m_hash;
+        const auto blocks = m_config.blocks->ListBlocks();
+        if (blocks.size() > (MaxBlockListBytes - 4) / 16)
+        {
+            End(EndReason::Desync, m_hashFrame, m_hash, m_peerHash);
+            return;
+        }
+        repair.blocks.assign(blocks.begin(), blocks.end());
+        if (!m_config.hello.host)
+        {
+            Append(repair.outgoing, blocks.size(), 4);
+            for (const auto& block : blocks)
+            {
+                Append(repair.outgoing, block.address, 4);
+                Append(repair.outgoing, uint32_t(block.heap), 4);
+                Append(repair.outgoing, block.hash, 8);
+            }
+        }
+    }
+    void Session::CompleteRepair()
+    {
+        if (m_repair->done)
+            return;
+        m_repair->done = true;
+        ++m_resyncs;
+        fprintf(stderr, "[netplay] state repaired at frame %llu (%zu bytes sent)\n",
+            static_cast<unsigned long long>(m_repair->frame),
+            m_config.hello.host ? m_repair->outgoing.size() : m_repair->incoming.size());
+        m_lastResync = m_config.now();
+        m_changed.notify_all();
+    }
+    void Session::PrepareRepair()
+    {
+        auto& repair = *m_repair;
+        size_t at = 0;
+        const auto fail = [&] { End(EndReason::Desync, repair.frame, m_hash, m_peerHash); };
+        if (m_config.hello.host)
+        {
+            if (repair.incoming.size() != 4 + repair.blocks.size() * 16 ||
+                Take(repair.incoming, at, 4) != repair.blocks.size())
+                return fail();
+            std::vector<size_t> different;
+            for (size_t i = 0; i < repair.blocks.size(); ++i)
+            {
+                const auto address = Take(repair.incoming, at, 4), heap = Take(repair.incoming, at, 4);
+                const auto hash = Take(repair.incoming, at, 8);
+                if (address != repair.blocks[i].address || heap != uint32_t(repair.blocks[i].heap))
+                    return fail();
+                if (hash != repair.blocks[i].hash)
+                    different.push_back(i);
+                if (different.size() > MaxRepairBlocks)
+                    return fail();
+            }
+            Append(repair.outgoing, different.size(), 4);
+            std::vector<uint8_t> bytes;
+            for (const auto index : different)
+            {
+                bytes.clear();
+                if (!m_config.blocks->ReadBlock(index, bytes) || bytes.empty() || bytes.size() > 65536)
+                    return fail();
+                Append(repair.outgoing, index, 4);
+                Append(repair.outgoing, bytes.size(), 4);
+                repair.outgoing.insert(repair.outgoing.end(), bytes.begin(), bytes.end());
+            }
+        }
+        else
+        {
+            if (repair.incoming.size() < 4)
+                return fail();
+            const auto count = Take(repair.incoming, at, 4);
+            if (count > MaxRepairBlocks)
+                return fail();
+            // Validate the whole transfer before the first write; peer bytes never choose a guest address.
+            size_t previous = 0;
+            for (uint64_t i = 0; i < count; ++i)
+            {
+                if (repair.incoming.size() - at < 8)
+                    return fail();
+                const auto index = Take(repair.incoming, at, 4), size = Take(repair.incoming, at, 4);
+                if (index >= repair.blocks.size() || (i && index <= previous) || !size || size > 65536 ||
+                    size > repair.incoming.size() - at)
+                    return fail();
+                previous = size_t(index);
+                at += size_t(size);
+            }
+            if (at != repair.incoming.size())
+                return fail();
+            at = 4;
+            for (uint64_t i = 0; i < count; ++i)
+            {
+                const auto index = Take(repair.incoming, at, 4), size = Take(repair.incoming, at, 4);
+                if (!m_config.blocks->WriteBlock(size_t(index), std::span(repair.incoming).subspan(at, size_t(size))))
+                    return fail();
+                at += size_t(size);
+            }
+            repair.total = m_config.blocks->TotalHash();
+        }
+        repair.prepared = true;
+    }
+    void Session::ReceiveRepair(const Packet& packet)
+    {
+        if (!m_repair || packet.hashFrame != m_repair->frame || m_failure.reason != EndReason::None)
+            return;
+        auto& repair = *m_repair;
+        if (!repair.done && m_config.now() - repair.start >= 5000)
+        {
+            End(EndReason::Desync, repair.frame, m_hash, m_peerHash);
+            return;
+        }
+        if (packet.type == PacketType::BlockRequest)
+        {
+            const auto stream = m_config.hello.host ? RepairStream::Data : RepairStream::List;
+            if (packet.stream != stream || repair.outgoing.empty())
+                return;
+            for (uint32_t bit = 0; bit < 64; ++bit)
+            {
+                const uint64_t offset = uint64_t(packet.chunk.index + bit) * RepairChunkBytes;
+                if (!(packet.value & (uint64_t(1) << bit)) || offset >= repair.outgoing.size())
+                    continue;
+                Packet chunk;
+                chunk.type = m_config.hello.host ? PacketType::BlockData : PacketType::BlockList;
+                chunk.hashFrame = repair.frame;
+                chunk.chunk.total = uint32_t(repair.outgoing.size());
+                chunk.chunk.index = packet.chunk.index + bit;
+                chunk.chunk.size = uint16_t(std::min(uint64_t(RepairChunkBytes), repair.outgoing.size() - offset));
+                std::copy_n(repair.outgoing.begin() + ptrdiff_t(offset), chunk.chunk.size, chunk.chunk.bytes.begin());
+                Send(chunk);
+            }
+        }
+        else if (packet.type == (m_config.hello.host ? PacketType::BlockList : PacketType::BlockData))
+        {
+            if (repair.prepared)
+                return;
+            const auto& chunk = packet.chunk;
+            if (repair.incoming.empty())
+            {
+                if (m_config.hello.host && chunk.total != 4 + repair.blocks.size() * 16)
+                {
+                    End(EndReason::Desync, repair.frame, m_hash, m_peerHash);
+                    return;
+                }
+                repair.incoming.resize(chunk.total);
+                repair.received.resize((chunk.total + RepairChunkBytes - 1) / RepairChunkBytes);
+            }
+            if (repair.incoming.size() != chunk.total)
+            {
+                End(EndReason::Desync, repair.frame, m_hash, m_peerHash);
+                return;
+            }
+            if (!repair.received[chunk.index])
+            {
+                std::copy_n(chunk.bytes.begin(), chunk.size,
+                    repair.incoming.begin() + ptrdiff_t(chunk.index) * ptrdiff_t(RepairChunkBytes));
+                repair.received[chunk.index] = 1;
+                if (std::all_of(
+                        repair.received.begin(), repair.received.end(), [](uint8_t value) { return value != 0; }))
+                    PrepareRepair();
+            }
+        }
+        else if (packet.type == PacketType::RepairResult && repair.prepared)
+        {
+            if (m_config.hello.host && packet.phase == RepairPhase::Verify)
+            {
+                if (packet.hash != repair.total)
+                    End(EndReason::Desync, repair.frame, repair.total, packet.hash);
+                else
+                    repair.verified = true;
+            }
+            else if (!m_config.hello.host && packet.phase == RepairPhase::Commit && packet.hash == repair.total)
+            {
+                repair.verified = true;
+                CompleteRepair();
+            }
+            else if (m_config.hello.host && packet.phase == RepairPhase::Ack && repair.verified &&
+                     packet.hash == repair.total)
+                CompleteRepair();
+        }
+    }
+    void Session::SendRepair()
+    {
+        if (!m_repair || m_failure.reason != EndReason::None)
+            return;
+        auto& repair = *m_repair;
+        // New host input proves it received the commit acknowledgement and released its barrier.
+        if (repair.done && (m_config.hello.host || m_remoteAck >= repair.frame + m_delay))
+            return;
+        if (!repair.done && m_config.now() - repair.start >= 5000)
+        {
+            End(EndReason::Desync, repair.frame, m_hash, m_peerHash);
+            return;
+        }
+        Packet packet;
+        packet.hashFrame = repair.frame;
+        if (!repair.prepared)
+        {
+            // Asked again only once the chunks asked for had a round trip to come: asking every loop (2 ms) would
+            // have the sender repeat each chunk dozens of times over a slow link. Counted in loops, not in the
+            // session's clock, which a test may hold still.
+            const uint64_t loops = std::clamp<uint64_t>(m_rtt == UINT64_MAX ? 25 : (m_rtt + 10) / 2, 5, 125);
+            if (repair.sinceRequest != UINT64_MAX)
+            {
+                ++repair.sinceRequest;
+                if (repair.sinceRequest < loops)
+                    return;
+            }
+            repair.sinceRequest = 0;
+            packet.type = PacketType::BlockRequest;
+            packet.stream = m_config.hello.host ? RepairStream::List : RepairStream::Data;
+            if (repair.received.empty())
+            {
+                packet.value = 1;
+                Send(packet);
+                return;
+            }
+            // Up to four windows of 64 chunks in flight per round trip.
+            size_t from = 0;
+            for (int window = 0; window < 4; ++window)
+            {
+                const auto missing = std::find(repair.received.begin() + ptrdiff_t(from), repair.received.end(), 0);
+                if (missing == repair.received.end())
+                    break;
+                packet.chunk.index = uint32_t(missing - repair.received.begin());
+                packet.value = 0;
+                for (size_t i = 0; i < 64 && packet.chunk.index + i < repair.received.size(); ++i)
+                    if (!repair.received[packet.chunk.index + i])
+                        packet.value |= uint64_t(1) << i;
+                Send(packet);
+                from = size_t(packet.chunk.index) + 64;
+                if (from >= repair.received.size())
+                    break;
+            }
+        }
+        else if (!m_config.hello.host || repair.verified)
+        {
+            packet.type = PacketType::RepairResult;
+            packet.hash = repair.total;
+            packet.phase =
+                m_config.hello.host ? RepairPhase::Commit : (repair.verified ? RepairPhase::Ack : RepairPhase::Verify);
+            Send(packet);
+        }
     }
     void Session::Send(Packet packet, bool bootstrap)
     {
@@ -422,6 +708,10 @@ namespace netplay
         m_lastReceive = m_config.now();
         switch (packet.type)
         {
+        case PacketType::BlockList:
+        case PacketType::BlockData:
+        case PacketType::BlockRequest:
+        case PacketType::RepairResult: ReceiveRepair(packet); break;
         case PacketType::Hello: ++m_dropped; break;
         case PacketType::Ping:
         {
@@ -567,6 +857,7 @@ namespace netplay
             }
             if (!m_transport->Healthy())
                 End(EndReason::Transport);
+            SendRepair();
             if (m_config.now() - m_lastReceive >= m_config.timeoutMs)
                 End(EndReason::Timeout);
             if ((!m_ready || m_failure.reason != EndReason::None) && (m_havePeer || !m_config.hello.host))

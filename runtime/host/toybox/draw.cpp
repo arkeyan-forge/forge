@@ -4315,10 +4315,13 @@ namespace toybox
             DrawDrag(model);
         if (!model.open) // it would sit on the corner buttons of the full-screen pages
             DrawFps(model);
-        if (netplay::Online() && netplay::SessionStatus().peerMenuOpen)
+        const auto online = netplay::SessionStatus();
+        if (netplay::Online() && (online.backInSync || online.peerMenuOpen))
         {
-            const char* text = L("in the menu", "dans le menu");
-            Fill(ImVec2(18, 18), ImVec2(180, 50), look::Colour::Surface, 0.85f);
+            const char* text =
+                online.backInSync ? L("Back in sync", "Synchronisation rétablie") : L("in the menu", "dans le menu");
+            const float width = g_bold->CalcTextSizeA(14, FLT_MAX, 0, text).x + 24;
+            Fill(ImVec2(18, 18), ImVec2(18 + width, 50), look::Colour::Surface, 0.85f);
             Text(g_bold, 14, ImVec2(30, 25), Look::Text, text);
         }
         if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())

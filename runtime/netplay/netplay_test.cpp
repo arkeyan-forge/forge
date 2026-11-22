@@ -161,6 +161,25 @@ namespace
         std::vector<uint8_t> bytes(0x20002, 0x5A);
         std::vector<netplay::Range> skips;
         std::string error;
+        {
+            std::array<uint8_t, 20> host{}, guest{};
+            host.fill(0x91);
+            guest.fill(0x42);
+            const std::array<netplay::Range, 3> excluded{ { { 0xFF, 0x103 }, { 0x107, 0x10B }, { 0x111, 0x120 } } };
+            std::vector<uint8_t> packed;
+            netplay::PackBlock(host, 0x100, excluded, packed);
+            Check(packed.size() == 10, "repair sends only hashed bytes across skip boundaries");
+            Check(!netplay::ApplyBlock(guest, 0x100, excluded, std::span(packed).first(9)),
+                "repair refuses truncated bytes before writing");
+            Check(std::all_of(guest.begin(), guest.end(), [](uint8_t byte) { return byte == 0x42; }),
+                "invalid repair leaves memory untouched");
+            Check(netplay::ApplyBlock(guest, 0x100, excluded, packed), "repair writes packed bytes");
+            for (size_t i = 0; i < guest.size(); ++i)
+                Check(guest[i] == ((i < 3 || (i >= 7 && i < 11) || i >= 17) ? 0x42 : 0x91),
+                    "repair preserves all excluded bytes");
+            Check(netplay::HashBytes(host, 0x100, excluded) == netplay::HashBytes(guest, 0x100, excluded),
+                "packed repair restores the hashed state");
+        }
         const uint64_t original = netplay::HashBytes(bytes, 0x1FFFF, skips);
         Check(original == netplay::HashBytes(bytes, 0x1FFFF, skips), "stable hash");
         bytes[10] ^= 1;

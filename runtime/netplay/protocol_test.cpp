@@ -26,6 +26,55 @@ int main()
         0x93 };
     Check(Tag({}, vectorKey) == EmptyTag, "SipHash-2-4-128 empty message vector");
     const auto key = PasswordKey("room");
+    Check(ProtocolVersion == 2, "repair requires protocol version two");
+    for (auto type :
+        { PacketType::BlockList, PacketType::BlockData, PacketType::BlockRequest, PacketType::RepairResult })
+    {
+        Packet repair;
+        repair.type = type;
+        repair.hashFrame = 300;
+        repair.hash = 0x12345678;
+        repair.value = 0x8000000000000001ull;
+        repair.stream = RepairStream::Data;
+        repair.phase = RepairPhase::Verify;
+        repair.chunk.total = 2049;
+        repair.chunk.index = 1;
+        repair.chunk.size = 1024;
+        repair.chunk.bytes.fill(0x73);
+        Datagram wire;
+        Packet result;
+        uint64_t rejected = 0;
+        Check(EncodePacket(repair, key, wire) && wire.size <= 1200 && DecodePacket(wire.View(), key, result, rejected),
+            "repair packet round trip");
+        Check(result.type == type && result.hashFrame == 300, "repair checkpoint survives encoding");
+        if (type == PacketType::BlockList || type == PacketType::BlockData)
+            Check(result.chunk.total == 2049 && result.chunk.index == 1 && result.chunk.size == 1024 &&
+                      result.chunk.bytes == repair.chunk.bytes,
+                "repair chunk fields and bytes");
+        if (type == PacketType::BlockRequest)
+            Check(result.stream == repair.stream && result.chunk.index == 1 && result.value == repair.value,
+                "missing chunk bitmap round trip");
+        if (type == PacketType::RepairResult)
+            Check(result.phase == repair.phase && result.hash == repair.hash, "repair verification total round trip");
+        for (size_t length = 0; length < wire.size; ++length)
+            Check(!DecodePacket(wire.View().first(length), key, result, rejected),
+                "all truncated repair packets refused");
+        auto oversized = wire;
+        ++oversized.size;
+        oversized.bytes[12] = uint8_t(oversized.size);
+        oversized.bytes[13] = uint8_t(oversized.size >> 8);
+        const auto oversizedTag = Tag(oversized.View().first(oversized.size - 16), key);
+        std::copy(oversizedTag.begin(), oversizedTag.end(), oversized.bytes.begin() + oversized.size - 16);
+        Check(!DecodePacket(oversized.View(), key, result, rejected), "authenticated oversized repair packet refused");
+        if (type == PacketType::BlockList || type == PacketType::BlockData)
+        {
+            repair.chunk.size = 1025;
+            Check(!EncodePacket(repair, key, wire), "oversized repair chunk cannot be encoded");
+            repair.chunk.size = 1024;
+            repair.chunk.index = 2;
+            Check(!EncodePacket(repair, key, wire), "incorrect final chunk size refused");
+        }
+    }
     Packet packet{};
     packet.type = PacketType::Hello;
     packet.hello = MakeHello("test", std::string(64, 'a'), "test-runtime", "test-cpu", 30, false, true);

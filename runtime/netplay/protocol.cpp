@@ -47,7 +47,7 @@ namespace netplay
                     byte = T(bytes[at++]);
             }
         };
-        size_t PayloadSize(PacketType type, uint8_t count, bool dump = false)
+        size_t PayloadSize(PacketType type, uint8_t count, bool dump = false, uint16_t chunkSize = 0)
         {
             switch (type)
             {
@@ -58,8 +58,19 @@ namespace netplay
             case PacketType::Frames: return count <= 8 ? 26 + size_t(count) * 29 : 0;
             case PacketType::End: return 25;
             case PacketType::Event: return 26 + (dump ? 1024 : 0);
+            case PacketType::BlockList:
+            case PacketType::BlockData: return chunkSize && chunkSize <= RepairChunkBytes ? 18 + chunkSize : 0;
+            case PacketType::BlockRequest: return 21;
+            case PacketType::RepairResult: return 17;
             }
             return 0;
+        }
+        bool ValidChunk(PacketType type, const RepairChunk& chunk)
+        {
+            const uint32_t limit = type == PacketType::BlockList ? MaxBlockListBytes : MaxBlockDataBytes;
+            const uint64_t offset = uint64_t(chunk.index) * RepairChunkBytes;
+            return chunk.total && chunk.total <= limit && offset < chunk.total &&
+                   chunk.size == std::min(uint64_t(RepairChunkBytes), chunk.total - offset);
         }
         bool ValidText(std::span<const char> text, bool hex = false)
         {
@@ -217,8 +228,18 @@ namespace netplay
 
     bool EncodePacket(const Packet& packet, const Key& key, Datagram& bytes)
     {
-        const size_t payload = PayloadSize(packet.type, packet.count, packet.event.hasDump);
+        const size_t payload = PayloadSize(packet.type, packet.count, packet.event.hasDump, packet.chunk.size);
         bytes = {};
+        if ((packet.type == PacketType::BlockList || packet.type == PacketType::BlockData) &&
+            !ValidChunk(packet.type, packet.chunk))
+            return false;
+        if (packet.type == PacketType::BlockRequest &&
+            (packet.stream < RepairStream::List || packet.stream > RepairStream::Data || !packet.value ||
+                packet.chunk.index >= (MaxBlockListBytes + RepairChunkBytes - 1) / RepairChunkBytes))
+            return false;
+        if (packet.type == PacketType::RepairResult &&
+            (packet.phase < RepairPhase::Verify || packet.phase > RepairPhase::Ack))
+            return false;
         if (!payload || (packet.type == PacketType::Event && (packet.event.slot >= 16 || !packet.event.sequence ||
                                                                  (packet.event.hasDump && !packet.event.figure))))
             return false;
@@ -233,6 +254,26 @@ namespace netplay
         out.Number(packet.ack, 8);
         switch (packet.type)
         {
+        case PacketType::BlockList:
+        case PacketType::BlockData:
+            out.Number(packet.hashFrame, 8);
+            out.Number(packet.chunk.total, 4);
+            out.Number(packet.chunk.index, 4);
+            out.Number(packet.chunk.size, 2);
+            for (size_t i = 0; i < packet.chunk.size; ++i)
+                out.Number(packet.chunk.bytes[i], 1);
+            break;
+        case PacketType::BlockRequest:
+            out.Number(packet.hashFrame, 8);
+            out.Number(uint8_t(packet.stream), 1);
+            out.Number(packet.chunk.index, 4);
+            out.Number(packet.value, 8);
+            break;
+        case PacketType::RepairResult:
+            out.Number(packet.hashFrame, 8);
+            out.Number(uint8_t(packet.phase), 1);
+            out.Number(packet.hash, 8);
+            break;
         case PacketType::Hello:
             out.Array(packet.hello.game);
             out.Array(packet.hello.image);
@@ -310,7 +351,11 @@ namespace netplay
         const uint8_t count = type == PacketType::Frames ? bytes[32] : 0;
         if (type == PacketType::Event && (bytes.size() < 74 || bytes[57] > 3))
             return fail();
-        const size_t payload = PayloadSize(type, count, type == PacketType::Event && (bytes[57] & 1));
+        const bool chunk = type == PacketType::BlockList || type == PacketType::BlockData;
+        if (chunk && bytes.size() < 67)
+            return fail();
+        const auto chunkSize = chunk ? uint16_t(Read(bytes.subspan(48, 2))) : uint16_t(0);
+        const size_t payload = PayloadSize(type, count, type == PacketType::Event && (bytes[57] & 1), chunkSize);
         if (!payload || bytes.size() != 48 + payload)
             return fail();
         const auto tag = Tag(bytes.first(bytes.size() - 16), key);
@@ -330,6 +375,33 @@ namespace netplay
         result.ack = in.Number(8);
         switch (type)
         {
+        case PacketType::BlockList:
+        case PacketType::BlockData:
+            result.hashFrame = in.Number(8);
+            result.chunk.total = uint32_t(in.Number(4));
+            result.chunk.index = uint32_t(in.Number(4));
+            result.chunk.size = uint16_t(in.Number(2));
+            if (!ValidChunk(type, result.chunk))
+                return fail();
+            for (size_t i = 0; i < result.chunk.size; ++i)
+                result.chunk.bytes[i] = uint8_t(in.Number(1));
+            break;
+        case PacketType::BlockRequest:
+            result.hashFrame = in.Number(8);
+            result.stream = RepairStream(in.Number(1));
+            result.chunk.index = uint32_t(in.Number(4));
+            result.value = in.Number(8);
+            if (result.stream < RepairStream::List || result.stream > RepairStream::Data || !result.value ||
+                result.chunk.index >= (MaxBlockListBytes + RepairChunkBytes - 1) / RepairChunkBytes)
+                return fail();
+            break;
+        case PacketType::RepairResult:
+            result.hashFrame = in.Number(8);
+            result.phase = RepairPhase(in.Number(1));
+            result.hash = in.Number(8);
+            if (result.phase < RepairPhase::Verify || result.phase > RepairPhase::Ack)
+                return fail();
+            break;
         case PacketType::Hello:
             in.Array(result.hello.game);
             in.Array(result.hello.image);
