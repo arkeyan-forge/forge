@@ -4,8 +4,8 @@
 // keyboard key, pad button and mouse button, stored as Arkeyan Launcher stores them (its launcher/game_keys.cpp). [input]
 // is the layout every game inherits (key_<action>=<SDL scancode name>, pad_<button>=<button>|none, mouse=0|1,
 // mouse_<action>=<mouse name>|none, rumble_p1/p2) and the Toy Box's keys (key_toybox, key_toybox_add, key_toybox_clear)
-// and physical pad shortcuts (pad_wheel, pad_toybox, pad_menu; shared only, never remapped);
-// [<game>.input] holds the game's own lines, which win. The page itself is host/toybox/menu.cpp.
+// and physical pad shortcuts (pad_wheel, pad_toybox, pad_menu, pad_toybox_add, pad_toybox_clear; shared only, never
+// remapped); [<game>.input] holds the game's own lines, which win. The page itself is host/toybox/menu.cpp.
 #include "host/launcher.h"
 #include "host/mouse.h"
 #include "host/pad_map.h"

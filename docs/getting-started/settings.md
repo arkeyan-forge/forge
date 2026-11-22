@@ -200,7 +200,9 @@ or triggers on the keyboard.)
   An unused tap of the wheel button or a combination's first button is given to the game on release;
   the second is hidden while the first is held. These shortcuts stay on the physical buttons when the
   game's controller mapping changes. Missing or invalid lines use the defaults; per-game overrides are
-  ignored. F3 > Commands offers three controller rows for them and applies changes immediately; a game's
+  ignored. `pad_toybox_add` and `pad_toybox_clear` (two buttons, like `pad_toybox`) do what F7 and F8 do
+  while the game plays; they are `none` (not bound) by default, and `none` unbinds any two-button shortcut.
+  F3 > Commands offers five controller rows for them and applies changes immediately; a game's
   Reset leaves them. These are shortcut settings for the launcher configuration's shared `[input]` section,
   separate from the Controller tab's `pad_<button>` remapping lines.
 - **`glyphs`**: the button glyphs the game shows (SSA: its A, B, X, Y, START and right-stick textures; Giants: the

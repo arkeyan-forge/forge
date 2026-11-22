@@ -51,7 +51,9 @@ struct PortalFigureChange
 // Both halves of a swapper and both players of a swap belong in the same call.
 bool PortalReplaceFigures(const std::vector<PortalFigureChange>& changes);
 void PortalRemoveFigure(int slot);
-// Takes every figure off (F8, the Toy Box's "Clear portal").
+// Swaps the hotkey figure for the folder's next dump (F7, [input] pad_toybox_add).
+void PortalPlaceNextFigure();
+// Takes every figure off (F8, the Toy Box's "Clear portal", [input] pad_toybox_clear).
 void PortalRemoveAllFigures();
 // The keys (SDL scancodes) that place the folder's next figure and clear the portal: F7 and F8 until set ([input]
 // key_toybox_add, key_toybox_clear).

@@ -508,6 +508,11 @@ its unused tap is returned on release; the second stays hidden while the first i
 shortcut consumes the tap. The Toy Box combination closes it too; the F3 combination closes a menu
 screen. Y and Start still do their usual jobs inside the Toy Box.
 
+`[input] pad_toybox_add` and `pad_toybox_clear` are two more combinations, `none` (not bound) by default:
+they place the folder's next figure and clear the portal, as F7 and F8 do, only while the game plays (never
+with the wheel or an overlay open). An unbound shortcut reserves no button. In F3 > Commands, pressing the
+same button twice unbinds one of them.
+
 The wheel row captures one button; the Toy Box and F3 rows capture two in order, with a release between
 presses. All sixteen pad button names are accepted, including triggers pressed past 30 of 255.
 Missing or invalid lines use the defaults. These settings are shared by every game, ignore per-game

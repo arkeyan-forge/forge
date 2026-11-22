@@ -11,6 +11,8 @@ namespace toybox::pad
             const int button = PadButtonIndex(value);
             return button < 0 ? fallback : Binding{ button, -1 };
         }
+        if (value == "none")
+            return Binding{ -1, -1 };
         if (plus == std::string_view::npos)
             return fallback;
         const int first = PadButtonIndex(value.substr(0, plus)), second = PadButtonIndex(value.substr(plus + 1));
@@ -19,6 +21,8 @@ namespace toybox::pad
 
     std::string Format(Binding binding)
     {
+        if (binding.first < 0)
+            return "none";
         std::string text = g_padButtons[binding.first];
         if (binding.second >= 0)
             text += std::string("+") + g_padButtons[binding.second];
@@ -63,6 +67,8 @@ namespace toybox::pad
         const uint16_t pressed = held & ~previous, released = previous & ~held;
         for (const Binding& binding : bindings.buttons)
         {
+            if (binding.first < 0)
+                continue;
             reserved |= Bit(binding.first);
             if (held & Bit(binding.first))
                 hidden |= Bit(binding.second < 0 ? binding.first : binding.second);
@@ -77,21 +83,27 @@ namespace toybox::pad
 
         // Chords win over a wheel hold sampled on the same frame. Once used, a first button cannot open again
         // until released, but the close chord can still be used inside an overlay.
-        for (int action : { Toybox, Menu })
+        // Add and Clear act on the game's portal: only while it plays.
+        for (int action = Toybox; action < Count; ++action)
         {
             const Binding binding = bindings.buttons[size_t(action)];
+            if (binding.first < 0 || (CanUnbind(action) && context != Context::Playing))
+                continue;
             if ((held & Bit(binding.first)) && (pressed & Bit(binding.second)) &&
                 (context != Context::Playing || !(used & Bit(binding.first))))
             {
                 event.toybox = action == Toybox;
                 event.menu = action == Menu;
+                event.add = action == ToyboxAdd;
+                event.clear = action == ToyboxClear;
                 used |= held & reserved;
                 break;
             }
         }
         const int wheel = bindings.buttons[Wheel].first;
-        if (context == Context::Playing && !event.toybox && !event.menu && (held & Bit(wheel)) &&
-            !(used & Bit(wheel)) && now - down[size_t(wheel)] >= HoldForWheel)
+        const bool chord = event.toybox || event.menu || event.add || event.clear;
+        if (context == Context::Playing && !chord && (held & Bit(wheel)) && !(used & Bit(wheel)) &&
+            now - down[size_t(wheel)] >= HoldForWheel)
         {
             event.wheel = true;
             used |= held & reserved;
@@ -102,7 +114,7 @@ namespace toybox::pad
             const uint16_t bit = Bit(button);
             if ((released & reserved & bit) && !(used & bit) && context == Context::Playing)
                 tapUntil[size_t(button)] = now + TapLength;
-            if (context != Context::Playing || event.wheel || event.toybox || event.menu)
+            if (context != Context::Playing || event.wheel || chord)
                 tapUntil[size_t(button)] = 0;
             if (map.target[button] < 0) // turned off: no job to hide or give back
                 continue;
