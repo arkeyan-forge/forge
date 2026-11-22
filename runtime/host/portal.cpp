@@ -402,23 +402,26 @@ namespace
         }
         PortalPlaceFigure(path);
     }
+}
 
-    void PlaceNextFigure()
+void PortalPlaceNextFigure()
+{
+    std::vector<std::string> figures = ListFigures();
+    if (figures.empty())
     {
-        std::vector<std::string> figures = ListFigures();
-        if (figures.empty())
-        {
-            fprintf(stderr, "[portal] no figure dumps (.sky/.bin/.dmp) in %s\n", FigureFolder().c_str());
-            return;
-        }
-
-        g_hotkeyFigure = (g_hotkeyFigure + 1) % int(figures.size());
-        if (g_hotkeySlot < 0)
-            g_hotkeySlot = PortalPlaceFigure(figures[g_hotkeyFigure]);
-        else
-            PortalReplaceFigures({ { g_hotkeySlot, figures[g_hotkeyFigure] } });
+        fprintf(stderr, "[portal] no figure dumps (.sky/.bin/.dmp) in %s\n", FigureFolder().c_str());
+        return;
     }
 
+    g_hotkeyFigure = (g_hotkeyFigure + 1) % int(figures.size());
+    if (g_hotkeySlot < 0)
+        g_hotkeySlot = PortalPlaceFigure(figures[g_hotkeyFigure]);
+    else
+        PortalReplaceFigures({ { g_hotkeySlot, figures[g_hotkeyFigure] } });
+}
+
+namespace
+{
     // F7 swaps the hotkey figure for the next dump of the folder, F8 takes every figure off the portal (PortalSetHotkeys).
     std::atomic<int> g_addKey{ SDL_SCANCODE_F7 }, g_clearKey{ SDL_SCANCODE_F8 };
 
@@ -429,7 +432,7 @@ namespace
 
         if (int(event->key.scancode) == g_addKey)
         {
-            PlaceNextFigure();
+            PortalPlaceNextFigure();
         }
         else if (int(event->key.scancode) == g_clearKey)
         {

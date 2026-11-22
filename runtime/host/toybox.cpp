@@ -923,6 +923,10 @@ void ToyboxFilterGamepad(GamepadState& state, const GamepadState* raw, const Run
             g_wheelByPad = true;
             model.OpenWheel(0);
         }
+        else if (shortcut.add)
+            PortalPlaceNextFigure();
+        else if (shortcut.clear)
+            PortalRemoveAllFigures();
         if (model.open)
         {
             state = {};

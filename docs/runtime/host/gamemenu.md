@@ -153,7 +153,7 @@ the mouse, and keyboard/pad navigation reveals the selected row. A notice reserv
 | Pad of a stick direction (the moves, Spyro's Adventure's right stick) | nothing to choose: it says the stick stays | |
 | Mouse (only with the switch on, else it says so) | waits for the next mouse button or wheel tick ("Click or scroll"; Escape cancels); that click does nothing else (`ToyboxWaitsForMouseButton`) | `mouse_<action>=<mouse name>` (`host/mouse.h`); the action that had the button gets `none` |
 | Mouse row | flips the switch | `mouse=1` / `0` |
-| A pad shortcut | waits for one physical button for the wheel, or two buttons in order for a combination (release between presses; Escape cancels) | `[input] pad_wheel=back`, `pad_toybox=back+y`, `pad_menu=back+start` by default; shared by every game |
+| A pad shortcut | waits for one physical button for the wheel, or two buttons in order for a combination (release between presses; Escape cancels) | `[input] pad_wheel=back`, `pad_toybox=back+y`, `pad_menu=back+start` by default, `pad_toybox_add`, `pad_toybox_clear` `none` (the same button twice unbinds them, shown as "-"); shared by every game |
 | A Toy Box key | waits for the next key | `[input] key_toybox`, `key_toybox_add`, `key_toybox_clear` (F6, F7, F8 when not set; Tab opens the Toy Box too while `key_toybox` is not set, and is listed beside F6) |
 
 - **Same file and rules as Arkeyan Launcher** (`host/commands.cpp`). `[input]` is the global layout every game inherits; a change

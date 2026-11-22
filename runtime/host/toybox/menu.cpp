@@ -130,6 +130,8 @@ namespace toybox
             PadWheel,
             PadToybox,
             PadMenu,
+            PadToyboxAdd,
+            PadToyboxClear,
             ResetLine,
             BackLine,
             ExtraCount
@@ -963,13 +965,15 @@ namespace toybox
             lines.push_back(std::move(line));
         }
         const auto shortcuts = commands::Read(g_commands, game).toyboxPad;
-        const char* english[] = { "Quick swap wheel", "Open the Toy Box (pad)", "Open the F3 menu" };
-        const char* french[] = { "Roue de sélection", "Ouvrir la Toy Box (manette)", "Ouvrir le menu F3" };
+        const char* english[] = { "Quick swap wheel", "Open the Toy Box (pad)", "Open the F3 menu",
+            "Add a figure (pad)", "Clear the figures (pad)" };
+        const char* french[] = { "Roue de sélection", "Ouvrir la Toy Box (manette)", "Ouvrir le menu F3",
+            "Ajouter une figurine (manette)", "Retirer les figurines (manette)" };
         for (int action = 0; action < toybox::pad::Count; ++action)
         {
             const auto binding = shortcuts.buttons[size_t(action)];
-            std::string text = PadName(binding.first);
-            if (binding.second >= 0)
+            std::string text = binding.first < 0 ? "-" : PadName(binding.first);
+            if (binding.first >= 0 && binding.second >= 0)
                 text += " + " + PadName(binding.second);
             CommandLine line{ L(english[action], french[action]), std::vector<CommandLine::Cell>(ColumnCount), {} };
             line.cells[PadColumn] = { text, true, commands::PadConflict(g_commands, game, rows, action) >= 0 };
@@ -984,7 +988,11 @@ namespace toybox
                                                 : L("Click or scroll", "Cliquez ou tournez la molette");
         if (waiting == Waiting::PadButton && commandRow >= int(rows.size()) + PadWheel && g_shortcutFirst >= 0)
             lines[size_t(commandRow)].cells[PadColumn].text =
-                PadName(g_shortcutFirst) + " + " + L("Press a second button", "Appuyez sur un second bouton");
+                PadName(g_shortcutFirst) + " + " +
+                (commandRow >= int(rows.size()) + PadToyboxAdd
+                        ? L("Press a second button (the same one: none)",
+                              "Appuyez sur un second bouton (le même : aucun)")
+                        : L("Press a second button", "Appuyez sur un second bouton"));
         return lines;
     }
 
@@ -1062,6 +1070,8 @@ namespace toybox
             case PadWheel:
             case PadToybox:
             case PadMenu:
+            case PadToyboxAdd:
+            case PadToyboxClear:
                 commandColumn = PadColumn;
                 g_shortcutFirst = -1;
                 waiting = Waiting::PadButton;
@@ -1146,19 +1156,24 @@ namespace toybox
                 g_shortcutFirst = button;
                 return;
             }
-            if (button == g_shortcutFirst)
+            // The same button twice unbinds Add or Clear.
+            const bool unbind = button == g_shortcutFirst && toybox::pad::CanUnbind(action);
+            if (button == g_shortcutFirst && !unbind)
             {
                 Toast(L("Choose a different second button", "Choisissez un autre second bouton"));
                 return;
             }
-            const toybox::pad::Binding binding = action == toybox::pad::Wheel
+            const toybox::pad::Binding binding = unbind ? toybox::pad::Binding{ -1, -1 }
+                                                 : action == toybox::pad::Wheel
                                                      ? toybox::pad::Binding{ button, -1 }
                                                      : toybox::pad::Binding{ g_shortcutFirst, button };
             const std::string value = toybox::pad::Format(binding);
             const bool saved =
                 ChangeCommands([&](LauncherConfig& config) { config["input"][toybox::pad::Lines[action]] = value; });
             const int conflict = commands::PadConflict(g_commands, game, InputRows(), action);
-            if (conflict >= 0 && size_t(conflict) < InputRows().size())
+            if (unbind)
+                Toast(L("Shortcut removed", "Raccourci retiré"));
+            else if (conflict >= 0 && size_t(conflict) < InputRows().size())
                 Toast(std::string(L("Also used by ", "Aussi utilisé par ")) +
                       commands::SlotLabel(InputRows(), size_t(conflict), French()));
             else if (conflict >= 0)

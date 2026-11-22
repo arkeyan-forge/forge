@@ -13,9 +13,13 @@ namespace toybox::pad
         Wheel,
         Toybox,
         Menu,
+        ToyboxAdd,
+        ToyboxClear,
         Count
     };
-    inline constexpr const char* Lines[Count] = { "pad_wheel", "pad_toybox", "pad_menu" };
+    inline constexpr const char* Lines[Count] = { "pad_wheel", "pad_toybox", "pad_menu", "pad_toybox_add",
+        "pad_toybox_clear" };
+    // first < 0: not bound ("none"), only for a two-button action.
     struct Binding
     {
         int first = 9, second = -1;
@@ -23,9 +27,12 @@ namespace toybox::pad
     };
     struct Bindings
     {
-        std::array<Binding, Count> buttons = { Binding{ 9, -1 }, Binding{ 9, 3 }, Binding{ 9, 8 } };
+        std::array<Binding, Count> buttons = { Binding{ 9, -1 }, Binding{ 9, 3 }, Binding{ 9, 8 }, Binding{ -1, -1 },
+            Binding{ -1, -1 } };
         bool operator==(const Bindings&) const = default;
     };
+    // Add and Clear may be unbound by the player; the others always keep a binding in the menus.
+    inline constexpr bool CanUnbind(int action) { return action == ToyboxAdd || action == ToyboxClear; }
     Binding Parse(int action, std::string_view value);
     std::string Format(Binding binding);
     int Line(std::string_view name);
@@ -37,7 +44,7 @@ namespace toybox::pad
     };
     struct Events
     {
-        bool wheel = false, toybox = false, menu = false;
+        bool wheel = false, toybox = false, menu = false, add = false, clear = false;
         bool confirm = false; // the physical wheel button was released (also clears ownership after leaving the wheel)
         GamepadState hide, tap; // game-side buttons/triggers, after remapping
     };

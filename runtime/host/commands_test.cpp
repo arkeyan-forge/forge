@@ -119,6 +119,22 @@ int main(int argc, char** argv)
         config["input"] = { { "pad_wheel", "none" }, { "pad_toybox", "lb" }, { "pad_menu", "a+a" } };
         CHECK(commands::Read(config, "game").toyboxPad == Bindings{});
         CHECK(SameAsParse(config));
+        // Add and Clear: read, published, unbound again with "none"; a conflict is flagged like the others.
+        config["input"] = { { "pad_toybox_add", "back+x" }, { "pad_toybox_clear", "back+b" } };
+        read = commands::Read(config, "game");
+        CHECK(read.toyboxPad.buttons[ToyboxAdd] == (Binding{ 9, 2 }));
+        CHECK(read.toyboxPad.buttons[ToyboxClear] == (Binding{ 9, 1 }));
+        CHECK(SameAsParse(config));
+        CHECK(commands::PadConflict(config, "game", Rows, ToyboxClear) == int(RowB));
+        commands::Publish(read);
+        settings.toyboxPad = {};
+        CHECK(commands::Take(settings) && settings.toyboxPad == read.toyboxPad);
+        config["input"]["pad_toybox_clear"] = Format(Binding{ -1, -1 });
+        CHECK(config["input"]["pad_toybox_clear"] == "none");
+        CHECK(commands::Read(config, "game").toyboxPad.buttons[ToyboxClear] == Bindings{}.buttons[ToyboxClear]);
+        CHECK(commands::PadConflict(config, "game", Rows, ToyboxClear) == -1);
+        CHECK(SameAsParse(config));
+        config["input"] = {};
         // Defaults are exempt even when a game's rows use View, Y and Start.
         constexpr commands::Row rows[] = { { "back", "Stats", "Stats", "back" }, { "y", "Attack", "Attaque", "y" },
             { "start", "Pause", "Pause", "start" }, { "a", "Jump", "Sauter", "a" }, { "lb", "Attack", "Attaque", "lb" },

@@ -155,6 +155,51 @@ int main()
     chord = Press("back");
     chord.buttons |= Button::Y;
     CHECK(state.Step(bindings, chord, map, 0).toybox);
+    // Add and Clear: unbound by default, "none" unbinds any chord, and they fire only while playing.
+    CHECK(
+        Bindings{}.buttons[ToyboxAdd] == (Binding{ -1, -1 }) && Bindings{}.buttons[ToyboxClear] == (Binding{ -1, -1 }));
+    CHECK(Parse(ToyboxClear, "back+b") == (Binding{ 9, 1 }));
+    CHECK(Parse(ToyboxClear, "none") == (Binding{ -1, -1 }) && Parse(Menu, "none") == (Binding{ -1, -1 }));
+    CHECK(Parse(ToyboxAdd, "rb") == Bindings{}.buttons[ToyboxAdd]);
+    CHECK(Format(Binding{ -1, -1 }) == "none");
+    CHECK(Line("pad_toybox_add") == ToyboxAdd && Line("pad_toybox_clear") == ToyboxClear);
+    state = {};
+    chord = Press("back");
+    chord.buttons |= Button::B;
+    for (int i = 0; i < 2; ++i)
+    {
+        event = state.Step(bindings, chord, map, uint64_t(i));
+        CHECK(!event.add && !event.clear && !event.toybox && !event.menu);
+        CHECK((event.hide.buttons & Button::B) == 0);
+    }
+    bindings.buttons[ToyboxClear] = Parse(ToyboxClear, "back+b");
+    bindings.buttons[ToyboxAdd] = Parse(ToyboxAdd, "back+x");
+    state = {};
+    state.Step(bindings, Press("back"), map, 0);
+    event = state.Step(bindings, chord, map, 1);
+    CHECK(event.clear && !event.add && !event.toybox && !event.menu && !event.wheel);
+    CHECK((event.hide.buttons & Button::B) != 0);
+    CHECK(!state.Step(bindings, chord, map, 2).clear);
+    CHECK(state.Step(bindings, {}, map, 3).tap.buttons == 0);
+    state = {};
+    state.Step(bindings, Press("back"), map, 0);
+    auto add = Press("back");
+    add.buttons |= Button::X;
+    CHECK(state.Step(bindings, add, map, 1).add);
+    for (Context context : { Context::Overlay, Context::Wheel })
+    {
+        state = {};
+        state.Step(bindings, Press("back"), map, 0, context);
+        event = state.Step(bindings, chord, map, 1, context);
+        CHECK(!event.clear && !event.add);
+    }
+    // An unbound Menu reserves nothing: its old second is the game's again.
+    bindings = {};
+    bindings.buttons[Wheel] = Parse(Wheel, "rb");
+    bindings.buttons[Toybox] = Parse(Toybox, "rb+y");
+    bindings.buttons[Menu] = Parse(Menu, "none");
+    state = {};
+    CHECK(state.Step(bindings, Press("back"), map, 0).hide.buttons == 0);
     fprintf(stderr, "%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
