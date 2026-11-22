@@ -98,6 +98,7 @@ add_executable(ArkeyanRuntime
     host/settings.cpp
     host/window_size.cpp
     host/toybox.cpp
+    host/toybox/add_list.cpp
     host/toybox/draw.cpp
     host/toybox/grid.cpp
     host/toybox/menu.cpp
@@ -386,6 +387,11 @@ target_link_libraries(ArkeyanToyboxTrapTest PRIVATE ArkeyanArtReader)
 add_executable(ArkeyanToyboxVersionGameTest host/toybox/version_game_test.cpp host/toybox/version_game.cpp)
 target_include_directories(ArkeyanToyboxVersionGameTest PRIVATE .)
 target_link_libraries(ArkeyanToyboxVersionGameTest PRIVATE ArkeyanArtReader)
+
+# Add a figure for a seat: the toys of its families, then a row that shows every toy (host/toybox/add_list.h): ./ArkeyanToyboxAddListTest
+add_executable(ArkeyanToyboxAddListTest host/toybox/add_list_test.cpp host/toybox/add_list.cpp)
+target_include_directories(ArkeyanToyboxAddListTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxAddListTest PRIVATE ArkeyanArtReader)
 
 # The remembered "resolution scale auto" step-down's file line: ./ArkeyanAutoScaleTest
 add_executable(ArkeyanAutoScaleTest gpu/auto_scale_test.cpp)
