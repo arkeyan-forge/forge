@@ -163,3 +163,7 @@ namespace game
 // 0x828757A4), which does not alias the allocation here. Called by the texture lock sub_828799B0 (flags 0x10 from the
 // portrait's texture-to-image download, sub_8268C860) and seven other engine functions [V: run of 2026-11-11, #47].
 #define GAME_HOOK_D3D_LockResource sub_828754C0
+
+// Bink's async decode thread polls its mailbox (engines/alchemy/bink_poll.cpp): (thread, wait, out, size) -> 0 while no
+// message came; its caller loops on it with no kernel call in between.
+#define GAME_HOOK_BinkAsync_Poll sub_832BC430

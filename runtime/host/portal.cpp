@@ -7,6 +7,8 @@
 #include "host/collection/collection.h"
 #include "host/collection/datadir.h"
 #include "host/figures/figure_tag.h"
+#include "kernel/objects.h"
+#include "netplay/clock.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <array>
@@ -409,6 +411,10 @@ void PortalInit()
         // Trap Team's portal thread reads until a read returns nothing: one status report per 8 ms (below Giants' 12 ms
         // poll) lets it finish and release the lock the main thread waits on.
         g_emulated->SetStatusInterval(std::chrono::milliseconds(8));
+        // Online play: the poll that gets a status report is a matter of the game's virtual time, not of this computer's
+        // speed (two replays of Giants read them at different polls on the host's clock).
+        if (netplay::Enabled())
+            g_emulated->SetClock([] { return std::chrono::nanoseconds(int64_t(GuestSystemTime()) * 100); });
         // Tests: another model from the table, by its id ("01 28", "0128"), to see what the game does with it.
         if (const char* wanted = skyenv::Get("SKY_PORTAL_MODEL"))
         {

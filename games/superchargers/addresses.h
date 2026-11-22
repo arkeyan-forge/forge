@@ -146,3 +146,7 @@ namespace game
     // The owner object's pointer and the id's offset in it (Owner_Fetch above).
     constexpr uint32_t OwnerObject = 0x83762794, OwnerIdOffset = 0xFC;
 }
+
+// Bink's async decode thread polls its mailbox (engines/alchemy/bink_poll.cpp): (thread, wait, out, size) -> 0 while no
+// message came; its caller loops on it with no kernel call in between.
+#define GAME_HOOK_BinkAsync_Poll sub_831E5EA8

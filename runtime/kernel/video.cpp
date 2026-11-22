@@ -416,6 +416,20 @@ void WaitForInterruptHandled(uint64_t since)
 {
     if (netplay::Cooperative())
     {
+        // Online, the interrupts come with the frames (FrameDeliveryFlip), and the wait for a swap's blank comes
+        // before the next frame's swap: it would never end. It grants what the flip would, the same way (the GPU's
+        // interrupts for the commands submitted so far, which mark the swap pending, then a blank, which shows it), at
+        // the same point of the guest's run on both computers.
+        gpu::SynchronizeGuestInterrupts();
+        bool grant;
+        {
+            std::lock_guard lock(g_mutex);
+            grant = g_vblanksRunning && g_interruptsHandled == since;
+            if (grant)
+                g_graphicsGranted = g_pending.size();
+        }
+        if (grant)
+            netplay::g_vblankDeliveries.Grant(1);
         netplay::GuestScheduler().Block([since] {
             std::lock_guard lock(g_mutex);
             return !g_vblanksRunning || g_interruptsHandled != since;

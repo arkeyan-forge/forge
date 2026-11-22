@@ -61,6 +61,10 @@
 // yet; its only caller, the scene's end sub_82515D68, spins on it before D3DDevice_Swap.
 #define GAME_HOOK_SwapWait_Status sub_82F5CB30
 
+// Bink's async decode thread polls its mailbox (engines/alchemy/bink_poll.cpp): (thread, wait, out, size) -> 0 while no
+// message came; its caller sub_830845E0 loops on it with no kernel call in between.
+#define GAME_HOOK_BinkAsync_Poll sub_8309EA98
+
 // Nightmare difficulty (engines/alchemy/nightmare.cpp): (storage) -> whether the save's "nightmare_difficulty_unlocked"
 // property is 1 (a script variable of the slot that the story's end sets through tryUnlockNightmareDifficultyLevel). Its one
 // caller, the difficulty menu's availability check sub_82C12BC0 (difficulty index >= 3 asks it), shows the padlock and "Beat
