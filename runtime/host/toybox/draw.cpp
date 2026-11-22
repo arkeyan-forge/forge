@@ -1402,6 +1402,32 @@ namespace toybox
             return model.SectionLabel(section);
         }
 
+        // A badge of the section strip: the cursor on the section's first card, its header at the top, as LB / RB.
+        void PickSection(Model& model, Grid& grid, int section)
+        {
+            int first = -1;
+            for (size_t c = 0; c < grid.cells.size() && first < 0; c++)
+            {
+                if (grid.cells[c].section == section)
+                    first = int(c);
+            }
+            if (first < 0)
+                return;
+            if (&grid == &model.add)
+            {
+                if (model.add.cursor != first)
+                    model.FocusAddCell(first); // the versions of the new toy
+            }
+            else
+            {
+                grid.cursor = first;
+                model.Touch();
+                if (&grid == &model.list)
+                    model.FocusCell(first, false);
+            }
+            grid.ShowSection(section);
+        }
+
         // Returns the strip's height.
         float SectionStrip(Model& model, Grid& grid, ImVec2 at, float width)
         {
@@ -1425,28 +1451,8 @@ namespace toybox
                 RoundRect(min, max, lit ? Look::Gold : Look::Chip, 13);
                 TextCentered(g_black, 13, ImVec2((min.x + max.x) / 2, min.y + 13), lit ? Look::GoldInk : Look::ChipText,
                     labels[i]);
-                int first = -1;
-                for (size_t c = 0; c < grid.cells.size() && first < 0; c++)
-                {
-                    if (grid.cells[c].section == int(i))
-                        first = int(c);
-                }
                 Grid* target = &grid;
-                AddHit(min, max, [&model, target, first] {
-                    if (first >= 0)
-                    {
-                        if (target == &model.add)
-                        {
-                            if (model.add.cursor != first)
-                                model.FocusAddCell(first); // the versions of the new toy
-                            return;
-                        }
-                        target->cursor = first;
-                        model.Touch();
-                        if (target == &model.list)
-                            model.FocusCell(first);
-                    }
-                });
+                AddHit(min, max, [&model, target, i] { PickSection(model, *target, int(i)); });
             }
             return layout.height;
         }

@@ -99,6 +99,7 @@ add_executable(ArkeyanRuntime
     host/window_size.cpp
     host/toybox.cpp
     host/toybox/draw.cpp
+    host/toybox/grid.cpp
     host/toybox/menu.cpp
     host/toybox/model.cpp
     host/toybox/trap_villain.cpp
@@ -366,6 +367,10 @@ target_link_libraries(ArkeyanToyboxKeyMaskTest PRIVATE SDL3::SDL3-static)
 add_executable(ArkeyanToyboxWheelKeysTest host/toybox/wheel_keys_test.cpp)
 target_include_directories(ArkeyanToyboxWheelKeysTest PRIVATE .)
 target_link_libraries(ArkeyanToyboxWheelKeysTest PRIVATE SDL3::SDL3-static)
+
+# The Toy Box grids' scroll: the least that shows the cursor, a section's header at the top (host/toybox/grid.h): ./ArkeyanToyboxGridTest
+add_executable(ArkeyanToyboxGridTest host/toybox/grid_test.cpp host/toybox/grid.cpp)
+target_include_directories(ArkeyanToyboxGridTest PRIVATE .)
 
 # Atomic virtual figure and swapper replacements (no device or figure files): ./ArkeyanToyboxSwapTest
 add_executable(ArkeyanToyboxSwapTest host/toybox/swap_test.cpp host/portal_prompt.cpp)

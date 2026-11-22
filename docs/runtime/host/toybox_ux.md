@@ -113,6 +113,9 @@ the pad reaches the other pages through the panel (LB / RB stay the seats here).
   refreshes the Versions column (it showed the previous toy's). The section chips above Add a figure and the wheel's
   list wrap onto as many rows as they need, so every section shows (Imaginators has about fourteen); the list starts
   below the last row (`toybox::strip::Wrap`, `ArkeyanToyboxStripTest`).
+  A section chip (in every list) puts its section's header at the top, as LB / RB do (`Grid::ShowSection`,
+  `host/toybox/grid.h`; the last sections stop where the list ends); moving the cursor scrolls the least that shows it
+  (`Grid::Fix`). Checked by `ArkeyanToyboxGridTest` and `runtime/host/toybox/mouse_test.cpp`.
   **Upgrades** (2026-10-26): the Edit sheet's "Upgrades" row (count, e.g. "4 of 11") opens its own screen
   (`Screen::Upgrades`, `DrawUpgrades`, `RunUpgrades`): the toy's upgrades by name from `collection::Upgrades`, the basic
   ones (with the Soul Gem and the Wow Pow under them) beside the two paths, the chosen path lit and the other greyed;
