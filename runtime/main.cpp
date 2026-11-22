@@ -645,6 +645,9 @@ int main(int argc, char** argv)
 
     // Not exit(): the title's other threads are still running, and atexit handlers and static destructors would run
     // under them (and could wait on them forever).
+    // A window closed during a session is a quit, not a crash: the other game is told, and the launcher reads why.
+    if (netplay::Online() && netplay::SessionEndReason() == netplay::EndReason::None)
+        netplay::LeaveSession();
     fprintf(stderr, "Main thread exited with 0x%08X\n", mainThread->exitCode);
     gamemenu::RememberWindowSize();
     savebackup::SetGameRunning(false);
