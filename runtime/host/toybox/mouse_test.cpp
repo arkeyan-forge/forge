@@ -270,11 +270,45 @@ int main()
     g_calls.clear();
     Click(model, 210, 10, 1, false);
     check(g_calls == std::vector<std::string>{ "focus starter", accept });
-    printf("%d checks, %d failures\n", 47, failures);
+    // The wheel scrolls the view a row per tick and leaves the cursor; at an end it does nothing.
+    Grid grid;
+    grid.sections.push_back({});
+    grid.sections.back().titled = false;
+    grid.cells.resize(40);
+    grid.rows = 10;
+    grid.rowHeight = 100;
+    grid.visibleHeight = 400;
+    grid.cursor = 2;
+    check(!grid.ScrollRows(-1) && grid.scroll == 0);
+    check(grid.ScrollRows(2) && grid.scroll == 200 && grid.cursor == 2);
+    check(grid.ScrollRows(9) && grid.scroll == 600);
+    check(!grid.ScrollRows(1) && grid.scroll == 600);
+    // After a scroll the card under the still pointer takes the focus, though the pointer did not move and the drawn
+    // frame already outlines it; with the pointer off every card nothing does.
+    g_hits.clear();
+    g_hovered = -1;
+    g_calls.clear();
+    AddHit({ 0, 400 }, { 20, 420 }, [] {});
+    g_hits.back().focus = [] { g_calls.push_back("focus card=0"); };
+    Pointer(5, 405, true);
+    g_hovered = HoveredHit();
+    g_hits.clear(); // the next frame, scrolled: another card at the same place
+    AddHit({ 0, 400 }, { 20, 420 }, [] {});
+    g_hits.back().focus = [] { g_calls.push_back("focus card=4"); };
+    g_hovered = HoveredHit();
+    Pointer(6, 406, true);
+    check(g_calls == std::vector<std::string>{ "focus card=0" });
+    Rehover();
+    check(g_calls == std::vector<std::string>{ "focus card=0", "focus card=4" });
+    g_calls.clear();
+    Pointer(50, 450, true);
+    Rehover();
+    check(g_calls.empty());
+    printf("%d checks, %d failures\n", 54, failures);
     puts(failures
              ? "FAIL: menu pointer and click"
              : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus, Add "
                "cards' hover and a click beside them while versions show, a seat's double click, an empty seat's +, "
-               "drag and drop, the starter pack's button");
+               "drag and drop, the starter pack's button, the wheel's scroll and the focus under a still pointer");
     return failures ? 1 : 0;
 }

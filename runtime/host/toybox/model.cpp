@@ -1619,17 +1619,6 @@ namespace toybox
         FixGrid(list, 0);
     }
 
-    int Grid::RowY(int row) const
-    {
-        int headers = 0;
-        for (const ListSection& section : sections)
-        {
-            if (section.firstRow <= row && section.titled)
-                headers++;
-        }
-        return row * rowHeight + headers * headerHeight;
-    }
-
     int Grid::HeaderY(int section) const
     {
         const ListSection& s = sections[section];
@@ -1651,8 +1640,7 @@ namespace toybox
         if (cell.row == grid.sections[cell.section].firstRow)
             top = grid.HeaderY(cell.section);
         grid.scroll = std::clamp(grid.scroll, bottom - grid.visibleHeight, top);
-        int total = grid.RowY(grid.rows - 1) + grid.rowHeight;
-        grid.scroll = std::clamp(grid.scroll, 0, std::max(total - grid.visibleHeight, 0));
+        grid.scroll = std::clamp(grid.scroll, 0, grid.MaxScroll());
     }
 
     bool Model::MoveGrid(Grid& grid, Command command)
@@ -2198,11 +2186,12 @@ namespace toybox
         Run(Command::Options);
     }
 
-    void Model::ScrollList(int rows)
+    bool Model::ScrollList(int rows)
     {
-        Grid& grid = screen == Screen::Add ? add : list;
-        for (int i = 0; i < std::abs(rows); i++)
-            MoveGrid(grid, rows > 0 ? Command::Down : Command::Up);
+        if (!(screen == Screen::Add ? add : list).ScrollRows(rows))
+            return false;
+        m_dirty = true;
+        return true;
     }
 
     void Model::Type(const std::string& utf8)

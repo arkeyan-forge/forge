@@ -14,6 +14,7 @@
 #include "host/toybox/look.h"
 #include "host/toybox/nav.h"
 #include "host/toybox/put_on.h"
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <set>
@@ -127,8 +128,26 @@ namespace toybox
         int scroll = 0; // pixels scrolled
         // Layout in pixels, set by the model for the drawing: a header above the first row of each titled section.
         int rowHeight = 100, headerHeight = 40, visibleHeight = 400;
-        int RowY(int row) const; // top of a row, from the top of the list
+        int RowY(int row) const // top of a row, from the top of the list
+        {
+            int headers = 0;
+            for (const ListSection& section : sections)
+            {
+                if (section.firstRow <= row && section.titled)
+                    headers++;
+            }
+            return row * rowHeight + headers * headerHeight;
+        }
         int HeaderY(int section) const; // top of a section's header (the row above its first, when titled)
+        int MaxScroll() const { return std::max(RowY(rows - 1) + rowHeight - visibleHeight, 0); }
+        // The mouse wheel: the view moves `count` rows (down when positive), the cursor stays. False at an end.
+        bool ScrollRows(int count)
+        {
+            if (cells.empty())
+                return false;
+            int next = std::clamp(scroll + count * rowHeight, 0, MaxScroll());
+            return std::exchange(scroll, next) != next;
+        }
     };
 
     // A modal question over the current screen.
@@ -495,7 +514,7 @@ namespace toybox
         void FocusCell(int cell, bool scroll = true); // the pointer passing over a card does not scroll
         void ActivateCell(int cell); // double click: put on
         void OptionsCell(int cell); // right click: Figure page
-        void ScrollList(int rows);
+        bool ScrollList(int rows); // the wheel: false when the view did not move
         void FocusAction(int index);
         void FocusAddCell(int cell);
         void HoverAddCell(int cell); // focus only (a click on the focused card opens its versions)

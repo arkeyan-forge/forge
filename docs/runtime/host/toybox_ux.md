@@ -424,6 +424,8 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 
 - **Mouse everywhere in the Toy Box and the F3 menu** (2026-11-02): every card, seat, button, row and field is a click target, and
   the one under the pointer gets a soft outline. The wheel scrolls the lists (Edit stats: steps; the F3 menu: moves the focus).
+  In the figure lists (the shelf, Add a figure, the wheel's list) a tick moves the view one row and leaves the focus;
+  once drawn, the card now under a still pointer takes the focus (#115; unit check: `runtime/host/toybox/mouse_test.cpp`).
   Script checks: `SKY_TOYBOX_SCRIPT` `move=x/y`, `wheel=up|down`, `drag=x1/y1/x2/y2` beside `click=x/y` (`tools/regress/f3mouse.sh`;
   [gamemenu.md](gamemenu.md)).
 - **No system on-screen keyboard** (#17): opening the Toy Box or the F3 menu starts SDL's text input so a real
