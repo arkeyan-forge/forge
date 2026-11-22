@@ -104,6 +104,20 @@ int main()
         }
         CHECK(stalled == 2);
     }
+    {
+        // The report's counts are the frames that drew nothing since the last one that drew, that frame's own left out.
+        d3d::StallCounts quiet{};
+        d3d::StallCounts drawn{ 900, 0, 0, 40, 0, 0, 0, 0 };
+        d3d::StallCounts none{ 3, 3, 0, 60, 0, 0, 0, 1 };
+        d3d::AddQuietFrame(quiet, 850, drawn);
+        CHECK(quiet.guestDraws == 0 && quiet.resolves == 0);
+        for (int i = 0; i < 4; i++)
+            d3d::AddQuietFrame(quiet, 0, none);
+        CHECK(
+            quiet.guestDraws == 12 && quiet.skippedShader == 12 && quiet.resolves == 240 && quiet.droppedVertices == 4);
+        d3d::AddQuietFrame(quiet, 1, drawn);
+        CHECK(quiet.guestDraws == 0 && quiet.resolves == 0);
+    }
 
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

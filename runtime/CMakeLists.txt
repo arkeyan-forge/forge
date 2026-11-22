@@ -487,6 +487,10 @@ target_include_directories(ArkeyanYieldBackOffTest PRIVATE .)
 add_executable(ArkeyanStallWatchTest d3d/stall_watch_test.cpp)
 target_include_directories(ArkeyanStallWatchTest PRIVATE .)
 
+# What MmQueryAddressProtect answers for physical memory (its cache attributes): ./ArkeyanAddressProtectTest
+add_executable(ArkeyanAddressProtectTest kernel/address_protect_test.cpp)
+target_include_directories(ArkeyanAddressProtectTest PRIVATE .)
+
 # The frame rate limiter's schedule and wait, with a fake clock: ./ArkeyanFrameLimiterTest
 add_executable(ArkeyanFrameLimiterTest kernel/frame_limiter_test.cpp)
 target_include_directories(ArkeyanFrameLimiterTest PRIVATE .)

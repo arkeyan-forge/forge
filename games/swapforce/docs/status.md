@@ -5,7 +5,7 @@
 ## At a glance
 
 - **Played on:** macOS (the test suite, the owner); Windows (issue #26); Linux on a Steam Deck (issue #23).
-- **Known limits:** A plain green picture after a figure swap in Wildwoods, still seen after #9, being looked into (#84); not every mode played.
+- **Known limits:** A plain green picture after some minutes in Wildwoods (#84): fixed 2026-11-22, to confirm on players' machines; not every mode played.
 
 (The source of the README's game table: `python3 -I tools/game_status.py` writes it from this section and `game.txt`.)
 
@@ -68,3 +68,18 @@ fixed-point target would have clamped, or a NaN, which the host's half-float tar
 from frame to frame then spreads. Colour exports are now stored as the console stores them
 ([shaders.md](../../../docs/runtime/gpu/shaders.md#colour-exports-stored-as-the-targets-format-2026-11-15)). Not
 reproduced here: to confirm by the player, or by `SKY_DUMP_FLOATS` on a green frame.
+
+**The game's own out-of-memory screen (2026-11-21, fixed 2026-11-22)** [V]: three players' `[stall]` reports (0.9.9 and
+0.9.10b1, Windows and Linux, in `ww2` after the `TurboZones/WW2_Flyer` zone) present a texture of mean colour (0, 153, 0)
+with no draw call, the render thread in `sub_82B15F58`: the handler a memory pool's allocate (`sub_82472370` and its
+siblings) calls through the pointer at `0x83403E9C` when it has no room. It clears to `0xFF009900` and presents in a loop
+that never exits; the pool's lock stays held, so the main thread waits for ever too. Reproduced on a Mac (a kit build,
+`ww2`, about 4 minutes of play): the `[memory]` line ([debugging.md](../../../docs/porting/debugging.md)) named pool 10,
+the 247 MB physical pool the game asks for at boot (write-combined, `MmAllocatePhysicalMemoryEx(0x0F700000, 0x20000404)`).
+The level's data fills it to about 207 MB (186 MB from the archives' loader); the rest grew in play from one site,
+`sub_825176C8` (called from `0x824DDD9C`): a render buffer's CPU copy, made only when `MmQueryAddressProtect` on the
+buffer's memory lacks `PAGE_WRITECOMBINE` (`0x400`). The runtime answered `PAGE_READWRITE` for everything, so every
+dynamic buffer got a copy: 12.8 MB in 596 blocks when the pool ran out. The kernel now answers the protection the memory
+was allocated with (`kernel/address_protect.h`): no copy is made, the pool holds 200 MB with 18 MB free in `ww2`, and
+its allocations drop from about 1800 to a few a second. The scene's size (1040x620 or 1280x720), the frame rate and
+figure swaps did not change the pool's use.

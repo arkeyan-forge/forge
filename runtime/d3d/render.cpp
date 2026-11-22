@@ -2943,17 +2943,10 @@ namespace
     {
         static d3d::StallWatch watch(5'000'000'000ull);
         // The game's draw calls since the last frame that drew: none, or all skipped by the renderer.
-        static Stats quiet;
-        if (frame.draws != 0)
-            quiet = {};
-        quiet.guestDraws += frame.guestDraws;
-        quiet.skippedShader += frame.skippedShader;
-        quiet.skippedTarget += frame.skippedTarget;
-        quiet.resolves += frame.resolves;
-        quiet.droppedStep += frame.droppedStep;
-        quiet.droppedSizes += frame.droppedSizes;
-        quiet.droppedIndices += frame.droppedIndices;
-        quiet.droppedVertices += frame.droppedVertices;
+        static d3d::StallCounts quiet;
+        d3d::AddQuietFrame(quiet, frame.draws,
+            { frame.guestDraws, frame.skippedShader, frame.skippedTarget, frame.resolves, frame.droppedStep,
+                frame.droppedSizes, frame.droppedIndices, frame.droppedVertices });
         const uint64_t now = PlatformNowNs();
         const d3d::StallWatch::Event event = watch.Swap(now, frame.draws, ultrawide::MoviePlaying());
         if (event == d3d::StallWatch::Event::Resumed)

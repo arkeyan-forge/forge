@@ -56,6 +56,7 @@ example [day1.md](day1.md)); the test-run rules and aids
 ### Threads, sync, memory, heap
 | Symptom | Cause | Fix | Files | Class |
 |---|---|---|---|---|
+| Swap Force: the picture turns plain green (0, 153, 0) and stays so, the game frozen, after some minutes in Wildwoods (`ww2`) | `MmQueryAddressProtect` answered `PAGE_READWRITE` for write-combined memory; the game makes a CPU copy, in its 247 MB pool, of every render buffer not in write-combined memory, the pool runs out and its out-of-memory handler draws green for ever | answer the protection the memory was allocated with, cache attributes included | `kernel/memory.cpp`, `kernel/address_protect.h`, `games/swapforce/out_of_memory.cpp` (the `[memory]` report) | Xbox |
 | Heap crash at frontend load after `hudmenu.str` (~1 in 40 logs) | corrupt free-list neighbour; source not found in ~300 runs | free skipped and logged when neighbour is corrupt | `engines/lux/patches.cpp` (`sub_828A25F8`) | SSA (Lux heap) |
 | Bink planes 4 KB too low | 0xE0000000 window maps physical +0x1000 (D8) | honour the offset | `memory.*` | Xbox |
 | XMA silent | XMA buffers must come from MmAllocatePhysicalMemoryEx; MmMapIoSpace must return guest address | done | `kernel/xma.cpp` | Xbox |

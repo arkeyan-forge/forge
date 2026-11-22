@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "kernel/address_protect.h"
 #include "kernel/alloc_log.h"
 #include "netplay/events.h"
 #include <algorithm>
@@ -39,6 +40,8 @@ namespace
     // hardware handed a physical address (XMA) needs it to find the guest address the title reads and writes.
     std::mutex g_windowMutex;
     std::map<uint32_t, uint32_t> g_physicalWindows;
+    // What MmQueryAddressProtect answers for each physical allocation (kernel/address_protect.h), by physical base.
+    kernel::PhysicalProtects g_physicalProtects;
     // Bumped when a physical allocation is freed: PhysicalToGuest's per-thread cache holds for one generation.
     std::atomic<uint32_t> g_windowGeneration;
 
@@ -211,6 +214,10 @@ PPC_FUNC(__imp__MmAllocatePhysicalMemoryEx)
         fprintf(stderr, "[kernel] MmAllocatePhysicalMemoryEx: 0x%08X exceeds max address 0x%08X\n",
             address & PhysicalMask, maxAddress);
 
+    {
+        std::lock_guard lock(g_windowMutex);
+        g_physicalProtects.Set(address & PhysicalMask, protect);
+    }
     AllocLog(ctx, "MmAllocatePhysicalMemoryEx (size, protect, alignment)", size, protect, alignment, address);
     NoteAllocation("physical", address, size);
     ctx.r3.u64 = address;
@@ -222,6 +229,7 @@ PPC_FUNC(__imp__MmFreePhysicalMemory)
     {
         std::lock_guard lock(g_windowMutex);
         g_physicalWindows.erase(physical);
+        g_physicalProtects.Erase(physical);
         g_windowGeneration.fetch_add(1, std::memory_order_release);
     }
     g_physicalHeap.Free(physical);
@@ -251,6 +259,11 @@ PPC_FUNC(__imp__MmQueryAddressProtect)
     uint32_t address = ctx.r3.u32;
     bool image = address >= PPC_IMAGE_BASE && address < PPC_IMAGE_BASE + PPC_IMAGE_SIZE;
     uint32_t protect = image || FindAllocation(address, nullptr) != 0 ? PageReadWrite : 0;
+    if (protect != 0 && address >= PhysicalWindowsBase)
+    {
+        std::lock_guard lock(g_windowMutex);
+        protect = g_physicalProtects.Get(g_physicalHeap.FindAllocation(address & PhysicalMask));
+    }
     AllocLog(ctx, "MmQueryAddressProtect (address; protect)", address, 0, 0, protect);
     ctx.r3.u64 = protect;
 }

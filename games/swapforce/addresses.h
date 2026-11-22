@@ -65,6 +65,12 @@
 // message came; its caller sub_830845E0 loops on it with no kernel call in between.
 #define GAME_HOOK_BinkAsync_Poll sub_8309EA98
 
+// The out-of-memory handler (games/swapforce/out_of_memory.cpp): the pointer at 0x83403E9C that a memory pool's allocate
+// (sub_82472370 and its three siblings) calls when it has no room, with (pool, 0, bytes asked, the pool's allocation count,
+// 1, -1 x 4) on the stack. The title installs this one: it clears to green (0xFF009900) and presents for ever, the
+// green picture of forge issue #84; the pool's lock stays held, so the main thread stops too.
+#define GAME_HOOK_OutOfMemory sub_82B15F58
+
 // Nightmare difficulty (engines/alchemy/nightmare.cpp): (storage) -> whether the save's "nightmare_difficulty_unlocked"
 // property is 1 (a script variable of the slot that the story's end sets through tryUnlockNightmareDifficultyLevel). Its one
 // caller, the difficulty menu's availability check sub_82C12BC0 (difficulty index >= 3 asks it), shows the padlock and "Beat
@@ -187,4 +193,8 @@ namespace game
     // The D3D device's swap counts (games/swapforce/swap_wait.cpp): issued (D3DDevice_Swap) and shown (the vertical
     // blank callback sub_82F5C128, at a pending swap's blank).
     constexpr uint32_t SwapsIssuedOffset = 16968, SwapsShownOffset = 16976;
+    // The out-of-memory report (games/swapforce/out_of_memory.cpp): the block pools of this class (the 247 MB physical
+    // pool 10 among them) allocate first fit from a list of free blocks at +664, a vector (count +8, data +20) of
+    // {address, bytes} (its allocate sub_8246EA48).
+    constexpr uint32_t BlockPoolClass = 0x8229F520, BlockPoolFreeListOffset = 664;
 }
