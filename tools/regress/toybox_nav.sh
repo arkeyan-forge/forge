@@ -21,6 +21,7 @@ mkdir -p "$R/collection" "$R/save" "$R/data" "$R/home"
 for toy in 450 452 519 482 0 4 8 14 16 19; do
     "$make" --make "$R/collection/new_$toy.sky" "$toy" > /dev/null || { echo "cannot make the dump of $toy"; exit 2; }
 done
+printf '{ "format": 1, "sorts": { "game": "recent" } }\n' > "$R/collection/collection.json" # one untitled shelf
 
 # Ten cards and the + card, six columns (the 0.9.0 layout beside the rail): grid row 0 holds cards 0-5, row 1 cards 6-10
 # (columns 0-4). Card c of row 0 is centred at x = 344 + 164.7 c, y = 307 on the 1280x720 canvas; Player 1's seat at 340/124,

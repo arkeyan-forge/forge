@@ -107,7 +107,8 @@ Collection/
 - Since the new Toy Box ([toybox_ux.md](toybox_ux.md)): per figure `origin` ("created", "imported", "portal") and `games`
   (`{"ssa": {"last_used": ..., "uses": 3}}`); top level `trash` (`{"<stamp> <file>": {file, deleted, reason,
   metadata}}`, the dumps in `trash/`, kept 30 days), `views` (`{"ssa": {"game": {group, order, show, fold_foreign},
-  "wheel": {"p1": [{file, pinned} x 8]}}}`) and `tidy_done`.
+  "wheel": {"p1": [{file, pinned} x 8]}}}`), `sorts` (`{"game": "element", "launcher": "game"}`: each app's sort,
+  `GetSort`/`SetSort`, absent until changed) and `tidy_done`.
 - The stats (experience, level, gold, play time, nickname, hat, upgrades, hero points...) are **only** in the dump
   (`docs/runtime/host/figures.md`). Nothing in `collection.json` repeats them.
 - `edition`: an edition the tag does not tell apart (many Crystal Clear, Glow in the Dark, Metallic, Flocked figures
@@ -321,7 +322,7 @@ variant `seen` (the game's own entry, null for the plain toy), its `kind` and `e
 apart). `VersionsFor(game, toy)` is the list of versions a UI offers for that game: only the `exact` ones (and the same-tag
 editions, a physical choice no game sees). `KindIn` and `NameIn` give a figure's kind and name as the game sees it. The Toy Box
 of a game **hides** the figures it does not read (no "Not for this game" fold in game) and its Add a figure lists only that
-game's toys and versions; Arkeyan Launcher keeps the whole collection, its Filters row **Works in** keeps the toys a game reads, and its
+game's toys and versions; Arkeyan Launcher keeps the whole collection, its **Works in** filter keeps the toys a game reads, and its
 sheet says "In <game>: plays as ..." when the game does not tell the variant apart.
 
 | Game | Toys it reads | Variants it tells apart (the rest play as the plain toy) | Source |
@@ -567,11 +568,12 @@ bits only; the figure keeps it in its extra area, `FigureStats::wowPow`). The fi
 `SearchMatches(query, card, game)` is the one search of the Toy Box's field and the launcher's: the query's words must all
 match the card (both halves of a swapper): a name word (label, nickname, name, version, edition, file), an element, a
 game, a toy type or a version in English or French, "level N" / "niveau N" / "lvl N" / "lv N", with accents and case
-folded (`Fold`) and one typo tolerated in a word of 5 letters or more. `Shelf(list, Sort, game)` is `Group`'s shelf in the
-player's sort (`Sort`: Recent = favourites, then what the game took, then element; Name, Level, Element, Game ignore
-favourites). `SortLabel(sort, french)` and `FigureCount(n, french)` hold the words both apps show. What each app puts
-around them (the field, Filters, the tags): [toybox_ux.md](toybox_ux.md) "Search, filters and sort". Unit test:
-`ArkeyanCollectionTest` (`TestSearch`). [V]
+folded (`Fold`) and one typo tolerated in a word of 5 letters or more. `Shelf(list, Sort, game, first)` is `Group`'s shelf in the
+player's sort: Game (the default, `first`'s section ahead), Element and Category cut it into titled sections, each in
+the Recent order (favourites, then what the game took, then element); Recent, Name, Level and Favorites are one shelf.
+`SortLabel(sort, french)` and `FigureCount(n, french)` hold the words both apps show. What each app puts
+around them (the field, Sort and filter, the tags): [toybox_ux.md](toybox_ux.md) "Search, filters and sort". Unit test:
+`ArkeyanCollectionTest` (`TestSearch`, `TestShelfSections`). [V]
 
 ## Toy Box (in the game)
 

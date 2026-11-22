@@ -83,7 +83,7 @@ screen), `model.cpp` / `menu.cpp` (the state), `toybox.cpp` (`ToyboxAchievement`
   buttons at the top right.
 - **Toy Box** (`DrawHome`, `DrawSeats`, `Card`): "On the portal" and its one-line help, the game's seats in a row (92 px; the
   chosen one raised with its name in the accent, an empty one dashed; + Add and Manage stacked at the end), "FOR PLAYER 1 · 12
-  FIGURES", the search field and Filters, six columns of cards (the portrait, the name, the level after a dot in the element's
+  FIGURES", the search field and Sort and filter, the sort's titled sections, six columns of cards (the portrait, the name, the level after a dot in the element's
   colour). Imaginators' creation crystal sits on a player's seat ("Your Imaginator"); Trap Team's trap and SuperChargers'
   vehicles are seats of their own (the catalogue's `games[].seats`). The Toy Box's other screens (the Figure page, Add a
   figure, Manage, Edit stats...) keep their layouts, restyled through the shared primitives.
