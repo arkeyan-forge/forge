@@ -2017,6 +2017,37 @@ namespace toybox
             }
         }
 
+        // The banner's button: the pointer focuses it, a click creates the pack (Accept on its row).
+        void StarterHit(Model& model, ImVec2 a, ImVec2 b)
+        {
+            AddHit(a, b, [&model] {
+                model.FocusStarter();
+                model.Run(Command::Accept);
+            });
+            g_hits.back().target = "starter-pack";
+            g_hits.back().focus = [&model] { model.FocusStarter(); };
+        }
+
+        constexpr float StarterBannerHeight = 64, StarterBannerGap = 8;
+
+        // Above the figures while the player has no character of the game: whose starter pack, what its box holds, and
+        // the button that creates it.
+        void DrawStarterBanner(Model& model, ImVec2 min, ImVec2 max)
+        {
+            const ImVec2 b(max.x, min.y + StarterBannerHeight);
+            Box(min, b, Look::Panel, Look::GoldBorder, look::Radius::Card, 1);
+            const ImVec2 buttonMin(b.x - 12 - 290, min.y + 12), buttonMax(b.x - 12, b.y - 12);
+            const float x = min.x + 16, room = buttonMin.x - 16 - x;
+            const std::string title = French() ? "Aucun Skylander de " + model.GameName() + " pour l'instant"
+                                               : "No " + model.GameName() + " Skylanders yet";
+            TextMiddle(g_black, 16, x, min.y + 22, Look::Text, Fit(g_black, 16, title, room));
+            TextMiddle(g_bold, 14, x, min.y + 44, Look::TextDim, Fit(g_bold, 14, model.starterNames, room));
+            GoldButton(buttonMin, buttonMax, L("Create starter pack", "Créer le pack de démarrage"), 15,
+                model.homeRow == Model::Row::Banner && model.screen == Screen::Home && !model.filtersOpen);
+            model.starterSpans.assign(1, { buttonMin.x, buttonMax.x });
+            StarterHit(model, buttonMin, buttonMax);
+        }
+
         void DrawEmpty(Model& model, ImVec2 min, ImVec2 max)
         {
             float x = min.x, y = min.y + 10;
@@ -2028,10 +2059,10 @@ namespace toybox
             y += 44;
             const std::string choices[] = { L("Add a figure", "Ajouter une figurine"),
                 L("Import figure files", "Importer des fichiers de figurines"),
-                L("Start with Spyro, Gill Grunt, Trigger Happy", "Commencer avec Spyro, Gill Grunt, Trigger Happy") };
-            for (int i = 0; i < 3; i++)
+                std::string(L("Start with ", "Commencer avec ")) + model.starterNames };
+            for (int i = 0; i < model.EmptyChoices(); i++)
             {
-                ImVec2 a(x, y), b(x + 520, y + 54);
+                ImVec2 a(x, y), b(x + 560, y + 54);
                 bool focused = model.homeRow != Model::Row::Seats && model.list.cursor == i;
                 if (i == 2)
                     GoldButton(a, b, choices[i], 15, focused);
@@ -2067,6 +2098,11 @@ namespace toybox
                 PageFooter({ { 'A', L("Choose", "Choisir") }, { 'B', back } });
                 return;
             }
+            if (model.ShowsStarter())
+            {
+                DrawStarterBanner(model, min, max);
+                min.y += StarterBannerHeight + StarterBannerGap;
+            }
             // What the grid is for: the chosen seat and how many figures this game reads for it.
             std::string choosing = model.realPortal
                                        ? std::string(L("YOUR FIGURES", "VOS FIGURINES"))
@@ -2093,6 +2129,13 @@ namespace toybox
             {
                 hints.push_back({ 'A', L("Change", "Changer") });
                 hints.push_back({ 'B', L("Close", "Fermer") });
+            }
+            else if (model.homeRow == Model::Row::Banner)
+            {
+                hints.push_back({ 'A', L("Create starter pack", "Créer le pack de démarrage") });
+                if (model.seats.size() > 1)
+                    hints.push_back({ 'L', L("Place", "Place") });
+                hints.push_back({ 'B', back });
             }
             else if (model.homeRow == Model::Row::Bar)
             {

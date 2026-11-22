@@ -110,6 +110,9 @@ For the Toy Box and the Collection page ([toybox_ux.md](toybox_ux.md) section 9)
 ```cpp
 cat.FindGame("ssa")->seats;                          // [{ id "p1", player 1, accepts {Core, Giant...} }, item, adventure]
 collection::UntouchedStarter(f); collection::Tidy(); collection::TidyDone();   // never-played dumps the game made
+collection::OffersStarterPack("swapforce", list, realPortal); // no character of that game, no real portal
+collection::StarterPackNames("swapforce");           // { "Wash Buckler", "Blast Zone", "Ninja Stealth Elf" }
+collection::CreateStarterPack("swapforce", list);    // { made, failed }: only what the player lacks (Game::starter)
 collection::Recent("ssa", 8);                        // paths, newest first (Touch keeps per-game times and counts)
 collection::Delete(path); collection::Trash(); collection::Undelete(id); collection::PurgeTrash(30);
 collection::Duplicate(path); collection::ResetToNew(path); collection::PruneBackups(path, 10);

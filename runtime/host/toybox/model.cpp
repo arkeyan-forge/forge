@@ -192,6 +192,39 @@ namespace toybox
             if (!UntouchedStarter(f))
                 figures.push_back(std::move(f));
         }
+        // `mixed`: a real portal with the virtual seats beside it.
+        starterOffered = OffersStarterPack(game, figures, realPortal || mixed);
+        starterNames.clear();
+        for (const std::string& packName : StarterPackNames(game))
+            starterNames += (starterNames.empty() ? "" : ", ") + packName;
+        if (homeRow == Row::Banner && !ShowsStarter())
+            homeRow = Row::Grid;
+    }
+
+    void Model::FocusStarter()
+    {
+        if (!ShowsStarter())
+            return;
+        homeRow = Row::Banner;
+        m_dirty = true;
+    }
+
+    void Model::CreateStarter()
+    {
+        const StarterPackResult result = CreateStarterPack(game, figures);
+        Reload();
+        BuildList();
+        homeRow = Row::Grid;
+        gridKnown = true;
+        list.cursor = 0;
+        FixGrid(list, 0);
+        if (result.failed > 0)
+            Toast(L("Couldn't create the starter pack", "Impossible de créer le pack de démarrage"));
+        else if (result.made == 0)
+            Toast(L("Already in My Skylanders", "Déjà dans Mes Skylanders"));
+        else
+            Toast(L("The starter pack is in My Skylanders", "Le pack de démarrage est dans Mes Skylanders"));
+        m_dirty = true;
     }
 
     int Model::FindFigure(const std::string& path) const
@@ -1744,21 +1777,23 @@ namespace toybox
         auto centre = [](const std::vector<nav::Span>& spans, int index) {
             return index >= 0 && index < int(spans.size()) ? spans[size_t(index)].Centre() : 0.0f;
         };
-        float x = homeRow == Row::Seats ? centre(seatSpans, column)
+        float x = homeRow == Row::Seats    ? centre(seatSpans, column)
+                  : homeRow == Row::Banner ? centre(starterSpans, 0)
                   : homeRow == Row::Bar
                       ? centre(barSpans, barColumn)
                       : (list.cells.empty() ? 0.0f : centre(gridSpans, list.cells[list.cursor].column));
-        int counts[3] = { int(seats.size() + ColumnRows().size()), OwnsAnything() ? BarCount : 0,
-            OwnsAnything() ? int(list.cells.size()) : 0 };
+        constexpr int Rows = int(Row::Grid) + 1;
+        int counts[Rows] = { int(seats.size() + ColumnRows().size()), ShowsStarter() ? 1 : 0,
+            OwnsAnything() ? BarCount : 0, OwnsAnything() ? int(list.cells.size()) : 0 };
         int row = int(homeRow);
-        for (int tries = 0; tries < 3; tries++)
+        for (int tries = 0; tries < Rows; tries++)
         {
             row += step;
-            if (row < 0 || row > 2)
+            if (row < 0 || row >= Rows)
             {
                 if (!wrap)
                     return;
-                row = (row + 3) % 3;
+                row = (row + Rows) % Rows;
             }
             if (counts[row] > 0)
                 break;
@@ -1770,7 +1805,7 @@ namespace toybox
             column = nav::Land(column, counts[0], seatSpans, x);
         else if (homeRow == Row::Bar)
             barColumn = nav::Land(barColumn, BarCount, barSpans, x);
-        else if (!gridKnown)
+        else if (homeRow == Row::Grid && !gridKnown)
         {
             // The first row's card nearest under the focus.
             int wanted = nav::Nearest(gridSpans, x);
@@ -1818,6 +1853,23 @@ namespace toybox
             RunList(command, false);
             return;
         }
+        if (homeRow == Row::Banner && OwnsAnything())
+        {
+            switch (command)
+            {
+            case Command::Up: HomeStep(-1, false); break;
+            case Command::Down: HomeStep(1, false); break;
+            case Command::PreviousSection:
+            case Command::NextSection:
+                FocusSeat(nav::SeatStep(seat, command == Command::NextSection ? 1 : -1, int(seats.size())));
+                break;
+            case Command::Accept: CreateStarter(); break;
+            case Command::Back: Leave(); break;
+            default: break;
+            }
+            m_dirty = true;
+            return;
+        }
         if (homeRow == Row::Bar && OwnsAnything())
         {
             RunBar(command);
@@ -1833,7 +1885,7 @@ namespace toybox
                     homeRow = Row::Seats;
                 list.cursor = std::max(list.cursor - 1, 0);
                 return;
-            case Command::Down: list.cursor = std::min(list.cursor + 1, 2); return;
+            case Command::Down: list.cursor = std::min(list.cursor + 1, EmptyChoices() - 1); return;
             case Command::Back: Leave(); return;
             case Command::Accept:
                 if (list.cursor == 0)
@@ -1848,16 +1900,7 @@ namespace toybox
                     manage.inPanel = true;
                 }
                 else
-                {
-                    // SSA's starter box.
-                    for (uint16_t type : { uint16_t(16), uint16_t(14), uint16_t(19) })
-                        Create(type);
-                    Reload();
-                    BuildList();
-                    homeRow = Row::Grid;
-                    Toast(L("Spyro, Gill Grunt and Trigger Happy are in My Skylanders",
-                        "Spyro, Gill Grunt et Trigger Happy sont dans Mes Skylanders"));
-                }
+                    CreateStarter();
                 return;
             default: return;
             }
@@ -1904,7 +1947,7 @@ namespace toybox
             {
                 // A: choose for this seat, in the grid.
                 if (OwnsAnything() && !gridKnown)
-                    HomeStep(2, false);
+                    HomeStep(int(Row::Grid), false);
                 homeRow = Row::Grid;
                 if (!OwnsAnything())
                     list.cursor = 0;

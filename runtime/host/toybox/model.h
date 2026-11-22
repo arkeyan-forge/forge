@@ -313,6 +313,7 @@ namespace toybox
         enum class Row
         {
             Seats, // the seats, then Add a figure and Manage
+            Banner, // the starter pack's button, while it is offered (ShowsStarter)
             Bar, // the search field, Filters
             Grid // your figures for the chosen seat
         };
@@ -324,7 +325,10 @@ namespace toybox
         static constexpr int BarCount = 2;
         // Where the drawing put each row's things (x extents), so that Up and Down keep the column: the seats row's
         // places, the bar's two, the grid's columns.
-        std::vector<nav::Span> seatSpans, barSpans, gridSpans;
+        std::vector<nav::Span> seatSpans, starterSpans, barSpans, gridSpans;
+        // The game's starter pack (collection::OffersStarterPack), worked out by Reload: not per frame.
+        bool starterOffered = false;
+        std::string starterNames; // "Wash Buckler, Blast Zone, Ninja Stealth Elf"; empty: the game has no pack
         Grid list; // your figures for the focused seat (Home, WheelList)
         int figure = -1; // the Figure page's figure
         int figureAction = 0;
@@ -536,6 +540,11 @@ namespace toybox
         // The name of a toy on the Add a figure screen: a swapper's top is the swapper ("Boom Jet", not "Boom Jet (top)").
         static std::string AddName(const collection::Toy& toy);
         bool OwnsAnything() const { return !figures.empty(); }
+        // The banner above the figures; an empty collection offers the pack among its choices instead.
+        bool ShowsStarter() const { return starterOffered && OwnsAnything(); }
+        int EmptyChoices() const { return starterNames.empty() ? 2 : 3; } // Add, Import, the starter pack
+        void FocusStarter();
+        void CreateStarter();
         // The Filters panel: four rows (Element, Game, Type, Sort) and Clear all. Left and Right change a row's value
         // (the first is "All"), Accept changes it to the next.
         static constexpr int FilterRows = 4;

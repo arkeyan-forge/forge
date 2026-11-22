@@ -12,6 +12,7 @@ void toybox::Model::HoverAddCell(int cell) { g_calls.push_back("hover add=" + st
 void toybox::Model::FocusColumnRow(int row) { g_calls.push_back("seat=" + std::to_string(row)); }
 void toybox::Model::AddForSeat(int index) { g_calls.push_back("add for seat=" + std::to_string(index)); }
 void toybox::Model::SeatOptions(int index) { g_calls.push_back("options seat=" + std::to_string(index)); }
+void toybox::Model::FocusStarter() { g_calls.push_back("focus starter"); }
 void toybox::Model::DropCard(int seatIndex, const std::string& path)
 {
     g_calls.push_back("drop " + path + " on " + std::to_string(seatIndex));
@@ -258,11 +259,21 @@ int main()
     homeHits();
     check(drag(5, 205, 50, 350) == std::pair(false, false) && g_calls.empty());
     model.realPortal = false;
-    printf("%d checks, %d failures\n", 45, failures);
+    // The starter pack's banner: the pointer focuses its button, a click there creates the pack (Accept on that row).
+    g_hits.clear();
+    g_hovered = -1;
+    g_calls.clear();
+    StarterHit(model, { 200, 0 }, { 260, 20 });
+    Pointer(210, 10, true);
+    check(HoverTarget() == "starter-pack" && g_calls == std::vector<std::string>{ "focus starter" });
+    g_calls.clear();
+    Click(model, 210, 10, 1, false);
+    check(g_calls == std::vector<std::string>{ "focus starter", accept });
+    printf("%d checks, %d failures\n", 47, failures);
     puts(failures
              ? "FAIL: menu pointer and click"
              : "PASS: menu/Settings/rail/card/Commands hover and click, blocked and outside hits, hover focus, Add "
                "cards' hover and a click beside them while versions show, a seat's double click, an empty seat's +, "
-               "drag and drop");
+               "drag and drop, the starter pack's button");
     return failures ? 1 : 0;
 }
