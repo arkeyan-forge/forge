@@ -366,7 +366,8 @@ namespace toybox
             MainSettings,
             MainPerformance,
             MainReport,
-            MainQuit
+            MainQuit,
+            MainPlayOnline
         };
         int menuRow = MainResume;
         std::vector<MenuRow> MainRows() const;
@@ -510,6 +511,7 @@ namespace toybox
 
         // --- What the drawing asks ----------------------------------------------------------------------------------
         int SeatOf(const std::string& path) const; // -1 if not on a seat
+        bool SeatWritable(int index) const;
         const collection::Figure* SeatFigure(int index) const; // null if empty or physical
         bool Accepts(const SeatState& s, const collection::Figure& f) const;
         // Why the seat would not take the card (PutOn's refusal, its toast aside); None: it would.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "host/figures/figure_data.h"
+#include "netplay/protocol.h"
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -73,6 +74,14 @@ std::string PortalFigureFolder();
 // The game's folder of portal.txt and toybox.link (SKY_SAVE_DIR, else the player profile's folder for the game; empty:
 // the current folder). The launcher computes the same (its SessionFile).
 std::string PortalSessionFolder();
+
+bool PortalSeatWritable(int player);
+int PortalOnlineSlot(int seat, int half = 0);
+std::array<uint8_t, PortalSlotCount> PortalOnlinePlayers();
+bool PortalPrepareOnline(bool host, const netplay::PortalEvent& event);
+bool PortalApplyOnline(const netplay::FrameEvents& events);
+void PortalFinishOnline();
+void PortalPeerLeft();
 
 // What the title saw of each slot, from the traffic (any portal, real or emulated): the status reports' presence and
 // the blocks it read or wrote since the toy arrived. The Toy Box uses it to tell when the title took a figure, and to

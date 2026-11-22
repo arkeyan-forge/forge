@@ -1,5 +1,6 @@
 #include "netplay/scheduler.h"
 #include "netplay/events.h"
+#include "netplay/session_runtime.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -17,6 +18,8 @@ namespace netplay
         if (!deterministic || std::string_view(deterministic) != "1" || !delivery ||
             std::string_view(delivery) != "frame")
         {
+            if (Online())
+                return false;
             fprintf(stderr, "[netplay] refused: cooperative scheduling requires deterministic=1 and delivery=frame\n");
             std::_Exit(1);
         }
@@ -53,7 +56,8 @@ namespace netplay
                 while (!stop.stop_requested())
                 {
                     m_changed.wait_for(lock, std::chrono::milliseconds(100));
-                    if (m_contexts.empty() || std::chrono::steady_clock::now() - m_handover < std::chrono::seconds(2))
+                    if (m_networkWait || m_contexts.empty() ||
+                        std::chrono::steady_clock::now() - m_handover < std::chrono::seconds(2))
                         continue;
                     fprintf(stderr, "[netplay] scheduler watchdog: holder %u, no handover for 2 s\n", m_holder);
                     if (m_holder != None && m_contexts[m_holder - 1]->location)
@@ -72,6 +76,14 @@ namespace netplay
     {
         m_watchdog.request_stop();
         m_changed.notify_all();
+    }
+
+    void Scheduler::NetworkWait(bool waiting)
+    {
+        std::lock_guard lock(m_mutex);
+        // The network deliberately holds the guest baton; a missing peer is diagnosed by the session timeout.
+        m_networkWait = waiting;
+        m_handover = std::chrono::steady_clock::now();
     }
 
     bool Scheduler::Active() const { return m_enabled && t_scheduler == this; }

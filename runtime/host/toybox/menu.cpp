@@ -6,6 +6,9 @@
 #include "host/gamemenu.h"
 #include "host/settings.h"
 #include "host/toybox.h"
+#include "host/profiles.h"
+#include "host/portal.h"
+#include "netplay/session_runtime.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
@@ -25,6 +28,9 @@ namespace toybox
         {
             Commands,
             SkipIntro,
+            Language,
+            Voices,
+            Nightmare,
             Fullscreen,
             FrameRate,
             AutoFallback,
@@ -47,7 +53,7 @@ namespace toybox
 
         std::string SectionOf(int row)
         {
-            return row <= SkipIntro  ? L("Game", "Jeu")
+            return row <= Nightmare  ? L("Game", "Jeu")
                    : row <= Vsync    ? L("Video", "Vidéo")
                    : row <= Speakers ? L("Audio", "Audio")
                                      : L("Debug", "Débogage");
@@ -90,7 +96,8 @@ namespace toybox
                     (row != PortalSound || gamemenu::Current().portalSoundShown) &&
                     (row != AutoFallback || gamemenu::Current().fpsLimit == 60) &&
                     (row != FsrQuality || gamemenu::Current().upscaler != 0) &&
-                    (row != GpuBackend || gamemenu::Current().gpuBackendShown))
+                    (row != GpuBackend || gamemenu::Current().gpuBackendShown) &&
+                    ((row != Language && row != Voices && row != Nightmare) || netplay::Online()))
                     shown.push_back(row);
             return shown;
         }
@@ -201,6 +208,7 @@ namespace toybox
 
     std::vector<MenuRow> Model::MainRows() const
     {
+        const bool online = netplay::Online();
         using Kind = MenuRow::Kind;
         const gamemenu::Values& v = gamemenu::Current();
         int onPortal = 0;
@@ -214,7 +222,7 @@ namespace toybox
             r.percent = percent;
             return r;
         };
-        std::vector<MenuRow> rows(look::MainRows);
+        std::vector<MenuRow> rows(look::MainRows + (online ? 0 : 1));
         rows[MainVolume] = row(Kind::Slider, L("Volume", "Volume"), std::to_string(v.volume), int(v.volume));
         rows[MainResume] = row(Kind::Action, L("Resume", "Reprendre"), "");
         rows[MainToyBox] = row(Kind::Action, "Toy Box",
@@ -227,6 +235,10 @@ namespace toybox
         rows[MainPerformance] = row(Kind::Choice, L("Performance", "Performances"), LevelLabel(v.debugScreen));
         rows[MainReport] = row(Kind::Action, L("Report a problem", "Signaler un problème"), "");
         rows[MainQuit] = row(Kind::Action, L("Quit to the launcher", "Quitter vers le launcher"), "");
+        if (online)
+            rows[MainQuit].label = L("Leave the session", "Quitter la session");
+        else
+            rows[MainPlayOnline] = row(Kind::Action, L("Play online", "Jouer en ligne"), "");
         return rows;
     }
 
@@ -246,7 +258,7 @@ namespace toybox
 
     void Model::FocusMenuRow(int row, int step)
     {
-        menuRow = std::clamp(row, 0, look::MainRows - 1);
+        menuRow = std::clamp(row, 0, look::MainRows + (netplay::Online() ? 0 : 1) - 1);
         MainStep(menuRow, step);
         m_dirty = true;
     }
@@ -302,17 +314,36 @@ namespace toybox
                 MenuStep(-1, 0);
             return;
         case MainQuit:
+        case MainPlayOnline:
             if (step == 0)
-                Ask({ L("Quit to the launcher?", "Quitter vers le launcher ?"),
+            {
+                const bool online = netplay::Online(), playOnline = row == MainPlayOnline;
+                if (playOnline && online)
+                    return;
+                Ask({ playOnline ? L("Close the game and open Online in the launcher?",
+                                       "Fermer le jeu et ouvrir En ligne dans le launcher ?")
+                      : online   ? L("Leave the session?", "Quitter la session ?")
+                                 : L("Quit to the launcher?", "Quitter vers le launcher ?"),
                     L("What the game has not saved is lost.", "Ce que le jeu n'a pas enregistré est perdu."),
-                    { L("Quit", "Quitter"), L("Keep playing", "Continuer") }, 1, false, [](int choice) {
+                    { online ? L("Leave", "Quitter") : L("Quit", "Quitter"), L("Keep playing", "Continuer") }, 1, false,
+                    [this, online, playOnline](int choice) {
                         if (choice != 0)
                             return;
+                        if (playOnline && !netplay::WriteOpenOnlineFile(PortalSessionFolder(), game))
+                        {
+                            Toast(L("Could not open Online in the launcher",
+                                      "Impossible d'ouvrir En ligne dans le launcher"),
+                                4);
+                            return;
+                        }
+                        if (online)
+                            netplay::LeaveSession();
                         fprintf(stderr, "[gamemenu] quit to the launcher\n");
                         SDL_Event quit{};
                         quit.type = SDL_EVENT_QUIT;
                         SDL_PushEvent(&quit);
                     } });
+            }
             return;
         default: return;
         }
@@ -322,8 +353,11 @@ namespace toybox
     {
         switch (command)
         {
-        case Command::Up: menuRow = (menuRow + look::MainRows - 1) % look::MainRows; break;
-        case Command::Down: menuRow = (menuRow + 1) % look::MainRows; break;
+        case Command::Up:
+            menuRow = (menuRow + look::MainRows + (netplay::Online() ? 0 : 1) - 1) %
+                      (look::MainRows + (netplay::Online() ? 0 : 1));
+            break;
+        case Command::Down: menuRow = (menuRow + 1) % (look::MainRows + (netplay::Online() ? 0 : 1)); break;
         case Command::Left:
         case Command::Right:
             if (menuRow == MainVolume || menuRow == MainPerformance)
@@ -607,6 +641,13 @@ namespace toybox
         rows[SkipIntro] = row(Kind::Toggle, L("Skip the start-up logos", "Passer les logos de départ"),
             OnOff(v.skipIntroMovies),
             L("Straight to the title when the game starts.", "Directement à l'écran titre au démarrage."), -1, true);
+        rows[Language] = row(Kind::Choice, L("Game language", "Langue du jeu"), v.language, "");
+        rows[Voices] = row(Kind::Choice, L("Voices", "Voix"), v.voiceLanguage, "");
+        rows[Nightmare] =
+            row(Kind::Toggle, L("Nightmare from start", "Cauchemar dès le début"), OnOff(v.nightmareFromStart), "");
+        if (netplay::Online())
+            for (int locked : { FrameRate, AutoFallback, SkipIntro, Language, Voices, Nightmare })
+                rows[locked].unavailable = L("Set by the host", "Défini par l'hôte");
         return rows;
     }
 
@@ -644,6 +685,9 @@ namespace toybox
     // volume by 10), 0 does the row.
     void Model::MenuStep(int row, int step)
     {
+        if (row == Language || row == Voices || row == Nightmare ||
+            (netplay::Online() && (row == FrameRate || row == AutoFallback || row == SkipIntro)))
+            return;
         const gamemenu::Values& v = gamemenu::Current();
         bool saved = true;
         auto flip = [&](bool value, bool (*set)(bool)) { saved = set(!value); };

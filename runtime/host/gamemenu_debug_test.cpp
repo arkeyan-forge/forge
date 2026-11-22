@@ -2,6 +2,7 @@
 // GPU device. Compact and Full screens in English and French, the clear gameplay area, collection stopping when off,
 // no C++ heap allocation in collection, the text for the clipboard, and the performance log's lines, end and size limit.
 #include "host/gamemenu.h"
+#include "netplay/session_runtime.h"
 #include "host/debug_screen.h"
 #include "host/embedded_fonts.h"
 #include "host/imgui_software.h"
@@ -82,6 +83,19 @@ void operator delete(void* p) noexcept { free(p); }
 void* operator new[](size_t size) { return ::operator new(size); }
 void operator delete[](void* p) noexcept { free(p); }
 
+netplay::OnlineStatus netplay::SessionStatus()
+{
+    netplay::OnlineStatus stats;
+    stats.roundTripMs = 42;
+    stats.delay = 3;
+    stats.goodHash = 300;
+    stats.goodChecks = 10;
+    stats.minPingMs = 16;
+    stats.maxPingMs = 42;
+    stats.pingCount = 3;
+    stats.pingMs = { 16, 42, 30 };
+    return stats;
+}
 const gamemenu::Values& gamemenu::Current() { return g_values; }
 const char* LogBuild() { return "test-build"; }
 const char* SystemOsName() { return "Test OS"; }
@@ -214,6 +228,7 @@ namespace
 int main(int argc, char** argv)
 {
     using namespace debugscreen;
+    const bool online = netplay::Online();
     // Warm the SDL timer outside the measured path. InitDebugScreen does no per-frame identity work.
     SDL_GetTicksNS();
     gamemenu::InitDebugScreen("Test game", "1.2.3", nullptr);
@@ -232,6 +247,7 @@ int main(int argc, char** argv)
     const debugscreen::Screen& screen = gamemenu::DebugScreenState();
     CHECK(!screen.full && Value(screen.left, "level") == "test_level"); // the map's name, not the zone's path
     CHECK(Value(screen.left, "cap") == "60  drop to 30 active");
+    CHECK(Value(screen.left, "online") == (online ? "42 ms  3f  ok" : ""));
     CHECK(!gamemenu::UpdateDebugScreen());
     CHECK(g_snapshots == 1); // no resampling inside the half-second refresh interval
     // A busy renderer: the refresh waits for an update that finds it free, without blocking.
@@ -284,6 +300,13 @@ int main(int argc, char** argv)
     g_presented += 30;
     CHECK(gamemenu::UpdateDebugScreen());
     CHECK(g_allocations == before);
+    CHECK(screen.pingCount == (online ? 3u : 0u));
+    if (online)
+    {
+        CHECK(Value(screen.right, "ping (60 s)") == "42 ms  min 16  max 42");
+        CHECK(Value(screen.right, "hash") == "frame 300  10 good checks");
+        CHECK(Has(gamemenu::DebugScreenText(), "ONLINE"));
+    }
     CHECK(screen.full && screen.graphCount == 199); // frame 1 began before the measurement
     CHECK(Has(Value(screen.left, "frame"), "cpu 3.00  gpu 4.00  wait 1.50"));
     CHECK(Value(screen.left, "cpu") == "game 3.00  host calls 2.00 ms");
@@ -335,7 +358,7 @@ int main(int argc, char** argv)
     gamemenu::UpdateDebugScreen();
     CHECK(g_allocations == before);
     CHECK(gamemenu::SwapPerfLog(nullptr) == log);
-    rewind(log);
+    CHECK(fseek(log, 0, SEEK_SET) == 0);
     char line[512];
     int lines = 0, hitches = 0;
     bool header = fgets(line, sizeof(line), log) != nullptr && std::string_view(line) == PerfLogHeader;

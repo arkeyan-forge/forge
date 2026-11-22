@@ -17,6 +17,7 @@
 #include "host/speakers.h"
 #include "host/toybox.h"
 #include "kernel/video.h"
+#include "netplay/session_runtime.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
 #include <filesystem>
@@ -75,6 +76,9 @@ void gamemenu::Init(const RuntimeSettings& settings, SDL_Window* window, const c
         settings.anisotropy, settings.vsync, settings.skipIntroMovies, settings.edgeSmoothing, settings.fpsAutoFallback,
         settings.debugScreen, ::game::HostKernelPixelShader != 0, g_version, settings.reduceMotion,
         settings.portalSound, PortalGameHasSpeaker() };
+    g_values.language = settings.language.empty() ? "game" : settings.language;
+    g_values.voiceLanguage = settings.voiceLanguage.empty() ? "game" : settings.voiceLanguage;
+    g_values.nightmareFromStart = settings.nightmareFromStart;
     g_values.upscaler = uint32_t(settings.upscaler);
     g_values.fsrQuality = uint32_t(settings.fsrQuality);
     g_values.frameGeneration = settings.fsrFrameGeneration;
@@ -226,6 +230,8 @@ void gamemenu::RememberWindowSize()
 
 bool gamemenu::SetFpsLimit(uint32_t fps)
 {
+    if (netplay::Online())
+        return false;
     g_values.fpsLimit = CapFrameRate(NormalFrameRate(fps), game::Current().maxFpsLimit);
     SetFrameRateLimit(g_values.fpsLimit);
     Logged("fps_limit", std::to_string(g_values.fpsLimit));
@@ -234,6 +240,8 @@ bool gamemenu::SetFpsLimit(uint32_t fps)
 
 bool gamemenu::SetFpsAutoFallback(bool on)
 {
+    if (netplay::Online())
+        return false;
     g_values.fpsAutoFallback = on;
     ::SetFpsAutoFallback(on);
     Logged("fps_auto_fallback", on ? "1" : "0");
@@ -260,6 +268,8 @@ bool gamemenu::SetVsync(bool on)
 
 bool gamemenu::SetSkipIntroMovies(bool on)
 {
+    if (netplay::Online())
+        return false;
     g_values.skipIntroMovies = on;
     return SaveForNextStart("skip_intro_movies", on ? "1" : "0");
 }

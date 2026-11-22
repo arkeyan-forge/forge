@@ -82,6 +82,14 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_NETPLAY_SCHEDULE=cooperative` | one FIFO baton for guest threads, APCs and graphics/audio callbacks; startup requires both `SKY_NETPLAY_DETERMINISTIC=1` and `SKY_NETPLAY_DELIVERY=frame`; virtual wait deadlines, yields at spin hints and every `PollQuantum` clock reads or free critical-section entries, a 2 s scheduler watchdog; step 0c of [netplay.md](../runtime/host/netplay.md) |
 | `SKY_NETPLAY_TRACE=<file>` | requires an `ARKEYAN_NETPLAY_TRACE=ON` build and cooperative scheduling; shadow guest memory to record host-sourced loads in a versioned binary file and counts/chain hashes per frame in `<file>.frames`; compare with `tools/netplay/trace_diff.py` (step 0d of [netplay.md](../runtime/host/netplay.md)) |
 | `SKY_NETPLAY_TRACE_FRAMES=<a>-<b>` | inclusive decimal range for full trace records, default all frames; summaries and shadow updates continue for every frame; use `trace_diff.py --frames <a.frames> <b.frames>` first, then compare the two binary files |
+| `SKY_NETPLAY_HOST=<port>` | host an input-lockstep session on UDP port 1–65535; local pad/keyboard becomes P1; requires deterministic=1, delivery=frame and schedule=cooperative; exclusive with JOIN, RECORD and REPLAY |
+| `SKY_NETPLAY_JOIN=<host>:<port>` | join an IPv4 address, DNS name, or `[IPv6]:port`; local first pad/keyboard becomes P2; same prerequisites as HOST |
+| `SKY_NETPLAY_FPS=30\|60` | required with HOST/JOIN; overrides file and command-line FPS, disables automatic fallback, forces 16:9 and locks guest-changing settings for the session; [step 3](../runtime/host/netplay.md#step-3-session-setup-game-side) |
+| `SKY_SAVE_DIR=<folder>` | session save folder; received/session figures go in `online-figures/`, and `online-ended.txt` contains `reason=<code>` after a session ends; the runtime shows the reason for four seconds before normal quit |
+| `SKY_NETPLAY_PASSWORD=<text>` | optional shared password for nonce-derived SipHash-128 packet authentication |
+| `SKY_NETPLAY_DELAY=<frames>` | 1–8; host override wins, otherwise clamp(ceil(RTT / 2 / frame time) + 1, 1, 8) from five ping/pong probes |
+| `SKY_NETPLAY_CROSS_PLATFORM=1` | allow different OS/CPU identities only when both peers opt in; unverified |
+| `SKY_NETPLAY_DESYNC_DUMP=<file>` | on a 30-frame checkpoint mismatch, write that frame's blocks in `SKYBLK01` format before exit; compare both dumps with `tools/netplay/hash_diff.py`; [step 1](../runtime/host/netplay.md#step-1-lockstep-on-one-machine) |
 
 ### Renderer, GPU, performance
 | Variable | Effect |

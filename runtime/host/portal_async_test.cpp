@@ -36,6 +36,7 @@ namespace
 
     using Clock = std::chrono::steady_clock;
     using std::chrono::milliseconds;
+    using std::chrono::seconds;
 
     double Ms(Clock::duration duration) { return std::chrono::duration<double, std::milli>(duration).count(); }
 
@@ -160,6 +161,11 @@ namespace
             std::copy(next.begin(), next.begin() + long(size), report);
             return size;
         }
+        int Reports()
+        {
+            std::lock_guard lock(m_mutex);
+            return m_counter;
+        }
 
     private:
         std::mutex m_mutex;
@@ -172,9 +178,12 @@ namespace
     // Answers before the status reports, which wait as one: the latest, with every change (issue #20, Giants' resets).
     void TestAnswersFirst()
     {
-        AsyncPortal portal(
-            std::make_unique<StreamingPortal>(), true, { milliseconds(20), milliseconds(100), milliseconds(1) });
-        std::this_thread::sleep_for(milliseconds(60));
+        auto device = std::make_unique<StreamingPortal>();
+        StreamingPortal& fake = *device;
+        AsyncPortal portal(std::move(device), true, { milliseconds(20), milliseconds(100), milliseconds(1) });
+        // Waits for the reports rather than a fixed time: under emulation (Wine, the sanitizers) 60 ms gave fewer.
+        for (const auto deadline = Clock::now() + seconds(5); fake.Reports() < 22 && Clock::now() < deadline;)
+            std::this_thread::sleep_for(milliseconds(5));
         uint8_t report[32];
         // Sixty reports came; the one waiting still says the toy arrived (changed), and is the newest.
         CHECK(portal.Read(report, sizeof(report)) == 7 && report[0] == 'S' && report[1] == 3 && report[5] > 20);

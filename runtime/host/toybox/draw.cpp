@@ -1,5 +1,6 @@
 #include "host/toybox/draw.h"
 #include "host/gamemenu.h"
+#include "netplay/session_runtime.h"
 #include "host/toybox/hit.h"
 #include "host/collection/icons.h"
 #include "host/embedded_fonts.h"
@@ -1085,13 +1086,18 @@ namespace toybox
 
         // --- The player's profile: SKY_PLAYER_NAME and its picture (host/profiles.h) ------------------------------------
 
-        imgui_software::Texture* g_avatar; // the picture cut round, 64 px; null: the initials on the accent
-        bool g_avatarRead;
+        std::array<imgui_software::Texture*, 2>
+            g_avatars{}; // the picture cut round, 64 px; null: the initials on the accent
+        std::array<bool, 2> g_avatarsRead{};
 
         // The profile's picture, or its initials, in a circle of `diameter`.
-        void Avatar(ImVec2 center, int diameter)
+        void Avatar(ImVec2 center, int diameter, size_t playerIndex = SIZE_MAX)
         {
-            const profiles::Profile& player = profiles::Current()[0];
+            if (playerIndex == SIZE_MAX)
+                playerIndex = skyenv::Get("SKY_NETPLAY_JOIN") ? 1 : 0;
+            auto& g_avatar = g_avatars[playerIndex];
+            auto& g_avatarRead = g_avatarsRead[playerIndex];
+            const profiles::Profile& player = profiles::Current()[playerIndex];
             if (!g_avatarRead)
             {
                 g_avatarRead = true;
@@ -1130,7 +1136,7 @@ namespace toybox
             TextCentered(g_black, diameter * 0.4f, center, Look::AccentInk, Initials(player.name));
         }
 
-        std::string PlayerName() { return profiles::Current()[0].name; }
+        std::string PlayerName() { return profiles::Current()[skyenv::Get("SKY_NETPLAY_JOIN") ? 1 : 0].name; }
 
         // The game's name without "Skylanders", in capitals, for Bungee ("IMAGINATORS", "SPYRO'S ADVENTURE").
         std::string Upper(const std::string& text)
@@ -1815,7 +1821,7 @@ namespace toybox
         void SeatHit(Model& model, int index, ImVec2 a, ImVec2 b)
         {
             const SeatState& seat = model.seats[size_t(index)];
-            const bool takeOff = !model.realPortal && !seat.physical && !seat.path.empty();
+            const bool takeOff = model.SeatWritable(index) && !model.realPortal && !seat.physical && !seat.path.empty();
             AddHit(
                 a, b, [&model, index] { model.FocusColumnRow(index); },
                 [&model, index] {
@@ -1831,7 +1837,8 @@ namespace toybox
                 g_hits.back().dragPath = seat.path;
                 g_hits.back().dragSeat = index;
             }
-            g_drops.push_back({ a, b, index, look::Radius::Card });
+            if (model.SeatWritable(index))
+                g_drops.push_back({ a, b, index, look::Radius::Card });
         }
 
         // A seat's pointer areas: the card, and over it an empty seat's + (its picture), which opens Add a figure for it.
@@ -1972,11 +1979,16 @@ namespace toybox
                     name = model.realPortal ? L("None", "Aucun") : L("Empty", "Vide");
                 }
                 if (s.seat.player == 2 && s.seat.id[0] == 'p' && !s.physical && (f == nullptr || !s.waiting) &&
-                    !GamepadConnected(1))
+                    !GamepadConnected(1) && !netplay::Online())
                 {
                     line = seatWidth < 200 ? L("No controller", "Pas de manette")
                                            : L("needs a 2nd controller", "il faut une 2e manette");
                     lineColor = Look::TextDimmer;
+                }
+                if (!model.SeatWritable(int(i)))
+                {
+                    label += L(" · LOCKED", " · VERROUILLÉ");
+                    line = L("Other player's seat", "Place de l'autre joueur");
                 }
                 // A LightCore toy lights up with the portal's light, where the game drives it.
                 bool lightCore =
@@ -3602,7 +3614,9 @@ namespace toybox
         {
             using namespace look;
             using look::CanvasWidth, look::CanvasHeight;
-            const MainLayout layout = look::Main();
+            const std::vector<MenuRow> rows = model.MainRows();
+            const bool online = rows.size() == look::MainRows;
+            const MainLayout layout = look::Main(online, !online);
             Fill(ImVec2(0, 0), ImVec2(MainLeft, CanvasHeight), Colour::Scrim, 0.28f);
             // A soft shadow on the game along the panel's edge.
             for (int i = 0; i < 8; i++)
@@ -3633,8 +3647,21 @@ namespace toybox
                 Fit(g_bold, 13, "Arkeyan" + (version.empty() ? std::string() : " \xC2\xB7 " + version),
                     pa.x - 12 - left));
 
-            std::vector<MenuRow> rows = model.MainRows();
-            for (int i = 0; i < MainRows; i++)
+            if (online)
+            {
+                const auto status = netplay::SessionStatus();
+                const size_t peer = netplay::Hosting() ? 1 : 0;
+                const float y = MainPad + MainHeader + 16;
+                Fill(ImVec2(left, y), ImVec2(right, y + 56), Colour::Raised);
+                Avatar(ImVec2(left + 24, y + 28), 32, peer);
+                const auto name = std::string(L("Online with ", "En ligne avec ")) + profiles::Current()[peer].name;
+                Text(g_black, 14, ImVec2(left + 50, y + 8), Colour::Text, Fit(g_black, 14, name, right - left - 60));
+                char info[128];
+                snprintf(info, sizeof(info), "%llu ms  %uf  %s", static_cast<unsigned long long>(status.roundTripMs),
+                    status.delay, status.goodChecks ? L("in sync", "synchronisé") : L("checking", "vérification"));
+                Text(g_bold, 12, ImVec2(left + 50, y + 32), Colour::TextDim, info);
+            }
+            for (int i = 0; i < int(rows.size()); i++)
             {
                 const MenuRow& row = rows[size_t(i)];
                 ImVec2 a(left, layout.rowTop[i]), b(right, layout.rowTop[i] + layout.rowHeight[i]);
@@ -3654,7 +3681,7 @@ namespace toybox
                     TextMiddle(g_bold, 15, a.x + 16 + 20 + 12, ty, Colour::Text, row.label);
                     float valueWidth = Measure(g_black, 15, row.value).x;
                     TextMiddle(g_black, 15, b.x - 16 - valueWidth, ty, Look::Accent, row.value);
-                    ImVec2 ta(a.x + 16, a.y + 48), tb(b.x - 16, a.y + 54);
+                    ImVec2 ta(a.x + 16, b.y - 24), tb(b.x - 16, b.y - 18);
                     RoundRect(ta, tb, Colour::Raised2, 3);
                     float at = ta.x + (tb.x - ta.x) * float(row.percent) / 100.0f;
                     if (row.percent > 0)
@@ -3683,7 +3710,7 @@ namespace toybox
                     Icon::Activity, Icon::Flag, Icon::Quit };
                 const bool quit = i == Model::MainQuit, small = i >= MainSmallFrom;
                 const uint32_t ink = quit ? Colour::DangerText : small ? Colour::TextSoft : Colour::Text;
-                DrawIcon(Icons[i], ImVec2(a.x + 16 + 10, cy), 20, ink);
+                DrawIcon(i == Model::MainPlayOnline ? Icon::Activity : Icons[i], ImVec2(a.x + 16 + 10, cy), 20, ink);
                 TextMiddle(focused ? g_black : g_bold, small ? 15 : 16, a.x + 16 + 20 + 14, cy, ink,
                     Fit(g_black, 16, row.label, b.x - a.x - 140));
                 if (row.kind == MenuRow::Kind::Toggle)
@@ -3751,6 +3778,7 @@ namespace toybox
                 rowTop[i] = y;
                 y += SettingsRowHeight + SettingsRowGap;
             }
+            model.settingsRow = std::clamp(model.settingsRow, 0, int(rows.size()) - 1);
             const size_t focus = size_t(model.settingsRow);
             model.settingsScroll = ListScroll(headingTop[focus] >= 0 ? headingTop[focus] : rowTop[focus],
                 rowTop[focus] + SettingsRowHeight, y - SettingsRowGap, listBottom - listTop, model.settingsScroll);
@@ -4287,6 +4315,20 @@ namespace toybox
             DrawDrag(model);
         if (!model.open) // it would sit on the corner buttons of the full-screen pages
             DrawFps(model);
+        if (netplay::Online() && netplay::SessionStatus().peerMenuOpen)
+        {
+            const char* text = L("in the menu", "dans le menu");
+            Fill(ImVec2(18, 18), ImVec2(180, 50), look::Colour::Surface, 0.85f);
+            Text(g_bold, 14, ImVec2(30, 25), Look::Text, text);
+        }
+        if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())
+        {
+            g_hits.clear();
+            g_drops.clear();
+            Fill(ImVec2(0, 0), ImVec2(CanvasWidth, CanvasHeight), look::Colour::Surface);
+            TextCentered(
+                g_black, 26, ImVec2(CanvasWidth / 2.0F, CanvasHeight / 2.0F), Look::Text, netplay::SessionEndMessage());
+        }
         ImGui::Render();
         // Into the caller's buffer: once it has its size, a frame (a toast sliding in) allocates nothing.
         imgui_software::Texture canvas{ CanvasWidth, CanvasHeight };

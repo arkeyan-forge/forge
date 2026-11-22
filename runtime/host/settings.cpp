@@ -1,5 +1,6 @@
 #include "host/settings.h"
 #include "host/env.h"
+#include "netplay/session_settings.h"
 #include <SDL3/SDL.h>
 #include <charconv>
 #include <atomic>
@@ -710,6 +711,16 @@ bool ParseSettings(const LauncherConfig& config, const std::string& gameSection,
     ParseEnvironmentSettings(getEnv, set);
     if (!ParseCommandLine(argc, argv, set, error))
         return false;
+    if (skyenv::Get("SKY_NETPLAY_HOST", getEnv) || skyenv::Get("SKY_NETPLAY_JOIN", getEnv))
+    {
+        if (const uint32_t fps = netplay::SessionFrameRate(skyenv::Get("SKY_NETPLAY_FPS", getEnv)))
+            settings.fpsLimit = fps;
+        settings.aspectAuto = settings.aspectFill = false;
+        settings.fpsAutoFallback = false;
+        settings.fpsAutoFallbackSet = true;
+        settings.nightmareFromStart = false;
+        settings.skipIntroMovies = false;
+    }
     g_skipIntroMovies = settings.skipIntroMovies;
     SetFpsAutoFallback(settings.fpsAutoFallback);
     return true;

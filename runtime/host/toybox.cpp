@@ -4,6 +4,8 @@
 #include "host/art/game_art.h"
 #include "host/collection/presence.h"
 #include "host/gamemenu.h"
+#include "netplay/session_runtime.h"
+#include "netplay/session_end.h"
 #include "host/glyphs.h"
 #include "host/pad_map.h"
 #include "host/settings.h"
@@ -738,7 +740,9 @@ namespace
     void Present()
     {
         toybox::Model& model = M();
-        bool visible = model.open || !model.toast.empty() || !model.fps.empty() || gamemenu::Current().debugScreen;
+        bool visible = (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues()) ||
+                       model.open || !model.toast.empty() || !model.fps.empty() || gamemenu::Current().debugScreen ||
+                       (netplay::Online() && netplay::SessionStatus().peerMenuOpen);
         if (!visible)
         {
             if (g_overlayShown)
@@ -796,6 +800,8 @@ void ToyboxInit(SDL_Window* window)
 
 bool ToyboxHandleEvent(const SDL_Event& event)
 {
+    if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())
+        return true;
     if (!g_enabled)
         return false;
     toybox::Model& model = M();
@@ -1302,10 +1308,62 @@ namespace
 
 void ToyboxUpdate()
 {
+    if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())
+    {
+        static netplay::EndScreenClock clock;
+        static bool shown = false;
+        static bool quitSent = false;
+        if (!shown)
+        {
+            shown = true;
+            clock.Show(SDL_GetTicks());
+            if (g_enabled)
+            {
+                M().open = false;
+                M().Touch();
+                Present();
+            }
+        }
+        // The guest no longer presents while it holds the end barrier.
+        gpu::Present(nullptr);
+        if (!quitSent && clock.QuitDue(SDL_GetTicks()))
+        {
+            SDL_Event quit{};
+            quit.type = SDL_EVENT_QUIT;
+            quitSent = SDL_PushEvent(&quit);
+        }
+        return;
+    }
     if (!g_enabled)
         return;
+    if (netplay::SessionContinues() && netplay::SessionEndReason() != netplay::EndReason::None)
+    {
+        static bool announced = false;
+        if (!announced)
+        {
+            announced = true;
+            M().Notice(netplay::SessionEndMessage(), 4);
+        }
+    }
     RunScript();
     toybox::Model& model = M();
+    netplay::SetMenuOpen(model.open && (MenuScreen(model) || model.fromMenu));
+    static bool peerMenu = false;
+    const bool peerMenuNow = netplay::Online() && netplay::SessionStatus().peerMenuOpen;
+    if (peerMenuNow != peerMenu)
+    {
+        peerMenu = peerMenuNow;
+        model.Touch();
+    }
+    if (netplay::Online() && model.open && model.screen == Screen::Menu)
+    {
+        static uint64_t refreshed = 0;
+        if (SDL_GetTicksNS() - refreshed >= 500'000'000)
+        {
+            refreshed = SDL_GetTicksNS();
+            model.Touch();
+        }
+    }
     {
         std::lock_guard lock(g_noticeMutex);
         if (g_noticePending)

@@ -922,3 +922,33 @@ set_source_files_properties(main.cpp host/uwp/main.cpp PROPERTIES COMPILE_DEFINI
 set_property(SOURCE main.cpp host/log.cpp host/portal.cpp host/portal_mixed.cpp host/gamemenu.cpp host/gamemenu_debug.cpp
     host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp kernel/files.cpp
     kernel/xam_achievements.cpp kernel/xam_content.cpp APPEND PROPERTY COMPILE_DEFINITIONS ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
+
+add_library(ArkeyanNetplayTransport STATIC netplay/protocol.cpp netplay/session.cpp netplay/socket.cpp netplay/portmap.cpp)
+target_include_directories(ArkeyanNetplayTransport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ArkeyanNetplayTransport PUBLIC ArkeyanNetplay)
+if(WIN32)
+    target_link_libraries(ArkeyanNetplayTransport PUBLIC ws2_32 iphlpapi)
+endif()
+sky_quality(ArkeyanNetplayTransport)
+target_link_libraries(ArkeyanRuntime PRIVATE ArkeyanNetplayTransport)
+add_executable(ArkeyanNetplayProtocolTest netplay/protocol_test.cpp)
+add_executable(ArkeyanNetplaySessionTest netplay/session_test.cpp)
+target_link_libraries(ArkeyanNetplayProtocolTest PRIVATE ArkeyanNetplayTransport)
+target_link_libraries(ArkeyanNetplaySessionTest PRIVATE ArkeyanNetplayTransport)
+add_executable(ArkeyanPortMapTest netplay/portmap_test.cpp)
+target_link_libraries(ArkeyanPortMapTest PRIVATE ArkeyanNetplayTransport)
+sky_add_tests(ArkeyanNetplayProtocolTest ArkeyanNetplaySessionTest ArkeyanPortMapTest)
+
+add_executable(ArkeyanNetplaySetupTest netplay/session_setup_test.cpp host/game_options.cpp host/settings.cpp host/window_size.cpp
+    host/pad_map.cpp host/toybox/pad_bindings.cpp host/mouse.cpp host/profiles.cpp host/stb_impl.cpp)
+target_include_directories(ArkeyanNetplaySetupTest PRIVATE .)
+target_include_directories(ArkeyanNetplaySetupTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
+target_link_libraries(ArkeyanNetplaySetupTest PRIVATE ArkeyanNetplayTransport fmt::fmt SDL3::SDL3-static)
+sky_add_tests(ArkeyanNetplaySetupTest)
+set_tests_properties(ArkeyanNetplaySetupTest PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_executable(ArkeyanNetplayStartupTest netplay/session_startup_test.cpp)
+target_link_libraries(ArkeyanNetplayStartupTest PRIVATE ArkeyanNetplay)
+sky_add_tests(ArkeyanNetplayStartupTest)
+set_tests_properties(ArkeyanNetplayStartupTest PROPERTIES
+    ENVIRONMENT "SKY_NETPLAY_HOST=1234;SKY_NETPLAY_DETERMINISTIC=0;SKY_NETPLAY_DELIVERY=frame;SKY_NETPLAY_SCHEDULE=cooperative")
