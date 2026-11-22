@@ -4402,6 +4402,13 @@ namespace toybox
         return hovered != g_hovered;
     }
 
+    void Rehover()
+    {
+        // Draw already outlines the new hit, so Pointer's change test would never focus it.
+        if (int hovered = HoveredHit(); hovered >= 0 && g_hits[size_t(hovered)].focus)
+            g_hits[size_t(hovered)].focus();
+    }
+
     std::string HoverTarget()
     {
         int i = HoveredHit();
