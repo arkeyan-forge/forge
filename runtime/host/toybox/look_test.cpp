@@ -159,6 +159,13 @@ int main()
                     CHECK(Commands(rows, l.first - l.capacity, notice).first == l.first - l.capacity);
             }
 
+    // ...its device columns end at the page's edge, and the mouse's on/off cell lines up with the Keyboard column's keys.
+    for (int columns = 1; columns <= 4; columns++)
+    {
+        CHECK(std::fabs(CommandsCellLeft(columns, columns - 1) + CommandsCellWidth - PageRight) < 0.01f);
+        CHECK(std::fabs(CommandsToggleLeft(columns) - CommandsCellLeft(columns, 0)) < 0.01f);
+    }
+
     // The Toy Box's focus (nav.h). A grid of 7 columns: 17 cards, so rows of 7, 7 and 3.
     using namespace toybox::nav;
     std::vector<Place> cells;

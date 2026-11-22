@@ -3475,8 +3475,8 @@ namespace toybox
                 TextMiddle(g_bold, 14, look::PageLeft + width + 16, look::PageTop + 20, Look::TextDim, line);
         }
 
-        // The Controls page: the actions down, a column per device (Model::CommandHeaders) across, then the mouse's
-        // switch, the Toy Box's keys, Reset and Back.
+        // The Controls page: the mouse's on/off cell, the actions down with a column per device (Model::CommandHeaders)
+        // across, then the Toy Box's keys, Reset and Back.
         void DrawCommands(Model& model)
         {
             using namespace look;
@@ -3486,9 +3486,10 @@ namespace toybox
             std::vector<std::string> headers = model.CommandHeaders();
             const CommandsLayout layout = look::Commands(int(lines.size()), model.commandRow, !model.toast.empty());
             PageTitle(L("Controls", "Commandes"), L("Saved as you change them", "Enregistré à chaque changement"));
-            constexpr float CellWidth = 196, Gap = Space::S;
-            const float cellsLeft = PageRight - float(headers.size()) * (CellWidth + Gap) + Gap;
-            auto cellLeft = [&](size_t column) { return cellsLeft + float(column) * (CellWidth + Gap); };
+            constexpr float CellWidth = CommandsCellWidth;
+            const int columns = int(headers.size());
+            const float cellsLeft = CommandsCellLeft(columns, 0);
+            auto cellLeft = [&](size_t column) { return CommandsCellLeft(columns, int(column)); };
             const float top = layout.firstRow;
             const int total = int(lines.size());
             // Page buttons remain reachable with the mouse; keyboard navigation reveals its focused row too.
@@ -3541,7 +3542,11 @@ namespace toybox
                     {
                         TextMiddle(g_black, Type::Body, rowA.x + Space::L, cy, Look::Text, line.label);
                         bool on = line.value == L("On", "Oui");
-                        Switch(ImVec2(cellLeft(0) + CellWidth - 22, cy), on);
+                        ImVec2 a(CommandsToggleLeft(columns), y + 3), b(a.x + CellWidth, y + layout.rowHeight - 3);
+                        Box(a, b, on ? Look::Gold : Look::Raised, on ? Look::Gold : Colour::Border, Radius::Control, 1);
+                        TextCentered(g_black, Type::Small, ImVec2((a.x + b.x) / 2, cy),
+                            on ? Colour::Well : Look::TextDim,
+                            Fit(g_black, Type::Small, line.value, CellWidth - Space::XL));
                     }
                     else
                     {

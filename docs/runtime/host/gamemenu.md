@@ -137,7 +137,7 @@ One row per action of the game, in Arkeyan Launcher's order and words (its Keybo
 label, the pad button whose job it is). Columns (`menu.cpp` `Column`, `Model::CommandHeaders`; `DrawCommands` lays out as many as
 there are): the action, the **keyboard** key (the letter its place has on the keyboard's layout, the named keys in French when the
 game's text is), the **pad** button (Xbox 360 names; the button or buttons that do the row's job now), the **mouse** button
-("Left click", "Wheel up"...; "-": none). Below the actions: the **Mouse** switch (On / Off), the Toy Box's three keys (**Open the
+("Left click", "Wheel up"...; "-": none). Above the actions: the **Mouse** row (On / Off). Below them: the Toy Box's three keys (**Open the
 Toy Box**, **Add a figure**, **Clear the figures**: keyboard only, every game), three pad shortcuts
 (**Quick swap wheel**, **Open the Toy Box (pad)**, **Open the F3 menu**), **Reset to defaults** and **Back** (Escape or B goes
 back to the panel).

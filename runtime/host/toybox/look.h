@@ -272,4 +272,13 @@ namespace toybox::look
         l.count = std::min(l.capacity, std::max(0, rows - l.first));
         return l;
     }
+
+    // The device columns end at the page's right edge. The mouse's on/off row shows its value in a cell of the Keyboard
+    // column (the first), lined up with that column's keys.
+    constexpr float CommandsCellWidth = 196, CommandsCellGap = Space::S;
+    inline float CommandsCellLeft(int columns, int column)
+    {
+        return PageRight - float(columns - column) * (CommandsCellWidth + CommandsCellGap) + CommandsCellGap;
+    }
+    inline float CommandsToggleLeft(int columns) { return CommandsCellLeft(columns, 0); }
 }
