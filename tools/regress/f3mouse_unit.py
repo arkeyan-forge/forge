@@ -50,4 +50,4 @@ with tempfile.TemporaryDirectory(prefix='f3mouse-unit-') as temporary:
         strip = '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections'
         run([compiler, *objects, strip, '-o', str(binary)])
         run([str(binary)])
-print('PASS: startup Toy Box keys and 45 menu/Settings/rail/card/Commands/Add/seat hover, click, hover focus, empty seat + and drag and drop checks')
+print('PASS: startup Toy Box keys and 47 menu/Settings/rail/card/Commands/Add/seat hover, click, hover focus, empty seat +, drag and drop and starter pack checks')

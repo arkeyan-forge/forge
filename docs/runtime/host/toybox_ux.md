@@ -368,8 +368,15 @@ on its remap target, and releasing it confirms the wheel.
 Every write the menus make backs the dump up first (the newest 10 kept); Delete goes to the trash for 30 days; the 37
 never-played starters older builds made are not the player's (tidied once, "Put them back").
 
-**Empty states**: "My Skylanders is empty" (Add a figure, Import figure files, Start with Spyro, Gill Grunt, Trigger
-Happy); a seat nothing goes on: the `+ Add a figure` card and "None yet: N exist for this game" (game), "Nothing for this
+**The starter pack** (both apps, 2026-11-22): while the player has no character that first came with the game, a banner
+above the figures says "No Swap Force Skylanders yet", what that game's box holds, and has **Create starter pack**
+(`collection::OffersStarterPack`; the game chosen in the launcher, the running game here). A character is what one of
+the game's player seats takes, vehicles and a swapper's bottom alone left out: a sidekick is none in Giants, a creation
+crystal is one. Not shown with a real portal (alone or with the virtual seats beside it). It makes only the figures the
+player lacks and puts nothing on the portal; the focus goes to the figures.
+
+**Empty states**: "My Skylanders is empty" (Add a figure, Import figure files, Start with the game's own starter pack,
+named figure by figure); a seat nothing goes on: the `+ Add a figure` card and "None yet: N exist for this game" (game), "Nothing for this
 seat yet" with `+ Add a figure` (launcher); a search that finds nothing: "No figure matches" with "Clear the search and
 the filters".
 
@@ -405,8 +412,9 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 | Screen | Gamepad | Keyboard | Mouse |
 |---|---|---|---|
 | In game | hold View: wheel; View + Y: Toy Box | hold Tab: wheel; F6 (or tap Tab): Toy Box; F7: add the folder's next figure; F8: clear the portal (the three are editable, below) | — |
-| Toy Box: seats (top row) | left/right: seat (it is chosen at once), then Add a figure and Manage (one above the other: up/down between them); A: choose for it; X: options, on an empty seat Add a figure for it; down: the bar; B: close | arrows, Enter, Delete: take off, Tab / Shift+Tab: next / previous row, Escape | click a seat; click an empty seat's +: Add a figure for it; double click: take its figure off (as Delete; not a real toy), an empty one: choose for it; right click: options; drag its figure onto the shelf or another seat |
-| Toy Box: bar (search, Filters) | left/right: the search field, Filters; A: the on-screen keyboard / the Filters panel; up: the seats; down: the figures; LB/RB: other seat; B: clear the search, else close | arrows, Enter, Tab, Escape; typing goes into the field from any row | click the field, Filters, a tag's x |
+| Toy Box: seats (top row) | left/right: seat (it is chosen at once), then Add a figure and Manage (one above the other: up/down between them); A: choose for it; X: options, on an empty seat Add a figure for it; down: the starter pack's banner when it shows, else the bar; B: close | arrows, Enter, Delete: take off, Tab / Shift+Tab: next / previous row, Escape | click a seat; click an empty seat's +: Add a figure for it; double click: take its figure off (as Delete; not a real toy), an empty one: choose for it; right click: options; drag its figure onto the shelf or another seat |
+| Toy Box: starter pack's banner | A: create the pack; up: the seats; down: the bar; LB/RB: other seat; B: close | arrows, Enter, Tab, Escape | click the button |
+| Toy Box: bar (search, Filters) | left/right: the search field, Filters; A: the on-screen keyboard / the Filters panel; up: the banner when it shows, else the seats; down: the figures; LB/RB: other seat; B: clear the search, else close | arrows, Enter, Tab, Escape; typing goes into the field from any row | click the field, Filters, a tag's x |
 | Toy Box: figures | d-pad: move (left/right stay in the row; up/down keep the column); up from the first row: the bar; A: put on the seat; X: the figure; LB/RB: other seat; Y: search; Start: Filters; B: close | arrows, Enter, F2, Page Up/Down, F3, F4: Filters, Tab, type: search, Escape: clear / close | click: focus; double click: place; drag onto a seat: place there; right click: the figure; wheel: scroll |
 | Figure | up/down: action; A: do it; B: back (out of More first); LB/RB: previous/next figure | arrows, Enter, Escape | click |
 | Wheel | either stick: aim; release or A: swap; B: cancel; Y: list; LB/RB: other seat; hold X: pin | arrows, the keys bound to either stick (WASD, IJKL) or 1-8; release Tab or Enter; Escape | point, click |
@@ -423,7 +431,8 @@ seat (Edit stats: by 10), **View** hold = wheel, **View + Y** = Toy Box.
 
 ### Navigation (2026-11-02, the owner's Xbox-style spec)
 
-- **Rows, top to bottom**: the seats (then Add a figure and Manage); the bar (the search field, Filters); the grid. Up and Down
+- **Rows, top to bottom**: the seats (then Add a figure and Manage); the starter pack's banner, while it is offered
+  (`Row::Banner`); the bar (the search field, Filters); the grid. The Toy Box still opens on the grid. Up and Down
   change row; each row **remembers its place** (`Model::column`, `barColumn`, `list.cursor`) and is entered there; a row not
   visited yet, or the grid rebuilt for another seat while the focus was above it, takes the thing **nearest under the focus**
   (the drawing records each row's x extents: `seatSpans`, `barSpans`, `gridSpans`). In the grid Left and Right stay in the row,

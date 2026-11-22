@@ -224,6 +224,9 @@ the collection folder adds toys or replaces them by toy type, and games by id. F
   figure with this id (Trap Team's Kaos Trap, whose one shape carried its own name, is a `base` entry for that reason;
   `StandardVariant`, `VersionCount`; `CreateSwapper` does it for both halves when no version is given).
   `same_tag`: a physical edition with no id of its own.
+- A game's `starter` lists the figures in the box of its starter pack, as "<type>" or "<type>:<variant id>" (no id: the
+  toy's standard one; a swapper by its top): the Toy Box and the launcher both read it, never a list of their own
+  (`CreateStarterPack`, [collection_api.md](collection_api.md)).
 - A game accepts the toys of `accepts` (in that order: SSA's menus follow it) and every toy whose first game is in
   `accepts_games`, except toy types in its optional `rejects` list. Exclusions override both acceptance lists and
   apply to `Accepts`, `Accepted` and `Read`, hence to Works in, shelf grouping and placement too.

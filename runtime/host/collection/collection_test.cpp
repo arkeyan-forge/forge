@@ -2036,6 +2036,81 @@ namespace
     }
 }
 
+namespace
+{
+    // Each game's starter pack: its own box, offered while the player has no character of that game.
+    void TestStarterPacks()
+    {
+        const Catalogue& catalogue = Catalogue::Get();
+        // Delete, not a removed file: the index forgets who made the figure, which the untouched starters turn on.
+        auto clear = [] {
+            for (const Figure& figure : List())
+                Delete(figure.path);
+        };
+        CHECK(catalogue.Games().size() == 6);
+        for (const Game& game : catalogue.Games())
+        {
+            CHECK(!game.starter.empty());
+            for (const StarterFigure& starter : game.starter)
+            {
+                const Toy* toy = catalogue.Find(starter.type);
+                CHECK(toy != nullptr && catalogue.Accepts(game.id, starter.type));
+                const Game* origin = toy ? catalogue.Origin(*toy, StarterVariant(starter)) : nullptr;
+                CHECK(origin != nullptr && origin->id == game.id);
+            }
+            clear();
+            CHECK(OffersStarterPack(game.id, List(), false));
+            CHECK(!OffersStarterPack(game.id, List(), true)); // a real portal
+            StarterPackResult made = CreateStarterPack(game.id, List());
+            CHECK(made.made == int(game.starter.size()) && made.failed == 0);
+            CHECK(StarterPackNames(game.id).size() == game.starter.size());
+            CHECK(HasCharacterOf(game.id, List()) && !OffersStarterPack(game.id, List(), false));
+            const size_t count = List().size();
+            made = CreateStarterPack(game.id, List());
+            CHECK(made.made == 0 && made.failed == 0 && List().size() == count);
+            // The box of one game hides no other game's pack.
+            for (const Game& other : catalogue.Games())
+            {
+                if (&other != &game)
+                    CHECK(OffersStarterPack(other.id, List(), false));
+            }
+        }
+
+        clear();
+        CHECK(CreateStarterPack("swapforce", List()).made == 3);
+        std::vector<std::string> names = StarterPackNames("swapforce");
+        CHECK((names == std::vector<std::string>{ "Wash Buckler", "Blast Zone", "Ninja Stealth Elf" }));
+        int linked = 0;
+        for (const Figure& figure : List())
+            linked += (figure.type == 1015 || figure.type == 1004) && !figure.partner.empty();
+        CHECK(linked == 2 && List().size() == 5);
+
+        // What cannot be played alone does not count as a character of its game.
+        clear();
+        CHECK(!Create(505).empty()); // a sidekick: an item's place in Giants
+        CHECK(!Create(211, 0x3001).empty()); // a trap
+        CHECK(!Create(3224).empty()); // a vehicle
+        CHECK(!Create(1007).empty()); // a swapper's bottom alone
+        for (const char* game : { "giants", "trapteam", "superchargers", "swapforce" })
+            CHECK(OffersStarterPack(game, List(), false));
+        CHECK(CreateStarterPack("superchargers", List()).made == 1); // Hot Streak is there
+        CHECK(!Create(502).empty()); // a mini plays in Trap Team
+        CHECK(!OffersStarterPack("trapteam", List(), false));
+        CHECK(!Create(680).empty()); // a creation crystal
+        CHECK(!OffersStarterPack("imaginators", List(), false));
+        // A figure counts for the game it came with: Series 2 Cynder for Giants, not for Spyro's Adventure.
+        CHECK(!Create(32, 0x1801).empty());
+        CHECK(!OffersStarterPack("giants", List(), false) && OffersStarterPack("ssa", List(), false));
+
+        // The starters older builds made on their own are not the player's.
+        clear();
+        CHECK(CreateMissing({ 16, 14, 19 }) == 3);
+        CHECK(OffersStarterPack("ssa", List(), false) && CreateStarterPack("ssa", List()).made == 3);
+        CHECK(!OffersStarterPack("nosuchgame", List(), false));
+        clear();
+    }
+}
+
 int main(int argc, char** argv)
 {
     const char* sheetFolder = argc > 2 && strcmp(argv[1], "--icons") == 0 ? argv[2] : nullptr;
@@ -2077,6 +2152,7 @@ int main(int argc, char** argv)
     TestLaterGames();
     TestUpgrades();
     TestWheel();
+    TestStarterPacks();
 
     if (skyenv::Get("SKY_KEEP_COLLECTION") == nullptr)
         RemoveTree(g_scratch);

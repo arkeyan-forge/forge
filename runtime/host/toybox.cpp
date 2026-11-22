@@ -525,12 +525,14 @@ namespace
     void LogFocus()
     {
         const toybox::Model& model = M();
-        const char* row = model.homeRow == toybox::Model::Row::Seats ? "seats"
-                          : model.homeRow == toybox::Model::Row::Bar ? "bar"
-                                                                     : "grid";
-        int place = model.homeRow == toybox::Model::Row::Seats ? model.column
-                    : model.homeRow == toybox::Model::Row::Bar ? model.barColumn
-                                                               : model.list.cursor;
+        const char* row = model.homeRow == toybox::Model::Row::Seats    ? "seats"
+                          : model.homeRow == toybox::Model::Row::Banner ? "starter"
+                          : model.homeRow == toybox::Model::Row::Bar    ? "bar"
+                                                                        : "grid";
+        int place = model.homeRow == toybox::Model::Row::Seats    ? model.column
+                    : model.homeRow == toybox::Model::Row::Banner ? 0
+                    : model.homeRow == toybox::Model::Row::Bar    ? model.barColumn
+                                                                  : model.list.cursor;
         fprintf(stderr,
             "[toybox] script: focus: screen %d, menu row %d, commands row %d column %d, settings row %d, "
             "achievement %d, card %d, home %s %d seat %d, hover %s\n",
