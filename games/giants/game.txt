@@ -5,7 +5,7 @@ name=Skylanders Giants
 runtime=Skylanders Giants
 # The game's own version (1.0 = the game at 100 %): each fix bumps the last number. The kit carries it (kit.txt game_version.<id>),
 # the release says it (games.json), Arkeyan Launcher offers UPDATE when its release has a higher one.
-version=0.8.17
+version=0.8.18
 toml=Giants.toml
 xex_sha256=12d1e29e4f07fbc559bc1a4988dd6bf346c3d16e30cbf862e2683e862f9fc09e
 # The releases' loaded images (decrypted, decompressed; same order as xex_sha256), labels and title ID: a disc of
