@@ -519,6 +519,7 @@ int main(int argc, char** argv)
     texpack::ConfigureForGame(game.id, settings.textureDump, settings.texturePacks, settings.hdTextures,
         datadir::FromText(portable::OwnPack()));
     presence::Begin(progress::Folder(game.id));
+    PortalSetKeepRealCopies(settings.keepRealCopies);
     PortalInit();
     gamemenu::Init(settings, window, netplay::VersionLabel(ARKEYAN_GAME_VERSION, netplay::Online()).c_str());
     // fps_auto_fallback never set (0.9.5 and earlier: on for everyone): the GPU's default, written to the game's video

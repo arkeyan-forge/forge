@@ -474,6 +474,7 @@ namespace
                     _putenv_s("SKY_MIGRATE_FROM", localFigures.c_str());
                 fprintf(stderr, "[uwp] figure collection %s\n", skyenv::Get("SKY_COLLECTION"));
             }
+            PortalSetKeepRealCopies(m_settings.keepRealCopies);
             PortalInit();
             gamemenu::Init(m_settings, window, netplay::VersionLabel(ARKEYAN_GAME_VERSION, netplay::Online()).c_str());
             ToyboxInit(window);

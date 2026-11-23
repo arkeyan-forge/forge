@@ -89,6 +89,7 @@ Collection/
   collection.json             what the dumps cannot hold (below)
   catalogue.json              optional: toys added to or corrected in the built-in catalogue
   backups/014 Gill Grunt.sky/2026-10-24T101500Z.sky
+  originals/16-1a2b3c4d.sky   a real toy's image the first time it was read (toy type, serial); never removed
 ```
 
 `collection.json` (written to a temporary file and renamed over, re-read just before each change):
@@ -116,6 +117,23 @@ Collection/
 - Keys are file names: renaming through the library moves the entry and the backups; a file renamed by hand loses
   its metadata (the stats stay, they are in the dump).
 - `partner` (Swap Force halves): the file name of the other half of a swapper, see "Swappers" below.
+- `real` (a real toy's copy): `{type, serial, base, behind}`, see "Copies of real toys" below.
+
+## Copies of real toys
+
+`[portal] keep_real_copies` ([portal.md](portal.md#copies-of-real-toys-portal-keep_real_copies)): each real toy put on
+a real portal has one copy in the collection, linked by its toy type and serial (`real` in its entry; `Figure::realCopy`).
+The entry keeps the image both sides held at the last sync (`base`, hexadecimal) and the blocks sent to the toy and not
+confirmed (`behind`, a 64-bit mask as hexadecimal). `SyncRealCopy` compares toy, copy and base block by block (block 0 and
+the sector trailers aside): a block that differs is the toy's change when the copy still holds the base, the copy's when
+the toy does (or never confirmed it), both when neither does.
+- First placement: a new dump `<name> (portal).sky` (origin `portal`), and `originals/<type>-<serial>.sky`, which nothing
+  prunes, deletes or replaces.
+- Only the toy changed: the copy takes its image, backed up first. Only the copy changed: the toy's image is backed up and
+  the blocks it lacks go to it (`RealCopy::write`; `RealCopyWritten` records each one). Both: nothing changes until
+  `ChooseRealCopy` (the side replaced backed up first). The syncs keep the last `RealBackups` (5) backups.
+- Deleting the copy unlinks it (the entry goes to the trash): the next placement makes a new one. A swapper's halves are
+  two toys, two copies, not paired yet.
 
 ## Swappers: two dumps, one card [SwapForce] (2026-10-27)
 
