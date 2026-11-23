@@ -1,8 +1,8 @@
 # XenonRecomp: config, every option, every patch hunk, boundaries, fences
 
-> **Purpose:** how is XenonRecomp configured for a game, and what does each hunk of our patch fix? · **Status:** current (2026-11-04) · **Tags:** [Xbox] [SSA]
+> **Purpose:** how is XenonRecomp configured for a game, and what does each hunk of our patch fix? · **Status:** current (2026-11-23) · **Tags:** [Xbox] [SSA]
 
-Upstream: `thirdparty/XenonRecomp` (hedge-dev, MIT). Our changes: [`patches/xenonrecomp.patch`](../../../patches/xenonrecomp.patch) (1333 lines, applied by the root CMake at configure time; after a merge that touches patches:
+Upstream: `thirdparty/XenonRecomp` (hedge-dev, MIT). Our changes: [`patches/xenonrecomp.patch`](../../../patches/xenonrecomp.patch) (1997 lines, applied by the root CMake at configure time; after a merge that touches patches:
 `git -C thirdparty/XenonRecomp checkout -- .` then cmake + ninja). SSA's config: [`games/ssa/config/SSA.toml`](../../../games/ssa/config/SSA.toml), [`SSA_switch_tables.toml`](../../../games/ssa/config/SSA_switch_tables.toml),
 [`SSA_symbols.txt`](../../../games/ssa/config/SSA_symbols.txt). Giants': [`games/giants/config/Giants.toml`](../../../games/giants/config/Giants.toml). The patch is **[Xbox]** (every game), the numbers **[SSA]**. No `midasm_hook` is used anywhere.
 
@@ -29,6 +29,7 @@ Functions are **weak** so `PPC_FUNC(sub_X)` overrides them ([../xbox360/threads_
 | `longjmp_address` | `0x825F8430` | restores f14-f31/r13-r31 from the jmp_buf and calls `RtlUnwind` when an unwind function is set (find it by calls to `RtlUnwind`) |
 | `setjmp_address` | `0x825FECA0` | mirror stores (`stfd f14, 0(r3)` ...) behind a hook-pointer check; sits just after longjmp |
 | `invalid_instructions` | `{0x00000000, 4}` padding; `{0x825FFC00, 8}` **`__CxxFrameHandler` + FuncInfo** in front of C++ EH functions; `{0x829E6114, 8}` **`__C_specific_handler` import thunk + scope table** in front of SEH functions; `{0x8260CA80, 8}` a custom handler + null data in front of `0x8260CA5C` | data words XenonRecomp must skip instead of decoding as code (re-find the 3 handler entries: sigmatch `config_data`) |
+| `paired_singles` | false (every Xbox game) | true for the 750CL's code (Wii, GameCube): [The 750CL](#the-750cl-wii) |
 | `functions` | **146** `{ address, size }` | functions outside `.pdata` the analyzer cannot size: leaf functions with jump tables, `bdz/bdnz` chains, adapters ending in `b <next>`, vtable targets merged into a neighbour, **packed leaf functions** |
 
 `setjmp`/`longjmp` on **UWP**: the translated code imports `_setjmp`, which binds to api-ms-win-crt-private: redirected to ucrtapp's own.
@@ -111,11 +112,37 @@ once more (a first install's compile time); updates are incremental again after 
 | **`vslo`/`vsro` count** (2026-11-02) | the octet count is read into a local before the loop | the loop read `vB.u8[0]` after writing `vD`: with vD == vB, 15 of 16 bytes were wrong, silently. 3 such `vsro` in Giants and in Swap Force (73 sites re-emitted in 4 functions per Alchemy game, 1 file each; none in SSA, none with vD == vB in Trap Team). Test: `ArkeyanXenonRecompTest` (47 of its 56 checks fail before) |
 | **CR6 of byte/halfword compares** (2026-11-02) | `vcmpgtsb.`, `vcmpgtsh.`, `vcmpgtub.`, `vcmpgtuh.` set CR6 from the byte mask (`movemask_epi8`, all = 0xFFFF) | the dot forms left CR6 stale for the next all/none branch (a float mask would also miss elements below each word's top byte). None of the four games uses them today; same test |
 | **Our decoder** (`XenonUtils/disasm.{h,cpp}`, `XenonUtils/CMakeLists.txt`, `thirdparty/CMakeLists.txt`) | `ppc::Disassemble` calls [`tools/xenonrecomp/ppc_decoder.cpp`](../../../tools/xenonrecomp/ppc_decoder.cpp) (`ARKEYAN_PPC_DECODER_DIR`, set by the root CMake); `thirdparty/disasm` is no longer a subdirectory (only its `ppc-inst.h`, the instruction ids, is read) | binutils' `ppc-dis.c` is GPL and the kit ships XenonRecomp: no GPL code in any binary now (below) |
+| **The 750CL** (`recompiler_750cl.inl`, `recompiler.cpp`, `recompiler_config.{h,cpp}`, `recompiler_headers.h`, `main.cpp`, `ppc_context.h`, `thirdparty/disasm/ppc-inst.h`) | the option `paired_singles`: the decoder's 750CL mode, the paired singles, the quantized loads and stores, `dcbz_l`, the GQRs, both halves filled by single-precision results; and, for any config, `fcmpo`, the CR logical forms (`cror`, `crclr`, `crset`...), `rlwnm`, `lmw`, `stmw`, `mfctr`, `mfxer`, `isync`, `icbi`, `dcbi` | the Wii's code: [The 750CL](#the-750cl-wii) |
 | **Context functions** (`recompiler.cpp/.h`, `recompiler_config.cpp/.h`, `ppc_context.h`) | `FindContextFunctions` (helpers, r12-reading funclets, the config's `context_functions`) are translated with every register in the context; a call to one from a function with locals stores and reloads those locals; `PPCContext` keeps every field whatever the `*_as_local` options | the `*_as_local` options: [Registers as locals](#registers-as-locals) |
 
 Our translator test, `tools/xenonrecomp/`: `ArkeyanXenonRecompSampleGen` translates invented instructions with the patched sources at build time; `ArkeyanXenonRecompTest` runs the C++ against the PowerPC semantics (clang, native builds only); since 2026-11-04 it also translates a funclet and its parent with the `*_as_local` options and checks the funclet sees the parent's r12 and r30 and the context's own values come back. `tools/xenonrecomp/local_reads.py` is the checker of [Registers as locals](#registers-as-locals).
 
 **Trap outside the patch**: `XenonUtils::ByteSwap(float)` converts numerically. Swap the bits (`memory.h`).
+
+## The 750CL (Wii)
+
+The Wii's processor (Broadway, like the GameCube's Gekko) is a 32-bit PowerPC 750CL: no VMX, but **paired singles**.
+Written from IBM's *PowerPC 750CL User's Manual*; on with `paired_singles = true` (`PPC_CONFIG_PAIRED_SINGLES` in
+`ppc_config.h`, a public policy like the `*_as_local` ones):
+- **The decoder** (`ppc::SetPairedSingles`, set by `main.cpp` from the config): primary opcode 4 is the paired singles
+  (A forms by bits 26-30, X forms by 21-30, the indexed quantized forms by 25-30), 56/57/60/61 are `psq_l`, `psq_lu`,
+  `psq_st`, `psq_stu`; 5 and 6 (VMX128) are not instructions. Off, nothing changes for the Xbox games.
+- **The registers**: each FPR is a pair, ps0 the FPR itself (`ctx.fN`, a double), ps1 a single (`ctx.ps1[N]`, at the
+  end of `PPCContext`, with `ctx.gqr[8]`; neither exists without the policy). `mtspr`/`mfspr` 912-919 are the GQRs.
+- **The instructions** (`XenonRecomp/recompiler_750cl.inl`, included in `Recompile`'s switch): each lane rounded to a
+  single, both lanes computed before the destination is written (it may be a source); `ps_sel` takes c when a >= 0
+  (-0 included), else b (NaN included); the merges keep ps1 a single. Single-precision arithmetic (`fadds`... `fres`,
+  `frsp`) and `lfs` fill both halves; `lfd`, `fmr` and the double forms leave ps1.
+- **Quantized loads and stores** (`PPCLoadPaired`, `PPCStorePaired` in `ppc_context.h`): the GQR's upper half for
+  loads, lower for stores; type 0 float, 4 u8, 5 u16, 6 s8, 7 s16 (1-3 reserved, read as float); a load divides by
+  2^scale, a store multiplies, then truncates toward zero and saturates (NaN stores 0); W set moves one value and ps1
+  is 1.0. `dcbz_l` zeroes 32 bytes (the locked cache is the runtime's).
+
+On SuperChargers Racing's ELF (2026-11-23, `ArkeyanXenonRecompTest`'s samples aside): 1,295,544 words in `.init` and
+`.text`, all decoded but 26,467 (zero padding and one data word); 6,303 quantized loads and stores, 470 other
+paired-single words, 3 `dcbz_l`, 3,585 `lmw`/`stmw`, 3,975 `fcmpo`, 2,511 CR logical forms. Left untranslated: 473 words, all the
+operating system's supervisor code (`rfi`, `mtmsr`, `mtsr`, the SRR, SPRG, BAT, HID and cache SPRs, `sc`) and one
+`mtfsb1` and one `bla`, for the Wii's runtime layer to replace.
 
 ## The PowerPC decoder: `tools/xenonrecomp/ppc_decoder.cpp`
 
@@ -145,7 +172,7 @@ The four games retranslated with the new XenonRecomp: `ppc/` **byte-identical** 
 logs identical. Rebuilt as the decode tree (same day), the same proof again: 0 differences on all 2^32 words and on the
 four games, `ppc/` byte-identical; and faster, one thread, best of 5: **15.5 to 41.8 million words per second** on the
 four games' code, **14.3 to 29.3** on random words (the table searched each primary opcode's entries in order).
-`ArkeyanPpcDecoderTest` (unit test): 196 checks on words built from the encodings (every form, fields at
+`ArkeyanPpcDecoderTest` (unit test): 235 checks (the 750CL's included) on words built from the encodings (every form, fields at
 their limits). A decoder change: `ArkeyanPpcDecoderTest`, then `decoder_compare.sh` on the four `default.xex` and `--all`.
 
 ## Function boundaries: `tools/find_switch_tables.py`

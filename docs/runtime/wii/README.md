@@ -11,15 +11,20 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 | Piece | State |
 |---|---|
 | Disc: RVZ images, partitions, file system, hash check | done: [disc_rvz.md](disc_rvz.md) |
+| CPU: the 750CL's paired singles, quantized loads and stores, GQRs, in XenonRecomp | done: [xenonrecomp.md](../../tools/toolchain/xenonrecomp.md#the-750cl-wii) |
 | Everything else | not started (#82) |
 
 ## Where the code is
 [`runtime/disc/`](../../../runtime/disc/): `rvz.{h,cpp}` (the image), `wii_disc.{h,cpp}` (partitions, files, hashes),
-`sha1.{h,cpp}`. [`vfs.cpp`](../../../runtime/vfs.cpp) opens an RVZ like any other disc.
+`sha1.{h,cpp}`. [`vfs.cpp`](../../../runtime/vfs.cpp) opens an RVZ like any other disc. The CPU: the decoder's
+750CL mode in [`tools/xenonrecomp/ppc_decoder.cpp`](../../../tools/xenonrecomp/ppc_decoder.cpp), the instructions in
+`XenonRecomp/recompiler_750cl.inl` ([`patches/xenonrecomp.patch`](../../../patches/xenonrecomp.patch)), on with the
+config's `paired_singles`.
 
 ## How to test it
 `ArkeyanRvzTest` (in `ctest` and `tools/test_all.sh`) builds synthetic images; `ArkeyanRvzTest --disc <image.rvz>`
-lists a real disc's files and checks its hashes.
+lists a real disc's files and checks its hashes. `ArkeyanXenonRecompTest` and `ArkeyanPpcDecoderTest`: one sample per
+750CL instruction, translated and run on the host.
 
 ## Gotchas
 - Only RVZ images, compressed with Zstandard (Dolphin's default) or not at all: no ISO or WBFS, which would need the
@@ -27,3 +32,5 @@ lists a real disc's files and checks its hashes.
 
 ## Pages
 - [disc_rvz.md](disc_rvz.md): the RVZ image, the Wii disc and its hash tree.
+- [The 750CL](../../tools/toolchain/xenonrecomp.md#the-750cl-wii) (in the recompiler's page): paired singles, GQRs,
+  what the game's executable still needs.

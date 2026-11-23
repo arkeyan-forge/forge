@@ -918,7 +918,44 @@ index fa91527..f0d7c43 100644
          case 1: // 2 shorts
              for (size_t i = 0; i < 2; i++)
              {
-@@ -2282,6 +2677,51 @@ bool Recompiler::Recompile(
+@@ -2263,10 +2658,36 @@ bool Recompiler::Recompile(
+         println("\t{}.u64 = {}.u64 ^ {};", r(insn.operands[0]), r(insn.operands[1]), insn.operands[2] << 16);
+         break;
+ 
++#include "recompiler_750cl.inl"
++
+     default:
+         return false;
+     }
+ 
++    // On the 750CL a single-precision result, and a single loaded by lfs, fills both halves of its register.
++    if (config.pairedSingles)
++    {
++        switch (insn.opcode->id)
++        {
++        case PPC_INST_FADDS:
++        case PPC_INST_FSUBS:
++        case PPC_INST_FMULS:
++        case PPC_INST_FDIVS:
++        case PPC_INST_FMADDS:
++        case PPC_INST_FMSUBS:
++        case PPC_INST_FNMADDS:
++        case PPC_INST_FNMSUBS:
++        case PPC_INST_FRES:
++        case PPC_INST_FRSP:
++        case PPC_INST_LFS:
++        case PPC_INST_LFSU:
++        case PPC_INST_LFSUX:
++        case PPC_INST_LFSX:
++            println("\tctx.ps1[{}] = {}.f64;", insn.operands[0], f(insn.operands[0]));
++            break;
++        }
++    }
++
+ #if 1
+     if (strchr(insn.opcode->name, '.'))
+     {
+@@ -2282,6 +2703,51 @@ bool Recompiler::Recompile(
      return true;
  }
  
@@ -970,7 +1007,7 @@ index fa91527..f0d7c43 100644
  bool Recompiler::Recompile(const Function& fn)
  {
      auto base = fn.base;
-@@ -2391,6 +2831,7 @@ bool Recompiler::Recompile(const Function& fn)
+@@ -2391,6 +2857,7 @@ bool Recompiler::Recompile(const Function& fn)
      auto switchTable = config.switchTables.end();
      bool allRecompiled = true;
      CSRState csrState = CSRState::Unknown;
@@ -978,7 +1015,7 @@ index fa91527..f0d7c43 100644
  
      // TODO: the printing scheme here is scuffed
      RecompilerLocalVariables localVariables;
-@@ -2495,6 +2936,43 @@ bool Recompiler::Recompile(const Function& fn)
+@@ -2495,6 +2962,43 @@ bool Recompiler::Recompile(const Function& fn)
      if (localVariables.ea)
          println("\tuint32_t ea{{}};");
  
@@ -1022,7 +1059,7 @@ index fa91527..f0d7c43 100644
      out += tempString;
  
      return allRecompiled;
-@@ -2505,29 +2983,7 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
+@@ -2505,29 +3009,7 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
      out.reserve(10 * 1024 * 1024);
  
      {
@@ -1053,7 +1090,7 @@ index fa91527..f0d7c43 100644
  
          println("#define PPC_IMAGE_BASE 0x{:X}ull", image.base);
          println("#define PPC_IMAGE_SIZE 0x{:X}ull", image.size);
-@@ -2563,17 +3019,7 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
+@@ -2563,17 +3045,7 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
      }
  
      {
@@ -1072,7 +1109,7 @@ index fa91527..f0d7c43 100644
  
          SaveCurrentOutData("ppc_context.h");
      }
-@@ -2602,6 +3048,8 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
+@@ -2602,6 +3074,8 @@ void Recompiler::Recompile(const std::filesystem::path& headerFilePath)
          SaveCurrentOutData("ppc_func_mapping.cpp");
      }
  
@@ -1106,10 +1143,18 @@ index 8242db5..758d789 100644
      bool LoadConfig(const std::string_view& configFilePath);
  
 diff --git a/XenonRecomp/recompiler_config.cpp b/XenonRecomp/recompiler_config.cpp
-index 81330a4..45d1021 100644
+index 81330a4..616ab1c 100644
 --- a/XenonRecomp/recompiler_config.cpp
 +++ b/XenonRecomp/recompiler_config.cpp
-@@ -58,6 +58,12 @@ void RecompilerConfig::Load(const std::string_view& configFilePath)
+@@ -26,6 +26,7 @@ void RecompilerConfig::Load(const std::string_view& configFilePath)
+         crRegistersAsLocalVariables = main["cr_as_local"].value_or(false);
+         nonArgumentRegistersAsLocalVariables = main["non_argument_as_local"].value_or(false);
+         nonVolatileRegistersAsLocalVariables = main["non_volatile_as_local"].value_or(false);
++        pairedSingles = main["paired_singles"].value_or(false);
+ 
+         restGpr14Address = main["restgprlr_14_address"].value_or(0u);
+         saveGpr14Address = main["savegprlr_14_address"].value_or(0u);
+@@ -58,6 +59,12 @@ void RecompilerConfig::Load(const std::string_view& configFilePath)
              }
          }
  
@@ -1123,7 +1168,7 @@ index 81330a4..45d1021 100644
          {
              for (auto& instr : *invalidArray)
 diff --git a/XenonRecomp/recompiler_config.h b/XenonRecomp/recompiler_config.h
-index 534e503..2c3ef21 100644
+index 534e503..1d488ab 100644
 --- a/XenonRecomp/recompiler_config.h
 +++ b/XenonRecomp/recompiler_config.h
 @@ -1,4 +1,5 @@
@@ -1132,7 +1177,16 @@ index 534e503..2c3ef21 100644
  
  struct RecompilerSwitchTable
  {
-@@ -50,6 +51,8 @@ struct RecompilerConfig
+@@ -39,6 +40,8 @@ struct RecompilerConfig
+     bool crRegistersAsLocalVariables = false;
+     bool nonArgumentRegistersAsLocalVariables = false;
+     bool nonVolatileRegistersAsLocalVariables = false;
++    // The 750CL's code (Wii, GameCube): paired singles and quantized loads and stores (recompiler_750cl.inl).
++    bool pairedSingles = false;
+     uint32_t restGpr14Address = 0;
+     uint32_t saveGpr14Address = 0;
+     uint32_t restFpr14Address = 0;
+@@ -50,6 +53,8 @@ struct RecompilerConfig
      uint32_t longJmpAddress = 0;
      uint32_t setJmpAddress = 0;
      std::unordered_map<uint32_t, uint32_t> functions;
@@ -1241,7 +1295,7 @@ index 195bc85..4ebe502 100644
  
      static int Disassemble(const void* code, uint64_t base, ppc_insn& out)
 diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
-index 31a86cd..c954112 100644
+index 31a86cd..f0e049c 100644
 --- a/XenonUtils/ppc_context.h
 +++ b/XenonUtils/ppc_context.h
 @@ -251,7 +251,7 @@ struct PPCFPSCRRegister
@@ -1360,15 +1414,90 @@ index 31a86cd..c954112 100644
      PPCVRegister v64;
      PPCVRegister v65;
      PPCVRegister v66;
-@@ -541,7 +516,6 @@ struct alignas(0x40) PPCContext
+@@ -541,9 +516,82 @@ struct alignas(0x40) PPCContext
      PPCVRegister v125;
      PPCVRegister v126;
      PPCVRegister v127;
--#endif
++#ifdef PPC_CONFIG_PAIRED_SINGLES
++    // The 750CL's registers (recompiler_750cl.inl): each FPR's second half (the first is f0-f31), and the GQRs.
++    double ps1[32];
++    uint32_t gqr[8];
+ #endif
  };
  
++#ifdef PPC_CONFIG_PAIRED_SINGLES
++// The 750CL's quantized loads and stores. A GQR gives the type and the scale of each direction, the load's in its upper
++// half: type 0 is a float, 4 u8, 5 u16, 6 s8, 7 s16 (1-3 are reserved, read here as a float); an integer is divided by
++// 2^scale when loaded and multiplied by it, then saturated, when stored. W set: one value, and ps1 is 1.0.
++inline uint32_t PPCQuantizedSize(uint32_t type)
++{
++    return type < 4 ? 4 : (type & 1) ? 2 : 1;
++}
++
++inline double PPCPowerOfTwo(int exponent) // -32 to 31, a float's normal range
++{
++    uint32_t bits = uint32_t(127 + exponent) << 23;
++    float value;
++    memcpy(&value, &bits, sizeof(value));
++    return value;
++}
++
++inline double PPCDequantize(uint8_t* base, uint32_t ea, uint32_t type, int scale)
++{
++    PPCRegister temp;
++    switch (type)
++    {
++    case 4: return double(PPC_LOAD_U8(ea)) * PPCPowerOfTwo(-scale);
++    case 5: return double(PPC_LOAD_U16(ea)) * PPCPowerOfTwo(-scale);
++    case 6: return double(int8_t(PPC_LOAD_U8(ea))) * PPCPowerOfTwo(-scale);
++    case 7: return double(int16_t(PPC_LOAD_U16(ea))) * PPCPowerOfTwo(-scale);
++    default: temp.u32 = PPC_LOAD_U32(ea); return double(temp.f32);
++    }
++}
++
++inline void PPCQuantize(uint8_t* base, uint32_t ea, uint32_t type, int scale, double value)
++{
++    PPCRegister temp;
++    if (type < 4)
++    {
++        temp.f32 = float(value);
++        PPC_STORE_U32(ea, temp.u32);
++        return;
++    }
++    // Toward zero, saturated; NaN stores 0.
++    const double low = type == 6 ? -128.0 : type == 7 ? -32768.0 : 0.0;
++    const double high = type == 4 ? 255.0 : type == 5 ? 65535.0 : type == 6 ? 127.0 : 32767.0;
++    const double scaled = double(float(value)) * PPCPowerOfTwo(scale);
++    const int32_t integer = scaled != scaled ? 0 : scaled < low ? int32_t(low) : scaled > high ? int32_t(high) : int32_t(scaled);
++    if (type & 1)
++        PPC_STORE_U16(ea, uint16_t(integer));
++    else
++        PPC_STORE_U8(ea, uint8_t(integer));
++}
++
++inline void PPCLoadPaired(uint8_t* base, uint32_t ea, uint32_t gqr, bool single, double& ps0, double& ps1)
++{
++    const uint32_t type = (gqr >> 16) & 7;
++    const int scale = int32_t(gqr << 2) >> 26;
++    const double first = PPCDequantize(base, ea, type, scale);
++    ps1 = single ? 1.0 : PPCDequantize(base, ea + PPCQuantizedSize(type), type, scale);
++    ps0 = first;
++}
++
++inline void PPCStorePaired(uint8_t* base, uint32_t ea, uint32_t gqr, bool single, double ps0, double ps1)
++{
++    const uint32_t type = gqr & 7;
++    const int scale = int32_t(gqr << 18) >> 26;
++    PPCQuantize(base, ea, type, scale, ps0);
++    if (!single)
++        PPCQuantize(base, ea + PPCQuantizedSize(type), type, scale, ps1);
++}
++#endif
++
  inline uint8_t VectorMaskL[] =
-@@ -672,6 +646,19 @@ inline simde__m128i simde_mm_cmpgt_epu16(simde__m128i a, simde__m128i b)
+ {
+     0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00,
+@@ -672,6 +720,19 @@ inline simde__m128i simde_mm_cmpgt_epu16(simde__m128i a, simde__m128i b)
      return simde_mm_cmpgt_epi16(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
  }
  
@@ -1388,7 +1517,7 @@ index 31a86cd..c954112 100644
  inline simde__m128i simde_mm_vctsxs(simde__m128 src1)
  {
      simde__m128 xmm2 = simde_mm_cmpunord_ps(src1, src1);
-@@ -682,6 +669,18 @@ inline simde__m128i simde_mm_vctsxs(simde__m128 src1)
+@@ -682,6 +743,18 @@ inline simde__m128i simde_mm_vctsxs(simde__m128 src1)
      return simde_mm_andnot_si128(simde_mm_castps_si128(xmm2), simde_mm_castps_si128(dest));
  }
  
@@ -1407,7 +1536,7 @@ index 31a86cd..c954112 100644
  inline simde__m128i simde_mm_vsr(simde__m128i a, simde__m128i b)
  {
      b = simde_mm_srli_epi64(simde_mm_slli_epi64(b, 61), 61);
-@@ -700,4 +699,13 @@ inline uint64_t __rdtsc()
+@@ -700,4 +773,13 @@ inline uint64_t __rdtsc()
  #   error "Missing implementation for __rdtsc()"
  #endif
  
@@ -1447,10 +1576,10 @@ index 06e6572..d87c3f7 100644
  endif()
 diff --git a/XenonRecomp/recompiler_headers.h b/XenonRecomp/recompiler_headers.h
 new file mode 100644
-index 0000000..d01e9d9
+index 0000000..c0d1e65
 --- /dev/null
 +++ b/XenonRecomp/recompiler_headers.h
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,50 @@
 +#pragma once
 +
 +#include <filesystem>
@@ -1481,6 +1610,8 @@ index 0000000..d01e9d9
 +            out += "#define PPC_CONFIG_NON_ARGUMENT_AS_LOCAL\n";
 +        if (config.nonVolatileRegistersAsLocalVariables)
 +            out += "#define PPC_CONFIG_NON_VOLATILE_AS_LOCAL\n";
++        if (config.pairedSingles)
++            out += "#define PPC_CONFIG_PAIRED_SINGLES\n";
 +
 +        out += '\n';
 +        return out;
@@ -1499,3 +1630,368 @@ index 0000000..d01e9d9
 +        return out;
 +    }
 +}
+diff --git a/XenonRecomp/main.cpp b/XenonRecomp/main.cpp
+index 12c6d8c..82bda34 100644
+--- a/XenonRecomp/main.cpp
++++ b/XenonRecomp/main.cpp
+@@ -25,6 +25,7 @@ int main(int argc, char* argv[])
+         if (!recompiler.LoadConfig(path))
+             return -1;
+ 
++        ppc::SetPairedSingles(recompiler.config.pairedSingles); // the decoder's mode, for the whole translation
+         recompiler.Analyse();
+ 
+         auto entry = recompiler.image.symbols.find(recompiler.image.entry_point);
+diff --git a/XenonRecomp/recompiler_750cl.inl b/XenonRecomp/recompiler_750cl.inl
+new file mode 100644
+index 0000000..a934377
+--- /dev/null
++++ b/XenonRecomp/recompiler_750cl.inl
+@@ -0,0 +1,300 @@
++// The 750CL's instructions (the Wii's Broadway, the GameCube's Gekko), included in Recompiler::Recompile's switch,
++// whose register formatters (r, f, cr) and locals (ea, temp) they use; on with the config's paired_singles. Written
++// from IBM's PowerPC 750CL User's Manual.
++//
++// Each FPR holds two values: ps0, the FPR itself (f0-f31, a double), and ps1, a single (ctx.ps1). The paired-single
++// instructions work on both, each result rounded to a single; ps0 alone is what every other float instruction uses
++// (single-precision results and lfs fill both halves: see the end of Recompile). The quantized loads and stores
++// convert through a GQR (ctx.gqr, PPCLoadPaired and PPCStorePaired in ppc_context.h).
++
++#define PS_HALF(index, lane) ((lane) == 0 ? fmt::format("{}.f64", f(index)) : fmt::format("ctx.ps1[{}]", index))
++
++    case PPC_INST_PS_ADD:
++    case PPC_INST_PS_SUB:
++    case PPC_INST_PS_MUL:
++    case PPC_INST_PS_DIV:
++    case PPC_INST_PS_MADD:
++    case PPC_INST_PS_MSUB:
++    case PPC_INST_PS_NMADD:
++    case PPC_INST_PS_NMSUB:
++    case PPC_INST_PS_MULS0:
++    case PPC_INST_PS_MULS1:
++    case PPC_INST_PS_MADDS0:
++    case PPC_INST_PS_MADDS1:
++    case PPC_INST_PS_SEL:
++    case PPC_INST_PS_RES:
++    case PPC_INST_PS_RSQRTE:
++    {
++        if (!config.pairedSingles)
++            return false;
++        printSetFlushMode(false);
++        // Operands: d, a, b (add, sub, div); d, a, c (mul, muls); d, a, c, b (the multiply-adds, sel); d, b (res,
++        // rsqrte). The scalar forms (muls0, madds1...) take c's lane 0 or 1 for both lanes.
++        const uint32_t d = insn.operands[0];
++        std::string lanes[2];
++        for (int lane = 0; lane < 2; lane++)
++        {
++            // Formatted only when used: formatting a register marks it as one of the function's locals.
++            auto a = [&]() { return PS_HALF(insn.operands[1], lane); };
++            auto second = [&]() { return PS_HALF(insn.operands[2], lane); };
++            auto c = [&](int fixed) { return PS_HALF(insn.operands[2], fixed); };
++            auto b = [&]() { return PS_HALF(insn.operands[3], lane); };
++            std::string& value = lanes[lane];
++            switch (insn.opcode->id)
++            {
++            case PPC_INST_PS_ADD: value = fmt::format("{} + {}", a(), second()); break;
++            case PPC_INST_PS_SUB: value = fmt::format("{} - {}", a(), second()); break;
++            case PPC_INST_PS_MUL: value = fmt::format("{} * {}", a(), second()); break;
++            case PPC_INST_PS_DIV: value = fmt::format("{} / {}", a(), second()); break;
++            case PPC_INST_PS_MADD: value = fmt::format("{} * {} + {}", a(), second(), b()); break;
++            case PPC_INST_PS_MSUB: value = fmt::format("{} * {} - {}", a(), second(), b()); break;
++            case PPC_INST_PS_NMADD: value = fmt::format("-({} * {} + {})", a(), second(), b()); break;
++            case PPC_INST_PS_NMSUB: value = fmt::format("-({} * {} - {})", a(), second(), b()); break;
++            case PPC_INST_PS_MULS0: value = fmt::format("{} * {}", a(), c(0)); break;
++            case PPC_INST_PS_MULS1: value = fmt::format("{} * {}", a(), c(1)); break;
++            case PPC_INST_PS_MADDS0: value = fmt::format("{} * {} + {}", a(), c(0), b()); break;
++            case PPC_INST_PS_MADDS1: value = fmt::format("{} * {} + {}", a(), c(1), b()); break;
++            // Lane by lane: c when a is at least zero (-0 included), else b, a NaN choosing b.
++            case PPC_INST_PS_SEL: value = fmt::format("{} >= 0.0 ? {} : {}", a(), second(), b()); break;
++            case PPC_INST_PS_RES: value = fmt::format("1.0 / {}", a()); break;
++            case PPC_INST_PS_RSQRTE: value = fmt::format("1.0 / sqrt({})", a()); break;
++            }
++        }
++        // Both lanes are computed before either is written: d may be a source.
++        println("\t{{ const double ps0 = float({}), ps1 = float({}); {} = ps0; {} = ps1; }}", lanes[0], lanes[1],
++            PS_HALF(d, 0), PS_HALF(d, 1));
++        break;
++    }
++
++    // ps_sum0: d0 = a0 + b1, d1 = c1. ps_sum1: d0 = c0, d1 = a0 + b1. Operands d, a, c, b.
++    case PPC_INST_PS_SUM0:
++    case PPC_INST_PS_SUM1:
++    {
++        if (!config.pairedSingles)
++            return false;
++        printSetFlushMode(false);
++        const uint32_t d = insn.operands[0], a = insn.operands[1], c = insn.operands[2], b = insn.operands[3];
++        const auto sum = fmt::format("float({} + {})", PS_HALF(a, 0), PS_HALF(b, 1));
++        if (insn.opcode->id == PPC_INST_PS_SUM0)
++            println("\t{{ const double ps0 = {}, ps1 = float({}); {} = ps0; {} = ps1; }}", sum, PS_HALF(c, 1),
++                PS_HALF(d, 0), PS_HALF(d, 1));
++        else
++            println("\t{{ const double ps0 = {}, ps1 = {}; {} = ps0; {} = ps1; }}", PS_HALF(c, 0), sum, PS_HALF(d, 0),
++                PS_HALF(d, 1));
++        break;
++    }
++
++    // Sign and copy, lane by lane, no rounding. Operands d, b.
++    case PPC_INST_PS_NEG:
++    case PPC_INST_PS_ABS:
++    case PPC_INST_PS_NABS:
++    case PPC_INST_PS_MR:
++    {
++        if (!config.pairedSingles)
++            return false;
++        printSetFlushMode(false);
++        const char* form = insn.opcode->id == PPC_INST_PS_NEG ? "-{}"
++            : insn.opcode->id == PPC_INST_PS_ABS              ? "fabs({})"
++            : insn.opcode->id == PPC_INST_PS_NABS             ? "-fabs({})"
++                                                              : "{}";
++        const uint32_t d = insn.operands[0], b = insn.operands[1];
++        println("\t{{ const double ps0 = {}, ps1 = {}; {} = ps0; {} = ps1; }}",
++            fmt::format(fmt::runtime(form), PS_HALF(b, 0)), fmt::format(fmt::runtime(form), PS_HALF(b, 1)),
++            PS_HALF(d, 0), PS_HALF(d, 1));
++        break;
++    }
++
++    // ps_mergeXY: d0 = a's lane X, d1 = b's lane Y (held as a single). Operands d, a, b.
++    case PPC_INST_PS_MERGE00:
++    case PPC_INST_PS_MERGE01:
++    case PPC_INST_PS_MERGE10:
++    case PPC_INST_PS_MERGE11:
++    {
++        if (!config.pairedSingles)
++            return false;
++        printSetFlushMode(false);
++        const int id = insn.opcode->id;
++        const int x = id == PPC_INST_PS_MERGE10 || id == PPC_INST_PS_MERGE11;
++        const int y = id == PPC_INST_PS_MERGE01 || id == PPC_INST_PS_MERGE11;
++        const uint32_t d = insn.operands[0], a = insn.operands[1], b = insn.operands[2];
++        println("\t{{ const double ps0 = {}, ps1 = float({}); {} = ps0; {} = ps1; }}", PS_HALF(a, x), PS_HALF(b, y),
++            PS_HALF(d, 0), PS_HALF(d, 1));
++        break;
++    }
++
++    // Operands crfD, a, b: lane 0 (cmpu0, cmpo0) or lane 1.
++    case PPC_INST_PS_CMPU0:
++    case PPC_INST_PS_CMPO0:
++    case PPC_INST_PS_CMPU1:
++    case PPC_INST_PS_CMPO1:
++    {
++        if (!config.pairedSingles)
++            return false;
++        printSetFlushMode(false);
++        const int lane = insn.opcode->id == PPC_INST_PS_CMPU1 || insn.opcode->id == PPC_INST_PS_CMPO1;
++        println("\t{}.compare({}, {});", cr(insn.operands[0]), PS_HALF(insn.operands[1], lane),
++            PS_HALF(insn.operands[2], lane));
++        break;
++    }
++
++    // psq_l, psq_lu, psq_st, psq_stu: d, displacement, rA, W, I. The indexed forms: d, rA, rB, W, I. The update forms
++    // write the address back to rA.
++    case PPC_INST_PSQ_L:
++    case PPC_INST_PSQ_LU:
++    case PPC_INST_PSQ_LX:
++    case PPC_INST_PSQ_LUX:
++    case PPC_INST_PSQ_ST:
++    case PPC_INST_PSQ_STU:
++    case PPC_INST_PSQ_STX:
++    case PPC_INST_PSQ_STUX:
++    {
++        if (!config.pairedSingles)
++            return false;
++        printSetFlushMode(false);
++        const int id = insn.opcode->id;
++        const bool indexed = id == PPC_INST_PSQ_LX || id == PPC_INST_PSQ_LUX || id == PPC_INST_PSQ_STX ||
++            id == PPC_INST_PSQ_STUX;
++        const bool update = id == PPC_INST_PSQ_LU || id == PPC_INST_PSQ_LUX || id == PPC_INST_PSQ_STU ||
++            id == PPC_INST_PSQ_STUX;
++        const bool load = id == PPC_INST_PSQ_L || id == PPC_INST_PSQ_LU || id == PPC_INST_PSQ_LX ||
++            id == PPC_INST_PSQ_LUX;
++        const uint32_t d = insn.operands[0], w = insn.operands[3], i = insn.operands[4];
++        const uint32_t ra = indexed ? insn.operands[1] : insn.operands[2];
++        const auto offset = indexed ? fmt::format("{}.u32", r(insn.operands[2]))
++                                    : fmt::format("{}", int32_t(insn.operands[1]));
++        if (ra != 0)
++            println("\t{} = {}.u32 + {};", ea(), r(ra), offset);
++        else
++            println("\t{} = {};", ea(), offset);
++        if (load)
++            println("\tPPCLoadPaired(base, {}, ctx.gqr[{}], {}, {}, {});", ea(), i, w != 0 ? "true" : "false",
++                PS_HALF(d, 0), PS_HALF(d, 1));
++        else
++            println("\tPPCStorePaired(base, {}, ctx.gqr[{}], {}, {}, {});", ea(), i, w != 0 ? "true" : "false",
++                PS_HALF(d, 0), PS_HALF(d, 1));
++        if (update)
++            println("\t{}.u32 = {};", r(ra), ea());
++        break;
++    }
++
++    // dcbz_l rA, rB: zeroes a line of the locked cache, 32 bytes.
++    case PPC_INST_DCBZ_L:
++        if (!config.pairedSingles)
++            return false;
++        print("\tmemset(base + ((");
++        if (insn.operands[0] != 0)
++            print("{}.u32 + ", r(insn.operands[0]));
++        println("{}.u32) & ~31), 0, 32);", r(insn.operands[1]));
++        break;
++
++    // The GQRs, SPRs 912-919; any other SPR is left to the caller (not translated).
++    case PPC_INST_MTSPR:
++        if (!config.pairedSingles || insn.operands[0] < 912 || insn.operands[0] > 919)
++            return false;
++        println("\tctx.gqr[{}] = {}.u32;", insn.operands[0] - 912, r(insn.operands[1]));
++        break;
++
++    case PPC_INST_MFSPR:
++        if (!config.pairedSingles || insn.operands[1] < 912 || insn.operands[1] > 919)
++            return false;
++        println("\t{}.u64 = ctx.gqr[{}];", r(insn.operands[0]), insn.operands[1] - 912);
++        break;
++
++    // lmw, stmw rT, d(rA): rT to r31, a word each, as the 750CL's compilers save and restore registers.
++    case PPC_INST_LMW:
++    case PPC_INST_STMW:
++    {
++        const uint32_t first = insn.operands[0], ra = insn.operands[2];
++        if (ra != 0)
++            println("\t{} = {}.u32 + {};", ea(), r(ra), int32_t(insn.operands[1]));
++        else
++            println("\t{} = {};", ea(), int32_t(insn.operands[1]));
++        for (uint32_t reg = first; reg < 32; reg++)
++        {
++            if (insn.opcode->id == PPC_INST_LMW)
++                println("\t{}.u64 = PPC_LOAD_U32({} + {});", r(reg), ea(), (reg - first) * 4);
++            else
++                println("\tPPC_STORE_U32({} + {}, {}.u32);", ea(), (reg - first) * 4, r(reg));
++        }
++        break;
++    }
++
++    // PowerPC instructions the Xbox 360's compilers left out and the 750CL's use: any config.
++
++    // fcmpo: as fcmpu; the two differ only in the exceptions an invalid operand raises, which nothing here enables.
++    case PPC_INST_FCMPO:
++        printSetFlushMode(false);
++        println("\t{}.compare({}.f64, {}.f64);", cr(insn.operands[0]), f(insn.operands[1]), f(insn.operands[2]));
++        break;
++
++    // The condition register's logical instructions: BT, BA, BB, by bit (bit 4n+k is field n's lt, gt, eq, so). crclr,
++    // crset, crnot and crmove are their extended forms, with BA and BB hidden.
++    case PPC_INST_CRAND:
++    case PPC_INST_CROR:
++    case PPC_INST_CRXOR:
++    case PPC_INST_CRNAND:
++    case PPC_INST_CRNOR:
++    case PPC_INST_CREQV:
++    case PPC_INST_CRANDC:
++    case PPC_INST_CRORC:
++    case PPC_INST_CRNOT:
++    case PPC_INST_CRMOVE:
++    case PPC_INST_CRCLR:
++    case PPC_INST_CRSET:
++    {
++        auto bit = [&](uint32_t index) {
++            constexpr const char* names[] = { "lt", "gt", "eq", "so" };
++            return fmt::format("{}.{}", cr(index / 4), names[index % 4]);
++        };
++        const char* form = nullptr;
++        switch (insn.opcode->id)
++        {
++        case PPC_INST_CRAND: form = "{} & {}"; break;
++        case PPC_INST_CROR: form = "{} | {}"; break;
++        case PPC_INST_CRXOR: form = "{} ^ {}"; break;
++        case PPC_INST_CRNAND: form = "!({} & {})"; break;
++        case PPC_INST_CRNOR: form = "!({} | {})"; break;
++        case PPC_INST_CREQV: form = "!({} ^ {})"; break;
++        case PPC_INST_CRANDC: form = "{} & !{}"; break;
++        case PPC_INST_CRORC: form = "{} | !{}"; break;
++        }
++        std::string value;
++        if (insn.opcode->id == PPC_INST_CRCLR)
++            value = "0";
++        else if (insn.opcode->id == PPC_INST_CRSET)
++            value = "1";
++        else if (insn.opcode->id == PPC_INST_CRNOT)
++            value = fmt::format("!{}", bit(insn.operands[1]));
++        else if (insn.opcode->id == PPC_INST_CRMOVE)
++            value = bit(insn.operands[1]);
++        else
++            value = fmt::format(fmt::runtime(form), bit(insn.operands[1]), bit(insn.operands[2]));
++        println("\t{} = {};", bit(insn.operands[0]), value);
++        break;
++    }
++
++    // rlwnm rA, rS, rB, MB, ME: rotlw by rB's low five bits, then the mask, as rlwinm.
++    case PPC_INST_RLWNM:
++        println("\t{}.u64 = __builtin_rotateleft64({}.u32 | ({}.u64 << 32), {}.u8 & 0x1F) & 0x{:X};",
++            r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[1]), r(insn.operands[2]),
++            ComputeMask(insn.operands[3] + 32, insn.operands[4] + 32));
++        if (strchr(insn.opcode->name, '.'))
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
++    case PPC_INST_MFCTR:
++        println("\t{}.u64 = {}.u64;", r(insn.operands[0]), ctr());
++        break;
++
++    case PPC_INST_MFXER:
++        println("\t{0}.u64 = ({1}.so ? 0x80000000u : 0) | ({1}.ov ? 0x40000000u : 0) | ({1}.ca ? 0x20000000u : 0);",
++            r(insn.operands[0]), xer());
++        break;
++
++    // Instruction-cache and context barriers, and the data-cache invalidate: no effect on a host's memory.
++    case PPC_INST_ISYNC:
++    case PPC_INST_ICBI:
++    case PPC_INST_DCBI:
++        break;
++
++#undef PS_HALF
+diff --git a/thirdparty/disasm/ppc-inst.h b/thirdparty/disasm/ppc-inst.h
+index 89df9ee..2e0223b 100644
+--- a/thirdparty/disasm/ppc-inst.h
++++ b/thirdparty/disasm/ppc-inst.h
+@@ -1846,3 +1846,42 @@
+ #define PPC_INST_DIEXQ 1844
+ #define PPC_INST_VUPKHSH128 1845
+ #define PPC_INST_VUPKLSH128 1846
++// The 750CL's paired singles, quantized loads and stores, and dcbz_l (Arkeyan).
++#define PPC_INST_PS_ABS 1847
++#define PPC_INST_PS_ADD 1848
++#define PPC_INST_PS_CMPO0 1849
++#define PPC_INST_PS_CMPO1 1850
++#define PPC_INST_PS_CMPU0 1851
++#define PPC_INST_PS_CMPU1 1852
++#define PPC_INST_PS_DIV 1853
++#define PPC_INST_PS_MADD 1854
++#define PPC_INST_PS_MADDS0 1855
++#define PPC_INST_PS_MADDS1 1856
++#define PPC_INST_PS_MERGE00 1857
++#define PPC_INST_PS_MERGE01 1858
++#define PPC_INST_PS_MERGE10 1859
++#define PPC_INST_PS_MERGE11 1860
++#define PPC_INST_PS_MR 1861
++#define PPC_INST_PS_MSUB 1862
++#define PPC_INST_PS_MUL 1863
++#define PPC_INST_PS_MULS0 1864
++#define PPC_INST_PS_MULS1 1865
++#define PPC_INST_PS_NABS 1866
++#define PPC_INST_PS_NEG 1867
++#define PPC_INST_PS_NMADD 1868
++#define PPC_INST_PS_NMSUB 1869
++#define PPC_INST_PS_RES 1870
++#define PPC_INST_PS_RSQRTE 1871
++#define PPC_INST_PS_SEL 1872
++#define PPC_INST_PS_SUB 1873
++#define PPC_INST_PS_SUM0 1874
++#define PPC_INST_PS_SUM1 1875
++#define PPC_INST_PSQ_L 1876
++#define PPC_INST_PSQ_LU 1877
++#define PPC_INST_PSQ_LUX 1878
++#define PPC_INST_PSQ_LX 1879
++#define PPC_INST_PSQ_ST 1880
++#define PPC_INST_PSQ_STU 1881
++#define PPC_INST_PSQ_STUX 1882
++#define PPC_INST_PSQ_STX 1883
++#define PPC_INST_DCBZ_L 1884

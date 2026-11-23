@@ -406,6 +406,71 @@ namespace
         }
     }
 
+    // The 750CL [PS], with paired singles on: primary opcode 4 is theirs, 56, 57, 60 and 61 the quantized loads and
+    // stores; 5 and 6 (VMX128) are not instructions. Off again after, for the Xenon's.
+    void PairedSingles()
+    {
+        ppc::SetPairedSingles(true);
+        auto unknown = [](int line, uint32_t word) {
+            char text[32];
+            snprintf(text, sizeof(text), ".long 0x%x", word);
+            ExpectUnknown(line, word, text);
+        };
+        // A forms: "fD,fA,fB", "fD,fA,fC", "fD,fA,fC,fB", "fD,fB".
+        EXPECT(A(4, 1, 2, 3, 0, 21), "ps_add", PPC_INST_PS_ADD, OPS(1, 2, 3), "f1,f2,f3");
+        EXPECT(A(4, 31, 30, 29, 0, 20) | 1, "ps_sub.", PPC_INST_PS_SUB, OPS(31, 30, 29), "f31,f30,f29");
+        EXPECT(A(4, 1, 2, 0, 4, 25), "ps_mul", PPC_INST_PS_MUL, OPS(1, 2, 4), "f1,f2,f4");
+        EXPECT(A(4, 1, 2, 0, 4, 13), "ps_muls1", PPC_INST_PS_MULS1, OPS(1, 2, 4), "f1,f2,f4");
+        EXPECT(A(4, 1, 2, 3, 4, 29), "ps_madd", PPC_INST_PS_MADD, OPS(1, 2, 4, 3), "f1,f2,f4,f3");
+        EXPECT(A(4, 1, 2, 3, 4, 14), "ps_madds0", PPC_INST_PS_MADDS0, OPS(1, 2, 4, 3), "f1,f2,f4,f3");
+        EXPECT(A(4, 1, 2, 3, 4, 10), "ps_sum0", PPC_INST_PS_SUM0, OPS(1, 2, 4, 3), "f1,f2,f4,f3");
+        EXPECT(A(4, 1, 2, 3, 4, 23), "ps_sel", PPC_INST_PS_SEL, OPS(1, 2, 4, 3), "f1,f2,f4,f3");
+        EXPECT(A(4, 1, 2, 3, 4, 31), "ps_nmadd", PPC_INST_PS_NMADD, OPS(1, 2, 4, 3), "f1,f2,f4,f3");
+        EXPECT(A(4, 5, 0, 6, 0, 24), "ps_res", PPC_INST_PS_RES, OPS(5, 6), "f5,f6");
+        EXPECT(A(4, 5, 0, 6, 0, 26), "ps_rsqrte", PPC_INST_PS_RSQRTE, OPS(5, 6), "f5,f6");
+        unknown(__LINE__, A(4, 1, 2, 3, 4, 21)); // ps_add with a C field
+        unknown(__LINE__, A(4, 1, 2, 3, 0, 24));  // ps_res with an A field
+
+        // X forms.
+        EXPECT(X(4, 1 << 2, 2, 3, 0), "ps_cmpu0", PPC_INST_PS_CMPU0, OPS(1, 2, 3), "cr1,f2,f3");
+        EXPECT(X(4, 7 << 2, 31, 0, 96), "ps_cmpo1", PPC_INST_PS_CMPO1, OPS(7, 31, 0), "cr7,f31,f0");
+        EXPECT(X(4, 1, 0, 3, 40), "ps_neg", PPC_INST_PS_NEG, OPS(1, 3), "f1,f3");
+        EXPECT(X(4, 1, 0, 3, 72, 1), "ps_mr.", PPC_INST_PS_MR, OPS(1, 3), "f1,f3");
+        EXPECT(X(4, 1, 0, 3, 136), "ps_nabs", PPC_INST_PS_NABS, OPS(1, 3), "f1,f3");
+        EXPECT(X(4, 1, 0, 3, 264), "ps_abs", PPC_INST_PS_ABS, OPS(1, 3), "f1,f3");
+        EXPECT(X(4, 1, 2, 3, 528), "ps_merge00", PPC_INST_PS_MERGE00, OPS(1, 2, 3), "f1,f2,f3");
+        EXPECT(X(4, 1, 2, 3, 560), "ps_merge01", PPC_INST_PS_MERGE01, OPS(1, 2, 3), "f1,f2,f3");
+        EXPECT(X(4, 1, 2, 3, 592), "ps_merge10", PPC_INST_PS_MERGE10, OPS(1, 2, 3), "f1,f2,f3");
+        EXPECT(X(4, 1, 2, 3, 624), "ps_merge11", PPC_INST_PS_MERGE11, OPS(1, 2, 3), "f1,f2,f3");
+        EXPECT(X(4, 0, 3, 4, 1014), "dcbz_l", PPC_INST_DCBZ_L, OPS(3, 4), "r3,r4");
+        EXPECT(X(4, 0, 0, 4, 1014), "dcbz_l", PPC_INST_DCBZ_L, OPS(0, 4), "0,r4");
+
+        // The quantized loads and stores: "fD,d(rA),W,I", the indexed "fD,rA,rB,W,I".
+        auto psq = [](uint32_t op, uint32_t d, uint32_t a, uint32_t w, uint32_t i, int32_t displacement) {
+            return Primary(op) | d << 21 | a << 16 | w << 15 | i << 12 | (uint32_t(displacement) & 0xFFF);
+        };
+        EXPECT(psq(56, 1, 3, 0, 1, 8), "psq_l", PPC_INST_PSQ_L, OPS(1, 8, 3, 0, 1), "f1,8(r3),0,1");
+        EXPECT(psq(57, 31, 1, 1, 7, -2048), "psq_lu", PPC_INST_PSQ_LU, OPS(31, uint32_t(-2048), 1, 1, 7),
+            "f31,-2048(r1),1,7");
+        EXPECT(psq(60, 2, 0, 0, 0, 2047), "psq_st", PPC_INST_PSQ_ST, OPS(2, 2047, 0, 0, 0), "f2,2047(0),0,0");
+        EXPECT(psq(61, 2, 4, 1, 3, -4), "psq_stu", PPC_INST_PSQ_STU, OPS(2, uint32_t(-4), 4, 1, 3), "f2,-4(r4),1,3");
+        auto psqx = [](uint32_t xo, uint32_t d, uint32_t a, uint32_t b, uint32_t w, uint32_t i) {
+            return Primary(4) | d << 21 | a << 16 | b << 11 | w << 10 | i << 7 | xo << 1;
+        };
+        EXPECT(psqx(6, 1, 3, 4, 0, 1), "psq_lx", PPC_INST_PSQ_LX, OPS(1, 3, 4, 0, 1), "f1,r3,r4,0,1");
+        EXPECT(psqx(7, 1, 0, 4, 1, 7), "psq_stx", PPC_INST_PSQ_STX, OPS(1, 0, 4, 1, 7), "f1,0,r4,1,7");
+        EXPECT(psqx(38, 1, 3, 4, 0, 2), "psq_lux", PPC_INST_PSQ_LUX, OPS(1, 3, 4, 0, 2), "f1,r3,r4,0,2");
+        EXPECT(psqx(39, 1, 3, 4, 1, 2), "psq_stux", PPC_INST_PSQ_STUX, OPS(1, 3, 4, 1, 2), "f1,r3,r4,1,2");
+
+        // Not the 750CL's: VMX128 (5, 6); the rest decodes as before (lfs, a GQR's mtspr).
+        unknown(__LINE__, Primary(5) | 0x00001234);
+        unknown(__LINE__, Primary(6));
+        EXPECT(D(48, 1, 3, 4), "lfs", PPC_INST_LFS, OPS(1, 4, 3), "f1,4(r3)");
+        EXPECT(Primary(31) | 5 << 21 | 17 << 16 | 28 << 11 | 467 << 1, "mtspr", PPC_INST_MTSPR, OPS(913, 5), "913,r5");
+        ppc::SetPairedSingles(false);
+        EXPECT(Primary(4) | 1 << 21 | 2 << 16 | 3 << 11 | 12, "vmrghb", PPC_INST_VMRGHB, OPS(1, 2, 3), "v1,v2,v3");
+    }
+
     void Unknown()
     {
         ExpectUnknown(__LINE__, 0x00000000, ".long 0x0");
@@ -422,6 +487,7 @@ int main()
     Vmx128();
     Vsldoi128Space();
     Unknown();
+    PairedSingles();
     printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

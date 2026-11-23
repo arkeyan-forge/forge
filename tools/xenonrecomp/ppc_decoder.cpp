@@ -9,6 +9,8 @@
 //   [CBE]  IBM, Cell Broadband Engine Programming Handbook and the PPU's instruction set extensions (lvlx/lvrx
 //          family, dcbzl, thread priority and delay "or" forms, ldbrx/stdbrx).
 //   [X128] The public descriptions of the Xbox 360's VMX128 extension (primary opcodes 4, 5 and 6, 128 registers).
+//   [PS]   IBM, the PowerPC 750CL (Gekko and Broadway) User's Manual: paired-single instructions, the quantized loads
+//          and stores (primary opcodes 4, 56, 57, 60 and 61) and dcbz_l.
 //   [SPR]  The SPR tables of the processor manuals: PowerPC 601 (MQ, RTC), 603e/750 (BATs, L2CR, PMCs, THRM),
 //          MPC8xx (debug, MMU and cache SPRs), PPC403/405 (protection bounds, DCCR/ICCR, timers), Book E (IVORs).
 // The decoder is a tree over the instruction's own fields: the primary opcode (bits 0-5) picks the form, the form's
@@ -1701,12 +1703,109 @@ namespace
         }
     }
 
+    bool g_pairedSingles = false; // ppc::SetPairedSingles
+
+    // Quantized loads and stores, D form [PS]: FRT, RA, W (bit 16), I (bits 17-19), a 12-bit displacement.
+    bool QuantizedLoadStore(uint32_t w, Out& o)
+    {
+        static constexpr PpcOpcode ops[] = { INSN("psq_l", PSQ_L, 5), INSN("psq_lu", PSQ_LU, 5),
+            INSN("psq_st", PSQ_ST, 5), INSN("psq_stu", PSQ_STU, 5) };
+        return o
+            .Is(ops[(w >> 26 & 4) >> 1 | (w >> 26 & 1)]) // 56, 57, 60, 61
+            .Fpr(Rt(w))
+            .Signed(SignExtend(w & 0xFFF, 12))
+            .Base(Ra(w))
+            .Number(Field(w, 16, 16))
+            .Number(Field(w, 17, 19))
+            .Done();
+    }
+
+    // Primary opcode 4 on the 750CL [PS]: the indexed quantized forms (xo in bits 25-30), the A forms (xo in bits
+    // 26-30, 10 and above but 16 and 22), and the X forms (xo in bits 21-30).
+    bool PairedSingle(uint32_t w, Out& o)
+    {
+        const uint32_t t = Rt(w), a = Ra(w), b = Rb(w), c = Field(w, 21, 25), rc = Rc(w), xo = Field(w, 26, 30);
+        if (xo == 6 || xo == 7)
+        {
+            static constexpr PpcOpcode ops[] = { INSN("psq_lx", PSQ_LX, 5), INSN("psq_stx", PSQ_STX, 5),
+                INSN("psq_lux", PSQ_LUX, 5), INSN("psq_stux", PSQ_STUX, 5) };
+            return rc == 0 && o.Is(ops[Field(w, 25, 25) << 1 | (xo & 1)])
+                                  .Fpr(t)
+                                  .GprOr0(a)
+                                  .Gpr(b)
+                                  .Number(Field(w, 21, 21))
+                                  .Number(Field(w, 22, 24))
+                                  .Done();
+        }
+        auto ab = [&](const PpcOpcode* ops) { return c == 0 && o.Is(ops[rc]).Fpr(t).Fpr(a).Fpr(b).Done(); };
+        auto ac = [&](const PpcOpcode* ops) { return b == 0 && o.Is(ops[rc]).Fpr(t).Fpr(a).Fpr(c).Done(); };
+        auto acb = [&](const PpcOpcode* ops) { return o.Is(ops[rc]).Fpr(t).Fpr(a).Fpr(c).Fpr(b).Done(); };
+        auto onlyB = [&](const PpcOpcode* ops) { return a == 0 && c == 0 && o.Is(ops[rc]).Fpr(t).Fpr(b).Done(); };
+        switch (xo)
+        {
+        case 10: return acb(OPS(RC("ps_sum0", PS_SUM0, 4)));
+        case 11: return acb(OPS(RC("ps_sum1", PS_SUM1, 4)));
+        case 12: return ac(OPS(RC("ps_muls0", PS_MULS0, 3)));
+        case 13: return ac(OPS(RC("ps_muls1", PS_MULS1, 3)));
+        case 14: return acb(OPS(RC("ps_madds0", PS_MADDS0, 4)));
+        case 15: return acb(OPS(RC("ps_madds1", PS_MADDS1, 4)));
+        case 18: return ab(OPS(RC("ps_div", PS_DIV, 3)));
+        case 20: return ab(OPS(RC("ps_sub", PS_SUB, 3)));
+        case 21: return ab(OPS(RC("ps_add", PS_ADD, 3)));
+        case 23: return acb(OPS(RC("ps_sel", PS_SEL, 4)));
+        case 24: return onlyB(OPS(RC("ps_res", PS_RES, 2)));
+        case 25: return ac(OPS(RC("ps_mul", PS_MUL, 3)));
+        case 26: return onlyB(OPS(RC("ps_rsqrte", PS_RSQRTE, 2)));
+        case 28: return acb(OPS(RC("ps_msub", PS_MSUB, 4)));
+        case 29: return acb(OPS(RC("ps_madd", PS_MADD, 4)));
+        case 30: return acb(OPS(RC("ps_nmsub", PS_NMSUB, 4)));
+        case 31: return acb(OPS(RC("ps_nmadd", PS_NMADD, 4)));
+        default: break;
+        }
+        auto compare = [&](const PpcOpcode& op) {
+            return rc == 0 && Field(w, 9, 10) == 0 && o.Is(op).Cr(Field(w, 6, 8)).Fpr(a).Fpr(b).Done();
+        };
+        auto unary = [&](const PpcOpcode* ops) { return a == 0 && o.Is(ops[rc]).Fpr(t).Fpr(b).Done(); };
+        auto merge = [&](const PpcOpcode* ops) { return o.Is(ops[rc]).Fpr(t).Fpr(a).Fpr(b).Done(); };
+        switch (Xo(w))
+        {
+        case 0: return compare(OP("ps_cmpu0", PS_CMPU0, 3));
+        case 32: return compare(OP("ps_cmpo0", PS_CMPO0, 3));
+        case 64: return compare(OP("ps_cmpu1", PS_CMPU1, 3));
+        case 96: return compare(OP("ps_cmpo1", PS_CMPO1, 3));
+        case 40: return unary(OPS(RC("ps_neg", PS_NEG, 2)));
+        case 72: return unary(OPS(RC("ps_mr", PS_MR, 2)));
+        case 136: return unary(OPS(RC("ps_nabs", PS_NABS, 2)));
+        case 264: return unary(OPS(RC("ps_abs", PS_ABS, 2)));
+        case 528: return merge(OPS(RC("ps_merge00", PS_MERGE00, 3)));
+        case 560: return merge(OPS(RC("ps_merge01", PS_MERGE01, 3)));
+        case 592: return merge(OPS(RC("ps_merge10", PS_MERGE10, 3)));
+        case 624: return merge(OPS(RC("ps_merge11", PS_MERGE11, 3)));
+        case 1014: return t == 0 && rc == 0 && o.Is(OP("dcbz_l", DCBZ_L, 2)).GprOr0(a).Gpr(b).Done();
+        default: return false;
+        }
+    }
+
     // The primary opcode, bits 0-5 [B1 1.6, appendix "Opcode Maps"].
     bool Decode(uint32_t w, Out& o)
     {
         const uint32_t rt = Rt(w), ra = Ra(w);
         const int32_t si = Si(w);
         const uint32_t ui = w & 0xFFFF;
+        if (g_pairedSingles)
+        {
+            switch (w >> 26)
+            {
+            case 4: return PairedSingle(w, o);
+            case 5:
+            case 6: return false; // VMX128: not on the 750CL
+            case 56:
+            case 57:
+            case 60:
+            case 61: return QuantizedLoadStore(w, o);
+            default: break;
+            }
+        }
         switch (w >> 26)
         {
         case 0: // attn (Cell, POWER4 and later)
@@ -1781,3 +1880,5 @@ int ppc::DecodeWord(uint32_t word, uint64_t address, ppc_insn& out)
         o.Long(word);
     return 4;
 }
+
+void ppc::SetPairedSingles(bool on) { g_pairedSingles = on; }
