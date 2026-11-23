@@ -1,4 +1,5 @@
 #include "netplay/protocol.h"
+#include "netplay/chacha20.h"
 #include <algorithm>
 #include <bit>
 
@@ -226,7 +227,28 @@ namespace netplay
         return "invalid session data";
     }
 
-    bool EncodePacket(const Packet& packet, const Key& key, Datagram& bytes)
+    namespace
+    {
+        // The payload between the sequence numbers and the tag, XORed with the session's keystream: a 32-byte key made
+        // from the session key, the nonce from the sender's side and the packet's sequence (never reused in a session).
+        void Encipher(std::span<uint8_t> payload, const Key& key, Cipher cipher, uint64_t sequence)
+        {
+            CipherKey cipherKey{};
+            for (uint8_t half = 0; half < 2; ++half)
+            {
+                const std::array<uint8_t, 8> label{ 'c', 'i', 'p', 'h', 'e', 'r', '-', uint8_t('0' + half) };
+                const Key part = Tag(label, key);
+                std::copy(part.begin(), part.end(), cipherKey.begin() + half * 16);
+            }
+            CipherNonce nonce{};
+            nonce[0] = cipher == Cipher::FromHost ? 1 : 2;
+            for (int i = 0; i < 8; ++i)
+                nonce[4 + i] = uint8_t(sequence >> (8 * i));
+            ChaCha20Xor(cipherKey, nonce, 1, payload);
+        }
+    }
+
+    bool EncodePacket(const Packet& packet, const Key& key, Datagram& bytes, Cipher cipher)
     {
         const size_t payload = PayloadSize(packet.type, packet.count, packet.event.hasDump, packet.chunk.size);
         bytes = {};
@@ -327,24 +349,42 @@ namespace netplay
             out.Number(packet.value, 8);
             break;
         }
+        if (cipher != Cipher::None && packet.type != PacketType::Hello)
+            Encipher(std::span(bytes.bytes).subspan(32, out.at - 32), key, cipher, packet.sequence);
         out.Array(Tag(std::span(bytes.bytes).first(out.at), key));
         bytes.size = uint16_t(out.at);
         return true;
     }
 
-    bool DecodePacket(
-        std::span<const uint8_t> bytes, const Key& key, Packet& packet, uint64_t& dropped, uint64_t* rejected)
+    bool DecodePacket(std::span<const uint8_t> sealed, const Key& key, Packet& packet, uint64_t& dropped,
+        uint64_t* rejected, Cipher cipher)
     {
         const auto fail = [&] {
             ++dropped;
             return false;
         };
-        if (bytes.size() < 48 || bytes.size() > Datagram{}.bytes.size() ||
-            !std::equal(Magic.begin(), Magic.end(), bytes.begin()))
+        if (sealed.size() < 48 || sealed.size() > Datagram{}.bytes.size() ||
+            !std::equal(Magic.begin(), Magic.end(), sealed.begin()))
             return fail();
-        if (Read(bytes.subspan(8, 2)) != ProtocolVersion || bytes[11] || bytes[14] || bytes[15] ||
-            Read(bytes.subspan(12, 2)) != bytes.size())
+        if (Read(sealed.subspan(8, 2)) != ProtocolVersion || sealed[11] || sealed[14] || sealed[15] ||
+            Read(sealed.subspan(12, 2)) != sealed.size())
             return fail();
+        // Authenticated before anything inside is read: the payload's own lengths are encrypted.
+        const auto tag = Tag(sealed.first(sealed.size() - 16), key);
+        uint8_t difference = 0;
+        for (size_t i = 0; i < tag.size(); ++i)
+            difference |= tag[i] ^ sealed[sealed.size() - 16 + i];
+        if (difference)
+        {
+            if (rejected)
+                ++*rejected;
+            return fail();
+        }
+        Datagram plain{};
+        std::copy(sealed.begin(), sealed.end(), plain.bytes.begin());
+        const auto bytes = std::span<const uint8_t>(plain.bytes).first(sealed.size());
+        if (cipher != Cipher::None && PacketType(sealed[10]) != PacketType::Hello)
+            Encipher(std::span(plain.bytes).subspan(32, sealed.size() - 48), key, cipher, Read(sealed.subspan(16, 8)));
         const auto type = PacketType(bytes[10]);
         if (type == PacketType::Frames && bytes.size() < 74)
             return fail();
@@ -358,16 +398,6 @@ namespace netplay
         const size_t payload = PayloadSize(type, count, type == PacketType::Event && (bytes[57] & 1), chunkSize);
         if (!payload || bytes.size() != 48 + payload)
             return fail();
-        const auto tag = Tag(bytes.first(bytes.size() - 16), key);
-        uint8_t difference = 0;
-        for (size_t i = 0; i < tag.size(); ++i)
-            difference |= tag[i] ^ bytes[bytes.size() - 16 + i];
-        if (difference)
-        {
-            if (rejected)
-                ++*rejected;
-            return fail();
-        }
         Packet result{};
         result.type = type;
         Reader in{ bytes, 16 };

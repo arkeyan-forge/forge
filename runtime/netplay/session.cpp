@@ -750,7 +750,8 @@ namespace netplay
         Datagram bytes;
         packet.sequence = ++m_sequence;
         packet.ack = m_remoteAck;
-        if (EncodePacket(packet, bootstrap ? HelloKey(m_password, packet.hello) : m_key, bytes))
+        const Cipher cipher = bootstrap ? Cipher::None : m_config.hello.host ? Cipher::FromHost : Cipher::FromGuest;
+        if (EncodePacket(packet, bootstrap ? HelloKey(m_password, packet.hello) : m_key, bytes, cipher))
         {
             if (!m_transport->Send(bytes.View()))
                 End(EndReason::Transport);
@@ -979,7 +980,8 @@ namespace netplay
                 const bool bootstrap = size > 10 && bytes.bytes[10] == uint8_t(PacketType::Hello);
                 const auto view = std::span(bytes.bytes).first(size);
                 if (bootstrap ? DecodeHello(view, m_password, packet, m_dropped, &m_rejected)
-                              : DecodePacket(view, m_key, packet, m_dropped, &m_rejected))
+                              : DecodePacket(view, m_key, packet, m_dropped, &m_rejected,
+                                    m_config.hello.host ? Cipher::FromGuest : Cipher::FromHost))
                     Receive(packet, bootstrap);
             }
             if (!m_transport->Healthy())

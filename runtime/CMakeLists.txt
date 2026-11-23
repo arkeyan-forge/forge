@@ -946,7 +946,7 @@ set_property(SOURCE main.cpp host/log.cpp host/portal.cpp host/portal_mixed.cpp 
     host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp kernel/files.cpp
     kernel/xam_achievements.cpp kernel/xam_content.cpp APPEND PROPERTY COMPILE_DEFINITIONS ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
 
-add_library(ArkeyanNetplayTransport STATIC netplay/protocol.cpp netplay/session.cpp netplay/socket.cpp netplay/portmap.cpp)
+add_library(ArkeyanNetplayTransport STATIC netplay/chacha20.cpp netplay/protocol.cpp netplay/session.cpp netplay/socket.cpp netplay/portmap.cpp)
 target_include_directories(ArkeyanNetplayTransport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ArkeyanNetplayTransport PUBLIC ArkeyanNetplay)
 if(WIN32)
