@@ -8,7 +8,7 @@ fields of the tag ([figures.md](../../../docs/runtime/host/figures.md#supercharg
 
 | Part | What [V] |
 |---|---|
-| Seats | Player 1, **Vehicle 1**, Player 2, **Vehicle 2**, Magic item / trophy, **Trap**; a vehicle seat takes a supported vehicle only, Trap takes traps only (host tests; the trap's in-game reward remains to check) |
+| Seats | Player 1, **Vehicle 1**, Player 2, **Vehicle 2**, Magic item / trophy, **Trap**; a vehicle seat takes a supported vehicle only, never a racing villain's (3470-3497, issue #135: the game crashes after one arrives in the Academy), Trap takes traps only (host tests; the trap's in-game reward remains to check) |
 | Vehicles | 20 types (3220-3241), 13 decos from the owner's dumps (Dark, Legendary, Power Blue, Nitro, Golden, E3, holiday, chase); a blank one made by the Toy Box or `new:<type>` is read and driven (`undeadcar.pak` opens when the game reads Crypt Crusher, 181 s into a new game) |
 | A vehicle's card and sheet | the card "Shield 2 · Weapon 1" (the garage's upgrades, [figures.md](../../../docs/runtime/host/figures.md#superchargers-vehicles-alchemy-superchargers)), the sheet "Gearbits: N · shield 2/5 · weapon 1/5 · driven <time>" once the game used it, "New: never driven" before; gearbits change through `collection::SetGearbits` (the launcher's Edit) |
 | Trophies | 3500 Sky, 3501 Land, 3502 Sea, 3503 Kaos (the dumps' tags; the public list had two swapped); the item seat |

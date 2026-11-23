@@ -6,7 +6,7 @@ namespace toybox
 {
     using namespace collection;
 
-    std::vector<AddGroup> AddGroups(const std::string& game, const std::vector<Category>* fits)
+    std::vector<AddGroup> AddGroups(const std::string& game, const Seat* fits)
     {
         const Catalogue& catalogue = Catalogue::Get();
         std::vector<const Toy*> toys = catalogue.Accepted(game);
@@ -15,8 +15,7 @@ namespace toybox
             return toy.category == Category::SwapBottom && catalogue.Accepts(game, MatchingHalf(toy.type));
         };
         if (fits != nullptr)
-            std::erase_if(toys,
-                [fits](const Toy* toy) { return std::find(fits->begin(), fits->end(), toy->category) == fits->end(); });
+            std::erase_if(toys, [fits](const Toy* toy) { return !fits->Takes(*toy); });
         std::vector<AddGroup> groups;
         // None last: a character outside the ten elements (Imaginators' Kaos) has a group of its own.
         static const Element Elements[] = { Element::Magic, Element::Earth, Element::Water, Element::Air, Element::Fire,

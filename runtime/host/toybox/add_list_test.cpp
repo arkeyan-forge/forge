@@ -50,7 +50,7 @@ int main()
     if (trap != nullptr)
     {
         std::vector<const Toy*> toys;
-        Grid grid = AddGrid(AddGroups("trapteam", &trap->accepts), Columns, true, toys);
+        Grid grid = AddGrid(AddGroups("trapteam", trap), Columns, true, toys);
         CHECK(!toys.empty());
         CHECK(std::all_of(toys.begin(), toys.end(), [](const Toy* toy) { return toy->category == Category::Trap; }));
         CHECK(!grid.cells.empty() && grid.cells.back().kind == Cell::Kind::Fold);
@@ -80,7 +80,7 @@ int main()
     if (p1 != nullptr)
     {
         std::vector<const Toy*> toys;
-        AddGrid(AddGroups("trapteam", &p1->accepts), Columns, true, toys);
+        AddGrid(AddGroups("trapteam", p1), Columns, true, toys);
         CHECK(Has(toys, Category::Core) && Has(toys, Category::TrapMaster));
         CHECK(!Has(toys, Category::Trap) && !Has(toys, Category::Vehicle) && !Has(toys, Category::MagicItem));
     }
@@ -91,9 +91,28 @@ int main()
     if (swapP1 != nullptr)
     {
         std::vector<const Toy*> toys;
-        AddGrid(AddGroups("swapforce", &swapP1->accepts), Columns, true, toys);
+        AddGrid(AddGroups("swapforce", swapP1), Columns, true, toys);
         CHECK(Has(toys, Category::SwapTop) && !Has(toys, Category::SwapBottom));
         CHECK(!Has(toys, Category::MagicItem));
+    }
+
+    // SuperChargers' and Imaginators' vehicle seats: the real vehicles, never a racing villain's (3470-3497), which the
+    // games define but which crash SuperChargers once one arrives outside a race. Show all figures still lists them.
+    for (const char* game : { "superchargers", "imaginators" })
+    {
+        const Seat* vehicle1 = FindSeat(game, "vehicle1");
+        CHECK(vehicle1 != nullptr);
+        if (vehicle1 == nullptr)
+            continue;
+        auto villainVehicle = [](const Toy* toy) { return toy->type >= 3470 && toy->type <= 3497; };
+        std::vector<const Toy*> toys;
+        AddGrid(AddGroups(game, vehicle1), Columns, true, toys);
+        CHECK(Has(toys, Category::Vehicle));
+        CHECK(std::any_of(toys.begin(), toys.end(), [](const Toy* toy) { return toy->type == 3225; })); // Shark Tank
+        CHECK(std::none_of(toys.begin(), toys.end(), villainVehicle));
+        std::vector<const Toy*> all;
+        AddGrid(AddGroups(game, nullptr), Columns, false, all);
+        CHECK(std::any_of(all.begin(), all.end(), villainVehicle));
     }
 
     printf("toybox add list test: %d checks, %d failures\n", g_checks, g_failures);

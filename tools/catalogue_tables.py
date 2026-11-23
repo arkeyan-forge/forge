@@ -87,7 +87,10 @@ def main():
                 if t["type"] in NEW_TOYS and t["name"] and not LEFT_OUT.search(t["name"]):
                     toy = {"type": t["type"], "name": t["name"].replace("’", "'"),
                            "element": t["element"] if t["element"] not in (None, "kaos") else "none",
-                           "category": "vehicle" if t["class"] == "CVehicleToyData" else "villain", "game": tb["game"]}
+                           "category": "vehicle" if t["class"] == "CVehicleToyData" else "villain"}
+                    if toy["category"] == "vehicle":
+                        toy["villain_vehicle"] = True  # no seat takes one: Seat::Takes
+                    toy["game"] = tb["game"]
                     insert_toy(catalogue, toy)
                     toys[toy["type"]] = toy
                     added.append("toy %d %s" % (toy["type"], toy["name"]))

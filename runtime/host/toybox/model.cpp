@@ -367,7 +367,7 @@ namespace toybox
     {
         if (f.toy == nullptr)
             return true; // unknown toys: any seat, the game decides
-        return std::find(s.seat.accepts.begin(), s.seat.accepts.end(), f.toy->category) != s.seat.accepts.end();
+        return s.seat.Takes(*f.toy);
     }
 
     int Model::SeatOf(const std::string& path) const
@@ -549,9 +549,7 @@ namespace toybox
             for (size_t i = 0; i < seats.size(); i++)
             {
                 SeatState& s = seats[i];
-                bool fits = toy == nullptr ? PlayerSeat(s)
-                                           : std::find(s.seat.accepts.begin(), s.seat.accepts.end(), toy->category) !=
-                                                 s.seat.accepts.end();
+                bool fits = toy == nullptr ? PlayerSeat(s) : s.seat.Takes(*toy);
                 if (s.physical || !fits || (mixed && !s.path.empty()))
                     continue;
                 s.physical = true;
@@ -3674,7 +3672,7 @@ namespace toybox
     {
         addSeat = forSeat;
         addFits = fits && forSeat >= 0 && forSeat < int(seats.size());
-        std::vector<AddGroup> groups = AddGroups(game, addFits ? &seats[forSeat].seat.accepts : nullptr);
+        std::vector<AddGroup> groups = AddGroups(game, addFits ? &seats[forSeat].seat : nullptr);
         // A seat none of the game's toys fit (a catalogue gap): every toy, rather than an empty list.
         if (addFits && std::all_of(groups.begin(), groups.end(), [](const AddGroup& g) { return g.toys.empty(); }))
         {

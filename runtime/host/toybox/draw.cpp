@@ -1645,8 +1645,7 @@ namespace toybox
                 int total = 0;
                 for (const Toy* toy : Catalogue::Get().Accepted(model.game))
                 {
-                    if (std::find(seat.seat.accepts.begin(), seat.seat.accepts.end(), toy->category) !=
-                        seat.seat.accepts.end())
+                    if (seat.seat.Takes(*toy))
                         total++;
                 }
                 char text[200];

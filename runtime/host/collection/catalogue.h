@@ -90,6 +90,7 @@ namespace collection
         std::string
             elementIcon; // the element icon of a toy outside the ten elements (Kaos: "kaos"): JSON "element_icon"
         std::string ride; // [SuperChargers] a vehicle's terrain, a SuperCharger's vehicle's: "land", "sea", "sky"
+        bool villainVehicle = false; // [SuperChargers] a racing villain's vehicle: JSON "villain_vehicle"
         std::vector<Variant> variants;
     };
 
@@ -99,6 +100,10 @@ namespace collection
         std::string id; // "p1", "p2", "item", "adventure", "trap", "vehicle1"
         int player = 0; // 1, 2 for a player's seats; 0 for shared ones
         std::vector<Category> accepts; // the toy families that go there
+
+        // A toy of those families, but never a racing villain's vehicle: SuperChargers crashes once one arrives
+        // outside a race (issue #135).
+        bool Takes(const Toy& toy) const;
     };
 
     // A villain a trap can hold (Trap Team): the game's own table. Its pictures are "<id>_villaincaptured" and
