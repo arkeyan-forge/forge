@@ -91,6 +91,7 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_NETPLAY_CROSS_PLATFORM=1` | allow different OS/CPU identities only when both peers opt in; unverified |
 | `SKY_NETPLAY_TEST_DESYNC=<frame>` | with `SKY_NETPLAY_TEST=1` on both games: the guest flips one hashed byte at that 30-frame checkpoint, to test the repair of a short desync; [step 4](../runtime/host/netplay.md#step-4-repairing-a-short-desync) |
 | `SKY_NETPLAY_TEST_NET=<spec>` | with `SKY_NETPLAY_TEST=1`: seeded send delay, jitter, loss, duplicates and timed cuts; set on both games for both directions; [testing a bad network](../runtime/host/netplay.md#testing-a-bad-network) |
+| `SKY_RESOLUTION_SCALE=<1-10>` | the resolution scale of this run only, over the settings (the launcher's online room sets it for a PC whose GPU holds the session back); never saved |
 | `SKY_NETPLAY_TEST_SLOW=<ms>` | with `SKY_NETPLAY_TEST=1`: sleep this many milliseconds on every frame to simulate a slow PC; [testing a bad network](../runtime/host/netplay.md#testing-a-bad-network) |
 | `SKY_NETPLAY_DESYNC_DUMP=<file>` | when a 30-frame checkpoint mismatch cannot be repaired, write that frame's blocks in `SKYBLK01` format before both continue alone; compare both dumps with `tools/netplay/hash_diff.py`; [step 1](../runtime/host/netplay.md#step-1-lockstep-on-one-machine) |
 

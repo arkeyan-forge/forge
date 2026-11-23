@@ -478,6 +478,9 @@ int main()
     CHECK(run.settings.language == "pt");
     run = Parse(config, { { "SKY_LANGUAGE", "it" }, { "SKY_VOICE_LANGUAGE", "es" } }, {});
     CHECK(run.settings.language == "it" && run.settings.voiceLanguage == "es");
+    // An online session's lower scale for a slow GPU, over the file's.
+    run = Parse(config, { { "SKY_RESOLUTION_SCALE", "1" } }, {});
+    CHECK(run.settings.resolutionScale == 1);
     run = Parse(config, { { "SKY_LANGUAGE", "it" } },
         { "--language", "en", "--scale", "2", "--vsync=1", "--windowed", "--anisotropy", "16", "--input", "gamepad",
             "--gamepad", "ffff", "--key", "a=Space", "--glyphs=playstation", "game.iso" });

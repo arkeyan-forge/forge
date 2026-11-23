@@ -440,6 +440,10 @@ namespace
         RuntimeSettings& s = set.s;
         if (const char* value = skyenv::Get("SKY_LANGUAGE", getEnv))
             s.language = value;
+        // An online session's scale for a PC whose GPU holds the frame rate back (the launcher's room): this run only,
+        // never written to the settings.
+        if (const char* value = skyenv::Get("SKY_RESOLUTION_SCALE", getEnv))
+            set.Scale("SKY_RESOLUTION_SCALE", value);
         if (const char* value = skyenv::Get("SKY_VOICE_LANGUAGE", getEnv))
             s.voiceLanguage = value;
         if (const char* value = skyenv::Get("SKY_NIGHTMARE_FROM_START", getEnv))
