@@ -10,7 +10,9 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_iostream.h>
 #include <SDL3/SDL_stdinc.h>
+#include <algorithm>
 #include <chrono>
+#include <deque>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -263,6 +265,217 @@ namespace
         Ask(mixed, { 'R' }, 'R');
         for (int g = 0; g < EmulatedPortal::SlotCount; g++)
             CHECK(!mixed.IsHeld(g));
+    }
+
+    // A real portal whose toy can refuse writes (a toy lifted halfway, a worn tag): each 'W' fails while `failWrites` is set.
+    class FlakyHardware final : public PortalBackend
+    {
+    public:
+        explicit FlakyHardware(EmulatedPortal& portal) : m_portal(portal) {}
+        bool failWrites = false;
+        const char* Name() const override { return "test"; }
+        bool IsConnected() override { return true; }
+        bool Write(const uint8_t* command, size_t size) override
+        {
+            if (failWrites && size >= 3 && command[0] == 'W')
+            {
+                m_failed.push_back({ 'W', 0x01, command[2] });
+                return true;
+            }
+            return m_portal.Write(command, size);
+        }
+        size_t Read(uint8_t* report, size_t capacity) override
+        {
+            if (!m_failed.empty())
+            {
+                const size_t size = std::min(capacity, m_failed.front().size());
+                memcpy(report, m_failed.front().data(), size);
+                m_failed.pop_front();
+                return size;
+            }
+            return m_portal.Read(report, capacity);
+        }
+
+    private:
+        EmulatedPortal& m_portal;
+        std::deque<std::vector<uint8_t>> m_failed;
+    };
+
+    // The collection's side of the copies, kept in memory: what each call got, and the plan the next placement gets.
+    class TestCopies final : public RealCopies
+    {
+    public:
+        Plan next; // its image: the toy's own when `ownImage` is false
+        bool ownImage = false;
+        std::vector<FigureData> placed;
+        FigureData saved{};
+        int saves = 0, lifted = 0;
+        std::vector<std::pair<int, bool>> toyWrites;
+
+        Plan Placed(const FigureData& toy) override
+        {
+            placed.push_back(toy);
+            Plan plan = next;
+            if (!ownImage)
+                plan.image = toy;
+            return plan;
+        }
+        void Saved(const FigureData& image) override
+        {
+            saved = image;
+            saves++;
+        }
+        void ToyWrote(const FigureData&, int block, bool confirmed) override
+        {
+            toyWrites.push_back({ block, confirmed });
+        }
+        void Lifted(const FigureData&) override { lifted++; }
+        bool Wrote(int block, bool confirmed) const
+        {
+            return std::find(toyWrites.begin(), toyWrites.end(), std::make_pair(block, confirmed)) != toyWrites.end();
+        }
+    };
+
+    std::vector<uint8_t> AskWith(PortalBackend& portal, const std::vector<uint8_t>& command, char answer)
+    {
+        portal.Write(command.data(), command.size());
+        for (int i = 0; i < 20; i++)
+        {
+            uint8_t report[PortalReportSize];
+            const size_t size = portal.Read(report, sizeof(report));
+            if (size > 0 && report[0] == uint8_t(answer))
+                return std::vector<uint8_t>(report, report + size);
+        }
+        return {};
+    }
+
+    // Reads until the game's slot shows a toy, noting any block answer the game did not ask for.
+    bool WaitArrival(PortalBackend& portal, int slot, bool& stray, int reads = 2000)
+    {
+        for (int i = 0; i < reads; i++)
+        {
+            uint8_t report[PortalReportSize];
+            const size_t size = portal.Read(report, sizeof(report));
+            if (size >= 5 && report[0] == 'S')
+            {
+                const uint32_t status = report[1] | report[2] << 8 | report[3] << 16 | uint32_t(report[4]) << 24;
+                if ((status >> (slot * 2) & 1) != 0)
+                    return true;
+            }
+            stray = stray || (size > 0 && (report[0] == 'Q' || report[0] == 'W'));
+            if (size == 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    }
+
+    // Reads (as the game polls) for a while, so the mixed portal's own traffic with the toy goes on.
+    void Poll(PortalBackend& portal, int reads = 400)
+    {
+        for (int i = 0; i < reads; i++)
+        {
+            uint8_t report[PortalReportSize];
+            if (portal.Read(report, sizeof(report)) == 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    std::vector<uint8_t> BlockOf(EmulatedPortal& portal, int slot, int block)
+    {
+        std::vector<uint8_t> answer = Ask(portal, { 'Q', uint8_t(0x10 | slot), uint8_t(block) }, 'Q');
+        return answer.size() >= 3 + FigureBlockSize ? std::vector<uint8_t>(answer.begin() + 3, answer.begin() + 19)
+                                                    : std::vector<uint8_t>{};
+    }
+
+    // [portal] keep_real_copies (docs/runtime/host/portal.md "Copies of real toys"): a toy put on is read whole before the
+    // game sees it, the game plays its copy, and each block it writes goes to the copy and to the toy, read back.
+    void CopyChecks()
+    {
+        EmulatedPortal real, seats;
+        auto hardware = std::make_unique<FlakyHardware>(real);
+        FlakyHardware& flaky = *hardware;
+        MixedPortal mixed(std::move(hardware), seats);
+        TestCopies copies;
+        copies.next.kind = RealCopies::Plan::Kind::Play;
+        mixed.SetCopies(&copies);
+        Ask(mixed, { 'R' }, 'R');
+        Ask(mixed, { 'A', 0x01 }, 'A');
+
+        // The toy is read whole before the first status that shows it, and none of that reaches the game.
+        const FigureData toy = CreateBlankFigure(16);
+        CHECK(real.Place(toy, {}) == 0);
+        bool stray = false;
+        CHECK(WaitArrival(mixed, 0, stray));
+        CHECK(!stray && copies.placed.size() == 1 && copies.placed[0] == toy && mixed.IsRealSlot(0));
+
+        // The game reads the copy: here the collection's copy is ahead in block 8, which the toy is sent at once.
+        real.Remove(0);
+        Poll(mixed, 50);
+        CHECK(copies.lifted == 1 && !mixed.IsRealSlot(0));
+        FigureData ahead = toy;
+        ahead[8 * FigureBlockSize] = 0x42;
+        copies.next.image = ahead;
+        copies.next.write = uint64_t(1) << 8;
+        copies.ownImage = true;
+        CHECK(real.Place(toy, {}) == 0);
+        CHECK(WaitArrival(mixed, 0, stray));
+        std::vector<uint8_t> read = Ask(mixed, { 'Q', 0x10, 8 }, 'Q');
+        CHECK(read.size() >= 4 && read[1] == 0x10 && read[2] == 8 && read[3] == 0x42);
+        Poll(mixed);
+        CHECK(copies.Wrote(8, true) && BlockOf(real, 0, 8).at(0) == 0x42);
+
+        // A block the game writes: answered at once, saved in the copy, then written to the toy and read back.
+        std::vector<uint8_t> write = { 'W', 0x10, 9 };
+        write.resize(3 + FigureBlockSize, 0x5A);
+        std::vector<uint8_t> written = AskWith(mixed, write, 'W');
+        CHECK(written.size() >= 3 && written[1] == 0x10 && written[2] == 9);
+        CHECK(copies.saves == 1 && copies.saved[9 * FigureBlockSize] == 0x5A);
+        Poll(mixed);
+        CHECK(copies.Wrote(9, true) && BlockOf(real, 0, 9).at(0) == 0x5A);
+
+        // The toy refuses a write: the game still saved (the copy holds it), the toy is left as it was.
+        flaky.failWrites = true;
+        write[2] = 10;
+        written = AskWith(mixed, write, 'W');
+        CHECK(written.size() >= 3 && written[1] == 0x10 && copies.saved[10 * FigureBlockSize] == 0x5A);
+        Poll(mixed, 1500);
+        CHECK(copies.Wrote(10, false) && !copies.Wrote(10, true) && BlockOf(real, 0, 10).at(0) != 0x5A);
+        flaky.failWrites = false;
+        // Block 0 and the sector trailers are never written.
+        write[2] = 0;
+        written = AskWith(mixed, write, 'W');
+        CHECK(written.size() >= 2 && written[1] == 0x01);
+
+        // Lifted: the game sees it go and the copy is let go.
+        real.Remove(0);
+        CHECK((NextStatus(mixed) & 3) == 2 || (NextStatus(mixed) & 3) == 2);
+        CHECK(copies.lifted == 2 && !mixed.IsRealSlot(0));
+
+        // Both sides changed: the toy waits, unseen, until the player has chosen (asked again meanwhile).
+        copies.next = {};
+        copies.next.kind = RealCopies::Plan::Kind::Wait;
+        copies.ownImage = false;
+        const size_t asked = copies.placed.size();
+        CHECK(real.Place(toy, {}) == 0);
+        CHECK(!WaitArrival(mixed, 0, stray, 600));
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        CHECK(!WaitArrival(mixed, 0, stray, 20));
+        CHECK(copies.placed.size() > asked + 1 && !mixed.IsRealSlot(0));
+        copies.next.kind = RealCopies::Plan::Kind::Play;
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        CHECK(WaitArrival(mixed, 0, stray));
+        CHECK(!stray && mixed.IsRealSlot(0));
+        real.Remove(0);
+        Poll(mixed, 50);
+
+        // No copy (the collection could not make one): the game reads the toy itself, as without the setting.
+        copies.next.kind = RealCopies::Plan::Kind::Toy;
+        CHECK(real.Place(CreateBlankFigure(14), {}) == 0);
+        CHECK(WaitArrival(mixed, 0, stray));
+        CHECK(ToyOf(Ask(mixed, { 'Q', 0x10, 1 }, 'Q')) == 14);
+        write[2] = 12;
+        AskWith(mixed, write, 'W');
+        CHECK(BlockOf(real, 0, 12).at(0) == 0x5A && copies.saves == 2);
     }
 }
 
@@ -640,6 +853,7 @@ int main()
 
     MixedChecks();
     RenumberChecks();
+    CopyChecks();
     printf("portal test: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

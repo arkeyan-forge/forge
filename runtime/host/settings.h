@@ -89,6 +89,7 @@ struct RuntimeSettings
         false; // [<game>] nightmare_from_start: the hardest difficulty offered from the start (Swap Force, Trap Team, Imaginators)
     bool toyboxAutoOpen =
         true; // the Toy Box opens by itself when the game asks for a figure ([portal] toybox_auto_open)
+    bool keepRealCopies = false; // a synced copy of each real toy in the collection ([portal] keep_real_copies)
     std::string language; // text language code, empty: the game's choice
     std::string voiceLanguage;
 

@@ -2225,6 +2225,112 @@ namespace
     }
 }
 
+namespace
+{
+    // A real toy's copy ([portal] keep_real_copies): linked by toy type and serial, synced one way when one side changed,
+    // left for the player to choose when both did; the toy's first image kept for good, the last RealBackups kept.
+    void TestRealCopies()
+    {
+        using namespace collection;
+        auto mark = [](FigureData& tag, size_t block, uint8_t value) { tag[block * FigureBlockSize + 4] = value; };
+        auto onDisk = [](const std::string& path, const FigureData& tag) {
+            size_t size = 0;
+            void* data = SDL_LoadFile(path.c_str(), &size);
+            const bool same = data != nullptr && size >= tag.size() && memcmp(data, tag.data(), tag.size()) == 0;
+            SDL_free(data);
+            return same;
+        };
+        auto exists = [](const std::string& path) {
+            SDL_PathInfo info;
+            return !path.empty() && SDL_GetPathInfo(path.c_str(), &info);
+        };
+
+        // Placed the first time: a new copy, linked, the toy's image; the toy's original kept apart.
+        FigureData toy = figures::CreateFigure(16);
+        const FigureData firstToy = toy;
+        RealCopy first = SyncRealCopy(toy);
+        const std::string path = first.path;
+        CHECK(!path.empty() && first.side == RealSide::New && first.write == 0);
+        CHECK(memcmp(first.image.data(), toy.data(), 3 * FigureBlockSize) == 0 && onDisk(path, first.image));
+        Figure figure;
+        CHECK(Read(path, figure) && figure.realCopy && figure.origin == "portal");
+        const std::string original = RealOriginalPath(toy);
+        CHECK(exists(original) && onDisk(original, toy));
+        Figure plain;
+        CHECK(Read(Create(14), plain) && !plain.realCopy);
+
+        // Placed again unchanged: nothing to do.
+        RealCopy same = SyncRealCopy(toy);
+        CHECK(same.path == path && same.side == RealSide::Same && same.write == 0);
+
+        // Played on a console: the copy takes the toy's progress, backed up first.
+        mark(toy, 8, 1);
+        size_t backups = Backups(path).size();
+        RealCopy toyAhead = SyncRealCopy(toy);
+        CHECK(toyAhead.side == RealSide::ToyAhead && toyAhead.image == toy && onDisk(path, toy));
+        CHECK(Backups(path).size() == backups + 1);
+
+        // Played here: the toy lacks the block the game wrote to the copy.
+        FigureData copy = toyAhead.image;
+        mark(copy, 9, 2);
+        CHECK(WriteRealCopy(path, copy));
+        RealCopy copyAhead = SyncRealCopy(toy);
+        CHECK(copyAhead.side == RealSide::CopyAhead && copyAhead.image == copy && copyAhead.write == uint64_t(1) << 9);
+        // The toy read it back: in sync.
+        CHECK(RealCopyWritten(path, copy, 9, true));
+        CHECK(SyncRealCopy(copy).side == RealSide::Same);
+        // A write the toy did not confirm: the toy may hold anything in that block, the copy still wins it.
+        mark(copy, 10, 3);
+        CHECK(WriteRealCopy(path, copy) && RealCopyWritten(path, copy, 10, false));
+        FigureData halfWritten = copy;
+        mark(halfWritten, 10, 0x77);
+        RealCopy retry = SyncRealCopy(halfWritten);
+        CHECK(retry.side == RealSide::CopyAhead && retry.write == uint64_t(1) << 10);
+        CHECK(RealCopyWritten(path, copy, 10, true) && SyncRealCopy(copy).side == RealSide::Same);
+
+        // Both changed: nothing moves until the player chooses.
+        FigureData console = copy, here = copy;
+        mark(console, 12, 4);
+        mark(here, 13, 5);
+        CHECK(WriteRealCopy(path, here));
+        RealCopy both = SyncRealCopy(console);
+        CHECK(both.side == RealSide::Both && both.image == here && both.write == 0 && onDisk(path, here));
+        // The toy's progress kept: the copy backed up and replaced.
+        backups = Backups(path).size();
+        RealCopy keptToy = ChooseRealCopy(path, console, true);
+        CHECK(keptToy.image == console && keptToy.write == 0 && onDisk(path, console));
+        CHECK(Backups(path).size() == std::min(backups + 1, RealBackups));
+        CHECK(SyncRealCopy(console).side == RealSide::Same);
+        // The copy's progress kept: the toy's image backed up, the blocks it lacks to write.
+        CHECK(WriteRealCopy(path, here));
+        FigureData console2 = console;
+        mark(console2, 14, 6);
+        CHECK(SyncRealCopy(console2).side == RealSide::Both);
+        RealCopy keptCopy = ChooseRealCopy(path, console2, false);
+        CHECK(keptCopy.image == here && onDisk(path, here));
+        CHECK(keptCopy.write == ((uint64_t(1) << 12) | (uint64_t(1) << 13) | (uint64_t(1) << 14)));
+        bool tookToy = false;
+        for (const std::string& backup : Backups(path))
+            tookToy = tookToy || onDisk(backup, console2);
+        CHECK(tookToy);
+
+        // The last RealBackups only; the original stays.
+        FigureData played = here;
+        for (uint8_t i = 0; i < 8; i++)
+        {
+            mark(played, 16, uint8_t(0x20 + i));
+            CHECK(SyncRealCopy(played).side == RealSide::ToyAhead);
+        }
+        CHECK(Backups(path).size() == RealBackups && onDisk(original, firstToy));
+
+        // Deleted: unlinked, the next placement makes a new copy; the original is never deleted.
+        CHECK(Delete(path));
+        RealCopy again = SyncRealCopy(played);
+        CHECK(again.side == RealSide::New && !again.path.empty() && onDisk(original, firstToy));
+        Delete(again.path);
+    }
+}
+
 int main(int argc, char** argv)
 {
     const char* sheetFolder = argc > 2 && strcmp(argv[1], "--icons") == 0 ? argv[2] : nullptr;
@@ -2268,6 +2374,7 @@ int main(int argc, char** argv)
     TestUpgrades();
     TestWheel();
     TestStarterPacks();
+    TestRealCopies();
 
     if (skyenv::Get("SKY_KEEP_COLLECTION") == nullptr)
         RemoveTree(g_scratch);

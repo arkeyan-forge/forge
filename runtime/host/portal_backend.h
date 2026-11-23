@@ -135,6 +135,33 @@ private:
     bool m_unknownSeen[256] = {};
 };
 
+// The copies of real toys a mixed portal keeps ([portal] keep_real_copies, docs/runtime/host/portal.md "Copies of real
+// toys"): the collection's side, called under the mixed portal's lock.
+class RealCopies
+{
+public:
+    virtual ~RealCopies() = default;
+    struct Plan
+    {
+        enum class Kind
+        {
+            Toy,  // no copy: the game reads and writes the toy itself
+            Play, // the game plays `image`
+            Wait  // the player chooses first: not shown to the game, asked again
+        } kind = Kind::Toy;
+        FigureData image{};
+        uint64_t write = 0; // bit n: block n of `image` to send to the toy
+    };
+    // The toy, read whole; asked again every 250 ms while the answer is Wait.
+    virtual Plan Placed(const FigureData& toy) = 0;
+    // The game wrote a block: `image` is the whole copy now.
+    virtual void Saved(const FigureData& image) = 0;
+    // A block sent to the toy: read back the same (`confirmed`), or not after a few tries.
+    virtual void ToyWrote(const FigureData& image, int block, bool confirmed) = 0;
+    // The toy left the portal.
+    virtual void Lifted(const FigureData& image) = 0;
+};
+
 // A real portal and the Toy Box's virtual seats as one portal for the game (docs/runtime/host/portal.md, "Mixed portal"): player
 // 1 on a real figure and player 2 on a virtual one, or the reverse. The real portal's toys keep their slot when it is free
 // and move to a free one when a virtual figure has it; virtual figures sit in the slots the real portal leaves free. The
@@ -146,6 +173,8 @@ private:
 // unchanged; each toy the real portal then reports is identified by its tag serial (block 0, asked here and never shown to
 // the game) and goes back to the game's slot that had it, or arrives as a new toy; a held slot nobody comes back to
 // within the hold time (3 s) is reported gone. Blocks asked of a held slot meanwhile get no answer (the title asks again).
+// With copies (SetCopies), a toy put on is read whole before the game is told it arrived, then the game reads and writes
+// its copy; each block written goes to the toy after, one at a time, and is read back.
 class MixedPortal final : public PortalBackend
 {
 public:
@@ -167,6 +196,12 @@ public:
 
     // The game's slot is held after a reset, waiting for its toy to come back (tests).
     bool IsHeld(int slot);
+    // Keeps a copy of each real toy through `copies` (null: none, the toys are read and written directly). Set before use.
+    void SetCopies(RealCopies* copies)
+    {
+        std::lock_guard lock(m_mutex);
+        m_copies = copies;
+    }
     static constexpr std::chrono::milliseconds HoldTime{ 3000 };
 
 private:
@@ -178,6 +213,13 @@ private:
     int FreeGameSlot(int wanted, uint32_t virtualBits);
     void HoldRealToys();
     bool Identify(const uint8_t* report, size_t size); // a block 0 answer asked by Identify's query: taken, not shown
+    bool AnswerCopy(int slot, const uint8_t* command, size_t size);
+    void StartReading(int real);
+    void Placed(int real, Clock::time_point now);
+    void Pump(Clock::time_point now);
+    bool TakeToyAnswer(const uint8_t* report, size_t size, Clock::time_point now); // ours: taken, not shown
+    void EndOperation(bool done);
+    void Release(int game); // the game's slot's toy is gone
     std::unique_ptr<PortalBackend> m_real;
     EmulatedPortal& m_virtual;
     std::mutex m_mutex;
@@ -189,6 +231,8 @@ private:
     {
         bool known = false, held = false, arrived = false; // arrived: report its arrival in the next status
         uint8_t serial[4] = {};
+        bool copy = false; // the game plays `image`, the toy's copy
+        FigureData image{};
     };
     Toy m_toys[Slots];
     std::chrono::milliseconds m_holdTime;
@@ -196,6 +240,45 @@ private:
     // Per real slot: a toy present and not mapped yet, being identified (when its block 0 was last asked; 0: not asked).
     bool m_identifying[Slots] = {};
     Clock::time_point m_asked[Slots] = {};
+
+    // The copies: per real slot, a toy being read whole (or waiting for the player's choice) before the game sees it.
+    RealCopies* m_copies = nullptr;
+    enum class Reading
+    {
+        None,
+        Reading,
+        Waiting,
+        Stuck // read, but no slot of the game was free: left alone until it is lifted
+    };
+    struct ReadState
+    {
+        Reading state = Reading::None;
+        int block = 0;
+        FigureData image{};
+        Clock::time_point asked{};
+    };
+    ReadState m_reading[Slots];
+    // One block command of the mixed portal's own at a time, so that a failure answer (which names no slot) is known.
+    struct Operation
+    {
+        enum class Kind
+        {
+            None,
+            Read, // a block of a toy being read whole (`real`)
+            Write, // a block of a copy to its toy (`game`), then
+            Check // read back
+        } kind = Kind::None;
+        int real = -1, game = -1, block = 0, tries = 0;
+        bool sent = false;
+        uint8_t data[FigureBlockSize] = {}; // Write and Check: the block sent
+        Clock::time_point asked{};
+    };
+    Operation m_operation;
+    struct ToyWrite
+    {
+        int game, block;
+    };
+    std::deque<ToyWrite> m_writes; // waiting for m_operation
 };
 
 // Tests (SKY_PORTAL=fake-real): a "real" portal that is an emulated one holding the dumps of SKY_PORTAL_FAKE_REAL (comma

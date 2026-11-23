@@ -404,6 +404,26 @@ game and the `AsyncPortal`: the game sees one portal, the real one's toys and th
   one and put another; then the reverse (virtual Player 1 first, then a real figure). Look at the log for the `[portal]
   mixed:` lines, and at the window: the real figure's seat says "Real figure · on the portal" and refuses changes.
 
+## Copies of real toys (`[portal] keep_real_copies`)
+
+Off by default (Arkeyan Launcher issue #132). With a real portal and the setting on, `MixedPortal` keeps a copy of each real toy in
+the collection (`SetCopies`; the collection's side is `CollectionCopies` in `host/portal.cpp` over `SyncRealCopy` and the
+rest of [collection.md](collection.md#copies-of-real-toys)):
+- **Placed.** A toy the real portal reports is not shown to the game yet: the mixed portal reads its 64 blocks with `Q`
+  (one command at a time, each asked again after 250 ms, given up after 4 tries) and never shows the answers. Read whole,
+  the collection syncs it with its copy; then the toy arrives in the game's next status report. A toy that cannot be read
+  whole is played directly, as without the setting (`could not be read whole, played without a copy`).
+- **In play.** The game's `Q` and `W` of that slot are answered from the copy at once (a held slot after a reset too).
+  Each block written is saved to the copy, then sent to the toy and read back (`W`, then `Q` of the same block). A write
+  the toy refuses or that reads back different is kept in the copy (`did not reach the toy; kept in its copy`,
+  `PortalRealWriteFailures`), and the next placement sends it again. Block 0 and the sector trailers are never written.
+- **Both changed** (the toy played on a console, the copy here): the toy waits unseen; `PortalRealChoices` lists it and
+  `PortalChooseReal` keeps one side, then the game gets the toy. The Toy Box screen for that choice is not built yet.
+- **Time to read a toy** on each portal (HID, Xbox 360 USB, Xbox One) and whether every game waits for a toy that long are
+  not measured [?]. `ArkeyanPortalTest` (`CopyChecks`): the toy read whole before the first status that shows it, a block
+  the copy is ahead sent at placement, a game write reaching the copy and the toy, a refused write left in the copy, the
+  wait for a choice, a toy with no copy played directly [V].
+
 ## The portal's identity
 
 The USB product string does not name the model: Wii portals of Spyro's Adventure and of Swap Force (`0000547`) both say

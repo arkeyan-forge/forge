@@ -11,6 +11,13 @@ namespace
 {
     // Second byte of a block answer: the block count in the high nibble, the slot in the low one; 0x01 is a failure.
     constexpr uint8_t Failure = 0x01;
+    constexpr uint8_t OneBlock = 0x10;
+
+    // The mixed portal's own block commands (the copies): asked again when unanswered, given up after a few tries.
+    constexpr std::chrono::milliseconds Retry{ 250 };
+    constexpr int Tries = 4;
+
+    bool IsSectorTrailer(size_t block) { return block % 4 == 3; }
 
     uint32_t StatusOf(const uint8_t* report)
     {
@@ -52,6 +59,8 @@ bool MixedPortal::Write(const uint8_t* command, size_t size)
     {
         const int slot = command[1] & 0x0F;
         std::unique_lock lock(m_mutex);
+        if (m_toys[slot].copy)
+            return AnswerCopy(slot, command, size);
         if (const int real = m_realSlot[slot]; real >= 0)
         {
             // The real portal's toy: its own slot number.
@@ -80,6 +89,242 @@ bool MixedPortal::Write(const uint8_t* command, size_t size)
     return m_real->Write(command, size);
 }
 
+bool MixedPortal::AnswerCopy(int slot, const uint8_t* command, size_t size)
+{
+    Toy& toy = m_toys[slot];
+    Report answer{};
+    answer[0] = command[0];
+    answer[1] = Failure;
+    const size_t block = size > 2 ? command[2] : FigureBlockCount;
+    answer[2] = uint8_t(block);
+    if (block < FigureBlockCount && command[0] == 'Q')
+    {
+        memcpy(&answer[3], toy.image.data() + block * FigureBlockSize, FigureBlockSize);
+        answer[1] = uint8_t(OneBlock | slot);
+    }
+    else if (block < FigureBlockCount && block != 0 && !IsSectorTrailer(block) && size >= 3 + FigureBlockSize)
+    {
+        memcpy(toy.image.data() + block * FigureBlockSize, command + 3, FigureBlockSize);
+        m_copies->Saved(toy.image);
+        const bool queued = std::any_of(m_writes.begin(), m_writes.end(),
+            [&](const ToyWrite& write) { return write.game == slot && write.block == int(block); });
+        if (!queued)
+            m_writes.push_back({ slot, int(block) });
+        answer[1] = uint8_t(OneBlock | slot);
+    }
+    m_answers.push_back(answer);
+    return true;
+}
+
+void MixedPortal::StartReading(int real)
+{
+    m_reading[real] = {};
+    m_reading[real].state = Reading::Reading;
+}
+
+void MixedPortal::Placed(int real, Clock::time_point now)
+{
+    ReadState& reading = m_reading[real];
+    const RealCopies::Plan plan = m_copies->Placed(reading.image);
+    if (plan.kind == RealCopies::Plan::Kind::Wait)
+    {
+        reading.state = Reading::Waiting;
+        reading.asked = now;
+        return;
+    }
+    const int game = FreeGameSlot(real, 0);
+    if (game < 0)
+    {
+        fprintf(stderr, "[portal] mixed: no free slot for the real portal's toy in slot %d\n", real);
+        reading.state = Reading::Stuck;
+        if (plan.kind == RealCopies::Plan::Kind::Play)
+            m_copies->Lifted(plan.image);
+        return;
+    }
+    Map(real, game);
+    Toy& toy = m_toys[game];
+    toy = {};
+    toy.arrived = true;
+    if (plan.kind == RealCopies::Plan::Kind::Play)
+    {
+        // Held by a reset like a toy the game has read: its serial is known.
+        toy.known = toy.copy = true;
+        memcpy(toy.serial, reading.image.data(), sizeof(toy.serial));
+        toy.image = plan.image;
+        for (int block = 0; block < int(FigureBlockCount); block++)
+        {
+            if ((plan.write >> block & 1) != 0)
+                m_writes.push_back({ game, block });
+        }
+    }
+    reading = {};
+}
+
+void MixedPortal::Pump(Clock::time_point now)
+{
+    if (m_copies == nullptr)
+        return;
+    for (int real = 0; real < Slots; real++)
+    {
+        if (m_reading[real].state == Reading::Waiting && now - m_reading[real].asked >= Retry)
+            Placed(real, now);
+    }
+    using Kind = Operation::Kind;
+    // A toy being read first: the game does not see it until then.
+    for (int real = 0; real < Slots && m_operation.kind == Kind::None; real++)
+    {
+        if (m_reading[real].state == Reading::Reading)
+        {
+            m_operation = {};
+            m_operation.kind = Kind::Read;
+            m_operation.real = real;
+            m_operation.block = m_reading[real].block;
+        }
+    }
+    while (m_operation.kind == Kind::None && !m_writes.empty())
+    {
+        const ToyWrite write = m_writes.front();
+        m_writes.pop_front();
+        if (!m_toys[write.game].copy)
+            continue;
+        m_operation = {};
+        m_operation.kind = Kind::Write;
+        m_operation.game = write.game;
+        m_operation.block = write.block;
+        memcpy(m_operation.data, m_toys[write.game].image.data() + write.block * FigureBlockSize, FigureBlockSize);
+    }
+    if (m_operation.kind == Kind::None || (m_operation.sent && now - m_operation.asked < Retry))
+        return;
+    if (m_operation.tries >= Tries)
+    {
+        EndOperation(false);
+        return;
+    }
+    const int real = m_operation.kind == Kind::Read ? m_operation.real : m_realSlot[m_operation.game];
+    if (real < 0)
+    {
+        m_operation.sent = false; // held after a reset: sent once the toy is back
+        return;
+    }
+    uint8_t command[3 + FigureBlockSize] = { m_operation.kind == Kind::Write ? uint8_t('W') : uint8_t('Q'),
+        uint8_t(OneBlock | real), uint8_t(m_operation.block) };
+    size_t size = 3;
+    if (m_operation.kind == Kind::Write)
+    {
+        memcpy(command + 3, m_operation.data, FigureBlockSize);
+        size = sizeof(command);
+    }
+    m_operation.sent = true;
+    m_operation.asked = now;
+    m_operation.tries++;
+    m_real->Write(command, size);
+}
+
+void MixedPortal::EndOperation(bool done)
+{
+    using Kind = Operation::Kind;
+    const Operation operation = m_operation;
+    m_operation = {};
+    if (operation.kind == Kind::Read)
+    {
+        // Not read whole (a worn tag?): the game reads it itself, as without copies.
+        fprintf(stderr,
+            "[portal] mixed: the real portal's toy in slot %d could not be read whole, played without a copy\n",
+            operation.real);
+        m_reading[operation.real] = {};
+        if (const int game = FreeGameSlot(operation.real, 0); game >= 0)
+        {
+            Map(operation.real, game);
+            m_toys[game] = {};
+            m_toys[game].arrived = true;
+        }
+        else
+            m_reading[operation.real].state = Reading::Stuck;
+        return;
+    }
+    if (operation.kind == Kind::Write && done)
+    {
+        m_operation = operation;
+        m_operation.kind = Kind::Check;
+        m_operation.sent = false;
+        m_operation.tries = 0;
+        return;
+    }
+    if (operation.kind == Kind::None || !m_toys[operation.game].copy)
+        return;
+    FigureData written = m_toys[operation.game].image;
+    memcpy(written.data() + operation.block * FigureBlockSize, operation.data, FigureBlockSize);
+    if (!done)
+        fprintf(stderr, "[portal] mixed: block %d of the game's slot %d did not reach the toy; kept in its copy\n",
+            operation.block, operation.game);
+    m_copies->ToyWrote(written, operation.block, done);
+}
+
+bool MixedPortal::TakeToyAnswer(const uint8_t* report, size_t size, Clock::time_point now)
+{
+    using Kind = Operation::Kind;
+    if (m_copies == nullptr || size < 3)
+        return false;
+    const bool failed = report[1] == Failure;
+    const int real = report[1] & 0x0F;
+    Operation& operation = m_operation;
+    const int operationReal = operation.kind == Kind::Read   ? operation.real
+                              : operation.kind != Kind::None ? m_realSlot[operation.game]
+                                                             : -1;
+    const uint8_t letter = operation.kind == Kind::Write ? 'W' : 'Q';
+    if (operation.kind != Kind::None && operation.sent && report[0] == letter && report[2] == operation.block &&
+        (failed || real == operationReal))
+    {
+        const bool block = size >= 3 + FigureBlockSize;
+        if (failed || (operation.kind != Kind::Write && !block))
+        {
+            operation.sent = false; // asked again at once, until the tries run out
+            return true;
+        }
+        if (operation.kind == Kind::Read)
+        {
+            ReadState& reading = m_reading[operation.real];
+            memcpy(reading.image.data() + operation.block * FigureBlockSize, report + 3, FigureBlockSize);
+            m_operation = {};
+            if (++reading.block == int(FigureBlockCount))
+                Placed(real, now);
+        }
+        else if (operation.kind == Kind::Write)
+            EndOperation(true);
+        else
+            EndOperation(memcmp(report + 3, operation.data, FigureBlockSize) == 0);
+        return true;
+    }
+    // A late answer to a command sent again, or a toy the game does not talk to itself: never the game's.
+    if (failed)
+        return false;
+    if (m_reading[real].state != Reading::None)
+        return true;
+    const int game = m_gameSlot[real];
+    return game >= 0 && m_toys[game].copy;
+}
+
+void MixedPortal::Release(int game)
+{
+    using Kind = Operation::Kind;
+    Toy& toy = m_toys[game];
+    if (toy.copy)
+    {
+        if ((m_operation.kind == Kind::Write || m_operation.kind == Kind::Check) && m_operation.game == game)
+        {
+            // Sent, maybe written: the next placement compares that block again.
+            if (m_operation.sent || m_operation.kind == Kind::Check)
+                EndOperation(false);
+            m_operation = {};
+        }
+        m_writes.erase(
+            std::remove_if(m_writes.begin(), m_writes.end(), [&](const ToyWrite& write) { return write.game == game; }),
+            m_writes.end());
+        m_copies->Lifted(toy.image);
+    }
+    toy = {};
+}
+
 void MixedPortal::HoldRealToys()
 {
     for (int game = 0; game < Slots; game++)
@@ -95,6 +340,11 @@ void MixedPortal::HoldRealToys()
     }
     for (bool& identifying : m_identifying)
         identifying = false; // the real portal numbers its toys anew
+    for (ReadState& reading : m_reading)
+        reading = {};
+    if (m_operation.kind == Operation::Kind::Read)
+        m_operation = {};
+    m_operation.sent = false; // a write is sent again once its toy is back
     m_holdUntil = Clock::now() + m_holdTime;
 }
 
@@ -141,13 +391,16 @@ void MixedPortal::MergeStatus(uint8_t* report)
             {
                 // Gone, and said so in this report: the slot is free again.
                 m_gameSlot[slot] = m_realSlot[game] = -1;
-                m_toys[game] = {};
+                Release(game);
             }
             continue;
         }
         if ((bits & 1) == 0)
         {
             m_identifying[slot] = false;
+            if (m_operation.kind == Operation::Kind::Read && m_operation.real == slot)
+                m_operation = {};
+            m_reading[slot] = {};
             continue;
         }
         if (holding)
@@ -160,6 +413,13 @@ void MixedPortal::MergeStatus(uint8_t* report)
                 const uint8_t query[] = { 'Q', uint8_t(0x10 | slot), 0 };
                 m_real->Write(query, sizeof(query));
             }
+            continue;
+        }
+        if (m_copies != nullptr)
+        {
+            // Read whole first; the game is told it arrived after.
+            if (m_reading[slot].state == Reading::None)
+                StartReading(slot);
             continue;
         }
         const int game = FreeGameSlot(slot, virtualBits);
@@ -182,7 +442,7 @@ void MixedPortal::MergeStatus(uint8_t* report)
         }
         fprintf(stderr, "[portal] mixed: the game's slot %d: its toy did not come back after the reset\n", game);
         merged |= 2u << (game * 2);
-        m_toys[game] = {};
+        Release(game);
     }
     uint32_t reserved = 0;
     for (int g = 0; g < Slots; g++)
@@ -219,6 +479,11 @@ bool MixedPortal::Identify(const uint8_t* report, size_t size)
             return true;
         }
     }
+    if (m_copies != nullptr)
+    {
+        StartReading(real);
+        return true;
+    }
     const int game = FreeGameSlot(real, 0);
     if (game < 0)
         return true;
@@ -229,39 +494,47 @@ bool MixedPortal::Identify(const uint8_t* report, size_t size)
 
 size_t MixedPortal::Read(uint8_t* report, size_t capacity)
 {
+    // The answers to the mixed portal's own commands are taken here and the next report read in their place.
+    for (int taken = 0; taken < 16; taken++)
     {
-        std::lock_guard lock(m_mutex);
-        if (!m_answers.empty())
         {
-            const size_t size = std::min(capacity, m_answers.front().size());
-            memcpy(report, m_answers.front().data(), size);
-            m_answers.pop_front();
-            return size;
-        }
-    }
-    const size_t size = m_real->Read(report, capacity);
-    if (size == 0)
-        return 0;
-    std::lock_guard lock(m_mutex);
-    if (report[0] == 'S' && size >= 5)
-        MergeStatus(report);
-    else if ((report[0] == 'Q' || report[0] == 'W') && size >= 2 && (report[1] & 0xF0) != 0)
-    {
-        if (Identify(report, size))
-            return 0; // asked here, not by the game
-        // A block of a real toy: the game's slot number. Block 0's serial names the toy after a reset.
-        const int game = m_gameSlot[report[1] & 0x0F];
-        if (game >= 0)
-        {
-            report[1] = uint8_t((report[1] & 0xF0) | game);
-            if (report[0] == 'Q' && size >= 7 && report[2] == 0)
+            std::lock_guard lock(m_mutex);
+            Pump(Clock::now());
+            if (!m_answers.empty())
             {
-                m_toys[game].known = true;
-                memcpy(m_toys[game].serial, report + 3, sizeof(m_toys[game].serial));
+                const size_t size = std::min(capacity, m_answers.front().size());
+                memcpy(report, m_answers.front().data(), size);
+                m_answers.pop_front();
+                return size;
             }
         }
+        const size_t size = m_real->Read(report, capacity);
+        if (size == 0)
+            return 0;
+        std::lock_guard lock(m_mutex);
+        if (report[0] == 'S' && size >= 5)
+            MergeStatus(report);
+        else if ((report[0] == 'Q' || report[0] == 'W') && size >= 2)
+        {
+            if ((report[1] & 0xF0) != 0 && Identify(report, size))
+                return 0; // asked here, not by the game
+            if (TakeToyAnswer(report, size, Clock::now()))
+                continue;
+            // A block of a real toy: the game's slot number. Block 0's serial names the toy after a reset.
+            const int game = (report[1] & 0xF0) != 0 ? m_gameSlot[report[1] & 0x0F] : -1;
+            if (game >= 0)
+            {
+                report[1] = uint8_t((report[1] & 0xF0) | game);
+                if (report[0] == 'Q' && size >= 7 && report[2] == 0)
+                {
+                    m_toys[game].known = true;
+                    memcpy(m_toys[game].serial, report + 3, sizeof(m_toys[game].serial));
+                }
+            }
+        }
+        return size;
     }
-    return size;
+    return 0;
 }
 
 namespace

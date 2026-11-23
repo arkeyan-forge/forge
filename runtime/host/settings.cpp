@@ -401,6 +401,8 @@ namespace
         {
             if (key == "toybox_auto_open")
                 set.Bool(file, "toybox_auto_open", value, s.toyboxAutoOpen);
+            else if (key == "keep_real_copies")
+                set.Bool(file, "keep_real_copies", value, s.keepRealCopies);
         }
     }
 
@@ -444,6 +446,8 @@ namespace
             set.Bool("SKY_NIGHTMARE_FROM_START", "nightmare_from_start", value, s.nightmareFromStart);
         if (const char* value = skyenv::Get("SKY_TOYBOX_AUTO_OPEN", getEnv))
             set.Bool("SKY_TOYBOX_AUTO_OPEN", "toybox_auto_open", value, s.toyboxAutoOpen);
+        if (const char* value = skyenv::Get("SKY_KEEP_REAL_COPIES", getEnv))
+            set.Bool("SKY_KEEP_REAL_COPIES", "keep_real_copies", value, s.keepRealCopies);
         if (const char* value = skyenv::Get("SKY_SPEAKERS", getEnv))
             set.Speakers("SKY_SPEAKERS", value);
         if (const char* value = skyenv::Get("SKY_UPSCALER", getEnv))
@@ -814,9 +818,10 @@ std::string DescribeSettings(const RuntimeSettings& s)
                s.voiceLanguage.empty() ? "game" : s.voiceLanguage, s.toyboxAutoOpen ? "" : ", toybox auto-open off",
                padDescription) +
            fmt::format(", fps auto fallback {}", s.fpsAutoFallback ? "on" : "off") +
-           (s.aspectFill ? ", aspect fill" : "") + (s.aspectAuto ? "" : ", aspect 16:9") +
-           (s.textureDump ? ", texture dump" : "") + (s.texturePacks ? "" : ", texture packs off") +
-           (s.hdTextures ? "" : ", HD textures off") + (s.originalResolution ? ", original resolution" : "") +
+           (s.keepRealCopies ? ", real toy copies" : "") + (s.aspectFill ? ", aspect fill" : "") +
+           (s.aspectAuto ? "" : ", aspect 16:9") + (s.textureDump ? ", texture dump" : "") +
+           (s.texturePacks ? "" : ", texture packs off") + (s.hdTextures ? "" : ", HD textures off") +
+           (s.originalResolution ? ", original resolution" : "") +
            (s.edgeSmoothing != edgesmoothing::Auto
                    ? fmt::format(", edge smoothing {}", edgesmoothing::Name(s.edgeSmoothing))
                    : "") +

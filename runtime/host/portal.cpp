@@ -15,12 +15,14 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -288,6 +290,142 @@ namespace
     // The collection shared with the launcher and the other games (docs/runtime/host/collection.md): SKY_COLLECTION, SKY_FIGURES,
     // else <user data>/Skylanders/Collection.
     std::string FigureFolder() { return collection::Folder(); }
+
+    // [portal] keep_real_copies: the collection's side of a mixed portal's copies (collection.h, "Copies of real toys").
+    // Called under the mixed portal's lock; the Toy Box's choices come from its own thread.
+    class CollectionCopies final : public RealCopies
+    {
+    public:
+        Plan Placed(const FigureData& toy) override
+        {
+            std::lock_guard lock(m_mutex);
+            std::string error;
+            collection::RealCopy copy;
+            auto waiting = std::find_if(
+                m_choices.begin(), m_choices.end(), [&](const Choice& choice) { return Key(choice.toy) == Key(toy); });
+            if (waiting != m_choices.end())
+            {
+                if (!waiting->chosen)
+                    return Wait();
+                copy = collection::ChooseRealCopy(waiting->path, toy, waiting->keepToy, &error);
+                fprintf(stderr, "[portal] real toy copy: %s, the player kept the %s\n", waiting->path.c_str(),
+                    waiting->keepToy ? "toy's progress" : "copy's progress");
+                m_choices.erase(waiting);
+            }
+            else
+            {
+                copy = collection::SyncRealCopy(toy, &error);
+                if (copy.side == collection::RealSide::Both)
+                {
+                    fprintf(stderr, "[portal] real toy copy: %s and its toy both changed, waiting for the player\n",
+                        copy.path.c_str());
+                    m_choices.push_back({ copy.path, toy });
+                    return Wait();
+                }
+            }
+            if (copy.path.empty() || !collection::Lock(copy.path, GameId))
+            {
+                fprintf(stderr, "[portal] real toy copy: none (%s), the toy is played directly\n",
+                    error.empty() ? "in use" : error.c_str());
+                return {};
+            }
+            collection::Touch(copy.path, GameId);
+            m_onPortal[Key(toy)] = copy.path;
+            static constexpr const char* Sides[] = { "made", "in sync", "updated from the toy", "ahead of the toy",
+                "both changed" };
+            fprintf(stderr, "[portal] real toy copy: %s, %s (%d block(s) to write to the toy)\n", copy.path.c_str(),
+                Sides[int(copy.side)], int(std::popcount(copy.write)));
+            Plan plan;
+            plan.kind = Plan::Kind::Play;
+            plan.image = copy.image;
+            plan.write = copy.write;
+            return plan;
+        }
+        void Saved(const FigureData& image) override
+        {
+            const std::string path = PathOf(image);
+            if (!path.empty() && !collection::WriteRealCopy(path, image))
+                fprintf(stderr, "[portal] cannot save the real toy copy %s\n", path.c_str());
+        }
+        void ToyWrote(const FigureData& image, int block, bool confirmed) override
+        {
+            if (!confirmed)
+                m_failures++;
+            if (const std::string path = PathOf(image); !path.empty())
+                collection::RealCopyWritten(path, image, block, confirmed);
+        }
+        void Lifted(const FigureData& image) override
+        {
+            std::lock_guard lock(m_mutex);
+            if (auto found = m_onPortal.find(Key(image)); found != m_onPortal.end())
+            {
+                collection::Unlock(found->second);
+                m_onPortal.erase(found);
+            }
+        }
+        void UnlockAll()
+        {
+            std::lock_guard lock(m_mutex);
+            for (const auto& [key, path] : m_onPortal)
+                collection::Unlock(path);
+        }
+        std::vector<PortalRealChoice> Choices()
+        {
+            std::lock_guard lock(m_mutex);
+            std::vector<PortalRealChoice> choices;
+            for (const Choice& choice : m_choices)
+            {
+                if (!choice.chosen)
+                    choices.push_back({ choice.path, choice.toy });
+            }
+            return choices;
+        }
+        void Choose(const std::string& path, bool keepToy)
+        {
+            std::lock_guard lock(m_mutex);
+            for (Choice& choice : m_choices)
+            {
+                if (choice.path == path)
+                {
+                    choice.chosen = true;
+                    choice.keepToy = keepToy;
+                }
+            }
+        }
+        uint64_t Failures() const { return m_failures; }
+
+    private:
+        struct Choice
+        {
+            std::string path;
+            FigureData toy;
+            bool chosen = false, keepToy = false;
+        };
+        static Plan Wait()
+        {
+            Plan plan;
+            plan.kind = Plan::Kind::Wait;
+            return plan;
+        }
+        // A toy: its type and serial.
+        static uint64_t Key(const FigureData& tag)
+        {
+            return uint64_t(tag[0x10] | tag[0x11] << 8) << 32 |
+                   uint32_t(tag[0] | tag[1] << 8 | tag[2] << 16 | uint32_t(tag[3]) << 24);
+        }
+        std::string PathOf(const FigureData& image)
+        {
+            std::lock_guard lock(m_mutex);
+            auto found = m_onPortal.find(Key(image));
+            return found != m_onPortal.end() ? found->second : std::string();
+        }
+        std::mutex m_mutex;
+        std::map<uint64_t, std::string> m_onPortal; // the copies in play, locked
+        std::vector<Choice> m_choices;
+        std::atomic<uint64_t> m_failures{ 0 };
+    };
+    bool g_keepRealCopies = false;
+    CollectionCopies* g_copies; // with a mixed portal and the setting on; kept until exit
 
     // Figures of the collection are locked while on the portal, so that the launcher leaves them alone.
     bool InCollection(const std::string& path) { return path.rfind(collection::Folder() + "/", 0) == 0; }
@@ -625,6 +763,11 @@ void PortalInit()
             g_emulated = new EmulatedPortal;
             g_mixed = new MixedPortal(std::move(backend), *g_emulated);
             backend.reset(g_mixed);
+            if (g_keepRealCopies)
+            {
+                g_copies = new CollectionCopies;
+                g_mixed->SetCopies(g_copies);
+            }
         }
     }
     g_backend = backend.release();
@@ -634,7 +777,8 @@ void PortalInit()
         return;
 
     if (g_mixed != nullptr)
-        fprintf(stderr, "[portal] mixed: the real portal's toys and the Toy Box's virtual seats in one portal\n");
+        fprintf(stderr, "[portal] mixed: the real portal's toys and the Toy Box's virtual seats in one portal%s\n",
+            g_copies != nullptr ? ", with a copy of each real toy" : "");
     else
         fprintf(stderr, "[portal] model: %s (emulated)\n",
             DescribePortal(GameId, g_emulated->Model().id, g_emulated->Model().idLength).c_str());
@@ -647,6 +791,8 @@ void PortalInit()
     atexit([] {
         for (int slot = 0; slot < EmulatedPortal::SlotCount; slot++)
             collection::Unlock(g_emulated->SlotPath(slot));
+        if (g_copies != nullptr)
+            g_copies->UnlockAll();
     });
     // Tests: exactly the figures of SKY_PORTAL_PLACE, whatever the last session left.
     if (const char* list = skyenv::Get("SKY_PORTAL_PLACE"))
@@ -666,6 +812,21 @@ void PortalInit()
         RestoreState();
     SDL_AddEventWatch(OnHostEvent, nullptr);
 }
+
+void PortalSetKeepRealCopies(bool on) { g_keepRealCopies = on; }
+
+std::vector<PortalRealChoice> PortalRealChoices()
+{
+    return g_copies != nullptr ? g_copies->Choices() : std::vector<PortalRealChoice>{};
+}
+
+void PortalChooseReal(const std::string& path, bool keepToy)
+{
+    if (g_copies != nullptr)
+        g_copies->Choose(path, keepToy);
+}
+
+uint64_t PortalRealWriteFailures() { return g_copies != nullptr ? g_copies->Failures() : 0; }
 
 PortalLightState PortalLight()
 {

@@ -65,6 +65,7 @@ namespace collection
         // A Swap Force half linked to the other half of its swapper (file name; empty: none, the half is a card of its
         // own). Set only when the link is good: both dumps exist, link each other, and are one top and one bottom.
         std::string partner;
+        bool realCopy = false; // the copy of a real toy, synced with it (SyncRealCopy)
         struct Use
         {
             std::string game, lastUsed; // ISO 8601, UTC
@@ -214,6 +215,41 @@ namespace collection
     // half (it has a partner) is copied with the other half and the two copies are linked; the path is the copy of the half
     // asked for.
     std::string Duplicate(const std::string& path, std::string* error = nullptr);
+
+    // --- Copies of real toys ([portal] keep_real_copies; docs/runtime/host/collection.md "Copies of real toys") -----------
+
+    // A dump linked to a real toy by its toy type and serial ("real" in its collection.json entry): the image both sides
+    // held at the last sync, and the blocks sent to the toy that it did not confirm. The toy's image as first read is kept
+    // in originals/, never pruned or deleted. Blocks are compared one by one, block 0 and the sector trailers aside: a
+    // block that differs is the toy's change when the copy still holds the synced one, the copy's when the toy does (or
+    // the toy never confirmed it), and both changed when neither does.
+    enum class RealSide
+    {
+        New, // no copy linked yet: one made from the toy
+        Same, // nothing changed
+        ToyAhead, // the toy was played elsewhere: the copy took its image (backed up first)
+        CopyAhead, // the copy was played: the toy's image backed up, `write` names the blocks it lacks
+        Both // both were played: nothing changes until ChooseRealCopy
+    };
+    struct RealCopy
+    {
+        std::string path; // the copy; empty when there is none (a bad tag, a copy another program uses, a disk error)
+        RealSide side = RealSide::New;
+        FigureData image{}; // what the game plays (Both: the copy as it is)
+        uint64_t write = 0; // bit n: block n of `image` to send to the toy
+    };
+    // The backups of a real toy's copy kept by the syncs.
+    constexpr size_t RealBackups = 5;
+    // The toy read whole, just put on a real portal: its copy found or made, and synced.
+    RealCopy SyncRealCopy(const FigureData& toy, std::string* error = nullptr);
+    // Both changed: the player keeps the toy's progress (`keepToy`) or the copy's. The side replaced is backed up first.
+    RealCopy ChooseRealCopy(const std::string& path, const FigureData& toy, bool keepToy, std::string* error = nullptr);
+    // The game wrote the copy (the first 1 KB of the dump, no backup).
+    bool WriteRealCopy(const std::string& path, const FigureData& image);
+    // A block of `image` sent to the toy: read back the same (`confirmed`), or not (the next sync sends it again).
+    bool RealCopyWritten(const std::string& path, const FigureData& image, int block, bool confirmed);
+    // originals/<toy type>-<serial>.sky: the toy's image the first time it was read.
+    std::string RealOriginalPath(const FigureData& toy);
 
     // --- Swappers: two dumps, one card (docs/runtime/host/collection.md "Swappers") ------------------------------------------
 

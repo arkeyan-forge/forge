@@ -222,6 +222,7 @@ namespace
                 "SKY_NIGHTMARE_FROM_START", false },
             { "ssa", "hd_textures", &RuntimeSettings::hdTextures, "", "SKY_HD_TEXTURES", false },
             { "portal", "toybox_auto_open", &RuntimeSettings::toyboxAutoOpen, "", "SKY_TOYBOX_AUTO_OPEN", false },
+            { "portal", "keep_real_copies", &RuntimeSettings::keepRealCopies, "", "SKY_KEEP_REAL_COPIES", false },
         };
         for (const auto& test : cases)
             CheckMember(
@@ -741,6 +742,10 @@ int main()
     portal["portal"]["toybox_auto_open"] = "maybe";
     run = Parse(portal, {}, {});
     CHECK(run.settings.toyboxAutoOpen && run.warnings.size() == 1);
+    // [portal] keep_real_copies: off by default.
+    CHECK(!Parse({}, {}, {}).settings.keepRealCopies);
+    portal["portal"] = { { "keep_real_copies", "1" } };
+    CHECK(DescribeSettings(Parse(portal, {}, {}).settings).find("real toy copies") != std::string::npos);
 
     // Pad remapping and rumble: [input] then the game's [ssa.input]; a bad value or button warns; --pad and --rumble.
     CHECK(Parse({}, {}, {}).settings.padMap.Identity() && Parse({}, {}, {}).settings.rumble[0] == "normal");

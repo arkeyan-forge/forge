@@ -20,6 +20,21 @@ constexpr size_t PortalReportSize = 32;
 // the figures listed in SKY_PORTAL_PLACE instead. Call after SDL_Init.
 void PortalInit();
 
+// [portal] keep_real_copies (off by default): a mixed portal keeps a synced copy of each real toy in the collection
+// (docs/runtime/host/portal.md "Copies of real toys"). Call before PortalInit.
+void PortalSetKeepRealCopies(bool on);
+// A real toy whose toy and copy both changed since the last sync: not shown to the game until PortalChooseReal.
+struct PortalRealChoice
+{
+    std::string path; // the copy
+    FigureData toy;   // the toy as read
+};
+std::vector<PortalRealChoice> PortalRealChoices();
+// Keeps the toy's progress (`keepToy`) or the copy's; the other side is backed up first. Then the game gets the toy.
+void PortalChooseReal(const std::string& path, bool keepToy);
+// How many blocks did not reach a real toy since the start (each kept in its copy; the next placement updates the toy).
+uint64_t PortalRealWriteFailures();
+
 // False when no portal is attached; the title then asks the player to connect one.
 bool PortalIsConnected();
 

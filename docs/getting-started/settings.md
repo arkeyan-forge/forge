@@ -7,7 +7,7 @@ Code: `runtime/host/settings.cpp` (parser), `runtime/main.cpp` (applies it), `ru
 [../porting/debugging.md](../porting/debugging.md).
 
 **Precedence, highest first: the command line (`"Skylanders Spyro's Adventure" [options] [<disc image .iso>]`; Giants: `"Skylanders Giants"`), then the
-`SKY_*` variables that mirror a setting (`SKY_LANGUAGE`, `SKY_VOICE_LANGUAGE`, `SKY_TOYBOX_AUTO_OPEN`,
+`SKY_*` variables that mirror a setting (`SKY_LANGUAGE`, `SKY_VOICE_LANGUAGE`, `SKY_TOYBOX_AUTO_OPEN`, `SKY_KEEP_REAL_COPIES`,
 `SKY_TEXTURE_DUMP`, `SKY_TEXTURE_PACKS`), then `launcher.ini` (or the file `SKY_SETTINGS` / `SKY_LAUNCHER_INI` names),
 then the defaults.** (The older `SSA_*` names, such as `SSA_LANGUAGE`, still work; `SKY_*` wins when both are set.) `launcher.ini` is shared with Arkeyan Launcher; its game section is the game's id (`[ssa]`, `[giants]`).
 
@@ -58,6 +58,7 @@ Options take their value as the next argument or after `=` (`--scale 3`, `--scal
 | `--voice-language C` | SSA: the same codes; Giants: en fr de es es-419 it nl pt sv no da fi; Swap Force: en fr; Trap Team: en de fr nl, only when speech in that language is on the mounted disc | SSA: English; Giants, Swap Force, Trap Team: the text's | `[<game id>] voice_language` (or `SKY_VOICE_LANGUAGE`); Trap Team detects speech in character archives, using `character/Init_Setup.bld` (then `permanent/global.bld`) for the regional text languages; absent speech logs a fallback to following text. [Trap Team checks](../../games/trapteam/docs/boot.md#lb-and-independent-voices), [Giants](../../games/giants/docs/boot.md#voice-language), [Swap Force](../../games/swapforce/docs/boot.md) |
 | `--select-iso`, `--launcher` | | | open the runtime's own disc picker ([runtime_launcher.md](../runtime/host/runtime_launcher.md)) |
 | (none) | 0, 1 | 1 | `[portal] toybox_auto_open` (or `SKY_TOYBOX_AUTO_OPEN`) |
+| (none) | 0, 1 | 0 | `[portal] keep_real_copies` (or `SKY_KEEP_REAL_COPIES`) |
 | `--list-gamepads` | | | prints `GUID  name` per connected gamepad and quits |
 | `--portal-probe` | | | prints one JSON line per real portal found and quits ([portal_probe.md](../runtime/host/portal_probe.md)) |
 | `--version` | | | prints the version and build and quits |
@@ -238,6 +239,9 @@ or triggers on the keyboard.)
 - **`toybox_auto_open`** (`[portal]`, default 1): when the game asks for a figure ("Player 1: place a Skylander on the
   Portal of Power"), the Toy Box opens by itself on that player's seat (emulated portal only), and closes again when
   the prompt goes away; closing it by hand does not open it again for the same prompt. [portal.md](../runtime/host/portal.md).
+- **`keep_real_copies`** (`[portal]`, default 0): with a real portal, each real toy put on is read whole and kept as a copy
+  in the collection, synced with the toy each time it is put on; the game plays the copy and every save also goes to the
+  toy. [portal.md](../runtime/host/portal.md#copies-of-real-toys-portal-keep_real_copies).
 
 `SKY_SETTINGS=<file>` (or `SKY_LAUNCHER_INI=<file>`) makes the runtime use that file instead of the player's
 `launcher.ini`; a missing or empty file means none, so the defaults apply. Every test run sets it
