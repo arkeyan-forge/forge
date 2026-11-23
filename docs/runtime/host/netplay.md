@@ -672,6 +672,57 @@ portal. Live: the host put Gill Grunt on slot 0 from the Toy Box; the guest rece
 [V] The version. A game that plays online takes a minor version (SSA 0.10.0). In an online session the window title and
 the F3 menu show `-o` after it (`netplay::VersionLabel`); the room compares the plain version.
 
+## Step 6: a quality online [Xbox] [SSA]
+
+The owner's bar (2026-11-22): solid and secure, playable with some latency and with a PC that cannot keep up, at 30 and
+at 60 FPS. Measured on an M1 Pro, two SSA instances on one Mac, offscreen, the front end.
+
+[V] **A lost connection.** No packet for `lostMs` (3 s) is a lost connection, not the end: both games hold, the session
+keeps sending, and the first authenticated packet back resumes it (`[netplay] connection lost`, `[netplay] reconnected
+after 10.1 s`). After `timeoutMs` (60 s) the game asks the player (`SessionConfig::askBeforeEnding`): wait a minute more
+(`KeepWaiting`) or continue alone (`ContinueAlone`, the solo path of a timeout). A peer that answers but does not advance
+(a long load on a slower PC) is waited for the same way instead of ending after 15 s. The UDP transport follows a peer
+whose address changed (a router that restarted), only on a packet that is authenticated and new (`AcceptPeer` after the
+sequence check). Live: the guest's process stopped for 10 s mid-session; the host reported the loss, then the
+reconnection after 10.1 s, and the 39 checkpoints that followed were equal.
+
+[V] **The input delay follows the network.** Each side moves its own delay (`adaptiveDelay`): the other game reads the
+pads by frame number, so a frame skipped by a longer delay repeats the last pad sent and the pad of a frame that falls
+on one already sent is dropped; both games read the same pads for every frame. Every 30 frames the worst of the last
+three round trips sets it (one frame more at once, one less after five calm checks); waits add one frame at most (a
+slower PC's waits would not be helped by more delay).
+
+[V] **The frame advantage.** A side whose frame is ahead of the other's (counting half the round trip), on average over
+30 frames by more than 1.5, sleeps half of it, two frames at most (`balanceAdvantage`, after GGPO's time
+synchronisation): neither side runs ahead into the delay's edge and then waits in bursts.
+
+[V] **60 FPS.** The checkpoint's hash is spread over the 30 frames of its window (`SliceAllocations`, `PlanWindow`): each
+frame hashes one part on block boundaries, the window's total is compared at the next barrier, and a repair compares the
+barrier's own blocks (`CombineBlocks`). At 60 FPS, scale 1: both games at 60.0 FPS, p95 16.7 ms; the hash 0.47 ms per
+frame instead of 16 ms every 30th. A guest byte changed at frame 900 was repaired at 930 and every later checkpoint was
+equal. At scale 2 the two instances share one GPU and hold 56 FPS; the online path itself holds 60.
+
+[V] **A slower PC.** Both games follow the slower one frame by frame, evenly: a guest slowed by 30 ms a frame
+(`SKY_NETPLAY_TEST_SLOW`) held both at 19.5 FPS, p95 within 6 ms of the median. The launcher's room says so beforehand and
+starts a GPU-bound PC one resolution scale lower (`SKY_RESOLUTION_SCALE`, this run only): two games at scales 1 and 2
+kept identical hashes. The scale cannot change in play (render targets and resolved textures keep it).
+
+[V] **Security.** The session's packets after the hellos are encrypted with ChaCha20 (`netplay/chacha20.h`, our own
+code checked against RFC 8439's vectors), a key from the session key, the nonce from the sender's side and the packet's
+sequence; the tag covers the ciphertext and is checked before anything inside is read. Protocol version 3. The launcher's
+room carries a secret in its code, encrypts its own messages and refuses guessing (described in the launcher's online page).
+
+[V] **The banner.** Nothing on screen while it plays; a corner chip with the round trip from 120 ms; a banner while the
+game is held: "Connection lost with Kaos, reconnecting... 42 s", "Still no answer", "Waiting for Kaos's game", with Esc
+or B to continue alone, Enter or A to wait more, R or Y to play together again (`host/toybox/online_banner.h`). After a
+session the F3 menu's "Play online" reads "Play together again". Either writes `online-replay.txt` and quits; the
+launcher sets the same room up again. Closing the window during a session writes `quit`.
+
+[V] **The desync report.** An online session records its inputs, both players' pads frame by frame, in its folder
+(`online-inputs.rec`, the `SKY_NETPLAY_RECORD` format); a desync the repair could not mend copies it beside the game's log
+(`netplay-desync.rec`) to replay the session alone (`SKY_NETPLAY_REPLAY`); figure changes made during the session are not
+in it.
+
 ## Testing a bad network
 
 With `SKY_NETPLAY_TEST=1`, set

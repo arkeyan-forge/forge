@@ -19,9 +19,11 @@
 #include "host/env.h"
 #include "host/launcher.h"
 #include "host/profiles.h"
+#include "host/log.h"
 #include "memory.h"
 #include <SDL3/SDL_events.h>
 #include <algorithm>
+#include <filesystem>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -152,15 +154,42 @@ namespace netplay
             return options;
         }
 
+        // The session's inputs (both players' pads, frame by frame), recorded in its folder: an unrepaired desync keeps
+        // them beside the game's log, to replay the session alone (SKY_NETPLAY_REPLAY) and find where it went apart.
+        std::filesystem::path SessionInputs()
+        {
+            return std::filesystem::path(PortalSessionFolder()) / "online-inputs.rec";
+        }
+        void KeepDesyncInputs()
+        {
+            std::error_code error;
+            const std::filesystem::path log = LogPath();
+            if (log.empty() || !std::filesystem::exists(SessionInputs(), error))
+                return;
+            const auto kept = log.parent_path() / "netplay-desync.rec";
+            if (std::filesystem::copy_file(
+                    SessionInputs(), kept, std::filesystem::copy_options::overwrite_existing, error))
+                fprintf(stderr,
+                    "[netplay] desync report: the session's inputs are in %s (replay alone with SKY_NETPLAY_REPLAY; "
+                    "figure changes made during the session are not in it)\n",
+                    kept.string().c_str());
+            else
+                fprintf(
+                    stderr, "[netplay] desync report: cannot copy the session's inputs: %s\n", error.message().c_str());
+        }
+
         void ExitSession(const SessionFailure& failure)
         {
             std::lock_guard lock(g_sessionExitMutex);
             if (g_endReason.load(std::memory_order_relaxed) != EndReason::None)
                 return;
             if (failure.reason == EndReason::Desync)
+            {
                 fprintf(stderr, "[netplay] session ended: desync frame %llu local=%016llx remote=%016llx\n",
                     static_cast<unsigned long long>(failure.frame), static_cast<unsigned long long>(failure.localHash),
                     static_cast<unsigned long long>(failure.remoteHash));
+                KeepDesyncInputs();
+            }
             else
                 fprintf(stderr, "[netplay] session %s: %s\n",
                     failure.reason >= EndReason::Protocol && failure.reason <= EndReason::Seats ? "refused" : "ended",
@@ -330,6 +359,15 @@ namespace netplay
                     if (replaying)
                         Refuse("record and replay are mutually exclusive");
                     record = Open(path, "wb");
+                    const auto header = InputHeader(g_gameInfo.id, 0);
+                    Write(record, header.data(), header.size());
+                }
+                else if (Network().enabled)
+                {
+                    // An online session always records its inputs, for the desync report.
+                    std::error_code error;
+                    std::filesystem::create_directories(SessionInputs().parent_path(), error);
+                    record = Open(SessionInputs().string().c_str(), "wb");
                     const auto header = InputHeader(g_gameInfo.id, 0);
                     Write(record, header.data(), header.size());
                 }
