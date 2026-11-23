@@ -130,6 +130,7 @@ build_and_test() { # <section> <build dir> <cmake args...>
         --emitter "$root/$dir/tools/abi/ArkeyanPublicHeaders"
     check "$section" "unit tree parity" python3 -I "$root/tools/tree_parity.py" --self-test
     check "$section" "unit leak scan words" python3 -I "$root/tools/leak_scan.py" --self-test
+    check "$section" "unit ELF jump tables" python3 -I "$root/tools/elf_switch_tables.py" --self-test
 }
 
 # run_game <game> <disc> <seconds> <press> <snapshot from frame> <extra env assignment>...

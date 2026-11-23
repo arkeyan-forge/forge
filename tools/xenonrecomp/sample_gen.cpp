@@ -1,5 +1,7 @@
 // Translates invented PowerPC samples with XenonRecomp into a header for xenonrecomp_test.cpp. No game code.
 #include "recompiler.h"
+#include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -43,6 +45,110 @@ namespace
     constexpr uint32_t D(uint32_t op, uint32_t t, uint32_t a, int32_t displacement)
     {
         return (op << 26) | (t << 21) | (a << 16) | (uint32_t(displacement) & 0xFFFF);
+    }
+
+    // A minimal big-endian PowerPC ELF: .text at `base`, its function symbols, and the section names.
+    struct ElfSymbol
+    {
+        const char* name;
+        uint32_t address, size;
+    };
+    std::vector<uint8_t> MakeElf(
+        uint32_t base, const std::vector<uint32_t>& text, const std::vector<ElfSymbol>& symbols)
+    {
+        std::vector<uint8_t> out(52 + 32);
+        auto put16 = [&](size_t at, uint32_t v) {
+            out[at] = uint8_t(v >> 8);
+            out[at + 1] = uint8_t(v);
+        };
+        auto put32 = [&](size_t at, uint32_t v) {
+            for (int i = 0; i < 4; i++)
+                out[at + i] = uint8_t(v >> (24 - 8 * i));
+        };
+        auto append32 = [&](uint32_t v) {
+            out.resize(out.size() + 4);
+            put32(out.size() - 4, v);
+        };
+        auto appendText = [&](const std::string& text) {
+            size_t at = out.size();
+            out.insert(out.end(), text.begin(), text.end());
+            return at;
+        };
+        const size_t textOffset = out.size();
+        for (uint32_t word : text)
+            append32(word);
+        const size_t textSize = out.size() - textOffset;
+        std::string names(1, '\0');
+        std::vector<uint32_t> nameOffsets;
+        for (const auto& symbol : symbols)
+        {
+            nameOffsets.push_back(uint32_t(names.size()));
+            names += symbol.name;
+            names += '\0';
+        }
+        const size_t strtab = appendText(names);
+        const size_t strtabSize = names.size();
+        while (out.size() % 4)
+            out.push_back(0);
+        const size_t symtab = out.size();
+        out.resize(out.size() + 16); // the null symbol
+        for (size_t i = 0; i < symbols.size(); i++)
+        {
+            size_t at = out.size();
+            out.resize(at + 16);
+            put32(at, nameOffsets[i]);
+            put32(at + 4, symbols[i].address);
+            put32(at + 8, symbols[i].size);
+            out[at + 12] = 0x12; // global, STT_FUNC
+            put16(at + 14, 1);   // .text
+        }
+        const size_t symtabSize = out.size() - symtab;
+        const std::string sectionNames = std::string("\0.text\0.strtab\0.symtab\0.shstrtab\0", 33);
+        const size_t shstrtab = appendText(sectionNames);
+        while (out.size() % 4)
+            out.push_back(0);
+        const size_t sections = out.size();
+        out.resize(out.size() + 5 * 40);
+        auto section = [&](int index, uint32_t name, uint32_t type, uint32_t flags, uint32_t address, size_t offset,
+                           size_t size, uint32_t link, uint32_t entry) {
+            size_t at = sections + index * 40;
+            put32(at, name);
+            put32(at + 4, type);
+            put32(at + 8, flags);
+            put32(at + 12, address);
+            put32(at + 16, uint32_t(offset));
+            put32(at + 20, uint32_t(size));
+            put32(at + 24, link);
+            put32(at + 36, entry);
+        };
+        section(1, 1, 1, 6, base, textOffset, textSize, 0, 0);       // .text: PROGBITS, alloc + exec
+        section(2, 7, 3, 0, 0, strtab, strtabSize, 0, 0);            // .strtab
+        section(3, 15, 2, 0, 0, symtab, symtabSize, 2, 16);          // .symtab, its names in .strtab
+        section(4, 23, 3, 0, 0, shstrtab, sectionNames.size(), 0, 0); // .shstrtab
+        memcpy(out.data(),
+            "\x7F"
+            "ELF\x01\x02\x01",
+            7);
+        put16(16, 2);  // executable
+        put16(18, 20); // PowerPC
+        put32(20, 1);
+        put32(24, base);
+        put32(28, 52);
+        put32(32, uint32_t(sections));
+        put16(40, 52);
+        put16(42, 32);
+        put16(44, 1);
+        put16(46, 40);
+        put16(48, 5);
+        put16(50, 4);
+        put32(52, 1); // PT_LOAD
+        put32(56, uint32_t(textOffset));
+        put32(60, base);
+        put32(64, base);
+        put32(68, uint32_t(textSize));
+        put32(72, uint32_t(textSize));
+        put32(76, 5);
+        return out;
     }
 
     struct Sample
@@ -219,6 +325,45 @@ int main(int argc, char** argv)
         }
         base += 0x1000;
     }
-    std::ofstream(argv[1], std::ios::binary) << recompiler.out << locals.out << paired.out;
+    // An ELF of the 750CL's compilers: its functions from the symbol table (b is called by no one), the register-save
+    // helpers by entry (each runs to its blr, no lr saved), and rlwimi. setting CR0.
+    constexpr uint32_t elfBase = 0x85000000, saveGpr = elfBase + 0x10;
+    std::vector<uint32_t> text = { 0x38600007, Blr, 0x38600009, Blr }; // li r3, 7; blr; li r3, 9; blr
+    for (uint32_t r = 14; r < 32; r++)
+        text.push_back(D(36, r, 11, -int32_t(32 - r) * 4)); // stw rN, -4 * (32 - N)(r11)
+    text.push_back(Blr);
+    text.push_back(
+        (20u << 26) | (4 << 21) | (3 << 16) | (8 << 11) | (16 << 6) | (23 << 1) | 1); // rlwimi. r3, r4, 8, 16, 23
+    text.push_back(Blr);
+    const std::vector<uint8_t> elf = MakeElf(elfBase, text,
+        { { "a", elfBase, 8 }, { "b", elfBase + 8, 8 }, { "__save_gpr", saveGpr, 76 }, { "c", saveGpr + 76, 8 } });
+    Recompiler fromElf;
+    fromElf.config.pairedSingles = true;
+    fromElf.config.saveGpr14Address = saveGpr;
+    fromElf.image = Image::ParseImage(elf.data(), elf.size());
+    fromElf.Analyse();
+    auto size = [&](uint32_t address) -> size_t {
+        for (const auto& fn : fromElf.functions)
+            if (fn.base == address)
+                return fn.size;
+        return 0;
+    };
+    if (fromElf.image.functionSymbols.size() != 4 || size(elfBase) != 8 || size(elfBase + 8) != 8 ||
+        size(saveGpr) != 76 || size(saveGpr + 17 * 4) != 8 || size(saveGpr + 76) != 8 || fromElf.functions.size() != 21)
+    {
+        fprintf(stderr, "the ELF's functions: %zu symbols, %zu functions, sizes %zu %zu %zu %zu %zu\n",
+            fromElf.image.functionSymbols.size(), fromElf.functions.size(), size(elfBase), size(elfBase + 8),
+            size(saveGpr), size(saveGpr + 17 * 4), size(saveGpr + 76));
+        return 1;
+    }
+    for (const auto& fn : fromElf.functions)
+    {
+        if (!fromElf.Recompile(fn))
+        {
+            fprintf(stderr, "0x%zX: not translated\n", fn.base);
+            return 1;
+        }
+    }
+    std::ofstream(argv[1], std::ios::binary) << recompiler.out << locals.out << paired.out << fromElf.out;
     return 0;
 }
