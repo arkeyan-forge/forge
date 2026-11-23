@@ -542,6 +542,43 @@ namespace
         }
     }
 
+    // The side that runs ahead slows a little every 30 frames; the pads both games read stay the same.
+    void BalancedAdvantage()
+    {
+        using namespace netplay;
+        Link link;
+        const auto configure = [&](bool host) {
+            auto config = Config(host);
+            config.delay = 4;
+            config.timeoutMs = 100000;
+            config.balanceAdvantage = true;
+            return config;
+        };
+        Session host(configure(true), std::make_unique<Wire>(link, 0));
+        Session guest(configure(false), std::make_unique<Wire>(link, 1));
+        Check(host.WaitReady() && guest.WaitReady(), "ready before the balance");
+        constexpr uint64_t Frames = 240;
+        std::vector<std::pair<uint16_t, uint16_t>> seen[2];
+        const auto play = [&](Session& session, size_t seat, int frameMs) {
+            seen[seat].resize(Frames);
+            InputFrame pads;
+            for (uint64_t frame = 0; frame < Frames; ++frame)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(frameMs));
+                Check(session.Exchange(frame, Pad(frame, seat), pads), "balanced exchange");
+                seen[seat][frame] = { pads[0].state.buttons, pads[1].state.buttons };
+            }
+        };
+        // The host's frames are quicker: it keeps running into the delay's edge, ahead, until the balance slows it.
+        std::jthread a([&] { play(host, 0, 2); });
+        play(guest, 1, 9);
+        a.join();
+        Check(seen[0] == seen[1], "both games read the same pads while one slows");
+        Check(host.Stats().balanceSlows > guest.Stats().balanceSlows, "the side ahead is the one that slows");
+        host.Stop();
+        guest.Stop();
+    }
+
     // A peer that answers but does not advance (a long load on a slower PC) is not a lost connection and ends nothing.
     void SlowPeer()
     {
@@ -782,6 +819,7 @@ int main()
     OnlineMenuAndStats();
     Reconnection();
     AdaptiveDelay();
+    BalancedAdvantage();
     SlowPeer();
     RemoteDeparture();
     RoundTrips();

@@ -199,6 +199,27 @@ namespace
             Check(netplay::HashBytes(lanes, 0x2000, {}) != base, "two words swapped between lanes change the hash");
         }
         {
+            // A checkpoint spread over 30 frames: its parts, hashed one after the other, give the whole hash's blocks.
+            std::vector<uint8_t> first(3u << 20), second(700000), third(5u << 20);
+            for (auto* memory : { &first, &second, &third })
+                for (size_t i = 0; i < memory->size(); ++i)
+                    (*memory)[i] = uint8_t((i * 2654435761u) >> 11);
+            const std::vector<netplay::Allocation> all = { { first, 0x10000, netplay::Heap::Virtual4K },
+                { second, 0x40008000, netplay::Heap::Virtual64K }, { third, 0x50000000, netplay::Heap::Physical } };
+            const std::vector<netplay::Range> holes = { { 0x40010000, 0x40010010 } };
+            std::vector<netplay::Block> whole, spread;
+            netplay::HashAllocations(all, holes, whole);
+            std::array<std::vector<netplay::Allocation>, 30> parts;
+            netplay::SliceAllocations(all, 0x10000, parts);
+            size_t nonEmpty = 0;
+            for (const auto& part : parts)
+            {
+                nonEmpty += !part.empty();
+                netplay::HashAllocations(part, holes, spread);
+            }
+            Check(spread == whole && nonEmpty >= 25, "a checkpoint spread over its frames hashes the same blocks");
+        }
+        {
             // The probe's walk over a heap: the allocation holding the address, else the next one.
             const std::map<uint32_t, uint32_t> used = { { 0x10000, 0x2000 }, { 0x40000, 0x1000 } };
             Check(AllocationAtOrAfter(used, 0x10000)->first == 0x10000 &&

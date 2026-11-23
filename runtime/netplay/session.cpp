@@ -96,6 +96,8 @@ namespace netplay
         stats.goodChecks = m_goodChecks;
         stats.delay = m_localDelay ? m_localDelay : m_delay;
         stats.delayChanges = m_delayChanges;
+        stats.frameAdvantage = m_advantage;
+        stats.balanceSlows = m_balanceSlows;
         stats.peerMenuOpen = m_peerMenuOpen;
         stats.lost = m_lost;
         stats.rejected = m_rejected;
@@ -323,6 +325,30 @@ namespace netplay
         m_recentWaitMs = 0;
     }
 
+    void Session::BalanceAdvantage(std::unique_lock<std::mutex>& lock, uint64_t frame)
+    {
+        if (!m_config.balanceAdvantage || m_peerFrame == 0)
+            return;
+        const double frameMs = 1000.0 / std::max<uint32_t>(m_config.hello.fps, 1);
+        const double transit = m_rtt == UINT64_MAX ? 0 : double(m_rtt) / 2 / frameMs;
+        // Sampled every frame, judged on the average of 30: one late packet (jitter) does not slow a side that is not
+        // ahead, which would only make both sides slower.
+        m_advantageSum += double(frame) - (double(m_peerFrame) + transit);
+        if (++m_advantageCount < 30)
+            return;
+        m_advantage = m_advantageSum / double(m_advantageCount);
+        m_advantageSum = 0;
+        m_advantageCount = 0;
+        if (m_advantage <= 1.5)
+            return;
+        // Half the advantage, two frames at most: the other side closes the rest in its own frames.
+        const auto until = std::chrono::steady_clock::now() +
+                           std::chrono::microseconds(int64_t(std::min(m_advantage / 2, 2.0) * frameMs * 1000));
+        ++m_balanceSlows;
+        while (m_failure.reason == EndReason::None && std::chrono::steady_clock::now() < until)
+            m_changed.wait_until(lock, until);
+    }
+
     void Session::SetDelay(uint32_t delay)
     {
         if (m_delay)
@@ -367,6 +393,9 @@ namespace netplay
         if (m_failure.reason != EndReason::None)
             return Solo(frame, local, pads, events);
         uint64_t inputWait = 0;
+        BalanceAdvantage(lock, frame);
+        if (m_failure.reason != EndReason::None)
+            return Solo(frame, local, pads, events);
         AdaptDelay(frame);
         const uint64_t target = frame + m_localDelay;
         if (!Wait(
@@ -504,8 +533,10 @@ namespace netplay
         auto& repair = *m_repair;
         repair.frame = m_hashFrame;
         repair.start = now;
-        repair.total = m_hash;
         const auto blocks = m_config.blocks->ListBlocks();
+        // The barrier's own total: the checkpoint's hash may have been made over the window's frames (the probe spreads
+        // it), while the repair compares the memory as it is now.
+        repair.total = CombineBlocks(blocks);
         if (blocks.size() > (MaxBlockListBytes - 4) / 16)
         {
             End(EndReason::Desync, m_hashFrame, m_hash, m_peerHash);
@@ -901,6 +932,8 @@ namespace netplay
             }
             m_ack = std::max(m_ack, packet.ack);
             m_eventAck = std::max(m_eventAck, packet.eventAck);
+            if (packet.value < m_next + 1024)
+                m_peerFrame = std::max(m_peerFrame, packet.value);
             for (size_t i = 0; i < packet.count; ++i)
             {
                 const auto& entry = packet.pads[i];
@@ -1030,6 +1063,7 @@ namespace netplay
                     frames.hash = m_hash;
                     frames.eventAck = m_receivedEvent;
                     frames.menuOpen = m_menuOpen;
+                    frames.value = m_next;
                     Send(frames);
                     const uint64_t end = std::min(m_eventSequence, m_eventAck + 8);
                     for (uint64_t sequence = m_eventAck + 1; sequence <= end; ++sequence)

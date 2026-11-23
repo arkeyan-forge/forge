@@ -39,6 +39,8 @@ namespace netplay
     inline constexpr uint64_t HashSeed = 0x6A09E667F3BCC909ull;
     uint64_t Mix(uint64_t hash, uint64_t word);
     uint64_t HashBytes(std::span<const uint8_t> bytes, uint64_t address, std::span<const Range> skips);
+    // A checkpoint's total from its blocks, in order.
+    uint64_t CombineBlocks(std::span<const Block> blocks);
     void PackBlock(
         std::span<const uint8_t> memory, uint32_t address, std::span<const Range> skips, std::vector<uint8_t>& bytes);
     bool ApplyBlock(
@@ -56,6 +58,10 @@ namespace netplay
         std::vector<Block>& blocks, uint32_t blockBytes = 0x10000, std::vector<uint64_t>* ends = nullptr);
     void HashAllocation(std::span<const uint8_t> bytes, uint32_t address, Heap heap, std::span<const Range> skips,
         std::vector<Block>& blocks, uint32_t blockBytes = 0x10000);
+    // Cuts `allocations` into parts of about the same size on block boundaries: hashing the parts one after the other
+    // gives the same blocks, in the same order, as hashing them all at once (a checkpoint spread over its frames).
+    void SliceAllocations(
+        std::span<const Allocation> allocations, uint32_t blockBytes, std::span<std::vector<Allocation>> parts);
     // A decimal count in [min, max] (a power of two when asked): the probe's block size and sampling period.
     bool ParseCount(std::string_view text, uint64_t min, uint64_t max, bool powerOfTwo, uint64_t& value);
     bool ParseSkips(std::string_view text, std::vector<Range>& ranges, std::string& error);

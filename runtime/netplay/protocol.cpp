@@ -56,7 +56,7 @@ namespace netplay
             case PacketType::Ping:
             case PacketType::Pong:
             case PacketType::Ready: return 8;
-            case PacketType::Frames: return count <= 8 ? 26 + size_t(count) * 29 : 0;
+            case PacketType::Frames: return count <= 8 ? 34 + size_t(count) * 29 : 0;
             case PacketType::End: return 25;
             case PacketType::Event: return 26 + (dump ? 1024 : 0);
             case PacketType::BlockList:
@@ -332,6 +332,7 @@ namespace netplay
             out.Number(packet.hash, 8);
             out.Number(packet.eventAck, 8);
             out.Number(packet.menuOpen, 1);
+            out.Number(packet.value, 8);
             break;
         case PacketType::Event:
             out.Number(packet.event.sequence, 8);
@@ -386,7 +387,7 @@ namespace netplay
         if (cipher != Cipher::None && PacketType(sealed[10]) != PacketType::Hello)
             Encipher(std::span(plain.bytes).subspan(32, sealed.size() - 48), key, cipher, Read(sealed.subspan(16, 8)));
         const auto type = PacketType(bytes[10]);
-        if (type == PacketType::Frames && bytes.size() < 74)
+        if (type == PacketType::Frames && bytes.size() < 82)
             return fail();
         const uint8_t count = type == PacketType::Frames ? bytes[32] : 0;
         if (type == PacketType::Event && (bytes.size() < 74 || bytes[57] > 3))
@@ -478,6 +479,7 @@ namespace netplay
             if (bytes[in.at] > 1)
                 return fail();
             result.menuOpen = in.Number(1) != 0;
+            result.value = in.Number(8);
             break;
         case PacketType::Event:
             result.event.sequence = in.Number(8);

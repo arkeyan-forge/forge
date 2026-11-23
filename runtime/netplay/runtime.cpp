@@ -290,6 +290,9 @@ namespace netplay
             std::vector<Range> skips, imageRanges;
             std::vector<Block> blocks;
             std::vector<netplay::Allocation> allocations; // of the hash being made
+            std::array<std::vector<netplay::Allocation>, 30> slices; // the network window's parts (PlanWindow)
+            std::vector<Block> windowBlocks;
+            bool windowFull = false;
             std::vector<uint64_t> ends;                   // each block's end, while locating blocks
             std::vector<Range> repairRanges;
             bool locatingBlocks = false;
@@ -388,6 +391,7 @@ namespace netplay
                     config.lostMs = 3000;
                     config.askBeforeEnding = true;
                     config.adaptiveDelay = true;
+                    config.balanceAdvantage = true;
                     config.slotPlayers = PortalOnlinePlayers();
                     config.prepareEvent = PortalPrepareOnline;
                     config.applyEvents = PortalApplyOnline;
@@ -637,26 +641,65 @@ namespace netplay
                 if (locatingBlocks)
                     for (size_t i = 0; i < blocks.size(); ++i)
                         repairRanges.push_back({ blocks[i].address, ends[i] });
-                uint64_t total = HashSeed;
-                for (const auto& block : blocks)
-                {
-                    total = Mix(total, (uint64_t(block.address) << 32) | uint32_t(block.heap));
-                    total = Mix(total, block.hash);
-                }
-                return total;
+                return CombineBlocks(blocks);
+            }
+
+            // The checkpoint's memory cut into 30 parts of about the same size, on block boundaries: one is hashed at
+            // each frame of the window (at 60 FPS a whole hash would take a frame and more at once). Both games are at
+            // the same frame, so each block is hashed at the same moment on both sides.
+            void PlanWindow()
+            {
+                allocations.clear();
+                Scan(g_virtualHeap4K, Heap::Virtual4K, 0x00010000);
+                Scan(g_virtualHeap64K, Heap::Virtual64K, 0x40000000);
+                Scan(g_physicalHeap, Heap::Physical, 0x00010000);
+                for (const auto range : imageRanges)
+                    Allocation(uint32_t(range.begin), uint32_t(range.end - range.begin), Heap::Image);
+                SliceAllocations(allocations, uint32_t(blockBytes), slices);
+                allocations.clear();
             }
 
             void Hash()
             {
-                const bool networkHash = session && !session->ContinuingSolo() && frames % 30 == 0;
+                const bool online = session && !session->ContinuingSolo();
                 const bool fileHash = totals && frames % hashEvery == 0;
-                if (!networkHash && !fileHash)
+                if (!online && !fileHash)
                     return;
                 const auto start = std::chrono::steady_clock::now();
-                if (networkHash && !Hosting() && Network().testDesync != 0 && frames == Network().testDesync)
-                    BreakOneBlock();
+                if (online)
+                {
+                    const uint64_t phase = frames % slices.size();
+                    if (phase == 0)
+                    {
+                        if (!Hosting() && Network().testDesync != 0 && frames == Network().testDesync)
+                            BreakOneBlock();
+                        // The window that just ended, compared at this barrier.
+                        if (windowFull)
+                        {
+                            NetworkWait waiting;
+                            if (!session->CheckHash(frames, CombineBlocks(windowBlocks)))
+                            {
+                                SessionExit();
+                                return;
+                            }
+                        }
+                        PlanWindow();
+                        windowBlocks.clear();
+                        windowFull = false;
+                    }
+                    HashAllocations(slices[phase], skips, windowBlocks, uint32_t(blockBytes));
+                    windowFull = phase + 1 == slices.size();
+                }
+                if (!fileHash)
+                {
+                    const double ms =
+                        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                    totalMs += ms;
+                    maxMs = std::max(maxMs, ms);
+                    ++hashed;
+                    return;
+                }
                 const uint64_t total = TotalHash();
-                if (fileHash)
                 {
                     if (fprintf(totals, "%llu %016llx\n", static_cast<unsigned long long>(frames),
                             static_cast<unsigned long long>(total)) < 0)
@@ -665,15 +708,6 @@ namespace netplay
                         WriteBlocks(sidecar);
                     if (fflush(totals) != 0 || (sidecar && fflush(sidecar) != 0))
                         Refuse("hash output flush failed");
-                }
-                if (networkHash)
-                {
-                    NetworkWait waiting;
-                    if (!session->CheckHash(frames, total))
-                    {
-                        SessionExit();
-                        return;
-                    }
                 }
                 const double ms =
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();

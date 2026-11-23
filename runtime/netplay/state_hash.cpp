@@ -187,6 +187,57 @@ namespace netplay
             worker.join();
     }
 
+    uint64_t CombineBlocks(std::span<const Block> blocks)
+    {
+        uint64_t total = HashSeed;
+        for (const auto& block : blocks)
+        {
+            total = Mix(total, (uint64_t(block.address) << 32) | uint32_t(block.heap));
+            total = Mix(total, block.hash);
+        }
+        return total;
+    }
+
+    void SliceAllocations(
+        std::span<const Allocation> allocations, uint32_t blockBytes, std::span<std::vector<Allocation>> parts)
+    {
+        for (auto& part : parts)
+            part.clear();
+        if (parts.empty())
+            return;
+        uint64_t total = 0;
+        for (const auto& allocation : allocations)
+            total += allocation.bytes.size();
+        const uint64_t share = total / parts.size() + 1;
+        size_t part = 0;
+        uint64_t filled = 0;
+        for (const auto& allocation : allocations)
+        {
+            size_t offset = 0;
+            while (offset < allocation.bytes.size())
+            {
+                const uint64_t at = uint64_t(allocation.address) + offset;
+                const uint64_t left = allocation.bytes.size() - offset;
+                uint64_t take = part + 1 < parts.size() ? std::min(left, share - filled) : left;
+                if (take < left)
+                {
+                    const uint64_t mask = ~uint64_t(blockBytes - 1);
+                    const uint64_t end = std::max((at + take) & mask, (at & mask) + blockBytes);
+                    take = std::min(end - at, left);
+                }
+                parts[part].push_back(
+                    { allocation.bytes.subspan(offset, size_t(take)), uint32_t(at), allocation.heap });
+                offset += size_t(take);
+                filled += take;
+                if (filled >= share && part + 1 < parts.size())
+                {
+                    ++part;
+                    filled = 0;
+                }
+            }
+        }
+    }
+
     void HashAllocation(std::span<const uint8_t> bytes, uint32_t address, Heap heap, std::span<const Range> skips,
         std::vector<Block>& blocks, uint32_t blockBytes)
     {
