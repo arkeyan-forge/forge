@@ -17,9 +17,9 @@ namespace toybox
         std::vector<const collection::Toy*> toys;
     };
 
-    // The toys `game` reads, by element then by category; empty groups are kept. `fits`: the families of the seat the
-    // list is for (Seat::accepts), the other toys left out; null: every toy.
-    std::vector<AddGroup> AddGroups(const std::string& game, const std::vector<collection::Category>* fits);
+    // The toys `game` reads, by element then by category; empty groups are kept. `fits`: the seat the list is for, the
+    // toys it does not take (Seat::Takes) left out; null: every toy.
+    std::vector<AddGroup> AddGroups(const std::string& game, const collection::Seat* fits);
 
     // The cards of the non-empty groups, `columns` per row; `toys` gets one entry per card (Cell::figure indexes it).
     // `showAll`: a last row of its own, a Cell::Kind::Fold that lists every toy again.

@@ -216,6 +216,9 @@ the collection folder adds toys or replaces them by toy type, and games by id. F
   element icon of a toy outside the ten elements (Kaos: `kaos`, Imaginators' `ElementIcon_Kaos`). `ride` on a
   vehicle and a SuperCharger: `land`, `sea`, `sky` (SuperChargers' `CVehicleToyData` vehicle type; a SuperCharger takes
   its vehicle's); the four Nintendo-only toys have none (not on the disc read). The card shows their icons.
+  `villain_vehicle: true` on the racing villains' vehicles (3470-3497): the Collection lists them, but no seat takes one
+  (`Seat::Takes`: the Toy Box's seats, its Add a figure list for a seat, the quick-swap wheel), because SuperChargers
+  crashes once one arrives outside a race (issue #135).
 - `edition` on a toy: the toy type itself is special (`legendary`: 404 Legendary Bash; `dark`: 28 Dark Spyro).
 - variant `kind`: legendary, dark, crystal, glow, metallic, gold, silver, chrome, flocked, series, lightcore,
   eons_elite, alt_deco (Polar, Royal, Volcanic, Granite...), event (event and store exclusives), shape (trap and crystal shapes),
@@ -485,7 +488,11 @@ Instant Spitfire `3412:0x440F`, the villain vehicles Toaster Bomber and Steam Ro
 Its intro then wants a land vehicle: Toaster Bomber (sky) gets "Incorrect VEHICLE type", Steam Roller (land) does not. A
 racing villain (Chef Pepper Jack, seated through a test catalogue whose Player 1 takes `villain`) is read too; whether
 the game plays it as a character is not known [?], so no seat takes `villain` yet: the Collection lists the villains,
-the Toy Box does not seat them.
+the Toy Box does not seat them. **Nor their vehicles** (issue #135, a player's Steam Deck, Europe disc): Toaster Bomber
+swapped onto Vehicle 1 in the Academy loads `vehiclechefpepperjack.pak` and Pepper Jack's driver banks
+(`minion_driv_mv_pepperjack*`), where a real vehicle loads `champ_v15_<vehicle>*`, and the game's main thread reads a
+null object at `+0x2C` 4 s later (the player's log) [V]. Which object only a race sets up is not known [?]; the
+`villain_vehicle` toys are kept off every seat.
 
 **Spyro's Adventure [Lux] [SSA]: no table in data.** Its accepted toy types are code ([figures.md](figures.md#toys-the-title-recognises));
 the dump lists the disc's toy pictures (`uigameimage.str`: 74 `toy_<name>_hud` and `<name>_vs`) and character models

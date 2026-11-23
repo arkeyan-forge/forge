@@ -711,6 +711,9 @@ namespace
         CHECK(std::find(skipped.begin(), skipped.end(), file) == skipped.end());
         // Giants does not read a Swap Force toy; with all eight places pinned a ninth figure is refused.
         CHECK(!SetOnWheel("giants", fileOf(Create(3000)), true));
+        // SuperChargers' wheel: a real vehicle goes on it, a racing villain's (Toaster Bomber) does not.
+        CHECK(SetOnWheel("superchargers", fileOf(Create(3225)), true));
+        CHECK(!SetOnWheel("superchargers", fileOf(Create(3470)), true));
         std::vector<WheelPlace> full(8);
         for (size_t i = 0; i < full.size(); i++)
             full[i] = { "x" + std::to_string(i) + ".sky", true };

@@ -2024,8 +2024,7 @@ namespace collection
                 return seats;
             for (const Seat& seat : g->seats)
             {
-                if (seat.player > 0 &&
-                    std::find(seat.accepts.begin(), seat.accepts.end(), figure.toy->category) != seat.accepts.end())
+                if (seat.player > 0 && seat.Takes(*figure.toy))
                     seats.push_back(seat.id);
             }
             return seats;
