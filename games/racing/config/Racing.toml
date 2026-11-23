@@ -1,0 +1,24 @@
+# XenonRecomp config for Skylanders: SuperChargers Racing (Wii, SKNP52, the Europe disc). The input is the ELF the disc
+# ships beside its main.dol (files/goliath.engine.wii.final.elf: the same sections at the same addresses, with its
+# symbols): its functions come from the symbol table, the register-save helpers are the CodeWarrior runtime's
+# (_savegpr_14, _restgpr_14, _savefpr_14, _restfpr_14), the switch tables from tools/elf_switch_tables.py. Paths are
+# relative to this file laid out as the kit does (config/Racing.toml, private/main.elf, ppc/). Output: ppc/
+# (private/racing/ppc in the workshop).
+[main]
+file_path = "../private/main.elf"
+out_directory_path = "../ppc"
+switch_table_file_path = "Racing_switch_tables.toml"
+# The 750CL's paired singles and quantized loads and stores (docs/tools/toolchain/xenonrecomp.md, "The 750CL").
+paired_singles = true
+
+# Every register in the context for now: the *_as_local options wait for the first boot.
+skip_lr = false
+skip_msr = false
+
+restgprlr_14_address = 0x80257DF8
+savegprlr_14_address = 0x80257DAC
+restfpr_14_address = 0x80257D60
+savefpr_14_address = 0x80257D14
+
+# The zero words between functions.
+invalid_instructions = [ { data = 0x00000000, size = 4 } ]

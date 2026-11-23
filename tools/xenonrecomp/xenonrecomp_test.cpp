@@ -510,6 +510,26 @@ static void PlainPowerPc(PPCContext& ctx)
     CHECK(ctx.r3.u64 == 0x300 && ctx.r4.u64 == 0x20 && memcmp(before, memory, sizeof(memory)) == 0);
 }
 
+// An ELF's functions from its symbols; the 750CL's register-save helper by entry; rlwimi. sets CR0.
+static void FromElf(PPCContext& ctx)
+{
+    sub_85000000(ctx, memory);
+    CHECK(ctx.r3.u64 == 7);
+    sub_85000008(ctx, memory); // called by no one: known from its symbol alone
+    CHECK(ctx.r3.u64 == 9);
+    ctx.r11.u64 = 0x600;
+    ctx.r30.u64 = 0x30303030;
+    ctx.r31.u64 = 0x31313131;
+    memset(memory + 0x5F0, 0, 0x10);
+    __savegprlr_30(ctx, memory); // stores r30 and r31 below r11
+    CHECK(Get16(0x5F8) == 0x3030 && Get16(0x5FC) == 0x3131 && Get16(0x5F4) == 0);
+    ctx.r3.u64 = 0x80000011;
+    ctx.r4.u64 = 0xAB;
+    ctx.cr0.lt = ctx.cr0.gt = ctx.cr0.eq = 0;
+    sub_8500005C(ctx, memory); // rlwimi. r3, r4, 8, 16, 23
+    CHECK(ctx.r3.u32 == 0x8000AB11 && ctx.cr0.lt && !ctx.cr0.gt && !ctx.cr0.eq);
+}
+
 int main()
 {
     static PPCContext ctx{};
@@ -531,6 +551,7 @@ int main()
     SpecialAndMultiple(ctx);
     BothHalves(ctx);
     PlainPowerPc(ctx);
+    FromElf(ctx);
     printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

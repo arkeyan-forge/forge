@@ -64,6 +64,7 @@ The same pages for every game ([template](porting/game_template/README.md)); `st
 | Trap Team | [status](../games/trapteam/docs/status.md), [100](../games/trapteam/docs/100.md), [010](../games/trapteam/docs/010.md), [boot](../games/trapteam/docs/boot.md), [research](../games/trapteam/docs/research.md), [shaders](../games/trapteam/docs/shaders.md), [glyphs](../games/trapteam/docs/glyphs.md), [art](../games/trapteam/docs/art.md), [toybox](../games/trapteam/docs/toybox.md) |
 | SuperChargers | [status](../games/superchargers/docs/status.md), [boot](../games/superchargers/docs/boot.md), [research](../games/superchargers/docs/research.md), [shaders](../games/superchargers/docs/shaders.md), [art](../games/superchargers/docs/art.md), [toybox](../games/superchargers/docs/toybox.md) |
 | Imaginators | [status](../games/imaginators/docs/status.md), [boot](../games/imaginators/docs/boot.md), [research](../games/imaginators/docs/research.md), [art](../games/imaginators/docs/art.md), [toybox](../games/imaginators/docs/toybox.md) |
+| SuperChargers Racing (Wii) | [status](../games/racing/docs/status.md) |
 
 Port records: [SSA](../games/ssa/docs/history.md), [Giants](../games/giants/docs/history.md),
 [Swap Force](../games/swapforce/docs/history.md).

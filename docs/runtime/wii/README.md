@@ -12,6 +12,7 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 |---|---|
 | Disc: RVZ images, partitions, file system, hash check | done: [disc_rvz.md](disc_rvz.md) |
 | CPU: the 750CL's paired singles, quantized loads and stores, GQRs, in XenonRecomp | done: [xenonrecomp.md](../../tools/toolchain/xenonrecomp.md#the-750cl-wii) |
+| The game's code: its ELF translated (functions from its symbols, the jump tables, the CodeWarrior helpers) | done: [games/racing/](../../../games/racing/README.md) |
 | Everything else | not started (#82) |
 
 ## Where the code is
