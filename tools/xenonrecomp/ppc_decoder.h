@@ -1,6 +1,6 @@
-// Our own PowerPC decoder for XenonRecomp: the Xenon's instruction set (64-bit PowerPC, VMX, VMX128), decoded into
-// the structure XenonRecomp's recompiler reads, with the same mnemonics, operand values and operand text as before.
-// Written from the public instruction-set documents only (see ppc_decoder.cpp).
+// Our own PowerPC decoder for XenonRecomp: the Xenon's instruction set (64-bit PowerPC, VMX, VMX128), or the 750CL's
+// (paired singles), decoded into the structure XenonRecomp's recompiler reads, with the same mnemonics, operand values
+// and operand text as before. Written from the public instruction-set documents only (see ppc_decoder.cpp).
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +26,11 @@ namespace ppc
 {
     // Decodes one big-endian word at a guest address. Returns 4 (the bytes consumed).
     int DecodeWord(uint32_t word, uint64_t address, ppc_insn& out);
+
+    // The 750CL (the Wii's Broadway, the GameCube's Gekko) gives primary opcodes 4, 56, 57, 60 and 61 to its paired
+    // singles and quantized loads and stores, where the Xenon has VMX and lq. On, for the whole process: one
+    // translation is of one processor's code.
+    void SetPairedSingles(bool on);
 } // namespace ppc
 
 // Fields the recompiler and the analyser read straight from the word (IBM bit numbering in the comments).

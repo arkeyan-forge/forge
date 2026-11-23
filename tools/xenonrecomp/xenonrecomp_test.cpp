@@ -1,6 +1,8 @@
 // Runs XenonRecomp's translation of invented samples (sample_gen.cpp) on the host against the PowerPC semantics.
 #include <xenonrecomp_sample.h>
+#include <cmath>
 #include <cstdio>
+#include <cstring>
 
 static int checks = 0, failures = 0;
 #define CHECK(condition)                                                                                               \
@@ -163,6 +165,351 @@ static void ContextFunctions(PPCContext& ctx)
     CHECK(ctx.r12.u64 == 9 && ctx.r30.u64 == 55);
 }
 
+// The 750CL (recompiler_750cl.inl). Each FPR is a pair: ps0 (ctx.fN) and ps1 (ctx.ps1[N]).
+static uint8_t memory[0x1000]; // the samples' guest memory, from address 0
+static void Pair(PPCContext& ctx, int n, double ps0, double ps1)
+{
+    (&ctx.f0)[n].f64 = ps0;
+    ctx.ps1[n] = ps1;
+}
+static bool Is(const PPCContext& ctx, int n, double ps0, double ps1)
+{
+    return (&ctx.f0)[n].f64 == ps0 && ctx.ps1[n] == ps1;
+}
+static void Put16(uint32_t address, uint16_t value)
+{
+    memory[address] = uint8_t(value >> 8);
+    memory[address + 1] = uint8_t(value);
+}
+static uint16_t Get16(uint32_t address) { return uint16_t(memory[address] << 8 | memory[address + 1]); }
+static void PutFloat(uint32_t address, float value)
+{
+    uint32_t bits;
+    memcpy(&bits, &value, 4);
+    Put16(address, uint16_t(bits >> 16));
+    Put16(address + 2, uint16_t(bits));
+}
+static float GetFloat(uint32_t address)
+{
+    const uint32_t bits = uint32_t(Get16(address)) << 16 | Get16(address + 2);
+    float value;
+    memcpy(&value, &bits, 4);
+    return value;
+}
+// A GQR: the load's type and scale in its upper half, the store's in its lower.
+static uint32_t Gqr(uint32_t loadType, int loadScale, uint32_t storeType, int storeScale)
+{
+    return (uint32_t(loadScale) & 0x3F) << 24 | loadType << 16 | (uint32_t(storeScale) & 0x3F) << 8 | storeType;
+}
+
+// Lane by lane, rounded to a single; the scalar forms take one lane of c; d may be a source.
+static void PairedArithmetic(PPCContext& ctx)
+{
+    auto run = [&](PPCFunc* sample) {
+        Pair(ctx, 2, 3.0, -2.0);
+        Pair(ctx, 3, 0.5, 4.0);
+        Pair(ctx, 4, 2.0, 10.0);
+        Pair(ctx, 1, 99.0, 99.0);
+        sample(ctx, memory);
+    };
+    run(sample_ps_add);
+    CHECK(Is(ctx, 1, 3.5, 2.0));
+    run(sample_ps_sub);
+    CHECK(Is(ctx, 1, 2.5, -6.0));
+    run(sample_ps_mul);
+    CHECK(Is(ctx, 1, 6.0, -20.0));
+    run(sample_ps_div);
+    CHECK(Is(ctx, 1, 6.0, -0.5));
+    run(sample_ps_madd); // a * c + b
+    CHECK(Is(ctx, 1, 6.5, -16.0));
+    run(sample_ps_msub);
+    CHECK(Is(ctx, 1, 5.5, -24.0));
+    run(sample_ps_nmadd);
+    CHECK(Is(ctx, 1, -6.5, 16.0));
+    run(sample_ps_nmsub);
+    CHECK(Is(ctx, 1, -5.5, 24.0));
+    run(sample_ps_muls0); // both lanes times c0 = 2
+    CHECK(Is(ctx, 1, 6.0, -4.0));
+    run(sample_ps_muls1); // times c1 = 10
+    CHECK(Is(ctx, 1, 30.0, -20.0));
+    run(sample_ps_madds0);
+    CHECK(Is(ctx, 1, 6.5, 0.0));
+    run(sample_ps_madds1);
+    CHECK(Is(ctx, 1, 30.5, -16.0));
+    run(sample_ps_sum0); // d0 = a0 + b1, d1 = c1
+    CHECK(Is(ctx, 1, 7.0, 10.0));
+    run(sample_ps_sum1); // d0 = c0, d1 = a0 + b1
+    CHECK(Is(ctx, 1, 2.0, 7.0));
+    run(sample_ps_sel); // a >= 0 ? c : b
+    CHECK(Is(ctx, 1, 2.0, 4.0));
+    Pair(ctx, 2, -0.0, NAN);
+    Pair(ctx, 4, 2.0, 10.0);
+    Pair(ctx, 3, 0.5, 4.0);
+    sample_ps_sel(ctx, memory); // -0 counts as zero; NaN takes b
+    CHECK(Is(ctx, 1, 2.0, 4.0));
+    run(sample_ps_res);
+    CHECK(Is(ctx, 1, 2.0, 0.25));
+    run(sample_ps_rsqrte);
+    CHECK(Is(ctx, 1, double(float(1.0 / std::sqrt(0.5))), 0.5));
+
+    // Rounded to a single: 1 + 2^-30 is 1.
+    Pair(ctx, 2, 1.0, 1.0);
+    Pair(ctx, 3, std::ldexp(1.0, -30), std::ldexp(1.0, -20));
+    sample_ps_add(ctx, memory);
+    CHECK(Is(ctx, 1, 1.0, 1.0 + std::ldexp(1.0, -20)));
+
+    // ps_add f2, f2, f3: both lanes read f2 before it is written.
+    Pair(ctx, 2, 1.0, 2.0);
+    Pair(ctx, 3, 10.0, 20.0);
+    sample_ps_add_self(ctx, memory);
+    CHECK(Is(ctx, 2, 11.0, 22.0));
+}
+
+// Sign and copy, lane by lane; the merges pick a lane of a and of b.
+static void PairedMoves(PPCContext& ctx)
+{
+    Pair(ctx, 3, -1.5, 2.0);
+    sample_ps_neg(ctx, memory);
+    CHECK(Is(ctx, 1, 1.5, -2.0));
+    sample_ps_abs(ctx, memory);
+    CHECK(Is(ctx, 1, 1.5, 2.0));
+    sample_ps_nabs(ctx, memory);
+    CHECK(Is(ctx, 1, -1.5, -2.0));
+    sample_ps_mr(ctx, memory);
+    CHECK(Is(ctx, 1, -1.5, 2.0));
+
+    Pair(ctx, 2, 1.0, 2.0);
+    Pair(ctx, 3, 3.0, 4.0);
+    sample_ps_merge00(ctx, memory);
+    CHECK(Is(ctx, 1, 1.0, 3.0));
+    sample_ps_merge01(ctx, memory);
+    CHECK(Is(ctx, 1, 1.0, 4.0));
+    sample_ps_merge10(ctx, memory);
+    CHECK(Is(ctx, 1, 2.0, 3.0));
+    sample_ps_merge11(ctx, memory);
+    CHECK(Is(ctx, 1, 2.0, 4.0));
+    sample_ps_merge10_self(ctx, memory);
+    CHECK(Is(ctx, 2, 2.0, 1.0));
+
+    // ps_merge into ps1 keeps a single: a double's extra bits go.
+    Pair(ctx, 3, 1.0 + std::ldexp(1.0, -40), 0.0);
+    sample_ps_merge00(ctx, memory);
+    CHECK(ctx.ps1[1] == 1.0);
+}
+
+// ps_cmpu0 compares lane 0, ps_cmpo1 lane 1, into cr1.
+static void PairedCompares(PPCContext& ctx)
+{
+    Pair(ctx, 2, 1.0, 5.0);
+    Pair(ctx, 3, 2.0, 5.0);
+    sample_ps_cmpu0(ctx, memory);
+    CHECK(ctx.cr1.lt && !ctx.cr1.gt && !ctx.cr1.eq);
+    sample_ps_cmpo1(ctx, memory);
+    CHECK(!ctx.cr1.lt && !ctx.cr1.gt && ctx.cr1.eq);
+}
+
+// The quantized loads: a float pair; the integer types divided by 2^scale; W set loads one value and 1.0.
+static void QuantizedLoads(PPCContext& ctx)
+{
+    ctx.r3.u64 = 0x100;
+    PutFloat(0x108, 1.25f);
+    PutFloat(0x10C, -3.0f);
+    ctx.gqr[1] = 0;
+    sample_psq_l(ctx, memory);
+    CHECK(Is(ctx, 1, 1.25, -3.0));
+
+    memory[0x108] = 10;
+    memory[0x109] = 200;
+    ctx.gqr[1] = Gqr(4, 0, 0, 0); // u8
+    sample_psq_l(ctx, memory);
+    CHECK(Is(ctx, 1, 10.0, 200.0));
+    memory[0x108] = 0xFE;
+    memory[0x109] = 6;
+    ctx.gqr[1] = Gqr(6, 1, 0, 0); // s8, halved
+    sample_psq_l(ctx, memory);
+    CHECK(Is(ctx, 1, -1.0, 3.0));
+    Put16(0x108, 0x0100);
+    Put16(0x10A, 0x0280);
+    ctx.gqr[1] = Gqr(5, 8, 0, 0); // u16 / 256
+    sample_psq_l(ctx, memory);
+    CHECK(Is(ctx, 1, 1.0, 2.5));
+    Put16(0x108, 0xFFFF);
+    Put16(0x10A, 0x0003);
+    ctx.gqr[1] = Gqr(7, -2, 0, 0); // s16 * 4
+    sample_psq_l(ctx, memory);
+    CHECK(Is(ctx, 1, -4.0, 12.0));
+
+    PutFloat(0xFC, 7.0f);
+    ctx.gqr[1] = 0;
+    sample_psq_l_single(ctx, memory); // -4(r3)
+    CHECK(Is(ctx, 1, 7.0, 1.0));
+
+    PutFloat(0x110, 0.5f);
+    PutFloat(0x114, 0.75f);
+    sample_psq_lu(ctx, memory); // 16(r3), then r3 = 0x110
+    CHECK(Is(ctx, 1, 0.5, 0.75) && ctx.r3.u32 == 0x110);
+
+    ctx.r3.u64 = 0x100;
+    ctx.r4.u64 = 0x10;
+    sample_psq_lx(ctx, memory);
+    CHECK(Is(ctx, 1, 0.5, 0.75) && ctx.r3.u32 == 0x100);
+    sample_psq_lux(ctx, memory);
+    CHECK(Is(ctx, 1, 0.5, 0.75) && ctx.r3.u32 == 0x110);
+}
+
+// The quantized stores: times 2^scale, toward zero, saturated; NaN stores 0; W set stores ps0 alone.
+static void QuantizedStores(PPCContext& ctx)
+{
+    ctx.r3.u64 = 0x200;
+    ctx.gqr[1] = 0;
+    Pair(ctx, 1, 1.5, -2.25);
+    sample_psq_st(ctx, memory);
+    CHECK(GetFloat(0x208) == 1.5f && GetFloat(0x20C) == -2.25f);
+
+    ctx.gqr[1] = Gqr(0, 0, 7, 8); // s16 * 256
+    Pair(ctx, 1, 1.5, -0.5);
+    sample_psq_st(ctx, memory);
+    CHECK(Get16(0x208) == 0x0180 && Get16(0x20A) == 0xFF80);
+
+    ctx.gqr[1] = Gqr(0, 0, 4, 0); // u8
+    Pair(ctx, 1, 300.0, -5.0);
+    sample_psq_st(ctx, memory);
+    CHECK(memory[0x208] == 255 && memory[0x209] == 0);
+    Pair(ctx, 1, 2.9, NAN);
+    sample_psq_st(ctx, memory);
+    CHECK(memory[0x208] == 2 && memory[0x209] == 0);
+
+    ctx.gqr[1] = Gqr(0, 0, 6, 0); // s8
+    Pair(ctx, 1, -200.0, -2.9);
+    sample_psq_st(ctx, memory);
+    CHECK(memory[0x208] == 0x80 && memory[0x209] == 0xFE);
+
+    ctx.gqr[1] = Gqr(0, 0, 5, -1); // u16, halved
+    Pair(ctx, 1, 100.0, 70000.0 * 2);
+    sample_psq_st(ctx, memory);
+    CHECK(Get16(0x208) == 50 && Get16(0x20A) == 0xFFFF);
+
+    ctx.gqr[1] = 0;
+    memset(memory + 0x200, 0xAA, 8);
+    Pair(ctx, 1, 3.0, 4.0);
+    sample_psq_st_single(ctx, memory);
+    CHECK(GetFloat(0x200) == 3.0f && memory[0x204] == 0xAA);
+
+    sample_psq_stu(ctx, memory);
+    CHECK(GetFloat(0x210) == 3.0f && GetFloat(0x214) == 4.0f && ctx.r3.u32 == 0x210);
+    ctx.r3.u64 = 0x200;
+    ctx.r4.u64 = 0x20;
+    sample_psq_stx(ctx, memory);
+    CHECK(GetFloat(0x220) == 3.0f && ctx.r3.u32 == 0x200);
+    sample_psq_stux(ctx, memory);
+    CHECK(GetFloat(0x224) == 4.0f && ctx.r3.u32 == 0x220);
+}
+
+// GQRs through mtspr and mfspr; dcbz_l zeroes 32 bytes; lmw and stmw move r29-r31.
+static void SpecialAndMultiple(PPCContext& ctx)
+{
+    ctx.r5.u64 = 0x12345678;
+    sample_mtgqr(ctx, memory);
+    CHECK(ctx.gqr[1] == 0x12345678);
+    ctx.gqr[1] = 0x0A0B0C0D;
+    sample_mfgqr(ctx, memory);
+    CHECK(ctx.r6.u64 == 0x0A0B0C0D);
+
+    memset(memory + 0x300, 0xFF, 0x60);
+    ctx.r3.u64 = 0x300;
+    ctx.r4.u64 = 0x25; // inside the line at 0x320
+    sample_dcbz_l(ctx, memory);
+    CHECK(memory[0x31F] == 0xFF && memory[0x320] == 0 && memory[0x33F] == 0 && memory[0x340] == 0xFF);
+
+    ctx.r3.u64 = 0x400;
+    ctx.r29.u64 = 0x11111111;
+    ctx.r30.u64 = 0x22222222;
+    ctx.r31.u64 = 0x33333333;
+    sample_stmw(ctx, memory);
+    CHECK(Get16(0x408) == 0x1111 && Get16(0x40C) == 0x2222 && Get16(0x412) == 0x3333);
+    ctx.r29.u64 = ctx.r30.u64 = ctx.r31.u64 = 0;
+    Put16(0x410, 0x8000);
+    sample_lmw(ctx, memory);
+    CHECK(ctx.r29.u64 == 0x11111111 && ctx.r30.u64 == 0x22222222 && ctx.r31.u64 == 0x80003333);
+}
+
+// lfs and the single-precision arithmetic fill both halves; lfd and fmr leave ps1.
+static void BothHalves(PPCContext& ctx)
+{
+    ctx.r3.u64 = 0x500;
+    PutFloat(0x500, 6.5f);
+    Pair(ctx, 1, 0.0, 9.0);
+    sample_lfs_fill(ctx, memory);
+    CHECK(Is(ctx, 1, 6.5, 6.5));
+    Pair(ctx, 1, 0.0, 9.0);
+    sample_lfd_keep(ctx, memory);
+    CHECK(ctx.ps1[1] == 9.0);
+    Pair(ctx, 2, 1.0, 0.0);
+    Pair(ctx, 3, 2.0, 0.0);
+    sample_fadds_fill(ctx, memory);
+    CHECK(Is(ctx, 1, 3.0, 3.0));
+    Pair(ctx, 1, 0.0, 9.0);
+    sample_fmr_keep(ctx, memory);
+    CHECK(Is(ctx, 1, 2.0, 9.0));
+}
+
+// fcmpo as fcmpu; the CR logical forms by bit; rlwnm; mfctr, mfxer; the barriers do nothing.
+static void PlainPowerPc(PPCContext& ctx)
+{
+    Pair(ctx, 2, 1.0, 0.0);
+    Pair(ctx, 3, NAN, 0.0);
+    sample_fcmpo(ctx, memory);
+    CHECK(!ctx.cr1.lt && !ctx.cr1.gt && !ctx.cr1.eq && ctx.cr1.so); // unordered
+    for (int lt = 0; lt < 2; lt++)
+    {
+        for (int gt = 0; gt < 2; gt++)
+        {
+            ctx.cr0.lt = uint8_t(lt);
+            ctx.cr0.gt = uint8_t(gt);
+            ctx.cr0.eq = 1;
+            sample_cror(ctx, memory);
+            CHECK(ctx.cr1.eq == (lt | gt));
+            sample_crxor(ctx, memory);
+            CHECK(ctx.cr1.lt == (lt ^ gt));
+            sample_crnor(ctx, memory);
+            CHECK(ctx.cr1.lt == !(lt | gt));
+            sample_crandc(ctx, memory);
+            CHECK(ctx.cr1.lt == (lt & !gt));
+        }
+    }
+    ctx.cr1.lt = 1;
+    sample_crnot(ctx, memory); // cr1.lt = !cr0.eq, cr0.eq is 1
+    CHECK(ctx.cr1.lt == 0);
+    sample_crset(ctx, memory);
+    CHECK(ctx.cr1.eq == 1);
+    sample_crclr(ctx, memory);
+    CHECK(ctx.cr1.eq == 0);
+
+    ctx.r4.u64 = 0x12345678;
+    ctx.r5.u64 = 0xFFFFFF08; // 8: the low five bits only
+    sample_rlwnm(ctx, memory); // rotlw by 8, keep bits 24-31
+    CHECK(ctx.r3.u64 == 0x12);
+
+    ctx.ctr.u64 = 0xABCD;
+    sample_mfctr(ctx, memory);
+    CHECK(ctx.r3.u64 == 0xABCD);
+    ctx.xer.so = 1;
+    ctx.xer.ov = 0;
+    ctx.xer.ca = 1;
+    sample_mfxer(ctx, memory);
+    CHECK(ctx.r3.u64 == 0xA0000000);
+
+    // Nothing to see: the registers they name and the memory stay as they were.
+    static uint8_t before[sizeof(memory)];
+    memcpy(before, memory, sizeof(memory));
+    ctx.r3.u64 = 0x300;
+    ctx.r4.u64 = 0x20;
+    sample_isync(ctx, memory);
+    sample_icbi(ctx, memory);
+    sample_dcbi(ctx, memory);
+    CHECK(ctx.r3.u64 == 0x300 && ctx.r4.u64 == 0x20 && memcmp(before, memory, sizeof(memory)) == 0);
+}
+
 int main()
 {
     static PPCContext ctx{};
@@ -176,6 +523,14 @@ int main()
     PackModulo(ctx);
     PackHalf2(ctx);
     ContextFunctions(ctx);
+    PairedArithmetic(ctx);
+    PairedMoves(ctx);
+    PairedCompares(ctx);
+    QuantizedLoads(ctx);
+    QuantizedStores(ctx);
+    SpecialAndMultiple(ctx);
+    BothHalves(ctx);
+    PlainPowerPc(ctx);
     printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
