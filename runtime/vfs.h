@@ -2,35 +2,44 @@
 
 #include "platform/platform.h"
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+namespace disc
+{
+    class WiiDisc;
+}
+
 // Read-only view of the game's files: the disc's XDVDFS file system read straight from the ISO, a folder holding a copy of
-// them ("Copy the game data", host/collection/game_data.h), or the pack of a portable game (host/collection/portable_pack.h:
-// its game/ files, at the end of the game's own executable or in game.skypack): Open takes any of them.
+// them ("Copy the game data", host/collection/game_data.h), the pack of a portable game (host/collection/portable_pack.h:
+// its game/ files, at the end of the game's own executable or in game.skypack), or a Wii disc's RVZ image (its game
+// partition, laid out as sys/ and files/: disc/wii_disc.h): Open takes any of them.
 class DiscFileSystem
 {
 public:
     struct Entry
     {
-        uint64_t offset; // byte offset in the ISO (or the pack)
+        uint64_t offset; // byte offset in the ISO (or the pack, or the Wii game partition's data)
         uint32_t size;
         bool directory;
         std::string name; // as on the disc (paths are looked up in lowercase)
         std::string host; // folder mode: the file's path on the host (opened for each read: no handle is kept)
     };
 
-    DiscFileSystem() = default;
+    DiscFileSystem();
     DiscFileSystem(const DiscFileSystem&) = delete;
     DiscFileSystem& operator=(const DiscFileSystem&) = delete;
     ~DiscFileSystem();
 
-    // `path`: a disc image, a folder with the disc's files, or a file ending with a pack (each needs a default.xex).
+    // `path`: a disc image, a folder with the disc's files, or a file ending with a pack (each needs a default.xex), or
+    // a Wii disc's RVZ (it needs a sys/main.dol).
     bool Open(const char* path);
     bool FromFolder() const { return m_folder; }
     bool FromPack() const { return m_pack; }
+    const disc::WiiDisc* Wii() const { return m_wii.get(); } // the Wii disc, when Open took one
 
     // `path` is relative to the disc root, any case, '\' or '/' separators. Empty means the root.
     const Entry* Find(const std::string& path) const;
@@ -53,9 +62,11 @@ private:
     std::unordered_set<uint32_t> m_directories; // the extents indexed so far, while Open walks
     bool m_folder = false;
     bool m_pack = false;
+    std::unique_ptr<disc::WiiDisc> m_wii;
 
     bool OpenFolder(const char* path);
     bool OpenPack(const char* path);
+    bool OpenWii(const char* path);
     // A real disc's directories are a few sectors and a few levels deep.
     static constexpr uint32_t MaxDirectorySize = 16u << 20;
     static constexpr int MaxDirectoryDepth = 64;

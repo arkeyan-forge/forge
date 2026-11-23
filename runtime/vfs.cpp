@@ -1,4 +1,5 @@
 #include "vfs.h"
+#include "disc/wii_disc.h"
 #include "host/collection/portable_pack.h"
 #include "host/env.h"
 #include "read_fully.h"
@@ -30,6 +31,8 @@ std::string DiscFileSystem::Normalize(std::string path)
         path.pop_back();
     return path;
 }
+
+DiscFileSystem::DiscFileSystem() = default;
 
 DiscFileSystem::~DiscFileSystem()
 {
@@ -100,6 +103,28 @@ bool DiscFileSystem::OpenPack(const char* path)
     return m_file != InvalidPlatformFile && Find("default.xex") != nullptr;
 }
 
+// A Wii disc's RVZ: the game partition's files, read through the image (entries hold offsets in the partition's data).
+bool DiscFileSystem::OpenWii(const char* path)
+{
+    auto wii = std::make_unique<disc::WiiDisc>();
+    std::string error;
+    if (!wii->Open(path, error))
+    {
+        fprintf(stderr, "[file] %s: %s\n", path, error.c_str());
+        return false;
+    }
+    m_entries[""] = { 0, 0, true, "", "" };
+    for (const disc::WiiDisc::File& file : wii->Files())
+    {
+        if (m_entries.size() > MaxEntries)
+            return false;
+        m_entries[Normalize(file.path)] = { file.offset, file.size, file.directory,
+            file.path.substr(file.path.rfind('/') + 1), "" };
+    }
+    m_wii = std::move(wii);
+    return Find("sys/main.dol") != nullptr;
+}
+
 bool DiscFileSystem::Open(const char* isoPath)
 {
     if (m_file != InvalidPlatformFile)
@@ -108,9 +133,18 @@ bool DiscFileSystem::Open(const char* isoPath)
     m_entries.clear();
     m_folder = false;
     m_pack = false;
+    m_wii.reset();
     std::error_code directoryError;
     if (fs::is_directory(FromUtf8(isoPath), directoryError))
         return OpenFolder(isoPath);
+    if (disc::RvzImage::IsRvz(isoPath))
+    {
+        if (OpenWii(isoPath))
+            return true;
+        m_entries.clear();
+        m_wii.reset();
+        return false;
+    }
     if (OpenPack(isoPath))
         return true;
     if (m_file != InvalidPlatformFile)
@@ -226,6 +260,7 @@ std::vector<const DiscFileSystem::Entry*> DiscFileSystem::List(const std::string
     }
     std::sort(children.begin(), children.end());
     std::vector<const Entry*> entries;
+    entries.reserve(children.size());
     for (const auto& child : children)
         entries.push_back(child.second);
     return entries;
@@ -287,6 +322,8 @@ uint32_t DiscFileSystem::Read(const Entry& entry, uint64_t position, void* buffe
         return 0;
 
     size = uint32_t(std::min<uint64_t>(size, entry.size - position));
+    if (m_wii != nullptr)
+        return m_wii->Read(entry.offset + position, buffer, size) ? size : 0;
     PlatformFile file = m_folder ? PlatformOpenFile(entry.host.c_str()) : m_file;
     if (file == InvalidPlatformFile)
         return 0;
@@ -312,7 +349,8 @@ uint32_t DiscFileSystem::Read(const Entry& entry, uint64_t position, void* buffe
     if (result.failures != 0 && logged.fetch_add(1) < 50)
         fprintf(stderr, "[file] read %s @%llu len %u: %u failed attempt(s), system error %d; %s\n", entry.name.c_str(),
             (unsigned long long)position, size, result.failures, result.error,
-            result.bytes == size ? "read in full on a retry" : "the rest is missing (the game sees the end of the file)");
+            result.bytes == size ? "read in full on a retry"
+                                 : "the rest is missing (the game sees the end of the file)");
     return result.bytes;
 }
 
