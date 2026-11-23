@@ -449,8 +449,8 @@ namespace netplay
                         g_probe.store(this, std::memory_order_release);
                         return;
                     }
-                    if (Network().testNet)
-                        transport = SimulateNetwork(std::move(transport), *Network().testNet, [] {
+                    if (const auto& simulated = Network().testNet)
+                        transport = SimulateNetwork(std::move(transport), *simulated, [] {
                             return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now().time_since_epoch())
                                     .count());
