@@ -7,6 +7,12 @@ namespace imgui_software
 {
     namespace
     {
+        // ImGui keeps a renderer's texture as an integer id; Ref makes it from a Texture's address.
+        Texture* FromId(ImTextureID id)
+        {
+            return reinterpret_cast<Texture*>(intptr_t(id)); // NOLINT(performance-no-int-to-ptr)
+        }
+
         struct Rect
         {
             int x0, y0, x1, y1; // [x0, x1) x [y0, y1)
@@ -180,9 +186,9 @@ namespace imgui_software
                     float k0 = w[0] / area, k1 = w[1] / area;
                     auto lerp = [&](int Color::* channel) {
                         int last = colors[2].*channel;
-                        return std::clamp(
-                            int(last + (colors[0].*channel - last) * k0 + (colors[1].*channel - last) * k1 + 0.5f), 0,
-                            255);
+                        return std::clamp(int(std::lround(last + (colors[0].*channel - last) * k0 +
+                                                          (colors[1].*channel - last) * k1)),
+                            0, 255);
                     };
                     Color color = { lerp(&Color::r), lerp(&Color::g), lerp(&Color::b), lerp(&Color::a) };
                     if (texture != nullptr)
@@ -279,7 +285,7 @@ namespace imgui_software
             }
             else if (data->Status == ImTextureStatus_WantUpdates)
             {
-                auto* texture = reinterpret_cast<Texture*>(intptr_t(data->TexID));
+                auto* texture = FromId(data->TexID);
                 for (const ImTextureRect& r : data->Updates)
                 {
                     for (int y = r.y; y < r.y + r.h; y++)
@@ -290,7 +296,7 @@ namespace imgui_software
             }
             else if (data->Status == ImTextureStatus_WantDestroy)
             {
-                delete reinterpret_cast<Texture*>(intptr_t(data->TexID));
+                delete FromId(data->TexID);
                 data->SetTexID(ImTextureID_Invalid);
                 data->SetStatus(ImTextureStatus_Destroyed);
             }
@@ -302,6 +308,23 @@ namespace imgui_software
         ImGuiIO& io = ImGui::GetIO();
         io.BackendRendererName = "imgui_software";
         io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
+    }
+
+    void Shutdown()
+    {
+        for (ImTextureData* texture : ImGui::GetPlatformIO().Textures)
+        {
+            // A texture shared with another context stays until that one shuts down.
+            if (texture->RefCount == 1 && texture->Status != ImTextureStatus_Destroyed &&
+                texture->TexID != ImTextureID_Invalid)
+            {
+                texture->SetStatus(ImTextureStatus_WantDestroy);
+                UpdateTexture(texture);
+            }
+        }
+        ImGuiIO& io = ImGui::GetIO();
+        io.BackendRendererName = nullptr;
+        io.BackendFlags &= ~(ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures);
     }
 
     void NewFrame()
@@ -340,7 +363,7 @@ namespace imgui_software
                 const ImVec4 r((command.ClipRect.x - origin.x) * scale.x, (command.ClipRect.y - origin.y) * scale.y,
                     (command.ClipRect.z - origin.x) * scale.x, (command.ClipRect.w - origin.y) * scale.y);
                 const Rect clip = Intersect({ int(r.x), int(r.y), int(r.z), int(r.w) }, bounds);
-                const auto* texture = reinterpret_cast<const Texture*>(intptr_t(command.GetTexID()));
+                const Texture* texture = FromId(command.GetTexID());
                 const ImDrawVert* vertices = list->VtxBuffer.Data + command.VtxOffset;
                 const ImDrawIdx* indices = list->IdxBuffer.Data + command.IdxOffset;
                 // Triangles are paired as they come: a pair that makes a rectangle is drawn as one, otherwise the

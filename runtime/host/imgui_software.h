@@ -26,6 +26,9 @@ namespace imgui_software
     // After ImGui::CreateContext: declares the renderer to ImGui (textures it creates, large meshes).
     void Init();
 
+    // Before ImGui::DestroyContext: frees the textures Render created for ImGui.
+    void Shutdown();
+
     // ImGui::NewFrame for this renderer: every font's glyphs at the frame's DisplayFramebufferScale. ImGui gives it to the
     // current font only; another one, drawn with ImDrawList::AddText(font, ...), would be rasterized at 1 and scaled up.
     void NewFrame();

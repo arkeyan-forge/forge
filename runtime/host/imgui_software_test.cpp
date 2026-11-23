@@ -167,6 +167,7 @@ int main()
         CHECK(pushed.pixels == direct.pixels);
     }
 
+    imgui_software::Shutdown();
     ImGui::DestroyContext();
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
