@@ -10,4 +10,5 @@ Index of the whole tree: [../README.md](../README.md). How the code is split bet
 |---|---|
 | [xbox360/](xbox360/README.md) | The console: kernel and XAM imports, threads, memory, files, saves, audio and XMA, vblank, input, the XEX loader, stubs |
 | [gpu/](gpu/README.md) | The GPU: replacing D3D9LTCG (Option B), Xenos registers, command buffers, the ring mirror, EDRAM, textures, shaders, pipelines, plume, rendering bugs, ultrawide, texture packs |
+| [wii/](wii/README.md) | The Wii, for SuperChargers Racing: the disc from an RVZ image, so far |
 | [host/](host/README.md) | What the host adds: portal, figures, the shared collection, the Toy Box, the disc's pictures, the runtime's `--launcher` window |

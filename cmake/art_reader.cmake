@@ -56,13 +56,17 @@ target_include_directories(ArkeyanArtReader PUBLIC ${ARKEYAN_RUNTIME_DIR})
 target_include_directories(ArkeyanArtReader SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb) # a dashboard backdrop is a JPEG
 target_link_libraries(ArkeyanArtReader PUBLIC SDL3::SDL3-static)
 
+# A Wii disc's RVZ image (disc/wii_disc.h), read by vfs.cpp; zstd unpacks its groups.
+set(ARKEYAN_DISC_SOURCES ${ARKEYAN_RUNTIME_DIR}/disc/rvz.cpp ${ARKEYAN_RUNTIME_DIR}/disc/sha1.cpp
+    ${ARKEYAN_RUNTIME_DIR}/disc/wii_disc.cpp)
 # The disc reader and the host OS layer, built once for the unit tests and Arkeyan-Builder instead of into each target.
 # ArkeyanArtReader is the collection library too: the tests link it rather than compile ARKEYAN_COLLECTION_SOURCES.
 if(WIN32)
-    add_library(ArkeyanHostFiles STATIC ${ARKEYAN_RUNTIME_DIR}/vfs.cpp ${ARKEYAN_RUNTIME_DIR}/platform/platform_win32.cpp)
+    add_library(ArkeyanHostFiles STATIC ${ARKEYAN_RUNTIME_DIR}/vfs.cpp ${ARKEYAN_DISC_SOURCES} ${ARKEYAN_RUNTIME_DIR}/platform/platform_win32.cpp)
     target_compile_definitions(ArkeyanHostFiles PRIVATE _WIN32_WINNT=0x0A00) # Windows 10 (CreateFile2)
     target_link_libraries(ArkeyanHostFiles PUBLIC winmm) # timeBeginPeriod
 else()
-    add_library(ArkeyanHostFiles STATIC ${ARKEYAN_RUNTIME_DIR}/vfs.cpp ${ARKEYAN_RUNTIME_DIR}/platform/platform_posix.cpp)
+    add_library(ArkeyanHostFiles STATIC ${ARKEYAN_RUNTIME_DIR}/vfs.cpp ${ARKEYAN_DISC_SOURCES} ${ARKEYAN_RUNTIME_DIR}/platform/platform_posix.cpp)
 endif()
 target_link_libraries(ArkeyanHostFiles PUBLIC ArkeyanArtReader) # vfs.cpp reads the portable game's pack
+target_link_libraries(ArkeyanHostFiles PRIVATE libzstd_static)

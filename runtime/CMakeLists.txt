@@ -54,6 +54,9 @@ add_executable(ArkeyanRuntime
     thread.cpp
     indirect_call_guard.cpp
     vfs.cpp
+    disc/rvz.cpp
+    disc/sha1.cpp
+    disc/wii_disc.cpp
     kernel/audio.cpp
     host/audio.cpp
     host/display.cpp
@@ -234,7 +237,7 @@ if(ARKEYAN_UWP)
     target_link_libraries(ArkeyanPresentTest PRIVATE plume)
     target_link_options(ArkeyanPresentTest PRIVATE -municode)
 endif()
-target_link_libraries(ArkeyanRuntime PRIVATE ArkeyanRecompLib ArkeyanRecompGpu ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
+target_link_libraries(ArkeyanRuntime PRIVATE ArkeyanRecompLib ArkeyanRecompGpu ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static libzstd_static)
 # ppc_context.h and ppc_config.h are XenonRecomp's output: system headers here, so their warnings stay out of ours. System
 # directories come after every -I one, so XenonUtils (which has its own ppc_context.h) is one too, after the game's.
 target_include_directories(ArkeyanRuntime SYSTEM PRIVATE ${ARKEYAN_PPC_DIR} ${ARKEYAN_XENON_UTILS})
@@ -837,6 +840,12 @@ target_link_libraries(ArkeyanFileListTest PRIVATE ArkeyanArtReader)
 add_executable(ArkeyanVfsTest vfs_test.cpp)
 target_include_directories(ArkeyanVfsTest PRIVATE .)
 target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
+
+# The Wii disc reader on synthetic RVZ images, damaged and crafted ones too: ./ArkeyanRvzTest [scratch dir]; with
+# --disc <image.rvz>, a real disc's files are listed and its hashes checked.
+add_executable(ArkeyanRvzTest disc/rvz_test.cpp)
+target_include_directories(ArkeyanRvzTest PRIVATE .)
+target_link_libraries(ArkeyanRvzTest PRIVATE ArkeyanHostFiles)
 
 # The portable game's pack and the game's reader of it (synthetic files, scratch folders only): ./ArkeyanPortablePackTest <scratch dir>
 add_executable(ArkeyanPortablePackTest host/collection/portable_pack_test.cpp)

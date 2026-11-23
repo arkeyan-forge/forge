@@ -1221,7 +1221,7 @@ That's all there is to it!
 - **Source**: `thirdparty/XenosRecomp/thirdparty/zstd/` (v1.5.7)
 - **Copyright**: Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
 - **Licence**: BSD 3-Clause License (from `thirdparty/XenosRecomp/thirdparty/zstd/LICENSE`)
-- **Notes**: Decompresses the translated shader cache in `ArkeyanRecompGpu`.
+- **Notes**: Decompresses the translated shader cache in `ArkeyanRecompGpu`, and the groups of a Wii disc's RVZ image (`runtime/disc/rvz.cpp`).
 
 ```text
 BSD License
