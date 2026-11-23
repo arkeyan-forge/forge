@@ -797,11 +797,109 @@ namespace
             Check(ended, "end notification reaches the host without another frame");
         }
     }
-
+    // A repair at the late check: both games hold 8 frames after the checkpoint, and the guest must keep acknowledging
+    // the commit until the host is past that frame, though the host's inputs already reach beyond it.
+    void LateRepair(bool chaos)
+    {
+        using namespace netplay;
+        Link link;
+        link.chaos = chaos;
+        Blocks hostBlocks(80), guestBlocks = hostBlocks;
+        auto host = Config(true), guest = Config(false);
+        std::atomic<uint64_t> time{ 2000 };
+        host.now = guest.now = [&] { return time.load(); };
+        host.timeoutMs = guest.timeoutMs = 100000;
+        host.blocks = &hostBlocks;
+        guest.blocks = &guestBlocks;
+        Session first(host, std::make_unique<Wire>(link, 0));
+        Session second(guest, std::make_unique<Wire>(link, 1));
+        Check(first.WaitReady() && second.WaitReady(), "late repair: ready");
+        const auto advance = [&](Session& session, size_t seat, uint64_t from, uint64_t to) {
+            InputFrame pads;
+            for (uint64_t f = from; f < to; ++f)
+                Check(session.Exchange(f, Pad(f, seat), pads), "late repair: frames advance");
+        };
+        const auto both = [&](auto&& step) {
+            std::thread a([&] { step(first, 0); });
+            std::thread b([&] { step(second, 1); });
+            a.join();
+            b.join();
+        };
+        both([&](Session& session, size_t seat) { advance(session, seat, 0, 30); });
+        guestBlocks.bytes[3][0] ^= 0x80;
+        const uint64_t hashes[2] = { hostBlocks.TotalHash(), guestBlocks.TotalHash() };
+        std::array<bool, 2> repaired{}, checked{};
+        both([&](Session& session, size_t seat) {
+            Check(session.PostHash(30, hashes[seat]), "late repair: posted");
+            advance(session, seat, 30, 38);
+            bool done = false;
+            checked[seat] = session.CheckPostedHash(30, done);
+            repaired[seat] = done;
+        });
+        Check(checked[0] && checked[1] && repaired[0] && repaired[1], "late repair: both repaired at the late check");
+        Check(hostBlocks.bytes == guestBlocks.bytes, "late repair: the guest's block put back");
+        both([&](Session& session, size_t seat) {
+            advance(session, seat, 38, 60);
+            Check(session.CheckHash(60, seat == 0 ? hostBlocks.TotalHash() : guestBlocks.TotalHash()),
+                "late repair: in sync after it");
+        });
+        Check(first.Failure().reason == EndReason::None && second.Failure().reason == EndReason::None,
+            "late repair: the session goes on");
+    }
+    // A checkpoint posted at its frame and compared 8 frames later: both games play those frames without waiting for
+    // the other's hash, an equal one counts as a good check, an unequal one ends the session there (no block source).
+    void LateCheck(bool differ)
+    {
+        Link link;
+        link.chaos = true;
+        netplay::Session first(Config(true), std::make_unique<Wire>(link, 0));
+        netplay::Session second(Config(false), std::make_unique<Wire>(link, 1));
+        std::array<uint64_t, 2> stopped{};
+        const auto play = [&](netplay::Session& session, size_t seat) {
+            Check(session.WaitReady(), "late check: ready");
+            uint64_t posted = 0;
+            for (uint64_t frame = 0; frame < 150; ++frame)
+            {
+                netplay::InputFrame pads{};
+                Check(session.Exchange(frame, Pad(frame, seat), pads), "late check: exchange");
+                const uint64_t next = frame + 1;
+                if (next % 30 == 0)
+                {
+                    Check(session.PostHash(next, differ && seat == 1 && next == 60 ? 7 : next), "hash posted");
+                    posted = next;
+                }
+                else if (next % 30 == 8 && posted)
+                {
+                    bool repaired = true;
+                    if (!session.CheckPostedHash(std::exchange(posted, 0), repaired))
+                    {
+                        stopped[seat] = next;
+                        Check(session.Failure().reason == netplay::EndReason::Desync && session.Failure().frame == 60,
+                            "a late difference ends at its checkpoint's frame");
+                        return;
+                    }
+                    Check(!repaired, "an equal hash needs no repair");
+                }
+            }
+        };
+        std::thread a([&] { play(first, 0); });
+        std::thread b([&] { play(second, 1); });
+        a.join();
+        b.join();
+        if (differ)
+            Check(stopped[0] == 68 && stopped[1] == 68, "both stop at the late check of frame 60");
+        else
+            Check(first.Stats().goodChecks == 4 && second.Stats().goodChecks == 4, "every late check is good");
+    }
 }
+
 int main()
 {
     using namespace netplay;
+    LateCheck(false);
+    LateCheck(true);
+    LateRepair(false);
+    LateRepair(true);
     Repair(false);
     Repair(true);
     Repair(true, 64);

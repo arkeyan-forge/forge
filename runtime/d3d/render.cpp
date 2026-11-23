@@ -2518,7 +2518,28 @@ namespace
         else
             got = gpu::CollectReadback(image);
         if (got && image.size() == size_t(pitch) * rows) // two frames old
+        {
+            // SKY_NETPLAY_TEST_DEPTH_NOISE=1 (a session test): the lowest depth bit of one texel in 61 flipped, as
+            // another GPU's rasterizer may round it, to check that the online games stay equal across GPUs.
+            static const bool noise = [] {
+                const char* value = skyenv::Get("SKY_NETPLAY_TEST_DEPTH_NOISE");
+                return value && std::string_view(value) == "1";
+            }();
+            if (noise)
+            {
+                size_t nonzero = 0;
+                for (size_t i = 0; i < image.size(); i += 61)
+                {
+                    nonzero += image[i] != 0;
+                    image[i] ^= 0x00010000; // guest byte 2, bit 0: depth bit 8 of the big-endian word
+                }
+                static uint32_t told = 0;
+                if (told++ % 300 == 0)
+                    fprintf(stderr, "[netplay] test: depth noise, %zu texels, %zu of the changed ones were not 0\n",
+                        image.size(), nonzero);
+            }
             memcpy(g_memory.Translate(guest), image.data(), image.size() * 4);
+        }
 
         // A whole scale reads one texel per guest pixel on the GPU (`step`); a fractional one (upscaling) reads them all,
         // and each guest pixel takes the host pixel under its centre.

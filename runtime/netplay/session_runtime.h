@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string_view>
 #include <string>
 
@@ -41,4 +42,8 @@ namespace netplay
     // The other player's name (their launcher profile), for the banner.
     std::string OtherPlayerName();
     bool QueuePortalEvents(std::span<const PortalEvent> events);
+    // Guest memory a game's hook marks as render-only during a session: what the host GPU computed (a depth read back
+    // for the game's CPU) and what the game derives from it for drawing alone. Its bytes differ between two GPUs, so it
+    // is left out of the state hash and the repair. Called from guest code, at the same point on both computers.
+    void SkipRenderOnly(uint32_t begin, uint32_t end);
 }

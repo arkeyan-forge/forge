@@ -65,6 +65,8 @@ namespace netplay
     // A decimal count in [min, max] (a power of two when asked): the probe's block size and sampling period.
     bool ParseCount(std::string_view text, uint64_t min, uint64_t max, bool powerOfTwo, uint64_t& value);
     bool ParseSkips(std::string_view text, std::vector<Range>& ranges, std::string& error);
+    // Adds `range` to sorted, merged skips, keeping them sorted and merged; false when it was already covered.
+    bool AddSkip(std::vector<Range>& ranges, Range range);
     bool WritableSections(std::span<const uint8_t> image, uint32_t base, std::vector<Range>& ranges, std::string& error,
         uint64_t mappedSize = 0);
 }

@@ -267,6 +267,20 @@ namespace
                   blocks[2].address == 0x30000 && blocks[3].address == 0x40000,
             "block edges");
         blocks.clear();
+        {
+            // Render-only memory a game marks during a session: kept sorted and merged, a covered range is no change.
+            std::vector<netplay::Range> marked;
+            Check(netplay::AddSkip(marked, { 0x3000, 0x4000 }) && netplay::AddSkip(marked, { 0x1000, 0x2000 }),
+                "skips added");
+            Check(!netplay::AddSkip(marked, { 0x3100, 0x3200 }) && !netplay::AddSkip(marked, { 0x5000, 0x5000 }),
+                "a covered or empty skip changes nothing");
+            Check(netplay::AddSkip(marked, { 0x1800, 0x3000 }) && marked.size() == 1 && marked[0].begin == 0x1000 &&
+                      marked[0].end == 0x4000,
+                "a skip touching two others merges them");
+            Check(netplay::AddSkip(marked, { 0x8000, 0x9000 }) && netplay::AddSkip(marked, { 0x6000, 0x7000 }) &&
+                      marked.size() == 3 && marked[1].begin == 0x6000 && marked[2].begin == 0x8000,
+                "skips stay sorted");
+        }
         Check(netplay::ParseSkips("20000-30000", skips, error), "whole block skip parse");
         netplay::HashAllocation(bytes, 0x1FFFF, netplay::Heap::Physical, skips, blocks);
         Check(blocks.size() == 3 && blocks[1].address == 0x30000 && blocks[1].heap == netplay::Heap::Physical,

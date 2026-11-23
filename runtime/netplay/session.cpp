@@ -30,6 +30,7 @@ namespace netplay
     struct Session::Repair
     {
         uint64_t frame = 0, start = 0, total = 0;
+        uint64_t hold = 0; // the frame both games hold at: the checkpoint's, or the late check's after it
         std::vector<Block> blocks;
         std::vector<uint8_t> outgoing, incoming, received;
         uint64_t sinceRequest = UINT64_MAX;
@@ -495,7 +496,7 @@ namespace netplay
         ++m_next;
         return true;
     }
-    bool Session::CheckHash(uint64_t frame, uint64_t hash)
+    bool Session::PostHash(uint64_t frame, uint64_t hash)
     {
         std::unique_lock lock(m_mutex);
         if (!frame || frame % 30 || frame != m_next || frame <= m_hashFrame)
@@ -508,17 +509,40 @@ namespace netplay
         if (m_peerEnd.reason == EndReason::Desync && m_peerEnd.frame == frame)
             End(EndReason::Desync, frame, hash, m_peerEnd.remoteHash);
         m_changed.notify_all();
-        if (!Wait(lock, [&] { return m_peerHashFrame == frame; }))
+        return m_failure.reason == EndReason::None;
+    }
+    bool Session::CheckPostedHash(uint64_t frame, bool& repaired)
+    {
+        std::unique_lock lock(m_mutex);
+        repaired = false;
+        if (!frame || frame != m_hashFrame || frame > m_next)
+        {
+            End(EndReason::Invalid);
             return false;
-        if (m_peerHash != hash)
+        }
+        // The other player is at most its input delay ahead (8 frames), so it cannot post the next checkpoint first.
+        if (!Wait(lock, [&] { return m_peerHashFrame >= frame; }))
+            return false;
+        if (m_peerHashFrame != frame)
+        {
+            End(EndReason::Invalid);
+            return false;
+        }
+        if (m_peerHash != m_hash)
         {
             StartRepair();
             if (!Wait(lock, [&] { return m_repair && m_repair->done; }))
                 return false;
+            repaired = true;
         }
         m_goodHash = frame;
         ++m_goodChecks;
         return true;
+    }
+    bool Session::CheckHash(uint64_t frame, uint64_t hash)
+    {
+        bool repaired = false;
+        return PostHash(frame, hash) && CheckPostedHash(frame, repaired);
     }
     void Session::StartRepair()
     {
@@ -532,6 +556,7 @@ namespace netplay
         m_repair = std::make_unique<Repair>();
         auto& repair = *m_repair;
         repair.frame = m_hashFrame;
+        repair.hold = m_next;
         repair.start = now;
         const auto blocks = m_config.blocks->ListBlocks();
         // The barrier's own total: the checkpoint's hash may have been made over the window's frames (the probe spreads
@@ -718,8 +743,10 @@ namespace netplay
         if (!m_repair || m_failure.reason != EndReason::None)
             return;
         auto& repair = *m_repair;
-        // New host input proves it received the commit acknowledgement and released its barrier.
-        if (repair.done && (m_config.hello.host || m_remoteAck >= repair.frame + m_delay))
+        // The host past the held frame proves it received the commit acknowledgement and released its barrier. (Its
+        // inputs are no proof: those it sent before holding reach the held frame plus its delay, which may be longer
+        // than the session's first one.)
+        if (repair.done && (m_config.hello.host || m_peerFrame > repair.hold))
             return;
         if (!repair.done && m_config.now() - repair.start >= 5000)
         {

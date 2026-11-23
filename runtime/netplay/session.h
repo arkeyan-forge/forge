@@ -95,6 +95,11 @@ namespace netplay
         bool QueueEvents(std::span<const PortalEvent> events);
         uint64_t RoundTripMs() const;
         uint64_t LastGoodHash() const;
+        // A checkpoint in two steps, so that the game never holds for the other player's hash: PostHash at the
+        // window's end sends ours (it rides on the inputs), CheckPostedHash a few frames later compares it with theirs,
+        // which has come by then, and repairs a difference (`repaired`). CheckHash does both at once.
+        bool PostHash(uint64_t frame, uint64_t hash);
+        bool CheckPostedHash(uint64_t frame, bool& repaired);
         bool CheckHash(uint64_t frame, uint64_t hash);
         uint32_t Delay() const;
         SessionFailure Failure() const;

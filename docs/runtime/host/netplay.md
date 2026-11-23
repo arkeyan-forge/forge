@@ -42,7 +42,7 @@ of the runtime must make it so; each point below is a known source of divergence
 | Time | `mftb` is translated to the host counter (`__rdtsc()`, XenonRecomp); `KeQuerySystemTime`, `KeQueryPerformance*` from host clocks | virtual time from the frame number and a fixed step: XenonRecomp emits `mftb` as a read of a runtime counter (a patch: every player's game is rebuilt, as on any game update) |
 | Thread scheduling | each guest thread is a host thread, run in parallel | a deterministic guest scheduler: one guest thread runs at a time, switched only at kernel calls (waits, signals, sleeps, yields, thread start and end) in a fixed order; host parallelism stays for the GPU, audio mixing and file reads |
 | Interrupts and callbacks | VBlank and GPU interrupts from a wall-clock thread; the audio driver calls the game's render callback from its own thread at the device's pace | delivered by the scheduler at fixed points of the frame: one VBlank per frame, the audio callbacks a fixed number per frame (fractional accumulator), the GPU's swap and fence interrupts after the frame's commands |
-| GPU results the game reads | fences, ring read pointer, resolves into guest memory, written by the host GPU thread when done | the guest sees the GPU done at fixed points (its waits complete deterministically); GPU-written memory (resolve targets) is left out of the state hash (its bytes differ between Metal, D3D12 and Vulkan); a per-game audit that the game logic never reads it |
+| GPU results the game reads | fences, ring read pointer, resolves into guest memory, written by the host GPU thread when done | the guest sees the GPU done at fixed points (its waits complete deterministically); what the host GPU writes for the game's CPU differs between two GPUs, so a game's hook marks it and what the game derives from it for drawing alone as render-only (`netplay::SkipRenderOnly`), left out of the state hash and the repair; a per-game audit that the game logic never reads it (SSA: the light tile job, below) |
 | File reads | synchronous (`kernel/files.cpp`) | already deterministic; loading time differs per PC, the lockstep waits for the slower one |
 | Randomness | game RNGs seeded from time; `<random>` in the host's XNet stubs | follows from virtual time; host randomness seeded from the session seed |
 | Floating point | native, same code on both PCs; x64 and arm64 differ in fused multiply-add and some library math | the same build flags on every platform (no FMA contraction in the game code: a recompiler option), or Mac-Mac and PC-PC only at first (to measure) |
@@ -57,8 +57,10 @@ scheduler. XenonRecomp can mark the console's spin hints (`db16cyc`, `or r31,r31
 loops) as yield points; the step-0 probe finds any loop that hangs.
 
 ## 4. Desyncs, input delay, rollback
-- **Desync detection**: every 30 frames, each PC hashes the game's state (the guest heaps, without GPU-written memory and
-  audio buffers) and sends it. On a mismatch both games hold that checkpoint while the guest sends its block hashes.
+- **Desync detection**: every 30 frames, each PC hashes the game's state (the guest heaps, without the render-only
+  memory a game's hook marks: what the host GPU computed for the game's CPU) and sends it with its inputs; 8 frames
+  later, when the other player's hash has come, they are compared, so no game holds for it. On a mismatch both games
+  hold at that frame while the guest sends its block hashes.
   With identical layouts and at most 64 different blocks, the host supplies their hashed bytes and both verify the
   repaired total. Success resumes the session with **Back in sync** for two seconds. A changed layout, too many blocks,
   an unequal final total, five seconds without completing repair or a third repair within sixty seconds ends online
@@ -717,6 +719,23 @@ game is held: "Connection lost with Kaos, reconnecting... 42 s", "Still no answe
 or B to continue alone, Enter or A to wait more, R or Y to play together again (`host/toybox/online_banner.h`). After a
 session the F3 menu's "Play online" reads "Play together again". Either writes `online-replay.txt` and quits; the
 launcher sets the same room up again. Closing the window during a session writes `quit`.
+
+[V] **Two GPUs.** The first session between two Windows PCs (an AMD and an NVIDIA card) went out of sync in the
+first lit scene, the title menu, about 20 s in: two 64 KB blocks differed at every checkpoint, the repair put them
+back and they differed again. Lux's light tile job (`sub_821404D8`, the "ZtoLOD" worker threads) reads the scene depth
+that the runtime writes back from the host GPU ([level_frame_lightprepass.md](../../engines/lux/level_frame_lightprepass.md)),
+and two GPUs round its last bits differently. Its depth (4 KB a tile), its outputs (a class byte and two floats a
+tile, read by the sun's tile draws) and its threads' stack frames are marked render-only from the job's hook
+(`engines/lux/light_tiles.cpp`), at the same guest point on both computers, and taken into the hash's skips at the
+next frame. Proof on one Mac: with one depth bit in 61 flipped on the guest (`SKY_NETPLAY_TEST_DEPTH_NOISE=1`, a
+session test), the title menu desynced at frame 60 and ended at 120 before; after, five minutes played in `level_027`
+(thousands of changed texels a frame, four figure changes) kept 275 checkpoints equal without a repair.
+
+[V] **The late check.** The checkpoint held both games until the other player's hash came: one network leg every 30
+frames, which cost 3 to 9 FPS at 60 FPS with 50 to 150 ms of round trip. The hash now rides on the inputs at the
+window's end (`Session::PostHash`) and is compared 8 frames later (`CheckPostedHash`), when it has come within the
+input delay (at most 8 frames). A repair then happens at that frame, both games at once, and the window that began
+before it is not posted. `ArkeyanNetplaySessionTest` (`LateCheck`) covers both cases.
 
 [V] **A punched path.** For players without UPnP the launcher punches through both routers before the game starts
 (the launcher's online page). The game keeps that path: a joiner binds the same local port (`SKY_NETPLAY_LOCAL_PORT`,

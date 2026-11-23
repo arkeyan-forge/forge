@@ -262,6 +262,27 @@ namespace netplay
         return true;
     }
 
+    bool AddSkip(std::vector<Range>& ranges, Range range)
+    {
+        if (range.begin >= range.end)
+            return false;
+        auto at =
+            std::lower_bound(ranges.begin(), ranges.end(), range, [](Range a, Range b) { return a.end < b.begin; });
+        if (at != ranges.end() && at->begin <= range.begin && range.end <= at->end)
+            return false;
+        // Every range that touches the new one is folded into it.
+        auto last = at;
+        while (last != ranges.end() && last->begin <= range.end)
+        {
+            range.begin = std::min(range.begin, last->begin);
+            range.end = std::max(range.end, last->end);
+            ++last;
+        }
+        at = ranges.erase(at, last);
+        ranges.insert(at, range);
+        return true;
+    }
+
     bool ParseSkips(std::string_view text, std::vector<Range>& ranges, std::string& error)
     {
         ranges.clear();

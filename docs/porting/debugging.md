@@ -94,6 +94,7 @@ require `SKY_NETPLAY_DETERMINISTIC=1`. Instructions, isolation recipe and format
 | `SKY_NETPLAY_LOCAL_PORT=<port>` | a joiner binds this UDP port first: the port its launcher punched through the router ([netplay](../runtime/host/netplay.md#step-6-a-quality-online-xbox-ssa)) |
 | `SKY_NETPLAY_PEER=<host:port>` | a host sends a one-byte knock to the joiner's public address every 100 ms until the joiner's first packet, so its own router lets the joiner in |
 | `SKY_RESOLUTION_SCALE=<1-10>` | the resolution scale of this run only, over the settings (the launcher's online room sets it for a PC whose GPU holds the session back); never saved |
+| `SKY_NETPLAY_TEST_DEPTH_NOISE=1` | with `SKY_NETPLAY_TEST=1`: flip the lowest depth bit of one texel in 61 of the depth the runtime writes back for the game's CPU, as another GPU rounds it ([two GPUs](../runtime/host/netplay.md#step-6-a-quality-online-xbox-ssa)); logs `[netplay] test: depth noise` every 300 write-backs |
 | `SKY_NETPLAY_TEST_SLOW=<ms>` | with `SKY_NETPLAY_TEST=1`: sleep this many milliseconds on every frame to simulate a slow PC; [testing a bad network](../runtime/host/netplay.md#testing-a-bad-network) |
 | `SKY_NETPLAY_DESYNC_DUMP=<file>` | when a 30-frame checkpoint mismatch cannot be repaired, write that frame's blocks in `SKYBLK01` format before both continue alone; compare both dumps with `tools/netplay/hash_diff.py`; [step 1](../runtime/host/netplay.md#step-1-lockstep-on-one-machine) |
 

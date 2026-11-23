@@ -268,6 +268,10 @@ namespace netplay
 
         struct Probe;
         std::atomic<Probe*> g_probe{ nullptr };
+        // Render-only ranges marked by guest code, taken into the hash's skips at the next frame's hash.
+        std::mutex g_renderOnlyMutex;
+        std::vector<Range> g_renderOnly;
+        bool g_renderOnlyChanged = false;
         std::atomic<uint32_t> g_bundle{ 0 };
         std::mutex g_inputMutex;
         InputLatch g_latch;
@@ -339,8 +343,11 @@ namespace netplay
             std::vector<netplay::Allocation> allocations; // of the hash being made
             std::array<std::vector<netplay::Allocation>, 30> slices; // the network window's parts (PlanWindow)
             std::vector<Block> windowBlocks;
-            bool windowFull = false;
-            std::vector<uint64_t> ends;                   // each block's end, while locating blocks
+            bool windowFull = false, discardWindow = false;
+            uint64_t postedFrame = 0; // the checkpoint whose hash went out, compared at the window's LateCheck frame
+            // The other player's hash rides on its inputs, which come within its input delay (8 frames at most).
+            static constexpr uint64_t LateCheck = 8;
+            std::vector<uint64_t> ends; // each block's end, while locating blocks
             std::vector<Range> repairRanges;
             bool locatingBlocks = false;
 
@@ -717,6 +724,12 @@ namespace netplay
 
             void Hash()
             {
+                {
+                    std::lock_guard lock(g_renderOnlyMutex);
+                    if (std::exchange(g_renderOnlyChanged, false))
+                        for (const auto range : g_renderOnly)
+                            AddSkip(skips, range);
+                }
                 const bool online = session && !session->ContinuingSolo();
                 const bool fileHash = totals && frames % hashEvery == 0;
                 if (!online && !fileHash)
@@ -729,19 +742,38 @@ namespace netplay
                     {
                         if (!Hosting() && Network().testDesync != 0 && frames == Network().testDesync)
                             BreakOneBlock();
-                        // The window that just ended, compared at this barrier.
-                        if (windowFull)
+                        // The window that just ended: its hash goes out with the inputs, and is compared LateCheck
+                        // frames later, when the other player's has come, so the game never holds for it. A window
+                        // that saw a repair is not posted (both games repaired at the same frame).
+                        if (windowFull && !discardWindow)
                         {
-                            NetworkWait waiting;
-                            if (!session->CheckHash(frames, CombineBlocks(windowBlocks)))
+                            if (!session->PostHash(frames, CombineBlocks(windowBlocks)))
                             {
                                 SessionExit();
                                 return;
                             }
+                            postedFrame = frames;
                         }
+                        discardWindow = false;
                         PlanWindow();
                         windowBlocks.clear();
                         windowFull = false;
+                    }
+                    else if (phase == LateCheck && postedFrame)
+                    {
+                        NetworkWait waiting;
+                        bool repaired = false;
+                        if (!session->CheckPostedHash(std::exchange(postedFrame, 0), repaired))
+                        {
+                            SessionExit();
+                            return;
+                        }
+                        // The window's first frames were hashed before the repair.
+                        if (repaired)
+                        {
+                            windowBlocks.clear();
+                            discardWindow = true;
+                        }
                     }
                     HashAllocations(slices[phase], skips, windowBlocks, uint32_t(blockBytes));
                     windowFull = phase + 1 == slices.size();
@@ -800,6 +832,16 @@ namespace netplay
         if (auto* session = g_activeSession.load(std::memory_order_acquire))
             session->SetMenuOpen(open);
     }
+    void SkipRenderOnly(uint32_t begin, uint32_t end)
+    {
+        std::lock_guard lock(g_renderOnlyMutex);
+        if (AddSkip(g_renderOnly, { begin, end }))
+        {
+            g_renderOnlyChanged = true;
+            fprintf(stderr, "[netplay] render-only memory left out of the state check: %08x-%08x\n", begin, end);
+        }
+    }
+
     void ContinueAlone()
     {
         if (auto* session = g_activeSession.load(std::memory_order_acquire))
