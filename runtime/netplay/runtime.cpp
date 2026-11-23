@@ -59,6 +59,7 @@ namespace netplay
             uint32_t delay = 0;
             std::string address, password, dump, error;
             uint64_t testDesync = 0;
+            UdpOptions udp; // the launcher's punched path: the joiner's local port, the host's knock target
             uint32_t testSlowMs = 0;
             std::optional<NetSim> testNet;
             EndReason errorReason = EndReason::Invalid;
@@ -111,6 +112,23 @@ namespace netplay
                 {
                     error = "JOIN must be host:port or [IPv6]:port";
                     return;
+                }
+                if (const char* value = skyenv::Get("SKY_NETPLAY_LOCAL_PORT"))
+                {
+                    if (host || !ParseCount(value, 1, 65535, false, number))
+                    {
+                        error = "LOCAL_PORT is a joiner's UDP port from 1 to 65535";
+                        return;
+                    }
+                    udp.localPort = uint16_t(number);
+                }
+                if (const char* value = skyenv::Get("SKY_NETPLAY_PEER"))
+                {
+                    if (!host || !ParseEndpoint(value, udp.knockHost, udp.knockPort))
+                    {
+                        error = "PEER is the joiner's address for a host, host:port or [IPv6]:port";
+                        return;
+                    }
                 }
                 if (const char* value = skyenv::Get("SKY_NETPLAY_DELAY"))
                 {
@@ -442,7 +460,7 @@ namespace netplay
                         }
                     };
                     std::string error;
-                    auto transport = OpenUdp(Network().address, Network().port, Network().host, error);
+                    auto transport = OpenUdp(Network().address, Network().port, Network().host, error, Network().udp);
                     if (!transport)
                     {
                         SessionRefuse(error.c_str(), EndReason::Transport);

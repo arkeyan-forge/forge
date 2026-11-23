@@ -1,6 +1,7 @@
 #include "netplay/session.h"
 #include "netplay/net_sim.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <functional>
 #include <chrono>
@@ -860,6 +861,42 @@ int main()
         auto join = OpenUdp("127.0.0.1", host->Port(), false, error);
         Check(bool(join), "join UDP socket");
         Run(std::move(host), std::move(join), desync);
+    }
+    {
+        // The launcher's punched path: a host knocks at the joiner's address until the joiner's first packet, and a
+        // joiner binds the port its launcher used.
+        std::string error;
+        auto receiver = OpenUdp("", 0, true, error);
+        if (receiver)
+        {
+            UdpOptions knocking;
+            knocking.knockHost = "127.0.0.1";
+            knocking.knockPort = receiver->Port();
+            auto host = OpenUdp("", 0, true, error, knocking);
+            Check(bool(host), "a host with a knock target opens");
+            host->Knock();
+            std::array<uint8_t, 64> bytes{};
+            size_t got = Transport::NoDatagram;
+            for (unsigned i = 0; i < 200 && got == Transport::NoDatagram; ++i)
+            {
+                got = receiver->Receive(bytes);
+                if (got == Transport::NoDatagram)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            Check(got == 1, "the host's knock reaches the joiner's address");
+            uint16_t free = 0;
+            {
+                auto probe = OpenUdp("", 0, true, error);
+                Check(bool(probe), "a port to reuse");
+                free = probe->Port();
+            }
+            UdpOptions local;
+            local.localPort = free;
+            auto join = OpenUdp("127.0.0.1", host->Port(), false, error, local);
+            Check(join && join->Port() == free, "a joiner binds the port its launcher punched through");
+        }
+        else
+            fprintf(stderr, "SKIP real UDP knock: %s\n", error.c_str());
     }
     std::puts("session: 600 frames, loss, duplicates, reordering, desync and timeout passed");
 }

@@ -1019,6 +1019,11 @@ namespace netplay
             }
             if (!m_transport->Healthy())
                 End(EndReason::Transport);
+            if (m_config.hello.host && !m_havePeer && m_config.now() - m_lastKnock >= 100)
+            {
+                m_transport->Knock();
+                m_lastKnock = m_config.now();
+            }
             SendRepair();
             CheckSilence();
             if ((!m_ready || m_failure.reason != EndReason::None) && (m_havePeer || !m_config.hello.host))

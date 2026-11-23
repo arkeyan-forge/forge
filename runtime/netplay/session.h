@@ -21,10 +21,20 @@ namespace netplay
         virtual size_t Receive(std::span<uint8_t> bytes) = 0;
         // The last datagram's sender becomes the peer; true when that changed the peer's address.
         virtual bool AcceptPeer() { return false; }
+        // A host that knows the guest's public address (the launcher punched through to it) sends it a tiny datagram
+        // until the guest's first packet arrives, so the host's own router lets that guest in.
+        virtual void Knock() {}
         virtual bool Healthy() const { return true; }
         virtual uint16_t Port() const { return 0; }
     };
-    std::unique_ptr<Transport> OpenUdp(std::string_view host, uint16_t port, bool listen, std::string& error);
+    struct UdpOptions
+    {
+        uint16_t localPort = 0;      // a joiner binds this port first (the port its launcher punched through)
+        std::string knockHost;       // a host knocks at this address (the joiner's public one) until it is reached
+        uint16_t knockPort = 0;
+    };
+    std::unique_ptr<Transport> OpenUdp(
+        std::string_view host, uint16_t port, bool listen, std::string& error, const UdpOptions& options = {});
     bool ParseEndpoint(std::string_view text, std::string& host, uint16_t& port);
     struct SessionFailure
     {
@@ -116,7 +126,7 @@ namespace netplay
         uint64_t m_repairAttempts = 0, m_resyncs = 0, m_lastResync = 0;
         bool m_waiting = false;
         bool m_connectionLost = false, m_askContinue = false;
-        uint64_t m_lostSince = 0, m_reconnects = 0, m_waitSince = 0;
+        uint64_t m_lostSince = 0, m_reconnects = 0, m_waitSince = 0, m_lastKnock = 0;
         void CheckSilence();
         void AdaptDelay(uint64_t frame);
         void BalanceAdvantage(std::unique_lock<std::mutex>& lock, uint64_t frame);

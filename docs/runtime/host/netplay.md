@@ -718,6 +718,12 @@ or B to continue alone, Enter or A to wait more, R or Y to play together again (
 session the F3 menu's "Play online" reads "Play together again". Either writes `online-replay.txt` and quits; the
 launcher sets the same room up again. Closing the window during a session writes `quit`.
 
+[V] **A punched path.** For players without UPnP the launcher punches through both routers before the game starts
+(the launcher's online page). The game keeps that path: a joiner binds the same local port (`SKY_NETPLAY_LOCAL_PORT`,
+`UdpOptions::localPort`), and a host knocks at the joiner's public address until its first packet arrives
+(`SKY_NETPLAY_PEER`, `Transport::Knock`), so the host's router lets the joiner in. A knock is one byte, which the joiner
+drops as too short.
+
 [V] **The desync report.** An online session records its inputs, both players' pads frame by frame, in its folder
 (`online-inputs.rec`, the `SKY_NETPLAY_RECORD` format); a desync the repair could not mend copies it beside the game's log
 (`netplay-desync.rec`) to replay the session alone (`SKY_NETPLAY_REPLAY`); figure changes made during the session are not
