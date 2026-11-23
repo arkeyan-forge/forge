@@ -594,8 +594,10 @@ namespace
         return true;
     }
 
-    int Place(const std::string& path, int wanted)
+    int Place(const std::string& name, int wanted)
     {
+        // A name alone is a figure of the folder (the scripts' "place=<name>"), as for SKY_PORTAL_PLACE.
+        const std::string path = std::filesystem::exists(name) ? name : FigurePath(name);
         if (netplay::Online())
         {
             std::lock_guard lock(g_onlineMutex);
@@ -680,6 +682,12 @@ void PortalInit()
                     g_onlineSlots[index][half] = slot;
                 }
             }
+        // Which player puts figures in which slot: a change on another player's slot is refused.
+        std::string owners;
+        for (int i = 0; i < slot; ++i)
+            owners += (i ? ", " : "") + std::to_string(i) + ":" +
+                      (g_onlinePlayers[size_t(i)] ? "P" + std::to_string(g_onlinePlayers[size_t(i)]) : "host");
+        fprintf(stderr, "[portal] online slots (%s): %s\n", netplay::Hosting() ? "hosting" : "joined", owners.c_str());
     }
     fprintf(stderr, "[portal] mode %s%s\n", mode.c_str(), modeVariable != nullptr ? " (SKY_PORTAL)" : "");
     if (mode == "none")
