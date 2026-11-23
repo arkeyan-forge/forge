@@ -8,6 +8,7 @@
 #include "thread.h"
 #include "vfs.h"
 #include "host/collection/achievements.h"
+#include "host/collection/progress.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -135,9 +136,11 @@ int main(int argc, char** argv)
         fprintf(stderr, "usage: %s <game disc .iso> [read]\n", argv[0]);
         return 2;
     }
-    bool second = argc > 2; // the process "after a restart"
-    fs::path scratch =
-        fs::temp_directory_path() / ("ArkeyanAchievementsKernelTest-" + std::to_string(second ? getppid() : getpid()));
+    const std::string mode = argc > 2 ? argv[2] : ""; // "read": the process "after a restart"; "online": in a session
+    const bool second = mode == "read", online = mode == "online";
+    fs::path scratch = argc > 3
+                           ? fs::path(argv[3])
+                           : fs::temp_directory_path() / ("ArkeyanAchievementsKernelTest-" + std::to_string(getpid()));
     fs::create_directories(scratch);
     setenv("SKY_SAVE_DIR", scratch.string().c_str(), 1);
 
@@ -148,7 +151,21 @@ int main(int argc, char** argv)
     CHECK(list.items.size() > 3);
     uint32_t first = list.items[0].id, third = list.items[2].id;
 
-    if (!second)
+    if (online)
+    {
+        // The player's earlier unlock is not shown to the title; this session's is, and both stay in the player's file.
+        int unlocked = 0;
+        for (const Seen& s : Enumerate(0, 255))
+            unlocked += (s.flags & 0x20000) != 0;
+        CHECK(unlocked == 0);
+        WriteUnlock(first);
+        for (const Seen& s : Enumerate(0, 255))
+            CHECK(((s.flags & 0x20000) != 0) == (s.id == first));
+        const auto saved = progress::ReadUnlocks(progress::Folder(ARKEYAN_GAME_ID));
+        CHECK(saved.size() == 2);
+        printf("  online: the title sees only this session's unlock, the player's file keeps both\n");
+    }
+    else if (!second)
     {
         std::vector<Seen> all = Enumerate(0, 255);
         CHECK(all.size() == list.items.size());
@@ -180,8 +197,13 @@ int main(int argc, char** argv)
         CHECK(unlocked == 1);
 
         // "After a restart": this program again, which reads only the data folder.
-        std::string command = std::string("\"") + argv[0] + "\" \"" + argv[1] + "\" read";
+        std::string command = std::string("\"") + argv[0] + "\" \"" + argv[1] + "\" read \"" + scratch.string() + "\"";
         CHECK(system(command.c_str()) == 0);
+        // In an online session: the same data folder, with the session's view.
+        setenv("SKY_NETPLAY_HOST", "47999", 1);
+        command = std::string("\"") + argv[0] + "\" \"" + argv[1] + "\" online \"" + scratch.string() + "\"";
+        CHECK(system(command.c_str()) == 0);
+        unsetenv("SKY_NETPLAY_HOST");
         fs::remove_all(scratch);
     }
     else

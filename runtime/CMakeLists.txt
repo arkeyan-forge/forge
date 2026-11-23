@@ -944,7 +944,8 @@ set_source_files_properties(main.cpp host/uwp/main.cpp PROPERTIES COMPILE_DEFINI
 # The game's id, for the same reason: only the files that read it (and toybox/model.h's includers) differ between games.
 set_property(SOURCE main.cpp host/log.cpp host/portal.cpp host/portal_mixed.cpp host/gamemenu.cpp host/gamemenu_debug.cpp
     host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp kernel/files.cpp
-    kernel/xam_achievements.cpp kernel/xam_content.cpp APPEND PROPERTY COMPILE_DEFINITIONS ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
+    kernel/xam_achievements.cpp kernel/xam_achievements_test.cpp kernel/xam_content.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
 
 add_library(ArkeyanNetplayTransport STATIC netplay/chacha20.cpp netplay/protocol.cpp netplay/session.cpp netplay/socket.cpp netplay/portmap.cpp)
 target_include_directories(ArkeyanNetplayTransport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

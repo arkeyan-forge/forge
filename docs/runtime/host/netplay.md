@@ -731,6 +731,15 @@ next frame. Proof on one Mac: with one depth bit in 61 flipped on the guest (`SK
 session test), the title menu desynced at frame 60 and ended at 120 before; after, five minutes played in `level_027`
 (thousands of changed texels a frame, four figure changes) kept 275 checkpoints equal without a repair.
 
+[V] **Achievements.** Two Windows PCs went out of sync right after "Hello!! Skylander": the title enumerates the
+achievements after an unlock, and each PC answered with its own player's list and wall-clock unlock times
+(`kernel/xam_achievements.cpp`). Online, the title now sees the unlocks of this session alone, timed by the session's
+clock (`GuestSystemTime`); each player's progress file still gets the unlock with its real time, and the overlay's page
+shows the player's own list. `ArkeyanAchievementsKernelTest` runs itself a third time as a session to check it.
+
+[V] **Where a repair was.** `[netplay] state repaired at frame N (B bytes sent): K blocks, at <address> ...` names up to
+eight repaired blocks (guest addresses, the same on both computers), so a player's log says which memory differed.
+
 [V] **The late check.** The checkpoint held both games until the other player's hash came: one network leg every 30
 frames, which cost 3 to 9 FPS at 60 FPS with 50 to 150 ms of round trip. The hash now rides on the inputs at the
 window's end (`Session::PostHash`) and is compared 8 frames later (`CheckPostedHash`), when it has come within the

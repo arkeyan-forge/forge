@@ -31,6 +31,7 @@ namespace netplay
     {
         uint64_t frame = 0, start = 0, total = 0;
         uint64_t hold = 0; // the frame both games hold at: the checkpoint's, or the late check's after it
+        std::vector<size_t> changed; // the blocks put back, for the log
         std::vector<Block> blocks;
         std::vector<uint8_t> outgoing, incoming, received;
         uint64_t sinceRequest = UINT64_MAX;
@@ -585,9 +586,19 @@ namespace netplay
             return;
         m_repair->done = true;
         ++m_resyncs;
-        fprintf(stderr, "[netplay] state repaired at frame %llu (%zu bytes sent)\n",
+        // Where the games differed (guest addresses, the same on both computers): what to look for in a player's log.
+        std::string where;
+        for (size_t i = 0; i < m_repair->changed.size() && i < 8; ++i)
+        {
+            char text[16];
+            snprintf(text, sizeof text, " %08llx",
+                static_cast<unsigned long long>(m_repair->blocks[m_repair->changed[i]].address));
+            where += text;
+        }
+        fprintf(stderr, "[netplay] state repaired at frame %llu (%zu bytes sent): %zu blocks, at%s%s\n",
             static_cast<unsigned long long>(m_repair->frame),
-            m_config.hello.host ? m_repair->outgoing.size() : m_repair->incoming.size());
+            m_config.hello.host ? m_repair->outgoing.size() : m_repair->incoming.size(), m_repair->changed.size(),
+            where.c_str(), m_repair->changed.size() > 8 ? " ..." : "");
         m_lastResync = m_config.now();
         m_changed.notify_all();
     }
@@ -613,6 +624,7 @@ namespace netplay
                 if (different.size() > MaxRepairBlocks)
                     return fail();
             }
+            repair.changed = different;
             Append(repair.outgoing, different.size(), 4);
             std::vector<uint8_t> bytes;
             for (const auto index : different)
@@ -653,6 +665,7 @@ namespace netplay
                 const auto index = Take(repair.incoming, at, 4), size = Take(repair.incoming, at, 4);
                 if (!m_config.blocks->WriteBlock(size_t(index), std::span(repair.incoming).subspan(at, size_t(size))))
                     return fail();
+                repair.changed.push_back(size_t(index));
                 at += size_t(size);
             }
             repair.total = m_config.blocks->TotalHash();
