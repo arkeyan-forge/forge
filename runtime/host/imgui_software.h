@@ -26,6 +26,12 @@ namespace imgui_software
     // After ImGui::CreateContext: declares the renderer to ImGui (textures it creates, large meshes).
     void Init();
 
-    // Creates, updates and destroys ImGui's own textures (the font atlas), then draws every list into `target`.
+    // ImGui::NewFrame for this renderer: every font's glyphs at the frame's DisplayFramebufferScale. ImGui gives it to the
+    // current font only; another one, drawn with ImDrawList::AddText(font, ...), would be rasterized at 1 and scaled up.
+    void NewFrame();
+
+    // Creates, updates and destroys ImGui's own textures (the font atlas), then draws every list into `target`, of
+    // `data->DisplaySize * data->FramebufferScale` pixels (ImGui rasterizes the fonts at that scale). The vertices are
+    // moved to target pixels in place.
     void Render(ImDrawData* data, Texture& target);
 }

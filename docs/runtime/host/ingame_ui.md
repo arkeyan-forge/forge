@@ -26,7 +26,10 @@ screen), `model.cpp` / `menu.cpp` (the state), `toybox.cpp` (`ToyboxAchievement`
 ## Tokens (`look.h`)
 
 - **Canvas**: 1280x720, letterboxed 16:9 over the game at any window size (`gpu::SetOverlay`); an ultrawide window shows
-  it centred, the game around it. Sizes below are canvas pixels.
+  it centred, the game around it. Sizes below are canvas pixels. It is drawn at its letterboxed size in the window's pixels
+  (`OverlayScale`, 1 to 3: 1.5 at 1080p, 2 at 1440p, 3 at 4K), so the present pass copies it pixel for pixel and text
+  and pictures stay sharp on large and high-density screens: fonts are rasterized at that scale
+  (`DisplayFramebufferScale`, no horizontal oversampling), the pictures baked at it, lines antialiased over one pixel.
 - **Safe area** (TV action-safe, 5 % a side): x 64-1216, y 36-684. What is drawn over the game while it plays (toasts 32 px from
   the edges, the FPS counter) stays in its corners; the full pages and the F3 panel reach the edges, as the launcher's pages do,
   their hints in a 64 px bar at the bottom.

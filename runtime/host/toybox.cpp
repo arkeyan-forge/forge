@@ -19,6 +19,7 @@
 #include "host/toybox/model.h"
 #include "host/toybox/key_mask.h"
 #include "host/toybox/keys.h"
+#include "host/toybox/look.h"
 #include "host/toybox/wheel_keys.h"
 #include "host/toybox_remote.h"
 #include "vfs.h"
@@ -64,6 +65,7 @@ namespace
     bool g_achievementPending;
     void (*g_achievementPreview)();
     gpu::Texture* g_texture;
+    float g_textureScale = 0; // g_texture's size, in canvas multiples
     std::vector<uint32_t> g_pixels;
     bool g_overlayShown;
     bool g_wasOpen;
@@ -755,19 +757,31 @@ namespace
             model.Clean();
             return;
         }
-        if (!model.Dirty() && g_overlayShown)
+        int width = 0, height = 0;
+        float scale = g_window != nullptr && SDL_GetWindowSizeInPixels(g_window, &width, &height)
+                          ? toybox::look::OverlayScale(width, height)
+                          : 1;
+        if (!model.Dirty() && g_overlayShown && scale == g_textureScale)
             return;
         // The debug screen's cost line counts the overlay its refresh makes drawn again (2 Hz) over the game; with a
         // menu open the drawing is the menu's.
         uint64_t start = std::exchange(g_debugRedraw, false) && !model.open ? SDL_GetTicksNS() : 0;
-        toybox::Draw(model, g_pixels);
+        toybox::Draw(model, g_pixels, scale);
         model.Clean();
-        if (g_texture == nullptr)
-            g_texture = gpu::CreateTexture({ .width = toybox::CanvasWidth,
-                .height = toybox::CanvasHeight,
-                .format = gpu::Format::R8G8B8A8_UNORM });
-        gpu::UploadTexture(g_texture, g_pixels.data(), uint32_t(toybox::CanvasWidth * 4));
+        const int textureWidth = toybox::look::Scaled(toybox::CanvasWidth, scale);
+        gpu::Texture* replaced = nullptr;
+        if (g_texture == nullptr || scale != g_textureScale)
+        {
+            replaced =
+                std::exchange(g_texture, gpu::CreateTexture({ .width = uint32_t(textureWidth),
+                                             .height = uint32_t(toybox::look::Scaled(toybox::CanvasHeight, scale)),
+                                             .format = gpu::Format::R8G8B8A8_UNORM }));
+            g_textureScale = scale;
+        }
+        gpu::UploadTexture(g_texture, g_pixels.data(), uint32_t(textureWidth * 4));
         gpu::SetOverlay(g_texture);
+        // After the overlay is switched: a frame presented in between still has the old one.
+        gpu::DestroyTexture(replaced);
         g_overlayShown = true;
         if (start != 0)
             gamemenu::AddDebugScreenCost(SDL_GetTicksNS() - start);
