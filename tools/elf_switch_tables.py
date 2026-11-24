@@ -8,8 +8,11 @@ A switch is compiled as a bounds check, the table's address in two halves, the i
 
 in that order, with other instructions between them. Each `bctr` after an `lwzx` and an `mtctr` is matched backwards
 inside its function (the ELF's function symbols), each register followed on its own: the table's base may be set once
-before a loop, the index may be scaled in place. Its N + 1 labels are read from the table. A `bctr` after a plain load,
-or after an `lwzx` with no bounds check (a call through a member pointer), is a call through a pointer, which
+before a loop, the index may be scaled in place. Its N + 1 labels are read from the table. A loop over the cases keeps
+the offset in a register of its own (`li rO, 4`, then `addi rO, rO, 4` with the counter) and checks the counter: with
+no `rlwinm`, an `lwzx` whose table is a `lis` and `addi` pair, after a bounds check on any register, whose N + 1 entries
+are all labels in the function, is that loop's switch, its offset register scaled in place. A `bctr` after a plain
+load, or after an `lwzx` with no bounds check (a call through a member pointer), is a call through a pointer, which
 XenonRecomp already translates. A switch it cannot match is reported on stderr and the tool fails.
 
 usage: python3 -I tools/elf_switch_tables.py private/<game>.elf > games/<id>/config/<Game>_switch_tables.toml
@@ -94,7 +97,7 @@ def match(elf, bctr):
     # The index: rlwinm rO, rI, 2, 0, 29, then the bounds check cmplwi crN, rI, N before it. None: a call.
     shift = find_back(words, 2, lambda w: w >> 26 == 21 and (w >> 16) & 31 == offset_register)
     if shift is None:
-        return None
+        return loop_switch(elf, fn, words, table_register, offset_register)
     w = words[shift][1]
     if (w >> 11) & 31 != 2 or (w >> 6) & 31 != 0 or (w >> 1) & 31 != 29:
         raise ValueError(f"index scaled otherwise at {words[shift][0]:#x}")
@@ -102,30 +105,62 @@ def match(elf, bctr):
     check = find_back(words, shift + 1, lambda w: w >> 26 == 10 and (w >> 16) & 31 == index and not (w >> 21) & 1)
     if check is None:
         return None
-    bound = words[check][1] & 0xFFFF
-    default = None
-    if check >= 1 and words[check - 1][1] >> 26 == 16:  # the branch to the default, right after the check
-        target = words[check - 1][1] & 0xFFFC
-        default = words[check - 1][0] + (target - 0x10000 if target & 0x8000 else target)
-    # The table: addi rT, rB, lo, and lis rB, hi before it (rB may be rT, or a register set once for a loop).
-    add = find_back(words, 2, lambda w: w >> 26 == 14 and (w >> 21) & 31 == table_register)
-    if add is None:
+    bound, default = bounds(words, check)
+    table = table_address(words, table_register)
+    if table is None:
         raise ValueError("table address not found")
-    base_register = (words[add][1] >> 16) & 31
-    high = find_back(words, add + 1, lambda w: w >> 26 == 15 and (w >> 21) & 31 == base_register and not (w >> 16) & 31)
-    if high is None or base_register == 0:
-        raise ValueError("table address not found")
-    table = ((words[high][1] & 0xFFFF) << 16) + sign16(words[add][1] & 0xFFFF) & 0xFFFFFFFF
     labels = [elf.u32(table + 4 * i) for i in range(bound + 1)]
     for label in labels:
         if not fn[0] <= label < fn[1]:
             raise ValueError(f"label {label:#x} outside the function")
     if index == offset_register:
-        # Scaled in place: at the bctr the register holds the index times four, so every fourth case is a label and
-        # the others (never reached) the default.
-        filler = default if default is not None else labels[0]
-        labels = [labels[i // 4] if i % 4 == 0 else filler for i in range(4 * bound + 1)]
-    return offset_register if index == offset_register else index, default, labels
+        return offset_register, default, scaled(labels, bound, default)
+    return index, default, labels
+
+
+def bounds(words, check):
+    """The bounds check at words[check]: its N, and the default the branch right after it goes to (or None)."""
+    bound = words[check][1] & 0xFFFF
+    default = None
+    if check >= 1 and words[check - 1][1] >> 26 == 16:
+        target = words[check - 1][1] & 0xFFFC
+        default = words[check - 1][0] + (target - 0x10000 if target & 0x8000 else target)
+    return bound, default
+
+
+def table_address(words, table_register):
+    """addi rT, rB, lo, and lis rB, hi before it (rB may be rT, or a register set once for a loop); None without."""
+    add = find_back(words, 2, lambda w: w >> 26 == 14 and (w >> 21) & 31 == table_register)
+    if add is None:
+        return None
+    base_register = (words[add][1] >> 16) & 31
+    high = find_back(words, add + 1, lambda w: w >> 26 == 15 and (w >> 21) & 31 == base_register and not (w >> 16) & 31)
+    if high is None or base_register == 0:
+        return None
+    return ((words[high][1] & 0xFFFF) << 16) + sign16(words[add][1] & 0xFFFF) & 0xFFFFFFFF
+
+
+def scaled(labels, bound, default):
+    """Scaled in place: at the bctr the register holds the index times four, so every fourth case is a label and the
+    others (never reached) the default."""
+    filler = default if default is not None else labels[0]
+    return [labels[i // 4] if i % 4 == 0 else filler for i in range(4 * bound + 1)]
+
+
+def loop_switch(elf, fn, words, table_register, offset_register):
+    """A loop's switch (the offset in a register of its own), or None for a call through a pointer."""
+    table = table_address(words, table_register)
+    check = find_back(words, 2, lambda w: w >> 26 == 10 and not (w >> 21) & 1)
+    if table is None or check is None:
+        return None
+    bound, default = bounds(words, check)
+    try:
+        labels = [elf.u32(table + 4 * i) for i in range(bound + 1)]
+    except KeyError:
+        return None
+    if not all(fn[0] <= label < fn[1] for label in labels):
+        return None
+    return offset_register, default, scaled(labels, bound, default)
 
 
 def scan(elf):
@@ -180,7 +215,8 @@ def self_test():
     blr = 0x4E800020
     text, data = 0x80001000, 0x80002000
     # 1: the usual order, the index in r4. 2: the table's base set before a loop, the index scaled in place in r0.
-    # 3: a call through a member pointer: an lwzx, no bounds check.
+    # 3: a call through a member pointer: an lwzx, no bounds check. 4: a loop's switch: the offset in r15, the counter
+    # in r17 checked.
     one = [cmplwi(4, 2), bgt(0x20), lis(5, 0x8000), rlwinm(6, 4), addi(5, 5, 0x2000), lwzx(7, 5, 6), mtctr(7), BCTR,
            blr, blr, blr]
     two_base = text + 4 * len(one)
@@ -188,14 +224,22 @@ def self_test():
            lwzx(3, 3, 0), mtctr(3), BCTR, blr, blr]
     three_base = two_base + 4 * len(two)
     three = [lwzx(12, 3, 12), mtctr(12), BCTR]
+    four_base = three_base + 4 * len(three)
+    li = lambda rt, n: addi(rt, 0, n)
+    four = [li(15, 4), lis(21, 0x8000), cmplwi(17, 1), bgt(0x14), addi(3, 21, 0x2014), lwzx(3, 3, 15), mtctr(3), BCTR,
+            blr, blr]
     labels_one = [text + 0x20, text + 0x24, text + 0x28]
     labels_two = [two_base + 0x28, two_base + 0x2C]
-    elf = Elf(data=synthetic_elf(text, one + two + three, data, labels_one + labels_two,
-                                 [(text, 4 * len(one)), (two_base, 4 * len(two)), (three_base, 4 * len(three))]))
+    labels_four = [four_base + 0x20, four_base + 0x24]
+    elf = Elf(data=synthetic_elf(text, one + two + three + four, data, labels_one + labels_two + labels_four,
+                                 [(text, 4 * len(one)), (two_base, 4 * len(two)), (three_base, 4 * len(three)),
+                                  (four_base, 4 * len(four))]))
     switches, calls, problems = scan(elf)
     expected = [(text + 0x1C, 4, text + 0x24, labels_one),
                 (two_base + 0x24, 0, two_base + 0x28, [labels_two[0], two_base + 0x28, two_base + 0x28,
-                                                       two_base + 0x28, labels_two[1]])]
+                                                       two_base + 0x28, labels_two[1]]),
+                (four_base + 0x1C, 15, four_base + 0x20, [labels_four[0], four_base + 0x20, four_base + 0x20,
+                                                          four_base + 0x20, labels_four[1]])]
     checks = [switches == expected, calls == 1, problems == []]
     print(f"elf_switch_tables self-test: {'PASS' if all(checks) else 'FAIL'} ({sum(checks)} of {len(checks)})")
     if not all(checks):

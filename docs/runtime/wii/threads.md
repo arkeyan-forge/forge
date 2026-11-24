@@ -38,6 +38,8 @@ One host thread waits for the next of two:
 - the **video retrace**, 59.94 times a second from `VIInit` on: VI's first display interrupt's status bit
   (`0xCC002030`, 0x8000) set, then the SDK's `__VIRetraceHandler` (the retrace callbacks, `VIWaitForRetrace`'s
   waiters). One at a time: a retrace still pending is not posted again.
+- the **audio interface's** interrupt, every buffer (3 ms) from `AIStartDMA` on: the DMA callback ([audio.md](audio.md)),
+  one at a time likewise.
 
 ## What the game's addresses give (`games/racing/`)
 `OSSaveContext`, `OSLoadContext`, the interrupt switch, `PPCMtdec`, `VIInit` (the host starts the retrace after it)

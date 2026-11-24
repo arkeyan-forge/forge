@@ -40,7 +40,9 @@ MEM1's size (0x28, 0xF0, 0x3100, 0x3104), MEM2's (0x3118, 0x311C) and its arena 
 buffers above it to `0x93400000`), the bus and processor clocks (243 and 729 MHz at 0xF8, 0xFC; the timebase ticks at
 a quarter of the bus), the IOS version (0x3140: the title metadata's, `disc::WiiDisc::Ios`, 56 for SuperChargers
 Racing) and the game ID again at 0x3180; the system menu's `setting.txt`, the console's region encrypted, at 0x3800
-([ios.md](ios.md#the-consoles-settings-runtimewiisettingshcpp)).
+([ios.md](ios.md#the-consoles-settings-runtimewiisettingshcpp)); the disc's file system table (its offset and size in
+words at 0x424 of the partition's header) at MEM1's top, 32-byte aligned, its address at 0x38 and its size at 0x3C (the
+DVD library reads them, `__DVDFSInit`), MEM1's arena top at 0x3110 below it (which OSInit takes when it is set).
 
 ## The first boot [V] (2026-11-24)
 `ArkeyanWiiRuntime <disc.rvz> <NAND folder>` (`runtime/wii/main.cpp`; the NAND folder holds the console's NAND, made on

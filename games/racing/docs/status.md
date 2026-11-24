@@ -14,7 +14,7 @@
 ## The translation [V] (2026-11-23)
 `config/Racing.toml` with `paired_singles = true`: **21,847 functions** (21,733 from the ELF's symbols, covering 98 %
 of `.init` and `.text`; the rest are the register-save helpers' entries and the gaps XenonRecomp's analysis splits),
-**200 jump tables** (`tools/elf_switch_tables.py`: every `bctr`; 158 others are calls through a pointer), 90 files,
+**201 jump tables** (`tools/elf_switch_tables.py`: every `bctr`; 157 others are calls through a pointer), 90 files,
 81 MB, under a second. The generated C++ compiles (clang, C++20, 0 errors). The log lists only:
 - 610 sites of the operating system's supervisor instructions, left out of the translation (`rfi`, `mtmsr`, `mtsr`,
   `mtsrr0/1`, `mtsprg`, `mtspr`/`mfspr` on the BAT, HID, cache and debug SPRs, `sc`): the exception vectors and the
@@ -47,7 +47,18 @@ and waits in the audio interface's start (`__AI_SRC_INIT`). Three answers on the
   translation read the whole timebase for the high half, so the two rarely agreed and each alarm took about 1.6 ms
   (KPAD's start never got past them). Fixed in XenonRecomp ([xenonrecomp.md](../../../docs/tools/toolchain/xenonrecomp.md#the-patch-hunks-what-each-fixes-and-why)).
 
+## Wwise and the game module [V] (2026-11-24)
+With the audio hardware ([audio.md](../../../docs/runtime/wii/audio.md)): Wwise's start goes through (AX's frames, 96
+voices, silent for now), the engine's streaming threads read the disc through the DVD library, and the engine loads
+`gamelogic.rso` into the heap (`InitGL`); the call to its prolog (`0x80F07320` on this run) is the first to code that
+was not translated. Two fixes on the way:
+- the remotes' library started twice (the input's `WPADInit`, then Wwise's): `WUDInit` answers "started" only the
+  first time, as the stack's own does, or `WPADInit` set its periodic alarm again while it was queued, and the alarm
+  queue looped;
+- a loop's switch in `RSOStaticLocateObject` (its offset in a register of its own, the counter bounds-checked) was
+  taken for a call through a pointer: `tools/elf_switch_tables.py` now matches it (201 tables).
+
 ## Next
-1. The audio: the audio interface, the DSP, AX (Wwise's output); then EXI, SI, and GX's commands drawn.
-2. `gamelogic.rso`: load and translate the module.
+1. `gamelogic.rso`: translate the module where the engine loads it.
+2. The audio's mix and the host's output; EXI, SI, and GX's commands drawn.
 3. The `*_as_local` options, once it boots.
