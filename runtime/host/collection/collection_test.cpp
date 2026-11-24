@@ -2326,6 +2326,46 @@ namespace
         }
         CHECK(Backups(path).size() == RealBackups && onDisk(original, firstToy));
 
+        // Its progress is the toy's: no stat edit, no reset. Its name, favourite and backups are the player's.
+        std::string refused;
+        figures::FigureStats stats;
+        CHECK(!WriteStats(path, stats, &refused) && refused.find("real toy") != std::string::npos);
+        CHECK(!ResetToNew(path) && !SetNickname(path, "Toy") && !SetTrapVillain(path, 1, false));
+        CHECK(!WriteCrystal(path, figures::CrystalStats{}) && !SetGearbits(path, 1) && onDisk(path, played));
+        CHECK(SetLabel(path, "Mine") && SetFavourite(path, true) && !Backup(path).empty());
+        std::string older;
+        for (const std::string& backup : Backups(path))
+            older = onDisk(backup, played) ? older : backup;
+        CHECK(!older.empty() && Restore(path, older) && !onDisk(path, played));
+        // A restored backup is the copy's progress: the next placement writes it to the toy.
+        RealCopy restored = SyncRealCopy(played);
+        CHECK(restored.side == RealSide::CopyAhead && restored.write != 0);
+        CHECK(WriteRealCopy(path, played) && SyncRealCopy(played).side == RealSide::Same);
+        const std::string renamed = path.substr(0, path.find_last_of('/') + 1) + "Mine.sky";
+        CHECK(Rename(path, "Mine.sky") && Read(renamed, figure) && figure.realCopy);
+        CHECK(SyncRealCopy(played).path == renamed);
+        CHECK(Rename(renamed, path.substr(path.find_last_of('/') + 1)));
+
+        // The toy as a card shows it, from its image alone.
+        Figure shown = FigureOf(played);
+        CHECK(shown.type == 16 && shown.state == figure.state && shown.level == figure.level && shown.path.empty());
+
+        // A real swapper's two halves on the portal together: their copies become one card, once.
+        const std::string top = SyncRealCopy(figures::CreateFigure(2004)).path;
+        const std::string bottom = SyncRealCopy(figures::CreateFigure(1004)).path;
+        const std::string otherTop = SyncRealCopy(figures::CreateFigure(2005)).path;
+        CHECK(!top.empty() && !bottom.empty() && !otherTop.empty());
+        CHECK(PairRealHalves(top, { path }).empty());
+        CHECK(PairRealHalves(top, { path, top, bottom }) == bottom);
+        Figure half;
+        CHECK(Read(top, half) && half.partner == bottom.substr(bottom.find_last_of('/') + 1));
+        CHECK(PairRealHalves(bottom, { top, bottom }).empty());
+        // Another top beside a bottom already paired: each keeps its own.
+        CHECK(PairRealHalves(otherTop, { otherTop, bottom }).empty() && Read(otherTop, half) && half.partner.empty());
+        CHECK(PairRealHalves(path, { path, bottom }).empty());
+        for (const std::string& made : { top, bottom, otherTop })
+            Delete(made);
+
         // Deleted: unlinked, the next placement makes a new copy; the original is never deleted.
         CHECK(Delete(path));
         RealCopy again = SyncRealCopy(played);

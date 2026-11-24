@@ -1444,6 +1444,8 @@ void ToyboxUpdate()
     }
     ServeWindow(model, now);
     model.Tick(now);
+    if (model.RealChoiceWaiting() && !model.open)
+        OpenToybox(); // a real toy stays off the game until the player says which progress to keep
     presence::SetSecondPlayer(std::any_of(model.seats.begin(), model.seats.end(),
         [](const toybox::SeatState& s) { return s.seat.id == "p2" && (s.physical || !s.path.empty()); }));
     Present();

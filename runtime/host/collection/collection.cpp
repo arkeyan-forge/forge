@@ -659,24 +659,9 @@ namespace collection
             if (!LoadDump(path, tag))
                 return false;
             const Catalogue& catalogue = Catalogue::Get();
-            figure = {};
+            figure = FigureOf(tag);
             figure.path = path;
             figure.file = FileName(path);
-            figure.type = figures::ToyType(tag);
-            figure.variant = figures::Variant(tag);
-            figure.toy = catalogue.Find(figure.type);
-            figure.variantInfo = catalogue.Describe(figure.toy, figure.variant);
-            figure.state = figures::ReadStats(tag, figure.stats);
-            figure.level =
-                figures::LevelForExperience(figures::TotalExperience(figure.stats), figures::MaxLevelSwapForce);
-            figure.missingSignature = figures::NeedsFactorySignature(figure.type) && !figures::HasFactorySignature(tag);
-            if (figures::IsCrystalType(figure.type))
-            {
-                figures::CrystalStats crystal;
-                figures::ReadCrystalStats(tag, crystal);
-                figure.battleClass = crystal.battleClass;
-                figure.level = figures::CrystalLevel(crystal.experience);
-            }
             figure.lock = GetLock(path);
 
             const Json& entry = index["figures"][figure.file];
@@ -707,6 +692,27 @@ namespace collection
             }
             return true;
         }
+    }
+
+    Figure FigureOf(const FigureData& tag)
+    {
+        const Catalogue& catalogue = Catalogue::Get();
+        Figure figure;
+        figure.type = figures::ToyType(tag);
+        figure.variant = figures::Variant(tag);
+        figure.toy = catalogue.Find(figure.type);
+        figure.variantInfo = catalogue.Describe(figure.toy, figure.variant);
+        figure.state = figures::ReadStats(tag, figure.stats);
+        figure.level = figures::LevelForExperience(figures::TotalExperience(figure.stats), figures::MaxLevelSwapForce);
+        figure.missingSignature = figures::NeedsFactorySignature(figure.type) && !figures::HasFactorySignature(tag);
+        if (figures::IsCrystalType(figure.type))
+        {
+            figures::CrystalStats crystal;
+            figures::ReadCrystalStats(tag, crystal);
+            figure.battleClass = crystal.battleClass;
+            figure.level = figures::CrystalLevel(crystal.experience);
+        }
+        return figure;
     }
 
     std::string Figure::LastUsedIn(const std::string& game) const
@@ -958,8 +964,21 @@ namespace collection
         return result;
     }
 
+    namespace
+    {
+        // A real toy's copy keeps the toy's progress: only the game, through the portal, changes it.
+        bool RealCopyRefused(const std::string& path, std::string* error)
+        {
+            if (!LoadJson(Directory(path) + "/" + IndexName)["figures"][FileName(path)]["real"].IsObject())
+                return false;
+            return Refuse(error, "the copy of a real toy: play the toy to change its progress"), true;
+        }
+    }
+
     bool WriteStats(const std::string& path, const figures::FigureStats& stats, std::string* error)
     {
+        if (RealCopyRefused(path, error))
+            return false;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
         FigureData tag;
@@ -974,6 +993,8 @@ namespace collection
 
     bool SetTrapVillain(const std::string& path, uint8_t villain, bool evolved, std::string* error)
     {
+        if (RealCopyRefused(path, error))
+            return false;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
         FigureData tag;
@@ -1016,6 +1037,8 @@ namespace collection
 
     bool WriteCrystal(const std::string& path, const figures::CrystalStats& stats, std::string* error)
     {
+        if (RealCopyRefused(path, error))
+            return false;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
         FigureData tag;
@@ -1048,6 +1071,8 @@ namespace collection
 
     bool SetGearbits(const std::string& path, uint32_t gearbits, std::string* error)
     {
+        if (RealCopyRefused(path, error))
+            return false;
         Figure figure;
         if (!Read(path, figure))
             return Refuse(error, "not a figure dump");
@@ -1061,6 +1086,8 @@ namespace collection
 
     bool SetNickname(const std::string& path, const std::string& utf8, std::string* error)
     {
+        if (RealCopyRefused(path, error))
+            return false;
         Figure figure;
         if (!Read(path, figure))
             return Refuse(error, "not a figure dump");
@@ -1346,6 +1373,8 @@ namespace collection
 
     bool ResetToNew(const std::string& path, std::string* error)
     {
+        if (RealCopyRefused(path, error))
+            return false;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
         FigureData tag;
@@ -2122,6 +2151,22 @@ namespace collection
     }
 
     bool WriteRealCopy(const std::string& path, const FigureData& image) { return SaveDump(path, image); }
+
+    std::string PairRealHalves(const std::string& path, const std::vector<std::string>& onPortal)
+    {
+        Figure half;
+        if (!Read(path, half) || !half.realCopy || !half.partner.empty() || !(half.IsSwapTop() || half.IsSwapBottom()))
+            return {};
+        for (const std::string& other : onPortal)
+        {
+            Figure candidate;
+            if (other == path || !Read(other, candidate) || !candidate.realCopy || !candidate.partner.empty())
+                continue;
+            if ((half.IsSwapTop() ? candidate.IsSwapBottom() : candidate.IsSwapTop()) && Pair(path, other))
+                return other;
+        }
+        return {};
+    }
 
     bool RealCopyWritten(const std::string& path, const FigureData& image, int block, bool confirmed)
     {

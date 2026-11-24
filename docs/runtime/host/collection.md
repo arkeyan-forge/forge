@@ -132,8 +132,15 @@ the toy does (or never confirmed it), both when neither does.
 - Only the toy changed: the copy takes its image, backed up first. Only the copy changed: the toy's image is backed up and
   the blocks it lacks go to it (`RealCopy::write`; `RealCopyWritten` records each one). Both: nothing changes until
   `ChooseRealCopy` (the side replaced backed up first). The syncs keep the last `RealBackups` (5) backups.
-- Deleting the copy unlinks it (the entry goes to the trash): the next placement makes a new one. A swapper's halves are
-  two toys, two copies, not paired yet.
+- Its progress is the toy's: `WriteStats`, `SetNickname`, `SetTrapVillain`, `WriteCrystal`, `SetGearbits` and
+  `ResetToNew` refuse a copy ("the copy of a real toy: play the toy to change its progress"). Its label, favourite,
+  file name (the link follows `Rename`) and backups are the player's; a restored backup is the copy's progress, so the
+  next placement writes it to the toy.
+- Deleting the copy unlinks it (the entry goes to the trash): the next placement makes a new one.
+- A swapper's halves are two toys, two copies. `PairRealHalves` links them as one card when both are on the portal and
+  neither has a partner; a mixed swapper (another swapper's bottom) keeps the halves' own cards.
+- `FigureOf(tag)` reads a toy's image as a card would (level, progress, last placed): the Toy Box's question shows the
+  toy's side with it.
 
 ## Swappers: two dumps, one card [SwapForce] (2026-10-27)
 

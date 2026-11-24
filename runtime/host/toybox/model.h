@@ -15,6 +15,7 @@
 #include "host/toybox/look.h"
 #include "host/toybox/nav.h"
 #include "host/toybox/put_on.h"
+#include "host/toybox/real_copy.h"
 #include "host/toybox/seat_rows.h"
 #include <algorithm>
 #include <cstdint>
@@ -252,6 +253,10 @@ namespace toybox
         int askedSeat = -1; // the seat the game's prompt asks for, -1: none; set every frame
         // A real portal with virtual seats: its toys' seats read-only, the others as on the emulated one.
         bool mixed = false;
+        // That portal keeps a copy of each real toy ([portal] keep_real_copies): no manual copy, the questions, the notice.
+        bool keepRealCopies = false;
+        // A real toy waits for the player's "which one to keep" while the Toy Box is closed: toybox.cpp opens it.
+        bool RealChoiceWaiting() const { return m_realWaiting; }
         std::vector<collection::Figure> figures; // every dump but the untouched starters
         std::vector<SeatState> seats;
         std::string search;
@@ -628,6 +633,8 @@ namespace toybox
         void OpenName(NameEntry entry);
         void CreateFrom(const Version& version);
         void SaveCopy(int seatIndex); // real portal: keep a dump of the toy
+        void FollowRealCopies();
+        void AskRealCopy(const PortalRealChoice& choice);
         void OpenManage();
         void RefreshManage();
         void ManageAction();
@@ -649,6 +656,11 @@ namespace toybox
         uint32_t m_realLogged[PortalSlotCount] = {}; // per slot: the real toy's type + 1 once logged as read (0: none)
         bool m_holdArmed = false;
         uint64_t m_lastScan = 0;
+        realcopy::Questions m_realQuestions;
+        realcopy::Failures m_realFailures;
+        bool m_realWaiting = false;
+        std::string m_realPath, m_realText; // the "which one to keep" asked last: its copy, its dialog's text
+        bool RealQuestionShown() const;
     };
 
     Model& Get();

@@ -359,6 +359,10 @@ target_include_directories(ArkeyanToyboxLookTest PRIVATE .)
 add_executable(ArkeyanToyboxInPlayTest host/toybox/in_play_test.cpp)
 target_include_directories(ArkeyanToyboxInPlayTest PRIVATE .)
 
+# The copies of real toys in the Toy Box: the side the question focuses, one question at a time (host/toybox/real_copy.h): ./ArkeyanToyboxRealCopyTest
+add_executable(ArkeyanToyboxRealCopyTest host/toybox/real_copy_test.cpp)
+target_include_directories(ArkeyanToyboxRealCopyTest PRIVATE .)
+
 # Which refusal a seat gives a card, for the toast and the seats a drag greys out (host/toybox/put_on.h): ./ArkeyanToyboxPutOnTest
 add_executable(ArkeyanToyboxPutOnTest host/toybox/put_on_test.cpp)
 target_include_directories(ArkeyanToyboxPutOnTest PRIVATE .)

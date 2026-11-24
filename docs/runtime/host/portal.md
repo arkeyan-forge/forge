@@ -381,7 +381,8 @@ game and the `AsyncPortal`: the game sees one portal, the real one's toys and th
   When a virtual Player 2 was put on before a real toy arrives, the real toy can sit in a lower slot than the virtual one;
   which player the game then gives it was not checked on hardware [?].
 - **The Toy Box** (`toybox::Model::mixed`): the real toys sit on the first free seat they fit, read only, shown as on a
-  real portal (their picture once the game read the tag; "Save a copy to My Skylanders" in their options); the other seats
+  real portal (their picture once the game read the tag; "Save a copy to My Skylanders" in their options, unless
+  `keep_real_copies` keeps one already); the other seats
   work as on the emulated portal. Putting a figure on a real toy's seat, swapping players while one is real, are refused
   ("A real figure is there: lift it off the portal first"). The launcher's Toy Box window shows the same (`seat <i> real`
   lines, [toybox_link.md](toybox_link.md)). The virtual seats start empty and are not saved in `portal.txt` (that file is the
@@ -418,7 +419,10 @@ rest of [collection.md](collection.md#copies-of-real-toys)):
   the toy refuses or that reads back different is kept in the copy (`did not reach the toy; kept in its copy`,
   `PortalRealWriteFailures`), and the next placement sends it again. Block 0 and the sector trailers are never written.
 - **Both changed** (the toy played on a console, the copy here): the toy waits unseen; `PortalRealChoices` lists it and
-  `PortalChooseReal` keeps one side, then the game gets the toy. The Toy Box screen for that choice is not built yet.
+  `PortalChooseReal` keeps one side, then the game gets the toy. The Toy Box asks
+  ([toybox_ux.md](toybox_ux.md#copies-of-real-toys)).
+- **A swapper**: its two halves are two toys with a copy each; placed together, the two copies become one card
+  (`PairRealHalves`, when neither has a partner yet).
 - **Time to read a toy** on each portal (HID, Xbox 360 USB, Xbox One) and whether every game waits for a toy that long are
   not measured [?]. `ArkeyanPortalTest` (`CopyChecks`): the toy read whole before the first status that shows it, a block
   the copy is ahead sent at placement, a game write reaching the copy and the toy, a refused write left in the copy, the

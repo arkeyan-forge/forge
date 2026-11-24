@@ -34,6 +34,8 @@ std::vector<PortalRealChoice> PortalRealChoices();
 void PortalChooseReal(const std::string& path, bool keepToy);
 // How many blocks did not reach a real toy since the start (each kept in its copy; the next placement updates the toy).
 uint64_t PortalRealWriteFailures();
+// Whether this run keeps the copies (the setting on and a mixed portal): the Toy Box asks and warns for them.
+bool PortalKeepsRealCopies();
 
 // False when no portal is attached; the title then asks the player to connect one.
 bool PortalIsConnected();

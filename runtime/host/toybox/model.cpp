@@ -168,6 +168,7 @@ namespace toybox
     {
         realPortal = real;
         mixed = !real && PortalIsMixed();
+        keepRealCopies = mixed && PortalKeepsRealCopies();
         gameInfo = Catalogue::Get().FindGame(game);
         seats.clear();
         if (gameInfo != nullptr)
@@ -256,6 +257,7 @@ namespace toybox
                 }
         screen = to;
         dialogs.clear();
+        m_realQuestions.Reopened();
         search.clear();
         ClearFilters();
         homeRow = Row::Grid; // the list, or the empty state's three choices
@@ -316,6 +318,9 @@ namespace toybox
         open = false;
         fromMenu = false;
         screen = Screen::Home;
+        // A "which one to keep" closed unanswered waits for the next opening, or the Toy Box would open again at once.
+        if (RealQuestionShown())
+            m_realQuestions.Closed(m_realPath);
         dialogs.clear();
         holdStart = 0;
         m_dirty = true;
@@ -1306,7 +1311,7 @@ namespace toybox
         std::vector<int> ids; // 0 take off, 1 swap, 2 details, 3 undo, 4 clear, 5 save copy, 6 manage
         if (realPortal || s.physical)
         {
-            if (s.physical)
+            if (s.physical && !keepRealCopies) // with the setting on, every real toy has its copy already
             {
                 buttons.push_back(L("Save a copy to My Skylanders", "Garder une copie dans Mes Skylanders"));
                 ids.push_back(5);
@@ -1398,6 +1403,98 @@ namespace toybox
         }
     }
 
+    void Model::FollowRealCopies()
+    {
+        m_realWaiting = false;
+        if (!keepRealCopies)
+            return;
+        if (m_realFailures.New(PortalRealWriteFailures()))
+            Toast(L("Saved in My Skylanders. The toy is updated the next time it is placed.",
+                      "Gardé dans Mes Skylanders. Le jouet sera mis à jour la prochaine fois qu'il sera posé."),
+                6);
+        const std::vector<PortalRealChoice> choices = PortalRealChoices();
+        std::vector<std::string> paths;
+        paths.reserve(choices.size());
+        for (const PortalRealChoice& choice : choices)
+            paths.push_back(choice.path);
+        const std::string next = m_realQuestions.Next(paths, RealQuestionShown());
+        if (next.empty())
+            return;
+        if (!open)
+        {
+            m_realWaiting = true;
+            return;
+        }
+        for (const PortalRealChoice& choice : choices)
+        {
+            if (choice.path == next)
+                AskRealCopy(choice);
+        }
+    }
+
+    bool Model::RealQuestionShown() const
+    {
+        return open && !m_realText.empty() && std::any_of(dialogs.begin(), dialogs.end(), [this](const Dialog& dialog) {
+            return dialog.text == m_realText;
+        });
+    }
+
+    void Model::AskRealCopy(const PortalRealChoice& choice)
+    {
+        const std::string path = choice.path;
+        Figure copy;
+        if (!collection::Read(path, copy))
+        {
+            // The copy is gone or unreadable: the toy is all there is.
+            fprintf(stderr, "[toybox] real toy copy %s unreadable: the toy's progress is kept\n", path.c_str());
+            PortalChooseReal(path, true);
+            m_realQuestions.Answered();
+            return;
+        }
+        const Figure toy = collection::FigureOf(choice.toy);
+        const uint64_t toyPlaced = realcopy::PlacedStamp(toy.state, toy.stats);
+        const uint64_t copyPlaced = realcopy::PlacedStamp(copy.state, copy.stats);
+        auto side = [&](const Figure& f, uint64_t placed) {
+            std::string line = collection::LevelText(f, game, French());
+            auto append = [&](const std::string& part) { line += (line.empty() ? "" : " · ") + part; };
+            if (collection::HasProgress(f) && f.state == figures::AreaState::Valid)
+                append(std::to_string(f.stats.gold) + L(" gold", " or"));
+            char date[24] = "";
+            if (placed != 0)
+                snprintf(date, sizeof(date), "%04u-%02u-%02u %02u:%02u", unsigned(f.stats.lastPlaced.year),
+                    unsigned(f.stats.lastPlaced.month), unsigned(f.stats.lastPlaced.day),
+                    unsigned(f.stats.lastPlaced.hour), unsigned(f.stats.lastPlaced.minute));
+            append(placed != 0 ? std::string(L("placed ", "posé le ")) + date : std::string(L("no date", "sans date")));
+            return line;
+        };
+        Dialog dialog{ FigureName(copy),
+            std::string(L("It was played on the toy and here. Which progress do you keep? The other one is backed up.",
+                "Elle a été jouée sur le jouet et ici. Quelle progression garder ? L'autre est sauvegardée.")) +
+                "\n" + L("Toy: ", "Jouet : ") + side(toy, toyPlaced) + "\n" + L("Here: ", "Ici : ") +
+                side(copy, copyPlaced),
+            { L("Keep the toy's", "Garder celle du jouet"), L("Keep this one", "Garder celle d'ici") },
+            realcopy::ToyFirst(toyPlaced, copyPlaced) ? 0 : 1, false,
+            [this, path, called = FigureName(copy)](int button) {
+                if (button < 0)
+                {
+                    m_realQuestions.Closed(path);
+                    Toast(called + L(" waits until you choose", " attend votre choix"), 5);
+                    return;
+                }
+                PortalChooseReal(path, button == 0);
+                m_realQuestions.Answered();
+                Toast(button == 0 ? L("The toy's progress is kept", "La progression du jouet est gardée")
+                                  : L("This progress is kept, the toy is updated",
+                                        "Cette progression est gardée, le jouet est mis à jour"),
+                    5);
+            } };
+        fprintf(stderr, "[toybox] which one to keep: %s (the %s focused)\n", path.c_str(),
+            dialog.focused == 0 ? "toy" : "copy");
+        m_realPath = path;
+        m_realText = dialog.text;
+        Ask(std::move(dialog));
+    }
+
     bool Model::Tick(uint64_t now)
     {
         if (now - m_lastScan > 250'000'000)
@@ -1408,6 +1505,7 @@ namespace toybox
             for (const SeatState& s : seats)
                 before.push_back(s.path + (s.waiting ? "*" : "") + (s.physical ? std::to_string(s.physicalType) : ""));
             RefreshSeats(now);
+            FollowRealCopies();
             std::optional<presence::Toy> playerOne;
             for (size_t i = 0; i < seats.size(); i++)
             {
@@ -2480,14 +2578,16 @@ namespace toybox
         std::vector<Action> ActionsFor(const Model& model, const Figure& f)
         {
             std::vector<Action> actions;
+            // A real toy's copy keeps the toy's progress: no edit, no reset (collection::WriteStats refuses them too).
+            const bool editable = KeepsProgress(f) && !f.realCopy;
             if (model.figureMore)
             {
-                if (KeepsProgress(f))
+                if (editable)
                     actions.push_back(Action::Rename);
                 for (Action a :
                     { Action::Pin, Action::Duplicate, Action::BackUp, Action::Restore, Action::Reset, Action::Delete })
                     actions.push_back(a);
-                if (!KeepsProgress(f))
+                if (!editable)
                     std::erase(actions, Action::Reset);
                 return actions;
             }
@@ -2497,12 +2597,12 @@ namespace toybox
                 actions.push_back(Action::TakeOff);
             if (f.lock.Busy())
                 actions.push_back(Action::Unlock);
-            if (!model.TrapVillainsOf(f).empty())
+            if (!f.realCopy && !model.TrapVillainsOf(f).empty())
             {
                 actions.push_back(Action::Villain);
                 actions.push_back(Action::Evolved);
             }
-            actions.push_back(KeepsProgress(f) ? Action::EditStats : Action::Rename);
+            actions.push_back(editable ? Action::EditStats : Action::Rename);
             if (f.IsSwapTop() || f.IsSwapBottom())
                 actions.push_back(Action::ChangeHalf);
             if (model.WheelPossible(f))
