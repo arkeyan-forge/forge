@@ -72,6 +72,11 @@ namespace
             "host file times do not depend on the host clock");
         Check(
             netplay::HostFileTime(false, 5000, 1234) == 3766, "host file times follow the file's age outside netplay");
+        Check(netplay::TitleDiskSpace(true, 7, 3).capacity == 120ull << 30 &&
+                  netplay::TitleDiskSpace(true, 9, 1).available == 100ull << 30,
+            "a deterministic run's disk is the same whatever the host's");
+        Check(netplay::TitleDiskSpace(false, 7, 3).capacity == 7 && netplay::TitleDiskSpace(false, 7, 3).available == 3,
+            "outside netplay the title sees the host's disk");
         // A cooperative flip waits for its blanks' wall time; a late one shows at once and paces the next from now.
         Check(netplay::FlipDue(0, 7000, 2, 100) == 7000, "the first cooperative flip is not held");
         Check(netplay::FlipDue(1000, 1050, 2, 100) == 1200,

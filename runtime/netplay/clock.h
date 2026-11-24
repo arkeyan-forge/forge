@@ -18,6 +18,17 @@ namespace netplay
         return deterministic ? EpochFileTime : now - age;
     }
 
+    // The storage the title is told about (XamContentGetDeviceData, NtQueryVolumeInformationFile): the host disk's, or in
+    // deterministic mode a fixed 120 GB drive with 100 GB free: two PCs' disks differ, and the title keeps what it reads.
+    struct DiskSpace
+    {
+        uint64_t capacity = 0, available = 0;
+    };
+    inline DiskSpace TitleDiskSpace(bool deterministic, uint64_t capacity, uint64_t available)
+    {
+        return deterministic ? DiskSpace{ 120ull << 30, 100ull << 30 } : DiskSpace{ capacity, available };
+    }
+
     struct ReadCursor
     {
         uint64_t frame = UINT64_MAX;

@@ -741,6 +741,10 @@ on the host and NEON on the guest (`SKY_NETPLAY_TEST_XMA_NATIVE=1`, a session te
 81 checkpoints stayed equal through four figure changes, with `SKY_NETPLAY_TEST_DEPTH_NOISE=2` on the guest too (one
 depth texel in 61 at the nearest or farthest value: no leak from the light tile job either).
 
+[V] **The disk.** `XamContentGetDeviceData` and `NtQueryVolumeInformationFile` told the title the host disk's size
+and free space, which differ between two PCs and change with every file written. A deterministic run now tells it a
+fixed 120 GB drive with 100 GB free (`netplay::TitleDiskSpace`, `ArkeyanNetplayTest`).
+
 [V] **Achievements.** Two Windows PCs went out of sync right after "Hello!! Skylander": the title enumerates the
 achievements after an unlock, and each PC answered with its own player's list and wall-clock unlock times
 (`kernel/xam_achievements.cpp`). Online, the title now sees the unlocks of this session alone, timed by the session's
