@@ -16,11 +16,16 @@ comparison on macOS (`SKY_UPSCALER=metalfx`), never offered as "FSR".
 | environment (tests) | `SKY_UPSCALER`, `SKY_FSR_QUALITY` | the same; `SKY_UPSCALER` also takes `metalfx` (internal) |
 | F3 menu, Video | **Upscaling** (Off, FSR 3), **FSR quality** (Native AA first; shown while on) | applied at the next frame, no restart; written to the game's section |
 
-**Scales** (`gpu/upscale_mode.h`): the game's targets render at a whole multiple of the guest's size, so a preset picks
-the scene's scale nearest to the frame's scale over FSR's ratio (1.5, 1.7, 2, 3). The frame's scale is the window's
-height over 720, rounded (`SKY_UPSCALE_SCALE=<n>` sets it). At 1440p (frame x2) every preset renders the scene at x1
-(FSR 2:1); at 4K (frame x3) quality, balanced and performance at x2 (1.5:1), ultra performance at x1 (3:1); at 720p FSR
-runs at 1:1, as anti-aliasing. The F3 menu's **Resolution scale** line then reads "x1, FSR 3 to x2".
+**Scales** (`gpu/upscale_mode.h`): a preset renders the scene at the scale that makes FSR's output its ratio (1.5, 1.7,
+2, 3) of the scene: output width over the preset's ratio, over the scene's guest width, from x1 to the frame's scale.
+The frame's scale is the window's height over 720, rounded (`SKY_UPSCALE_SCALE=<n>` sets it). That scale is
+fractional: the scene's targets, and what is resolved from them, are their guest size times it, rounded
+(`d3d::HostSize`), and each target's axes take their own exact scale (`d3d::TargetAxisScale`), so viewports, scissors,
+resolve and clear rectangles land on its edges; the depth read-back reads every host pixel and takes the one under
+each guest pixel's centre. At 1440p quality, Giants' 1000x600 scene renders at 1707x1024 for 2560x1440, the full-scene
+games' 1040x620 at 1707x1017. Before 0.9.10 the scale was whole, so at 1440p every preset gave about 2.5:1, blurrier
+than performance (#137). The scene never goes under its guest size: at 720p FSR runs nearer 1:1, as anti-aliasing. The
+F3 menu's **Resolution scale** line reads the two sizes, "1707x1024, FSR 3 to 2560x1440".
 
 **Native** (0.9.4, `fsr_quality = native`, AMD's "Native AA", ratio 1): the scene always at the frame's own scale (x2 at
 1440p, x3 at 4K), FSR as temporal anti-aliasing only (8 jitter phases, no LOD bias). The owner's ask: frame generation
@@ -37,7 +42,7 @@ others' 1040x620 into 1280x720), FSR outputs the frame's size and does the whole
 **Full-size scenes** (Swap Force, Trap Team, SuperChargers, Imaginators render their 3D at the frame's 1280x720,
 `game::Adapter::fullScene`): the scene cannot be told from the frame by size, and the frame often reuses the scene's
 EDRAM, so with FSR on these games render their own smaller scene (1040x620, as `original_resolution`) and FSR
-upscales it to the frame (2.46x at 1440p). That choice is made at the start: in these four, the F3 menu's Upscaling
+upscales it to the frame (at the preset's ratio, as above). That choice is made at the start: in these four, the F3 menu's Upscaling
 row applies at the next start when the game started with FSR off.
 
 **Live switching** (`upscale::Request`, `d3d/upscale.cpp`): the menu asks; at the next swap the scales change and
@@ -187,12 +192,12 @@ as function constant 65535.
   without motion (6.45): a wrong binding, format or motion convention fails it. `ArkeyanRecompGpuTest --fsr-bench <w> <h>
   <output w> <output h>` gives FSR's cost per frame and fails when its still grey picture does not stay grey.
 - One game: `SKY_UPSCALER=fsr3 SKY_WINDOW_SIZE=2560x1440` on an isolated run (testing.md); the log has
-  `[upscale] fsr3 quality: the scene at scale 1, upscaled to the frame's scale 2`, `[fsr] FSR 3.1 upscaler 1000x600 ->
-  2000x1200, SDR colour (formats 20 -> 20)` (plume's format numbers) and every 900 frames the camera vote's count, the
+  `[upscale] fsr3 quality: the scene at scale 1.71, upscaled to the frame's scale 2 (ratio 1.50, 18 jitter phases)`,
+  `[fsr] FSR 3.1 upscaler 1707x1024 -> 2560x1440, SDR colour (formats 20 -> 20)` (plume's format numbers) and every 900 frames the camera vote's count, the
   depth's direction (and how often it changed) and the new histories (resets); never `[fsr] ... no longer upscaled`.
 - Every game: `tools/regress/fsr_all.sh` (in `tools/test_all.sh`'s game sections).
 - Live: the F3 menu's Upscaling row; the log has `[gamemenu] upscaler = fsr3`, then `[upscale] the render targets are
-  made again at scale 1 (the frame at 2)`.
+  made again at scale 1.71 (the frame at 2)`.
 
 ## Results (M1 Pro, macOS 26.6, offscreen 2560x1440, 2026-11-07) [V]
 

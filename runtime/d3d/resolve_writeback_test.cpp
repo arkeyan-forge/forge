@@ -4,6 +4,7 @@
 // ArkeyanResolveWritebackTest
 #include "d3d/resolve_writeback.h"
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -29,9 +30,13 @@ namespace
         return fetch;
     }
 
-    uint32_t HostPixel(uint32_t x, uint32_t y) { return (x * 7 + y) & 0xFF | (y * 3) % 256 << 8 | (x ^ y) << 16 | 0xC0000000u; }
+    uint32_t HostPixel(uint32_t x, uint32_t y)
+    {
+        return (x * 7 + y) & 0xFF | (y * 3) % 256 << 8 | (x ^ y) << 16 | 0xC0000000u;
+    }
 
-    void Run(uint32_t width, uint32_t height, bool tiled, uint32_t endian, uint32_t scale, uint32_t offsetX, bool swapRB)
+    void Run(
+        uint32_t width, uint32_t height, bool tiled, uint32_t endian, uint32_t scale, uint32_t offsetX, bool swapRB)
     {
         const d3d::xenos::TextureFetch fetch = Fetch(width, height, tiled, endian);
         const d3d::xenos::TextureLevel level =
@@ -42,11 +47,13 @@ namespace
             for (uint32_t x = 0; x < hostWidth; x++)
                 host[size_t(y) * hostWidth + x] = HostPixel(x, y);
         std::vector<uint8_t> guest(level.sliceBytes, 0xAB);
-        d3d::PackResolvedColour(host.data(), hostWidth, hostHeight, scale, offsetX, fetch, level, swapRB, guest.data());
+        d3d::PackResolvedColour(
+            host.data(), hostWidth, hostHeight, float(scale), offsetX, fetch, level, swapRB, guest.data());
         for (uint32_t y = 0; y < height; y++)
             for (uint32_t x = 0; x < width; x++)
             {
-                uint32_t offset = tiled ? d3d::xenos::Tiled2D(x, y, level.pitchBlocks, 2) : (y * level.pitchBlocks + x) * 4;
+                uint32_t offset =
+                    tiled ? d3d::xenos::Tiled2D(x, y, level.pitchBlocks, 2) : (y * level.pitchBlocks + x) * 4;
                 uint8_t texel[4];
                 memcpy(texel, &guest[offset], 4);
                 d3d::xenos::SwapEndian(texel, 4, endian);
@@ -62,6 +69,32 @@ namespace
                 }
             }
     }
+
+    // A fractional scale (the upscaled scene's): each texel averages the host pixels its guest pixel covers, every texel
+    // written. Host columns of one colour per guest column show which block each texel read.
+    void RunFractional()
+    {
+        const uint32_t width = 64, height = 32, hostWidth = 110, hostHeight = 55; // scale 1.72
+        const float scale = float(hostHeight) / float(height);
+        const d3d::xenos::TextureFetch fetch = Fetch(width, height, false, 0);
+        const d3d::xenos::TextureLevel level =
+            d3d::xenos::TextureLevelLayout(fetch, d3d::xenos::TextureFormat(fetch.Format()), 0);
+        std::vector<uint32_t> host(size_t(hostWidth) * hostHeight);
+        for (uint32_t column = 0; column < width; column++)
+            for (auto x = uint32_t(std::lround(float(column) * scale));
+                x < uint32_t(std::lround(float(column + 1) * scale)); x++)
+                for (uint32_t y = 0; y < hostHeight; y++)
+                    host[size_t(y) * hostWidth + x] = column | 0xFF000000u;
+        std::vector<uint8_t> guest(level.sliceBytes, 0xAB);
+        d3d::PackResolvedColour(host.data(), hostWidth, hostHeight, scale, 0, fetch, level, false, guest.data());
+        for (uint32_t y = 0; y < height; y++)
+            for (uint32_t x = 0; x < width; x++)
+            {
+                uint8_t texel[4];
+                memcpy(texel, &guest[(y * level.pitchBlocks + x) * 4], 4);
+                Check(texel[0] == x && texel[3] == 0xFF, "fractional scale", x, y);
+            }
+    }
 }
 
 int main()
@@ -71,6 +104,7 @@ int main()
     Run(160, 90, true, 2, 2, 16, true); // a frame copy wider than the guest's
     Run(48, 20, false, 0, 2, 0, false); // linear, no swap: rows of 256 bytes
     Run(40, 8, false, 1, 3, 0, false);  // 8-in-16
+    RunFractional();
     if (g_failures == 0)
         printf("resolve write-back test: all checks passed\n");
     return g_failures == 0 ? 0 : 1;

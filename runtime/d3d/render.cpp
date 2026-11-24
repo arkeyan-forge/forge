@@ -80,7 +80,9 @@ namespace
 
     // Resolution scale (settings): host render targets, and the textures resolved from them, are this many times the
     // guest's surfaces, so guest pixel coordinates (viewports, scissors, resolve and clear rectangles) are scaled by it.
-    int32_t Scale() { return int32_t(gpu::g_settings.resolutionScale); }
+    // With upscaling it is the scene's, often fractional: sizes are rounded (d3d::HostSize), and each target's axes
+    // take their own exact scale (TargetScale).
+    float Scale() { return upscale::Active() ? upscale::SceneScale() : float(gpu::g_settings.resolutionScale); }
     // The effective edge smoothing: the setting, or by the resolution scale and the level when it was not chosen. Each
     // change is logged once.
     edgesmoothing::Mode EdgeSmoothing()
@@ -103,7 +105,10 @@ namespace
     }
 
     // The frame's scale: the resolution scale, or with upscaling (d3d/upscale.h) the upscaled scene's.
-    int32_t FrameScale() { return upscale::Active() ? int32_t(upscale::FrameScale()) : Scale(); }
+    int32_t FrameScale()
+    {
+        return int32_t(upscale::Active() ? upscale::FrameScale() : gpu::g_settings.resolutionScale);
+    }
 
     struct Stats
     {
@@ -145,15 +150,18 @@ namespace
                desc.height == ultrawide::FrameHeight * FrameScale();
     }
 
-    int32_t TargetScale(const gpu::TextureDesc& desc)
+    d3d::AxisScale TargetScale(const gpu::TextureDesc& desc)
     {
-        return IsFrameTexture(desc) ? FrameScale() : d3d::TargetScale(desc.width, desc.height, Scale());
+        if (IsFrameTexture(desc))
+            return { float(FrameScale()), float(FrameScale()) };
+        return d3d::TargetAxisScale(desc.width, desc.height, Scale());
     }
 
     // A host target of the 3D scene's size (upscaling: its draws are jittered, its composite upscaled).
     bool IsSceneTexture(const gpu::TextureDesc& desc)
     {
-        return desc.width == ultrawide::SceneWidth() * Scale() && desc.height == ultrawide::SceneHeight() * Scale();
+        return desc.width == d3d::HostSize(ultrawide::SceneWidth(), Scale()) &&
+               desc.height == d3d::HostSize(ultrawide::SceneHeight(), Scale());
     }
 
     // How far the guest's frame sits from the wide frame's left edge, in host pixels.
@@ -209,8 +217,8 @@ namespace
         for (auto& [surface, own] : g_ownTargets)
             gpu::DestroyTexture(own.texture);
         g_ownTargets.clear();
-        fprintf(stderr, "[upscale] the render targets are made again at scale %d (the frame at %d)\n", Scale(),
-            FrameScale());
+        fprintf(stderr, "[upscale] the render targets are made again at scale %.3g (the frame at %d)\n",
+            double(Scale()), FrameScale());
     }
 
     // The window settled on another shape (ultrawide::FrameEnd): the frame's targets (1280x720 guest pixels, as wide as
@@ -252,9 +260,10 @@ namespace
         gpu::Texture*& texture = own != g_ownTargets.end() ? own->second.texture : g_targets[key];
         if (texture == nullptr)
         {
-            const int32_t scale = IsFrameSize(width, height) ? FrameScale() : d3d::TargetScale(width, height, Scale());
-            gpu::TextureDesc desc{ .width = (IsFrameSize(width, height) ? ultrawide::FrameWidth() : width) * scale,
-                .height = height * scale };
+            const bool frameSize = IsFrameSize(width, height);
+            const float scale = frameSize ? float(FrameScale()) : d3d::TargetScale(width, height, Scale());
+            gpu::TextureDesc desc{ .width = d3d::HostSize(frameSize ? ultrawide::FrameWidth() : width, scale),
+                .height = d3d::HostSize(height, scale) };
             desc.format = depth ? xenos::DepthTargetFormat : xenos::ColorTargetFormat(format);
             desc.usage =
                 depth ? gpu::TextureUsage::DepthStencil : gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled;
@@ -1310,23 +1319,23 @@ namespace
         uint32_t vte = GpuRegister(device, Reg::PA_CL_VTE_CNTL);
         const gpu::TextureDesc& size = gpu::Desc(sizeTarget);
         const bool frame = IsFrameTexture(size);
-        const int32_t targetScale = TargetScale(size);
-        draw.resolutionScale = float(targetScale);
+        const d3d::AxisScale targetScale = TargetScale(size);
+        draw.resolutionScale = targetScale.y;
         draw.positionScale[0] = draw.positionScale[1] = 1.0f;
         if ((vte & 1) == 0)
         {
             // Viewport transform disabled: shaders output pixel positions. Convert them to clip space in the shader
             // (g_PositionScale) and draw over the whole target.
             // The wide frame is still 1280 guest pixels for the game.
-            // A target's size is a whole multiple of its scale: these divisions are exact.
-            float guestWidth = frame ? float(ultrawide::FrameWidth16x9) : float(size.width) / float(targetScale);
+            // Each axis's scale is its host size over its guest size: these divisions give the guest's size back.
+            float guestWidth = frame ? float(ultrawide::FrameWidth16x9) : float(size.width) / targetScale.x;
             draw.positionScale[0] = 2.0f / guestWidth;
-            draw.positionScale[1] = -2.0f * float(targetScale) / float(size.height);
+            draw.positionScale[1] = -2.0f * targetScale.y / float(size.height);
             draw.halfPixelOffset[0] = -1.0f;
             draw.halfPixelOffset[1] = 1.0f;
             xScale = guestWidth / 2;
             xOffset = xScale;
-            yScale = -float(size.height) / float(targetScale) / 2;
+            yScale = -float(size.height) / targetScale.y / 2;
             yOffset = -yScale;
         }
         // An inverted depth range (MinZ > MaxZ) is kept as it is: Swap Force draws its scene with viewports 1..0.2 and
@@ -1335,10 +1344,10 @@ namespace
         draw.viewport =
             plume::RenderViewport(xOffset - std::fabs(xScale), yOffset - std::fabs(yScale), 2 * std::fabs(xScale),
                 2 * std::fabs(yScale), (vte & 0x20) ? zOffset : 0.0f, (vte & 0x10) ? zOffset + zScale : 1.0f);
-        draw.viewport.x *= targetScale;
-        draw.viewport.y *= targetScale;
-        draw.viewport.width *= targetScale;
-        draw.viewport.height *= targetScale;
+        draw.viewport.x *= targetScale.x;
+        draw.viewport.y *= targetScale.y;
+        draw.viewport.width *= targetScale.x;
+        draw.viewport.height *= targetScale.y;
 
         const d3d::Rect scissor = d3d::DrawScissor(Read32(device + Device::ScissorTestEnable) != 0,
             { int32_t(Read32(device + Device::Scissor)), int32_t(Read32(device + Device::Scissor + 4)),
@@ -1413,8 +1422,7 @@ namespace
                 {
                     const gpu::TextureDesc& read = gpu::Desc(draw.textures[slot]);
                     g_frameTargetRead |= (read.usage & gpu::TextureUsage::RenderTarget) != 0;
-                    if (read.width == ultrawide::SceneWidth() * Scale() &&
-                        read.height == ultrawide::SceneHeight() * Scale())
+                    if (IsSceneTexture(read))
                         g_frameSceneRead = true;
                     else if (IsFrameTexture(read) || (inset && read.width == size.width && read.height == size.height))
                         g_frameFrameRead = true;
@@ -1980,7 +1988,7 @@ namespace
         // pixels apart at scale N: an edge filter that wide also softens what the higher resolution added. Measured at
         // scale 2: 2.9 % of the pixels changed and 20 % of the sharpness lost, against 1.4 % and 13 % in host pixels.
         const bool fxaaPass = game::HostKernelPixelShader != 0 && g_drawPixelShader == game::HostKernelPixelShader;
-        const bool hostKernel = fxaaPass && Scale() > 1;
+        const bool hostKernel = fxaaPass && Scale() > 1.0f;
         // The "Edge smoothing" setting: Game leaves the pass's contrast thresholds, Light and Off raise them (gpu/edge_smoothing.h).
         const edgesmoothing::Mode smoothing = fxaaPass ? EdgeSmoothing() : edgesmoothing::Game;
         if (upData != 0 || g_dump.active || g_promptFaceHash != 0 ||
@@ -2512,32 +2520,43 @@ namespace
         if (got && image.size() == size_t(pitch) * rows) // two frames old
             memcpy(g_memory.Translate(guest), image.data(), image.size() * 4);
 
-        uint32_t scale = uint32_t(Scale());
-        uint32_t left = x / scale, top = y / scale;
-        uint32_t right = std::min((x + width) / scale, level.width),
-                 bottom = std::min((y + height) / scale, level.height);
+        // A whole scale reads one texel per guest pixel on the GPU (`step`); a fractional one (upscaling) reads them all,
+        // and each guest pixel takes the host pixel under its centre.
+        const d3d::AxisScale scale = d3d::TargetAxisScale(gpu::Desc(texture).width, gpu::Desc(texture).height, Scale());
+        const bool whole = scale.x == scale.y && scale.x == std::floor(scale.x);
+        const uint32_t step = whole ? uint32_t(scale.x) : 1;
+        const float pickX = whole ? 1.0f : scale.x, pickY = whole ? 1.0f : scale.y;
+        const auto guestOf = [](uint32_t host, float axis) { return uint32_t(std::lround(float(host) / axis)); };
+        uint32_t left = guestOf(x, scale.x), top = guestOf(y, scale.y);
+        uint32_t right = std::min(guestOf(x + width, scale.x), level.width),
+                 bottom = std::min(guestOf(y + height, scale.y), level.height);
         std::shared_ptr<const d3d::TiledDepthLayout> layout = tiled ? DepthLayout(pitch, rows) : nullptr;
-        const uint64_t request = gpu::RequestReadback(texture, scale,
+        const uint64_t request = gpu::RequestReadback(texture, step,
             [=](const uint32_t* depth, uint32_t depthWidth, uint32_t depthHeight, std::vector<uint32_t>& out) {
                 out.assign(size_t(pitch) * rows, 0);
-                const uint32_t rowEnd = std::min(bottom, depthHeight), columnEnd = std::min(right, depthWidth);
+                const auto pick = [](uint32_t guest, float axis) {
+                    return axis == 1.0f ? guest : uint32_t((float(guest) + 0.5f) * axis);
+                };
+                const uint32_t rowEnd = std::min(bottom, uint32_t(float(depthHeight) / pickY)),
+                               columnEnd = std::min(right, uint32_t(float(depthWidth) / pickX));
                 for (uint32_t row = top; row < rowEnd; row++)
                 {
-                    const uint32_t* source = depth + size_t(row) * depthWidth;
+                    const uint32_t* source = depth + size_t(pick(row, pickY)) * depthWidth;
                     if (!tiled)
                         for (uint32_t column = left; column < columnEnd; column++)
-                            out[size_t(row) * pitch + column] = GuestDepth(source[column]);
+                            out[size_t(row) * pitch + column] = GuestDepth(source[pick(column, pickX)]);
                     else if (layout->split)
                     {
                         // layout->Offset(column, row), its row part once a row.
                         const uint32_t tileRow = ((row >> 5) * (pitch >> 5)) << 10;
                         const uint16_t* inTile = layout->inTile.data() + (row & 31) * 32;
                         for (uint32_t column = left; column < columnEnd; column++)
-                            out[tileRow + ((column >> 5) << 10) + inTile[column & 31]] = GuestDepth(source[column]);
+                            out[tileRow + ((column >> 5) << 10) + inTile[column & 31]] =
+                                GuestDepth(source[pick(column, pickX)]);
                     }
                     else
                         for (uint32_t column = left; column < columnEnd; column++)
-                            out[xenos::Tiled2D(column, row, pitch, 2) / 4] = GuestDepth(source[column]);
+                            out[xenos::Tiled2D(column, row, pitch, 2) / 4] = GuestDepth(source[pick(column, pickX)]);
                 }
             });
         if (byRequest)
@@ -2565,21 +2584,22 @@ namespace
             return;
 
         const bool frame = !depth && IsFrameTexture(gpu::Desc(target));
-        const int32_t scale = TargetScale(gpu::Desc(target));
+        const d3d::AxisScale scale = TargetScale(gpu::Desc(target));
+        const int32_t guestFrameRight = d3d::ToHost(int32_t(ultrawide::FrameWidth16x9), scale.x);
         int32_t left = 0, top = 0, right = int32_t(gpu::Desc(target).width), bottom = int32_t(gpu::Desc(target).height);
         if (args.rect != 0)
         {
-            left = std::max(int32_t(Read32(args.rect)) * scale, 0);
-            top = std::max(int32_t(Read32(args.rect + 4)) * scale, 0);
+            left = std::max(d3d::ToHost(int32_t(Read32(args.rect)), scale.x), 0);
+            top = std::max(d3d::ToHost(int32_t(Read32(args.rect + 4)), scale.y), 0);
             // A rectangle over the guest's whole frame takes the whole wide one. The tiles of a predicated-tiling frame
             // (Giants: 0-864 and 864-1280) take the wide frame from its left edge, or to its right edge, and meet at the
             // centred position of their common edge.
-            int32_t guestRight = int32_t(Read32(args.rect + 8)) * scale;
-            if (frame && left == 0 && guestRight >= int32_t(ultrawide::FrameWidth16x9) * scale)
+            int32_t guestRight = d3d::ToHost(int32_t(Read32(args.rect + 8)), scale.x);
+            if (frame && left == 0 && guestRight >= guestFrameRight)
                 ; // the whole wide frame
             else if (frame && game::ExpandTiledTargets)
             {
-                if (guestRight >= int32_t(ultrawide::FrameWidth16x9) * scale)
+                if (guestRight >= guestFrameRight)
                     guestRight = right;
                 else
                     guestRight += FrameShift();
@@ -2589,7 +2609,7 @@ namespace
             }
             else
                 right = std::min(guestRight, right);
-            bottom = std::min(int32_t(Read32(args.rect + 12)) * scale, bottom);
+            bottom = std::min(d3d::ToHost(int32_t(Read32(args.rect + 12)), scale.y), bottom);
         }
 
         if (args.destination != 0)
@@ -2604,7 +2624,7 @@ namespace
             // Depth (k_24_8, k_24_8_FLOAT textures) is sampled as its value in X, as Xenia converts it.
             gpu::Format format = depth ? gpu::Format::R32_FLOAT : gpu::Desc(target).format;
             // The frame's copy is as wide as the frame: that is what the swap presents.
-            const uint32_t hostWidth = frame ? gpu::Desc(target).width : fetch.Width() * scale;
+            const uint32_t hostWidth = frame ? gpu::Desc(target).width : d3d::HostSize(fetch.Width(), scale.x);
             // A cube texture receives one resolve per face (`slice`): the level's ambient cube map is built this way.
             bool cube = !depth && fetch.Dimension() == 3;
             if (host.texture == nullptr || gpu::Desc(host.texture).format != format ||
@@ -2612,7 +2632,7 @@ namespace
             {
                 gpu::DestroyTexture(host.texture);
                 host.texture = gpu::CreateTexture({ .width = hostWidth,
-                    .height = fetch.Height() * scale,
+                    .height = d3d::HostSize(fetch.Height(), scale.y),
                     .arraySize = cube ? 6u : 1u,
                     .format = format,
                     .usage = gpu::TextureUsage::Sampled | gpu::TextureUsage::RenderTarget,
@@ -2624,8 +2644,8 @@ namespace
             // start with X, as for ARGB textures (ZYXW): the host copy keeps the target's order, so sampling swaps back.
             host.swapRB = !depth && ((fetch.dword[3] >> 1) & 7) != 0;
 
-            uint32_t x = args.point != 0 ? Read32(args.point) * scale : 0,
-                     y = args.point != 0 ? Read32(args.point + 4) * scale : 0;
+            uint32_t x = args.point != 0 ? uint32_t(d3d::ToHost(int32_t(Read32(args.point)), scale.x)) : 0,
+                     y = args.point != 0 ? uint32_t(d3d::ToHost(int32_t(Read32(args.point + 4)), scale.y)) : 0;
             if (frame && game::ExpandTiledTargets && ultrawide::Active())
                 x = uint32_t(
                     left); // a tile of the wide frame lands where it was read (the copy is as wide as the frame)
@@ -2708,18 +2728,18 @@ namespace
         // The whole target: a load-action clear, cheaper than plume's rectangle clear.
         auto clearRect = [&](const gpu::Texture* target, plume::RenderRect& out) -> const plume::RenderRect* {
             const gpu::TextureDesc& desc = gpu::Desc(target);
-            const int32_t scale = TargetScale(desc);
-            int32_t l = left * scale, r = right * scale;
+            const d3d::AxisScale scale = TargetScale(desc);
+            int32_t l = d3d::ToHost(left, scale.x), r = d3d::ToHost(right, scale.x);
             if (IsFrameTexture(desc))
             {
                 // The wide frame: a clear of the guest's whole frame clears all of it, a smaller one is centred.
-                if (l <= 0 && r >= int32_t(ultrawide::FrameWidth16x9) * scale)
+                if (l <= 0 && r >= d3d::ToHost(int32_t(ultrawide::FrameWidth16x9), scale.x))
                     r = int32_t(desc.width);
                 else
                     l += FrameShift(), r += FrameShift();
             }
-            out = plume::RenderRect(std::max(l, 0), std::max(top * scale, 0), std::min(r, int32_t(desc.width)),
-                std::min(bottom * scale, int32_t(desc.height)));
+            out = plume::RenderRect(std::max(l, 0), std::max(d3d::ToHost(top, scale.y), 0),
+                std::min(r, int32_t(desc.width)), std::min(d3d::ToHost(bottom, scale.y), int32_t(desc.height)));
             if (out.left == 0 && out.top == 0 && out.right == int32_t(desc.width) && out.bottom == int32_t(desc.height))
                 return nullptr;
             return &out;
@@ -3167,8 +3187,9 @@ bool d3d::WriteBackResolvedTexture(uint32_t texture)
     if (guest == 0 || !gpu::ReadbackTexture(found->second.texture, rgba, width, height) || height < level.height)
         return false;
     // The copy holds `scale` host pixels per guest pixel; a frame copy may be wider than the guest's (ultrawide), centred.
-    const uint32_t scale = height / level.height;
-    const uint32_t offsetX = width > level.width * scale ? (width - level.width * scale) / 2 : 0;
+    const float scale = float(height) / float(level.height);
+    const uint32_t guestWidth = d3d::HostSize(level.width, scale);
+    const uint32_t offsetX = width > guestWidth ? (width - guestWidth) / 2 : 0;
     auto memory = static_cast<uint8_t*>(g_memory.Translate(guest));
     writewatch::WillWrite(memory, level.sliceBytes);
     PackResolvedColour(rgba.data(), width, height, scale, offsetX, fetch, level, found->second.swapRB, memory);
