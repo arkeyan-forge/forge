@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <random>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace
@@ -75,6 +76,23 @@ namespace
         Check(netplay::TitleDiskSpace(true, 7, 3).capacity == 120ull << 30 &&
                   netplay::TitleDiskSpace(true, 9, 1).available == 100ull << 30,
             "a deterministic run's disk is the same whatever the host's");
+        {
+            uint64_t a = netplay::DeterministicRandomSeed, b = netplay::DeterministicRandomSeed;
+            bool same = true, varied = false;
+            uint8_t first = netplay::DeterministicByte(a);
+            same = same && first == netplay::DeterministicByte(b);
+            for (int i = 0; i < 64; ++i)
+            {
+                const uint8_t x = netplay::DeterministicByte(a);
+                same = same && x == netplay::DeterministicByte(b);
+                varied = varied || x != first;
+            }
+            Check(same && varied, "a deterministic run's random bytes are the same on both computers, and vary");
+        }
+        Check(netplay::TitleTimeZoneBias(true, -60) == 0 && netplay::TitleTimeZoneBias(false, -60) == -60 &&
+                  std::string_view(netplay::TitleTimeZoneName(true, "CEST")) == "UTC" &&
+                  std::string_view(netplay::TitleTimeZoneName(false, "CEST")) == "CEST",
+            "a deterministic run's time zone is UTC, the host's otherwise");
         Check(netplay::TitleDiskSpace(false, 7, 3).capacity == 7 && netplay::TitleDiskSpace(false, 7, 3).available == 3,
             "outside netplay the title sees the host's disk");
         // A cooperative flip waits for its blanks' wall time; a late one shows at once and paces the next from now.

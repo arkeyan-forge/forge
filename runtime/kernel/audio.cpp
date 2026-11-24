@@ -206,10 +206,13 @@ PPC_FUNC(__imp__XAudioSubmitRenderDriverFrame)
 }
 
 // At the title's audio start (its XAudio2 registers its render client right after; SSA asks twice).
+// A deterministic run (an online session, a recording) tells it stereo whatever the device: Wwise mixes for the layout
+// it is told, in the title's memory, so a 5.1 PC and a stereo one would go out of sync.
 PPC_FUNC(__imp__XAudioGetSpeakerConfig)
 {
-    const uint32_t config = speakers::GuestSpeakerConfig(HostAudioLayout());
-    fprintf(stderr, "[audio] speaker config 0x%08X (%s)\n", config, speakers::Name(HostAudioLayout()));
+    const speakers::Mode told = netplay::Enabled() ? speakers::Stereo : HostAudioLayout();
+    const uint32_t config = speakers::GuestSpeakerConfig(told);
+    fprintf(stderr, "[audio] speaker config 0x%08X (%s)\n", config, speakers::Name(told));
     g_memory.Write<uint32_t>(ctx.r3.u32, config);
     ctx.r3.u64 = StatusSuccess;
 }

@@ -745,6 +745,15 @@ depth texel in 61 at the nearest or farthest value: no leak from the light tile 
 and free space, which differ between two PCs and change with every file written. A deterministic run now tells it a
 fixed 120 GB drive with 100 GB free (`netplay::TitleDiskSpace`, `ArkeyanNetplayTest`).
 
+[V] **What else the host told the title.** A review of the kernel calls that answer from the host, after the two PCs:
+the time zone and its name (`ExGetXConfigSetting` 3/1-3/3, which the title stamps its saves with; the testers' PCs were
+two hours apart) are UTC in a deterministic run; `XAudioGetSpeakerConfig` says stereo whatever the device (Wwise mixes
+for the layout it is told, in the title's memory); `XNetRandom` gives bytes from a fixed SplitMix64 seed, the same on
+both computers and in a replay (SSA never calls it, a played session with a blank figure logged no call; other titles
+may). Settled already: the video mode (1280x720 at 60 Hz, fixed), directory listings (sorted), the clocks (virtual),
+the settings the host sends. `ArkeyanNetplayTest` covers the helpers (`netplay/clock.h`). Test switch:
+`SKY_NETPLAY_TEST_HOST_RANDOM=1` gives the host's random bytes again.
+
 [V] **Achievements.** Two Windows PCs went out of sync right after "Hello!! Skylander": the title enumerates the
 achievements after an unlock, and each PC answered with its own player's list and wall-clock unlock times
 (`kernel/xam_achievements.cpp`). Online, the title now sees the unlocks of this session alone, timed by the session's

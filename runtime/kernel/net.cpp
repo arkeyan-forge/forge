@@ -3,12 +3,15 @@
 // export takes the caller type (XNCALLER_TITLE) first, except the WSA*Event calls. XHttp (the console's HTTP client,
 // Swap Force) opens sessions, connections and requests, which are local, and fails each request where a real console
 // with no cable fails it: name resolution. Signatures follow Xenia (BSD) and the XDK's WinHTTP-shaped XHttp API.
+#include "host/env.h"
 #include "kernel/objects.h"
 #include "memory.h"
+#include "netplay/clock.h"
 #include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <random>
+#include <string_view>
 #include <ppc_config.h>
 #include <ppc_context.h>
 
@@ -151,15 +154,28 @@ PPC_FUNC(__imp__NetDll_XNetGetTitleXnAddr)
     ctx.r3.u64 = XnAddrNone;
 }
 
-// XNetRandom(caller, buffer, length): the console's cryptographic random bytes.
+// XNetRandom(caller, buffer, length): the console's cryptographic random bytes. A deterministic run (an online session,
+// a recording) gives the same bytes on both computers, in the order the title asks for them (netplay::DeterministicBytes):
+// the host's own random bytes would differ, and the title keeps them.
 PPC_FUNC(__imp__NetDll_XNetRandom)
 {
     static std::mutex mutex;
     static std::random_device device;
+    static uint64_t state = netplay::DeterministicRandomSeed;
+    static uint32_t calls = 0;
     auto* bytes = static_cast<uint8_t*>(g_memory.Translate(ctx.r4.u32));
     std::lock_guard lock(mutex);
+    // SKY_NETPLAY_TEST_HOST_RANDOM=1 (a session test): the host's random bytes all the same, to show they desync it.
+    static const bool hostRandom = [] {
+        const char* value = skyenv::Get("SKY_NETPLAY_TEST_HOST_RANDOM");
+        return value != nullptr && std::string_view(value) == "1";
+    }();
+    const bool deterministic = netplay::Enabled() && !hostRandom;
+    if (++calls <= 8) // where a title asks for them: a few lines only
+        fprintf(stderr, "[net] XNetRandom: %u bytes%s (lr=0x%08X)\n", ctx.r5.u32,
+            deterministic ? ", the session's" : "", uint32_t(ctx.lr));
     for (uint32_t i = 0; i < ctx.r5.u32; i++)
-        bytes[i] = uint8_t(device());
+        bytes[i] = deterministic ? netplay::DeterministicByte(state) : uint8_t(device());
     ctx.r3.u64 = 0;
 }
 

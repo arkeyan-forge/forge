@@ -38,7 +38,7 @@ namespace gameoptions
                 "SKY_TEST_READ_FAIL", "SKY_RESOLVE_DEFER", "SKY_CLEAR_NEW_TEXTURES", "SKY_SKIP_PS", "SKY_PORTAL_MODEL",
                 "SKY_TOYBOX_CLOCK", "SKY_TOYBOX_REAL_VIEW", "SKY_CRASH_TEST", "SKY_NETPLAY_TEST_DESYNC",
                 "SKY_NETPLAY_TEST_NET", "SKY_NETPLAY_TEST_SLOW", "SKY_NETPLAY_TEST_DEPTH_NOISE",
-                "SKY_NETPLAY_TEST_XMA_NATIVE" };
+                "SKY_NETPLAY_TEST_XMA_NATIVE", "SKY_NETPLAY_TEST_HOST_RANDOM" };
             for (const char* variable : Blocked)
             {
                 if (test)

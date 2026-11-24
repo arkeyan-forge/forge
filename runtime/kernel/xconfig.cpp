@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include "netplay/clock.h"
 #include <mutex>
 #include <set>
 #include <string_view>
@@ -48,13 +49,14 @@ namespace
 
     // The time zone XAPI's GetTimeZoneInformation assembles from settings 3/1-3/7 (sub_822E4A18): the host's current
     // offset as the bias (minutes to add to local time to get UTC), daylight saving included, and no transition dates
-    // (month 0), so local time is right today. The title stamps its saves with it.
+    // (month 0), so local time is right today. The title stamps its saves with it, so a deterministic run (an online
+    // session, a recording) tells it UTC: two players' time zones differ.
     int32_t TimeZoneBias()
     {
         time_t now = time(nullptr);
         std::tm utc = *gmtime(&now);
         utc.tm_isdst = -1; // read the UTC fields back as local time
-        return int32_t(difftime(mktime(&utc), now) / 60);
+        return netplay::TitleTimeZoneBias(netplay::Enabled(), int32_t(difftime(mktime(&utc), now) / 60));
     }
 
     // The console language (XC_LANGUAGE_*) and country (XC_COUNTRY_*) behind each language code. Dutch, Swedish,
@@ -121,10 +123,11 @@ PPC_FUNC(__imp__ExGetXConfigSetting)
         store32(uint32_t(TimeZoneBias()));
     else if (category == UserCategory && (setting == UserTimeZoneStandardName || setting == UserTimeZoneDaylightName))
     {
-        // Four characters, not terminated: the host zone's abbreviation ("CEST").
-        char name[8] = {};
+        // Four characters, not terminated: the host zone's abbreviation ("CEST"); "UTC" in a deterministic run.
+        char host[8] = {}, name[8] = {};
         time_t now = time(nullptr);
-        strftime(name, sizeof(name), "%Z", localtime(&now));
+        strftime(host, sizeof(host), "%Z", localtime(&now));
+        strncpy(name, netplay::TitleTimeZoneName(netplay::Enabled(), host), sizeof(name) - 1);
         memcpy(value, name, 4);
     }
     else if (category == UserCategory && (setting == UserTimeZoneStandardDate || setting == UserTimeZoneDaylightDate ||
