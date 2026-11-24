@@ -168,6 +168,69 @@ int main()
         EXPECT(!capture.Update(Playing()) && !capture.On(Capture::Event::Click));
     }
 
+    // The canvas (1280x720) in the window: fitted, centred, black bars outside it.
+    {
+        float x = 0, y = 0;
+        EXPECT(CanvasPoint(640, 360, 1280, 720, x, y) && x == 640 && y == 360);
+        EXPECT(CanvasPoint(1280, 720, 2560, 1440, x, y) && x == 640 && y == 360);
+        EXPECT(CanvasPoint(1000, 360, 2000, 720, x, y) && x == 640 && y == 360); // bars left and right
+        EXPECT(!CanvasPoint(100, 360, 2000, 720, x, y));
+        EXPECT(!CanvasPoint(10, 10, 0, 0, x, y));
+    }
+    // The game's menus: the pointer and its clicks reach the game's menu hook, whatever the switch says.
+    {
+        MenuPointer menu;
+        MenuPointer::State state;
+        state.supported = state.gameMenu = true;
+        EXPECT(menu.Update(state));
+        menu.Move(400, 300, true);
+        menu.Click();
+        Capture capture; // switch off, nothing mapped: the pointer stays free
+        Capture::State play;
+        play.focused = play.gameMenu = true;
+        EXPECT(!capture.Update(play));
+        MenuPointer::Read read = menu.Take();
+        EXPECT(read.active && read.inside && read.x == 400 && read.y == 300 && read.clicks == 1);
+        EXPECT(menu.Take().clicks == 0); // taken once
+        menu.Move(5, 5, false);
+        menu.Click(); // on the black bars: not the menu's
+        read = menu.Take();
+        EXPECT(!read.inside && read.clicks == 0);
+    }
+    // No hook in the game, no menu on screen, or an overlay over it: nothing reaches the game.
+    {
+        MenuPointer menu;
+        MenuPointer::State state;
+        state.gameMenu = true;
+        EXPECT(!menu.Update(state));
+        menu.Move(400, 300, true);
+        menu.Click();
+        EXPECT(!menu.Take().active && menu.Take().clicks == 0);
+        state.supported = true;
+        state.gameMenu = false;
+        EXPECT(!menu.Update(state));
+        menu.Click();
+        EXPECT(menu.Take().clicks == 0);
+        state.gameMenu = state.overlay = true;
+        EXPECT(!menu.Update(state));
+        menu.Click();
+        EXPECT(menu.Take().clicks == 0);
+    }
+    // Leaving the menu drops a click the game has not taken: it never becomes a click in the next menu.
+    {
+        MenuPointer menu;
+        MenuPointer::State state;
+        state.supported = state.gameMenu = true;
+        menu.Update(state);
+        menu.Move(400, 300, true);
+        menu.Click();
+        state.gameMenu = false;
+        menu.Update(state);
+        state.gameMenu = true;
+        menu.Update(state);
+        EXPECT(menu.Take().clicks == 0);
+    }
+
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

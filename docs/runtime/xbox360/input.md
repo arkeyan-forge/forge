@@ -63,7 +63,8 @@ Run the host startup/pointer unit checks with `python3 -I tools/regress/f3mouse_
 Code: `host/mouse.{h,cpp}` (the names, the bindings over the game's defaults, the capture's state machine; no SDL),
 `host/mouse_input.{h,cpp}` (the SDL side: events, SDL's relative mouse mode, the actions held), `main.cpp` (`ReadHostGamepad` takes the
 mouse's actions for Player 1 beside the keyboard's), `game::Adapter::mouseDefaults` and `menuLevels` (each game's adapter),
-`game::InMenuLevel` (`game.cpp`). Test: `ArkeyanMouseTest` (names, bindings, every capture transition below), `ArkeyanSettingsTest` (the lines).
+`game::InMenuLevel` and `game::InMenu` (`game.cpp`). Test: `ArkeyanMouseTest` (names, bindings, every capture transition below, the
+game-menu pointer), `ArkeyanSettingsTest` (the lines).
 
 - **Off by default.** `[<game>.input] mouse=1` turns it on ([settings.md](../../getting-started/settings.md)). Off, or nothing mapped:
   `mouseinput` makes no SDL call, `ReadHostGamepad` gets `nullptr` and runs the path it ran before; the pointer is never hidden.
@@ -78,11 +79,21 @@ mouse's actions for Player 1 beside the keyboard's), `game::Adapter::mouseDefaul
   still held when the pointer is taken, never reach the game** (released first). Closing the F3 menu or the Toy Box takes it back at
   once. Quitting frees it before anything else. A crash ends the process: the system frees the pointer. The log says
   `[mouse] on: a=Mouse Left, x=Mouse Right`, `[mouse] pointer held by the game` / `free`.
-- **What the runtime cannot tell**: the menus a game draws inside a level (pause, shops, dialogs) look like play: the pointer stays
-  hidden there and a mapped click does its action (left click is Accept in SSA's and Giants' menus). The game-menu cursor is for 0.8.1.
+- **The game's menus inside a level** (pause, options, shops): told by `game::Adapter::MenuOpen`, read from the game's memory each
+  frame; `game::InMenu` is a menu level or `MenuOpen()`. There the pointer is free, as on the front end. A game without `MenuOpen`:
+  those menus look like play, the pointer stays hidden and a mapped click does its action.
+- **The pointer in the game's menus** (`mouse::MenuPointer`, `mouse::Menu()`): for a game with `game::Adapter::menuPointer`, while
+  `game::InMenu` and no F3 menu, Toy Box or wheel is open, **whatever the switch says** (`mouse=0` and nothing mapped included). The
+  main thread gives it the pointer's place on the 1280×720 canvas (fitted in the window, like the F3 menu; off the black bars) and
+  each left click; the game's own menu hook takes them on the game's thread (`Take`: the place, and the clicks since the last call),
+  gives the focus to the item under the pointer and picks it on a click. Leaving the menu drops the clicks not taken, so a click never
+  carries over into the next menu. Out of the menus nothing changes; a game without `menuPointer` behaves as before. The log says
+  `[mouse] game menu pointer on` / `off`. The menu hooks are per game (none yet).
 - **Test aid**: `SKY_PRESS` items `mleft`, `mright`, `mmiddle`, `m4`, `m5` (`mleft:20` clicks at 20 s, `mleft:20:1` holds 1 s) and
   `wheelup`, `wheeldown` (one tick) go through the same bindings and capture; a script stands for a focused window. Each logs
   `[mouse] script: Mouse Left (held pointer: the game's)` or `(free pointer: not the game's)`; `SKY_INPUT_LOG=1` shows what the title read.
+  With the Toy Box closed, `SKY_TOYBOX_SCRIPT`'s `move=x/y` and `click=x/y` (canvas pixels) go to the game's menu pointer; each logs
+  `[mouse] script: game menu click 640/360`.
 - **By hand only** (no real mouse or keyboard in tests): Alt-Tab and Cmd-Tab while playing, a minimized window, quitting with the pointer
   held, a crash, the click that takes it back.
 

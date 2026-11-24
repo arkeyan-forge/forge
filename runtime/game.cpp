@@ -51,6 +51,8 @@ namespace
 
 bool game::InMenuLevel() { return g_inMenuLevel; }
 
+bool game::InMenu() { return g_inMenuLevel || (Current().MenuOpen != nullptr && Current().MenuOpen()); }
+
 void game::LevelStarted(std::string_view name)
 {
     std::lock_guard lock(g_levelMutex);

@@ -4,6 +4,7 @@
 #include "host/art/game_art.h"
 #include "host/collection/presence.h"
 #include "host/gamemenu.h"
+#include "host/mouse.h"
 #include "netplay/session_runtime.h"
 #include "netplay/session_end.h"
 #include "host/glyphs.h"
@@ -490,10 +491,11 @@ namespace
     // release only; "type=<text>" types; "shot" or "shot=<name>" saves a screenshot; "pad=back+lright*0.8" holds pad
     // buttons (a b x y back start lb rb up down left right, lup ldown lleft lright for the stick) for 0.8 s (0.15 s
     // without "*"), as the Toy Box sees the pad; "click=x/y" and "rclick=x/y" click at canvas pixels, "move=x/y" moves
-    // the pointer there (hover), "drag=x1/y1/x2/y2" drags from one to the other and drops, "wheel=up" / "wheel=down"
-    // turn the wheel one tick (each logs the focus); "hold=K*0.5" holds a key (an SDL scancode name) for the game's
-    // input 0.5 s and logs the pad state the game gets from it; "place=<dump>", "remove=<slot>" and "remove=all" change
-    // the emulated portal (host/portal_script.h).
+    // the pointer there (hover; with the Toy Box closed, click= and move= go to the game's menu, mouse::MenuPointer),
+    // "drag=x1/y1/x2/y2" drags from one to the other and drops, "wheel=up" / "wheel=down" turn the wheel one tick (each
+    // logs the focus); "hold=K*0.5" holds a key (an SDL scancode name) for the game's input 0.5 s and logs the pad state
+    // the game gets from it; "place=<dump>", "remove=<slot>" and "remove=all" change the emulated portal
+    // (host/portal_script.h).
     void LoadScript()
     {
         const char* script = skyenv::Get("SKY_TOYBOX_SCRIPT");
@@ -688,6 +690,15 @@ namespace
                     MouseDown(x, y, action[0] == 'r' ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT, false);
                     g_mouseHeld = false;
                     M().Hold(false, now);
+                }
+                else if (action[0] != 'r') // closed: the game's menu (mouse::MenuPointer)
+                {
+                    mouse::Menu().Move(x, y, x >= 0 && y >= 0 && x < toybox::CanvasWidth && y < toybox::CanvasHeight);
+                    if (action[0] == 'c')
+                        mouse::Menu().Click();
+                    fprintf(
+                        stderr, "[mouse] script: game menu %s %.0f/%.0f\n", action[0] == 'c' ? "click" : "move", x, y);
+                    continue;
                 }
                 LogFocus();
                 continue;
