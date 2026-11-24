@@ -2406,8 +2406,10 @@ namespace toybox
             if (f.missingSignature)
                 facts.push_back(VirtualCrystalText());
             if (f.realCopy)
-                facts.push_back(L("The copy of a real toy: placing the toy keeps both the same.",
-                    "La copie d'un vrai jouet : poser le jouet garde les deux pareils."));
+                facts.push_back(L("A copy of your real toy. Changes here go to the toy the next time it is placed.",
+                    "Une copie de votre vrai jouet. Les changements faits ici vont sur le jouet la prochaine fois "
+                    "qu'il "
+                    "est posé."));
             if (figures::IsVehicleType(f.type))
                 facts.push_back(f.state == figures::AreaState::Valid
                                     ? std::string(L("Gearbits: ", "Gearbits : ")) +

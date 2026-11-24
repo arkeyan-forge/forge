@@ -964,21 +964,8 @@ namespace collection
         return result;
     }
 
-    namespace
-    {
-        // A real toy's copy keeps the toy's progress: only the game, through the portal, changes it.
-        bool RealCopyRefused(const std::string& path, std::string* error)
-        {
-            if (!LoadJson(Directory(path) + "/" + IndexName)["figures"][FileName(path)]["real"].IsObject())
-                return false;
-            return Refuse(error, "the copy of a real toy: play the toy to change its progress"), true;
-        }
-    }
-
     bool WriteStats(const std::string& path, const figures::FigureStats& stats, std::string* error)
     {
-        if (RealCopyRefused(path, error))
-            return false;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
         FigureData tag;
@@ -993,8 +980,6 @@ namespace collection
 
     bool SetTrapVillain(const std::string& path, uint8_t villain, bool evolved, std::string* error)
     {
-        if (RealCopyRefused(path, error))
-            return false;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
         FigureData tag;
@@ -1037,8 +1022,6 @@ namespace collection
 
     bool WriteCrystal(const std::string& path, const figures::CrystalStats& stats, std::string* error)
     {
-        if (RealCopyRefused(path, error))
-            return false;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
         FigureData tag;
@@ -1071,8 +1054,6 @@ namespace collection
 
     bool SetGearbits(const std::string& path, uint32_t gearbits, std::string* error)
     {
-        if (RealCopyRefused(path, error))
-            return false;
         Figure figure;
         if (!Read(path, figure))
             return Refuse(error, "not a figure dump");
@@ -1086,8 +1067,6 @@ namespace collection
 
     bool SetNickname(const std::string& path, const std::string& utf8, std::string* error)
     {
-        if (RealCopyRefused(path, error))
-            return false;
         Figure figure;
         if (!Read(path, figure))
             return Refuse(error, "not a figure dump");
@@ -1373,8 +1352,6 @@ namespace collection
 
     bool ResetToNew(const std::string& path, std::string* error)
     {
-        if (RealCopyRefused(path, error))
-            return false;
         if (GetLock(path).Busy())
             return Refuse(error, "in use by " + GetLock(path).game);
         FigureData tag;

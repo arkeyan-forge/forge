@@ -169,7 +169,6 @@ namespace collection
     // untouched starters do not count). The portal is left as it is.
     StarterPackResult CreateStarterPack(const std::string& game, const std::vector<Figure>& figures);
 
-    // The progress writers below refuse a real toy's copy (Figure::realCopy): the toy's progress changes in the game only.
     // Writes progress into the dump (both areas, docs/runtime/host/figures.md). Refused while another process uses it.
     bool WriteStats(const std::string& path, const figures::FigureStats& stats, std::string* error = nullptr);
     // Trap Team: makes `villain` (1-46) the trap's selected villain and sets whether it is evolved, keeping the other

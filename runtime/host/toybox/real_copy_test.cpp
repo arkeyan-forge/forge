@@ -64,6 +64,29 @@ namespace
         CHECK(questions.Next({ "c" }, false) == "c");
     }
 
+    void DifferenceChecks()
+    {
+        using namespace toybox::realcopy;
+        figures::FigureStats toy, copy;
+        toy.gold = 500;
+        copy.gold = 900;
+        copy.experience = 5000;
+        CHECK(Differences(toy, copy) == 0); // level and gold are always shown
+        copy.upgrades = 0x0007; // a path chosen (bits 0-1) and one basic upgrade
+        CHECK(Differences(toy, copy) == Upgrades && UpgradeCount(copy) == 1 && UpgradeCount(toy) == 0);
+        copy.upgrades = 0x03FC;
+        copy.wowPow = 1;
+        CHECK(UpgradeCount(copy) == 9);
+        copy = toy;
+        copy.heroPoints = 40;
+        copy.heroicChallenges = 3;
+        copy.hat = 7;
+        copy.nickname = u"Spy";
+        copy.playSeconds = 600;
+        CHECK(Differences(toy, copy) == (HeroPoints | Challenges | Hat | Nickname | PlayTime));
+        CHECK(Differences(copy, copy) == 0);
+    }
+
     void FailureChecks()
     {
         toybox::realcopy::Failures failures;
@@ -77,6 +100,7 @@ int main()
 {
     FocusChecks();
     QuestionChecks();
+    DifferenceChecks();
     FailureChecks();
     if (g_failures == 0)
         printf("real copy: all checks passed\n");
