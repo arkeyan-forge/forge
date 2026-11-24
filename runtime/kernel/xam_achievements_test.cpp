@@ -27,7 +27,8 @@ std::string g_lastNotice;
 size_t g_lastPicture;
 uint32_t g_lastPoints;
 void ToyboxNotice(const char* english, const char*) { g_lastNotice = english; }
-void ToyboxAchievement(const std::string& name, uint32_t points, std::vector<uint8_t> png)
+void ToyboxAchievement(const std::string& name, uint32_t points,
+    std::vector<uint8_t> png) // NOLINT(performance-unnecessary-value-param): the signature of host/toybox.h
 {
     g_lastNotice = name;
     g_lastPoints = points;
@@ -142,7 +143,7 @@ int main(int argc, char** argv)
                            ? fs::path(argv[3])
                            : fs::temp_directory_path() / ("ArkeyanAchievementsKernelTest-" + std::to_string(getpid()));
     fs::create_directories(scratch);
-    setenv("SKY_SAVE_DIR", scratch.string().c_str(), 1);
+    setenv("SKY_SAVE_DIR", scratch.string().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
 
     CHECK(g_disc.Open(argv[1]));
     g_memory.Reserve();
@@ -198,12 +199,12 @@ int main(int argc, char** argv)
 
         // "After a restart": this program again, which reads only the data folder.
         std::string command = std::string("\"") + argv[0] + "\" \"" + argv[1] + "\" read \"" + scratch.string() + "\"";
-        CHECK(system(command.c_str()) == 0);
+        CHECK(system(command.c_str()) == 0); // NOLINT(concurrency-mt-unsafe)
         // In an online session: the same data folder, with the session's view.
-        setenv("SKY_NETPLAY_HOST", "47999", 1);
+        setenv("SKY_NETPLAY_HOST", "47999", 1); // NOLINT(concurrency-mt-unsafe)
         command = std::string("\"") + argv[0] + "\" \"" + argv[1] + "\" online \"" + scratch.string() + "\"";
-        CHECK(system(command.c_str()) == 0);
-        unsetenv("SKY_NETPLAY_HOST");
+        CHECK(system(command.c_str()) == 0); // NOLINT(concurrency-mt-unsafe)
+        unsetenv("SKY_NETPLAY_HOST"); // NOLINT(concurrency-mt-unsafe)
         fs::remove_all(scratch);
     }
     else

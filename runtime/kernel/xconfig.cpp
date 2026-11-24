@@ -54,7 +54,12 @@ namespace
     int32_t TimeZoneBias()
     {
         time_t now = time(nullptr);
-        std::tm utc = *gmtime(&now);
+        std::tm utc{};
+#ifdef _WIN32
+        gmtime_s(&utc, &now);
+#else
+        gmtime_r(&now, &utc);
+#endif
         utc.tm_isdst = -1; // read the UTC fields back as local time
         return netplay::TitleTimeZoneBias(netplay::Enabled(), int32_t(difftime(mktime(&utc), now) / 60));
     }
@@ -126,7 +131,13 @@ PPC_FUNC(__imp__ExGetXConfigSetting)
         // Four characters, not terminated: the host zone's abbreviation ("CEST"); "UTC" in a deterministic run.
         char host[8] = {}, name[8] = {};
         time_t now = time(nullptr);
-        strftime(host, sizeof(host), "%Z", localtime(&now));
+        std::tm local{};
+#ifdef _WIN32
+        localtime_s(&local, &now);
+#else
+        localtime_r(&now, &local);
+#endif
+        strftime(host, sizeof(host), "%Z", &local);
         strncpy(name, netplay::TitleTimeZoneName(netplay::Enabled(), host), sizeof(name) - 1);
         memcpy(value, name, 4);
     }
