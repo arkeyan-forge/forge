@@ -42,6 +42,11 @@ namespace disc
 
         // The game partition's data from `offset`.
         bool Read(uint64_t offset, void* out, uint64_t size) const;
+        // The disc itself from `offset`, outside the partitions' data (its header, the partition table).
+        bool ReadRaw(uint64_t offset, void* out, uint64_t size) const { return m_image.ReadRaw(offset, out, size); }
+        // The game partition: where it starts on the disc, and its title metadata (what IOS's ES checks it with).
+        uint64_t GamePartition() const { return m_partitions.empty() ? 0 : m_partitions[m_game].offset; }
+        bool TitleMetadata(std::vector<uint8_t>& out) const;
 
         // Every partition's data against its hash tree, up to the title's own hash of it. `progress(done, total)`, in
         // sectors, returns false to stop (the check then reports the stop as its problem).
@@ -56,6 +61,8 @@ namespace disc
             uint64_t hashTable = 0;
             Sha1Digest titleHash{}; // the title metadata's hash of the hash table (H3)
             uint64_t systemVersion = 0; // the title metadata's: the IOS it runs on
+            uint64_t titleMetadata = 0; // on the disc
+            uint32_t titleMetadataSize = 0;
         };
 
         RvzImage m_image;

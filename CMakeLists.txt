@@ -191,7 +191,9 @@ if(ARKEYAN_WII_PPC_DIR)
     target_include_directories(ArkeyanWiiRecompLib SYSTEM PUBLIC ${ARKEYAN_WII_PPC_DIR}
         ${CMAKE_SOURCE_DIR}/thirdparty/XenonRecomp/thirdparty/simde)
     target_compile_options(ArkeyanWiiRecompLib PRIVATE -fno-strict-aliasing -Wno-unused-label -Wno-unused-variable)
-    add_executable(ArkeyanWiiRuntime runtime/wii/main.cpp runtime/wii/os.cpp runtime/kernel/guest_format.cpp
+    add_executable(ArkeyanWiiRuntime runtime/wii/main.cpp runtime/wii/os.cpp runtime/wii/threads.cpp
+        runtime/wii/ios_calls.cpp runtime/wii/ios_devices.cpp runtime/wii/ios_disc.cpp runtime/wii/timers.cpp
+        runtime/kernel/guest_format.cpp
         games/racing/hooks.cpp)
     target_include_directories(ArkeyanWiiRuntime PRIVATE runtime games/racing)
     # The game's ppc_context.h first: XenonUtils (byteswap.h, for memory.h) has its own.

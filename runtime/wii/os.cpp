@@ -46,7 +46,42 @@ namespace wii::os
             return text;
         }
 
-        void Interrupts(PPCContext& ctx, bool on) { ctx.r3.u64 = g_interrupts.exchange(on) ? 1 : 0; }
+        constexpr uint32_t CurrentThread = 0x800000E4; // the operating system's, in low memory
+
+        uint32_t Read32(const uint8_t* base, uint32_t address)
+        {
+            const uint8_t* p = base + address;
+            return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
+        }
+
+        // Interrupts turned on. With a thread running, the events posted meanwhile run now. With none (the scheduler
+        // idles, its current thread cleared, and spins until a priority is ready), the processor waits for events
+        // until one makes a thread ready.
+        void SafePoint(PPCContext& ctx, uint8_t* base)
+        {
+            if (Read32(base, CurrentThread) != 0)
+            {
+                RunPendingEvents(ctx, base);
+                return;
+            }
+            while (Read32(base, g_game.runQueueBits) == 0)
+            {
+                if (!WaitForEvent(ctx))
+                {
+                    fprintf(stderr, "[os] every thread waits, and nothing has come for 10 s: the boot stops\n");
+                    LogThreads(base);
+                    StopBoot(1);
+                }
+            }
+        }
+
+        void Interrupts(PPCContext& ctx, uint8_t* base, bool on)
+        {
+            const bool was = g_interrupts.exchange(on);
+            ctx.r3.u64 = was ? 1 : 0;
+            if (on && !was && base != nullptr && !InHandler())
+                SafePoint(ctx, base);
+        }
     } // namespace
 
     void Report(PPCContext& ctx, uint8_t* base)
@@ -66,8 +101,8 @@ namespace wii::os
 
     void Panic(PPCContext& ctx, uint8_t* base)
     {
-        fprintf(stderr, "[os] panic in %s line %u: %s\n", GuestString(base, ctx.r3.u32).c_str(), ctx.r4.u32,
-            Message(ctx, base, ctx.r5.u32, 6).c_str());
+        fprintf(stderr, "[os] panic in %s line %u (called from 0x%08X): %s\n", GuestString(base, ctx.r3.u32).c_str(),
+            ctx.r4.u32, uint32_t(ctx.lr), Message(ctx, base, ctx.r5.u32, 6).c_str());
         StopBoot(1);
     }
 
@@ -77,9 +112,9 @@ namespace wii::os
         StopBoot(1);
     }
 
-    void DisableInterrupts(PPCContext& ctx) { Interrupts(ctx, false); }
-    void EnableInterrupts(PPCContext& ctx) { Interrupts(ctx, true); }
-    void RestoreInterrupts(PPCContext& ctx) { Interrupts(ctx, ctx.r3.u32 != 0); }
+    void DisableInterrupts(PPCContext& ctx) { Interrupts(ctx, nullptr, false); }
+    void EnableInterrupts(PPCContext& ctx, uint8_t* base) { Interrupts(ctx, base, true); }
+    void RestoreInterrupts(PPCContext& ctx, uint8_t* base) { Interrupts(ctx, base, ctx.r3.u32 != 0); }
 
     void Skip(PPCContext& ctx, const char* function)
     {
@@ -93,10 +128,10 @@ namespace wii::os
         ctx.r3.u64 = 0;
     }
 
-    void OpenDevice(PPCContext& ctx, uint8_t* base)
+    void FrameBuffer(PPCContext& ctx)
     {
-        fprintf(stderr, "[ios] open \"%s\" (mode %u): the first request to IOS, where the boot stops for now\n",
-            GuestString(base, ctx.r3.u32).c_str(), ctx.r4.u32);
-        StopBoot(0);
+        static int count = 0;
+        if (++count <= 3 || count == 60 || count == 600)
+            fprintf(stderr, "[vi] frame buffer %d at 0x%08X\n", count, ctx.r3.u32);
     }
 }

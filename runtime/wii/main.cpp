@@ -21,6 +21,18 @@ GuestMemory g_memory; // the guest's memory, for the code it shares with the Xbo
 
 namespace
 {
+    uint8_t* g_base = nullptr;
+
+    // A fault: where in the guest's address space, then the platform's backtrace (the translated functions' names).
+    void OnFault(const char* description, const void* address)
+    {
+        const auto* at = static_cast<const uint8_t*>(address);
+        if (g_base != nullptr && at >= g_base && at < g_base + 0x100000000ull)
+            fprintf(stderr, "[wii] %s at guest address 0x%08X\n", description, uint32_t(at - g_base));
+        else
+            fprintf(stderr, "[wii] %s at host address %p\n", description, address);
+    }
+
     std::mutex g_stopMutex;
     std::condition_variable g_stopped;
     bool g_stop = false;
@@ -33,9 +45,11 @@ namespace
         wii::StopBoot(1);
     }
 
+    DiscFileSystem g_disc; // the game's disc, read for as long as it runs
+
     bool LoadGame(const char* path, uint8_t*& base, uint32_t& entry)
     {
-        DiscFileSystem disc;
+        DiscFileSystem& disc = g_disc;
         const disc::WiiDisc* wii = disc.Open(path) ? disc.Wii() : nullptr;
         if (wii == nullptr)
         {
@@ -72,6 +86,7 @@ namespace
         if (!wii->Read(0, info.discHeader, sizeof(info.discHeader)))
             return false;
         wii::WriteBootInfo(base, info);
+        wii::SetDisc(*wii);
         for (uint64_t address = PPC_CODE_BASE; address < PPC_CODE_BASE + PPC_CODE_SIZE; address += 4)
             PPC_LOOKUP_FUNC(base, address) = Unmapped;
         for (const PPCFuncMapping* mapping = PPCFuncMappings; mapping->host != nullptr; mapping++)
@@ -110,6 +125,7 @@ extern "C" void ppc_spin_hint() {}
 int main(int argc, char** argv)
 {
     PlatformInit();
+    PlatformInstallFaultHandler(OnFault);
     if (argc != 2)
     {
         fprintf(stderr, "usage: %s <disc.rvz>\n", argv[0]);
@@ -119,8 +135,10 @@ int main(int argc, char** argv)
     uint32_t entry = 0;
     if (!LoadGame(argv[1], base, entry))
         return 1;
+    g_base = base;
     // The game's first thread, on a host stack deep enough for the translated code's calls.
     PlatformStartThread(64 << 20, [base, entry] {
+        wii::os::StartProcessor();
         static PPCContext ctx{};
         ctx.r1.u64 = wii::Mem1Cached + wii::Mem1Size - 0x100; // a scratch stack: the entry sets its own
         PPCFunc* start = PPC_LOOKUP_FUNC(base, entry);

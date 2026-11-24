@@ -2,6 +2,7 @@
 // August 2010 build), found by name in the disc's ELF (its symbol table); the other Wii games, when they come, have
 // the same functions at their own addresses. A hook the game does not define is compiled out.
 #pragma once
+#include <cstdint>
 
 // The operating system's messages and errors (runtime/wii/os.cpp).
 #define GAME_HOOK_OSReport sub_8028DF20
@@ -13,12 +14,47 @@
 #define GAME_HOOK_OSEnableInterrupts sub_80291920
 #define GAME_HOOK_OSRestoreInterrupts sub_80291940
 
+// The context switches the scheduler (SelectThread) makes: the host's (runtime/wii/threads.cpp).
+#define GAME_HOOK_OSSaveContext sub_8028D930
+#define GAME_HOOK_OSLoadContext sub_8028D9B0
+
+namespace game
+{
+    // The scheduler's ready priorities (RunQueueBits, a bit for each priority with a thread ready): 0 while it idles.
+    constexpr uint32_t RunQueueBits = 0x807DA970;
+    constexpr uint32_t IdleContext = 0x8065C970; // the scheduler's
+    constexpr uint32_t Reschedule = 0x80294EA0;  // __OSReschedule
+    constexpr uint32_t DecrementerHandler = 0x8028C1D0; // DecrementerExceptionCallback
+    constexpr uint32_t RetraceHandler = 0x802ED2A0;     // __VIRetraceHandler
+}
+
 // Hardware the host answers later, skipped at the start: the EXI and serial buses, the SRAM behind EXI, the DSP.
 #define GAME_HOOK_EXIInit sub_802F4F70
 #define GAME_HOOK_SIInit sub_802F3390
 #define GAME_HOOK___OSInitSram sub_80293AD0
 #define GAME_HOOK___OSInitAudioSystem sub_8028CCB0
 
-// The first request to IOS, where the boot stops for now.
+// The timers: the decrementer the alarms set, and VI's start, after which its retrace interrupt runs.
+#define GAME_HOOK_PPCMtdec sub_8027AA20
+#define GAME_HOOK_VIInit sub_802EDE70
+// The first frames: logged.
+#define GAME_HOOK_VISetNextFrameBuffer sub_802EF4A0
+
+// The graphics processor's "draw done", which waits for its finish interrupt: done at once until the host draws.
+#define GAME_HOOK_GXDrawDone sub_8027DBE0
+#define GAME_HOOK_GXWaitDrawDone sub_8027DB90
+
+// IOS's client calls: the host's IOS answers them (runtime/wii/ios_calls.cpp).
 #define GAME_HOOK_IOS_Open sub_8026CAF0
 #define GAME_HOOK_IOS_OpenAsync sub_8026C9D0
+#define GAME_HOOK_IOS_Close sub_8026CCE0
+#define GAME_HOOK_IOS_CloseAsync sub_8026CC20
+#define GAME_HOOK_IOS_Read sub_8026CE90
+#define GAME_HOOK_IOS_ReadAsync sub_8026CD90
+#define GAME_HOOK_IOS_Write sub_8026D0A0
+#define GAME_HOOK_IOS_WriteAsync sub_8026CFA0
+#define GAME_HOOK_IOS_SeekAsync sub_8026D1B0
+#define GAME_HOOK_IOS_Ioctl sub_8026D3D0
+#define GAME_HOOK_IOS_IoctlAsync sub_8026D290
+#define GAME_HOOK_IOS_Ioctlv sub_8026D730
+#define GAME_HOOK_IOS_IoctlvAsync sub_8026D640

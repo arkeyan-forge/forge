@@ -51,7 +51,8 @@ calls the entry on a host thread with a 64 MB stack. The operating system's func
 - `OSDisableInterrupts`, `OSEnableInterrupts`, `OSRestoreInterrupts`: the interrupt switch, which the translation
   does not keep (`mtmsr` is supervisor code);
 - `EXIInit`, `SIInit`, `__OSInitSram`, `__OSInitAudioSystem`: skipped for now (each polls its hardware);
-- `IOS_Open`, `IOS_OpenAsync`: the first request to IOS, where the boot stops (exit code 0).
+- `IOS_Open`, `IOS_OpenAsync`: the first request to IOS, where the boot stopped then (IOS is answered since:
+  [ios.md](ios.md)).
 
 SuperChargers Racing, Europe disc, in half a second: the SDK's banner (`Revolution OS`, kernel built Aug 23 2010,
 `Firmware : 56.0.0` from the boot information's IOS, MEM1 arena `0x80800ec0`-`0x81730000`, MEM2 arena
@@ -59,6 +60,4 @@ SuperChargers Racing, Europe disc, in half a second: the SDK's banner (`Revoluti
 (the state module: power, the reset button, the screen), exit code 0.
 
 ## Next
-The operating system's threads (one host thread each, one guest thread running at a time, the SDK's own scheduling
-rules), its alarms and interrupts; IOS answered by the host (its file system, the disc, the system settings); then EXI,
-SI, VI and the first GX frame.
+The boot goes on past the first IOS request: [threads.md](threads.md), [ios.md](ios.md).

@@ -29,8 +29,14 @@ called. `OSInit` prints the SDK's banner (`Revolution OS`, kernel built Aug 23 2
 asks IOS for `/dev/stm/immediate`: the first request to IOS, where the host stops (exit code 0), in half a second.
 Before the host answered `OSDisableInterrupts` and the rest, the same boot outside the runtime waited in `EXISync`.
 
+## Further [V] (2026-11-24)
+With the threads, the timers and IOS ([threads.md](../../../docs/runtime/wii/threads.md),
+[ios.md](../../../docs/runtime/wii/ios.md)): past OSInit's firmware check, the disc drive opened, the first GX "draw
+done", the engine's first thread (priority 17) started and handed back; then the game stops in its network library
+(`bdSingleton.inl` line 29: Demonware's allocator not set), on a path that needs the NAND (`/dev/fs`) or ES.
+
 ## Next
-1. The Wii host: the operating system's threads, alarms and interrupts; IOS (`/dev/stm`, the file system, the disc,
-   the settings); EXI and SI; then VI and the first GX frame.
+1. IOS: `/dev/fs` (the NAND: the settings, the saves), `/dev/es`, the network devices offline; then EXI, SI and the
+   first GX frame.
 2. `gamelogic.rso`: load and translate the module.
 3. The `*_as_local` options, once it boots.

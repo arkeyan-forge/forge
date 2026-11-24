@@ -35,6 +35,15 @@ namespace disc
         return m_image.ReadPartition(m_partitions[m_game].image, offset, out, size);
     }
 
+    bool WiiDisc::TitleMetadata(std::vector<uint8_t>& out) const
+    {
+        if (m_partitions.empty())
+            return false;
+        const PartitionInfo& game = m_partitions[m_game];
+        out.resize(game.titleMetadataSize);
+        return m_image.ReadRaw(game.titleMetadata, out.data(), out.size());
+    }
+
     bool WiiDisc::Open(const char* path, std::string& error)
     {
         m_partitions.clear();
@@ -100,6 +109,8 @@ namespace disc
                     return false;
                 }
                 partition.systemVersion = uint64_t(Be32(version)) << 32 | Be32(version + 4);
+                partition.titleMetadata = tmd;
+                partition.titleMetadataSize = tmdSize;
                 const auto& stored = m_image.Partitions();
                 auto it = std::find_if(stored.begin(), stored.end(),
                     [&](const RvzImage::Partition& p) { return p.firstSector * WiiSectorSize == data; });

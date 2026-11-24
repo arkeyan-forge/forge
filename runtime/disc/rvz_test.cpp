@@ -422,6 +422,11 @@ int main(int argc, char** argv)
         printf("open: %s\n", error.empty() ? "ok" : error.c_str());
         EXPECT(wii.GameId() == "RTST01" && wii.Title() == "Test");
         EXPECT(wii.Ios() == 58);
+        std::vector<uint8_t> tmd;
+        EXPECT(wii.TitleMetadata(tmd) && tmd.size() == 0x208 && tmd[0x188 + 3] == 58);
+        uint8_t header[8] = {};
+        EXPECT(wii.ReadRaw(0, header, sizeof(header)) && memcmp(header, "RTST01", 6) == 0);
+        EXPECT(wii.GamePartition() == PartitionOffset);
         EXPECT(wii.GameDataSize() == d.data.size());
         size_t found = 0;
         for (const disc::WiiDisc::File& file : wii.Files())
