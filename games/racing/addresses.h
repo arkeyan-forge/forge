@@ -47,6 +47,20 @@ namespace game
 // The graphics processor's "draw done", which waits for its finish interrupt: done at once until the host draws.
 #define GAME_HOOK_GXDrawDone sub_8027DBE0
 #define GAME_HOOK_GXWaitDrawDone sub_8027DB90
+// The audio hardware: the audio interface's DMA (its start skipped: it times the interface's sample counter) and the
+// DSP's task, AX's, run by the host (runtime/wii/audio.cpp).
+#define GAME_HOOK_AIInit sub_802F1C90
+#define GAME_HOOK_AIRegisterDMACallback sub_802F1B30
+#define GAME_HOOK_AIInitDMA sub_802F1B80
+#define GAME_HOOK_AIStartDMA sub_802F1C00
+#define GAME_HOOK_AIStopDMA sub_802F1C20
+#define GAME_HOOK_AIGetDMABytesLeft sub_802F1C40
+#define GAME_HOOK_DSPInit sub_802F2170
+#define GAME_HOOK_DSPAddTask sub_802F2240
+#define GAME_HOOK_DSPSendMailToDSP sub_802F2150
+#define GAME_HOOK_DSPCheckMailToDSP sub_802F2110
+#define GAME_HOOK_DSPAssertTask sub_802F22F0
+
 // The draw sync token, which the graphics processor writes back once it gets there: written back at once.
 #define GAME_HOOK_GXSetDrawSync sub_8027DA10
 

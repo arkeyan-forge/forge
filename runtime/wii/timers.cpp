@@ -1,7 +1,8 @@
 // The Wii's timers on the host (docs/runtime/wii/threads.md): the decrementer (the operating system's alarms set it
-// with PPCMtdec; when it runs out, its exception handler fires the alarms due and sets it again) and the video
+// with PPCMtdec; when it runs out, its exception handler fires the alarms due and sets it again), the video
 // interface's retrace interrupt, 59.94 times a second (__VIRetraceHandler: the retrace callbacks, the threads waiting
-// in VIWaitForRetrace). One host thread waits for the next of the two and posts it as an event for the processor.
+// in VIWaitForRetrace), and the audio interface's, at each buffer's end (audio.cpp). One host thread waits for the
+// next of them and posts it as an event for the processor.
 #include "wii/boot_info.h"
 #include "wii/os.h"
 #include "ppc_recomp_shared.h"
@@ -30,6 +31,9 @@ namespace wii::os
             std::optional<Clock::time_point> decrementer;
             std::optional<Clock::time_point> retrace;
             std::atomic<bool> retracePending{ false };
+            std::optional<Clock::time_point> audio;
+            std::chrono::nanoseconds audioPeriod{ 0 };
+            std::atomic<bool> audioPending{ false };
             uint8_t* base = nullptr;
             bool started = false;
         };
@@ -49,6 +53,8 @@ namespace wii::os
                 std::optional<Clock::time_point> next = timers.decrementer;
                 if (timers.retrace && (!next || *timers.retrace < *next))
                     next = timers.retrace;
+                if (timers.audio && (!next || *timers.audio < *next))
+                    next = timers.audio;
                 if (!next)
                 {
                     timers.changed.wait(lock);
@@ -64,6 +70,19 @@ namespace wii::os
                     PostEvent([base] {
                         CallGuest(base, g_game.decrementerHandler, DecrementerException, InterruptedContext);
                     });
+                }
+                if (timers.audio && *timers.audio <= now)
+                {
+                    *timers.audio += timers.audioPeriod;
+                    if (*timers.audio < now)
+                        *timers.audio = now + timers.audioPeriod; // far behind: no burst of buffers
+                    if (!timers.audioPending.exchange(true))
+                    {
+                        PostEvent([base] {
+                            TheTimers().audioPending = false;
+                            AudioInterrupt(base);
+                        });
+                    }
                 }
                 if (timers.retrace && *timers.retrace <= now)
                 {
@@ -104,6 +123,28 @@ namespace wii::os
             std::lock_guard lock(timers.mutex);
             Start(base);
             timers.decrementer = Clock::now() + wait;
+        }
+        timers.changed.notify_all();
+    }
+
+    void StartAudio(uint8_t* base, std::chrono::nanoseconds period)
+    {
+        Timers& timers = TheTimers();
+        {
+            std::lock_guard lock(timers.mutex);
+            Start(base);
+            timers.audioPeriod = period;
+            timers.audio = Clock::now() + period;
+        }
+        timers.changed.notify_all();
+    }
+
+    void StopAudio()
+    {
+        Timers& timers = TheTimers();
+        {
+            std::lock_guard lock(timers.mutex);
+            timers.audio.reset();
         }
         timers.changed.notify_all();
     }

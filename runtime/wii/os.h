@@ -2,6 +2,7 @@
 
 // The Wii operating system's functions the host answers in place of the game's own (games/<id>/addresses.h binds them
 // to the game's addresses: games/<id>/hooks.cpp). Each takes the guest's registers as the translated code passes them.
+#include <chrono>
 #include <cstdint>
 #include <functional>
 
@@ -47,6 +48,18 @@ namespace wii::os
     // engine's token register, which GXReadDrawSync reads): at once, until the host draws.
     void DrawSyncReached(uint8_t* base, uint16_t token);
     void StartRetrace(uint8_t* base);
+    // The audio interface's interrupt, every `period` from StartAudio to StopAudio (AudioInterrupt, an event).
+    void StartAudio(uint8_t* base, std::chrono::nanoseconds period);
+    void StopAudio();
+
+    // The audio hardware (audio.cpp): the audio interface's DMA and the DSP running AX's task.
+    void AiRegisterDmaCallback(PPCContext& ctx); // AIRegisterDMACallback(callback): the previous one back
+    void AiInitDma(PPCContext& ctx); // AIInitDMA(address, length): the buffer the next DMA plays
+    void AiStartDma(uint8_t* base);
+    void AiStopDma();
+    void AudioInterrupt(uint8_t* base); // the DMA's end: its callback
+    void DspAddTask(PPCContext& ctx, uint8_t* base); // DSPAddTask(task): the task started at once
+    void DspSendMail(PPCContext& ctx, uint8_t* base); // DSPSendMailToDSP(mail): AX's command lists run
 
     // The IOS calls (ios_calls.cpp), on the host's IOS (Hosted, its devices in ios_devices.cpp).
     void IosOpen(PPCContext& ctx, uint8_t* base, bool async);

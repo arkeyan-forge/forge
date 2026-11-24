@@ -33,10 +33,33 @@ PPC_FUNC(GAME_HOOK(EXIInit)) { wii::os::Skip(ctx, "EXIInit"); }
 PPC_FUNC(GAME_HOOK(SIInit)) { wii::os::Skip(ctx, "SIInit"); }
 PPC_FUNC(GAME_HOOK(__OSInitSram)) { wii::os::Skip(ctx, "__OSInitSram"); }
 PPC_FUNC(GAME_HOOK(__OSInitAudioSystem)) { wii::os::Skip(ctx, "__OSInitAudioSystem"); }
-PPC_FUNC(GAME_HOOK(WUDInit)) { wii::os::Skip(ctx, "WUDInit", 1); } // started, for WPADInit to go on
+// Started, for WPADInit to go on; as the stack's own start, only the first time: WPADInit then sets up its alarm, and a
+// second WPADInit (Wwise's) must not set it again while it is queued.
+PPC_FUNC(GAME_HOOK(WUDInit))
+{
+    static bool started = false;
+    wii::os::Skip(ctx, "WUDInit", started ? 0 : 1);
+    started = true;
+}
 PPC_FUNC(GAME_HOOK(WUDGetStatus)) { ctx.r3.u64 = 3; } // set up: the remotes' library ready, none connected
 PPC_FUNC(GAME_HOOK(GXDrawDone)) { wii::os::Skip(ctx, "GXDrawDone"); }
 PPC_FUNC(GAME_HOOK(GXWaitDrawDone)) { wii::os::Skip(ctx, "GXWaitDrawDone"); }
+PPC_FUNC(GAME_HOOK(AIInit)) { wii::os::Skip(ctx, "AIInit"); }
+PPC_FUNC(GAME_HOOK(AIRegisterDMACallback)) { wii::os::AiRegisterDmaCallback(ctx); }
+PPC_FUNC_IMPL(GAME_IMP(AIInitDMA));
+PPC_FUNC(GAME_HOOK(AIInitDMA))
+{
+    wii::os::AiInitDma(ctx);
+    GAME_IMP(AIInitDMA)(ctx, base); // the interface's registers too, which AIGetDMAStartAddr reads
+}
+PPC_FUNC(GAME_HOOK(AIStartDMA)) { wii::os::AiStartDma(base); }
+PPC_FUNC(GAME_HOOK(AIStopDMA)) { wii::os::AiStopDma(); }
+PPC_FUNC(GAME_HOOK(AIGetDMABytesLeft)) { ctx.r3.u64 = 0; } // the host plays each buffer at its interrupt
+PPC_FUNC(GAME_HOOK(DSPInit)) { wii::os::Skip(ctx, "DSPInit"); }
+PPC_FUNC(GAME_HOOK(DSPAddTask)) { wii::os::DspAddTask(ctx, base); }
+PPC_FUNC(GAME_HOOK(DSPSendMailToDSP)) { wii::os::DspSendMail(ctx, base); }
+PPC_FUNC(GAME_HOOK(DSPCheckMailToDSP)) { ctx.r3.u64 = 0; } // the host takes each mail at once
+PPC_FUNC(GAME_HOOK(DSPAssertTask)) { ctx.r3.u64 = 0; } // the host's task never keeps the DSP
 PPC_FUNC_IMPL(GAME_IMP(GXSetDrawSync));
 PPC_FUNC(GAME_HOOK(GXSetDrawSync))
 {

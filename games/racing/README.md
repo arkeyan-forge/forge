@@ -8,7 +8,7 @@ a build target (`ARKEYAN_GAME` does not take it yet). The Wii's other pieces: [d
 | File | What |
 |---|---|
 | `config/Racing.toml` | XenonRecomp's input: the disc's ELF, `paired_singles`, the CodeWarrior register-save helpers |
-| `config/Racing_switch_tables.toml` | the 200 jump tables, from [`tools/elf_switch_tables.py`](../../tools/elf_switch_tables.py) |
+| `config/Racing_switch_tables.toml` | the 201 jump tables, from [`tools/elf_switch_tables.py`](../../tools/elf_switch_tables.py) |
 | `addresses.h` | the SDK functions the Wii host answers (`GAME_HOOK_<Name>`, found by name in the ELF) |
 | `hooks.cpp` | each bound to the host's answer ([`runtime/wii/os.h`](../../runtime/wii/os.h)) |
 
