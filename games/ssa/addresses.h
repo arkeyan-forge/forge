@@ -99,6 +99,7 @@ namespace game
     // Its dimming: a quad of the HUD's vertex shader over the whole frame, position matrix in c8-c11 (mLocalToScreen).
     constexpr uint64_t UltrawideBackdropDimVertexShader = 0xCDEA3CD041CF5CFAull;
     constexpr uint32_t UltrawideBackdropDimMatrix = 8;
+    constexpr uint64_t UltrawideSceneVeilVertexShader = 0; // none seen (d3d/frame_anchor.h, SceneVeilScaleX)
     // Upscaling (d3d/upscale.h): the vertex constant where the position matrix starts: c0-c3, row vectors (Lux), checked
     // by the camera vote agreeing in 900 of 900 frames of level_008.
     constexpr int32_t UpscalePositionMatrix = 0;

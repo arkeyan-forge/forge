@@ -97,6 +97,7 @@ namespace game
     constexpr uint32_t UltrawideBackdropVposParams = 0;
     constexpr uint64_t UltrawideBackdropDimVertexShader = 0;
     constexpr uint32_t UltrawideBackdropDimMatrix = 0;
+    constexpr uint64_t UltrawideSceneVeilVertexShader = 0; // none seen (d3d/frame_anchor.h, SceneVeilScaleX)
     // Upscaling (d3d/upscale.h): the vertex constant where the position matrix starts. The scene's vertex shaders keep
     // the object's world x view x projection in c0-c3 as row vectors: clip = x c0 + y c1 + z c2 + c3 (a level frame).
     constexpr int32_t UpscalePositionMatrix = 0;

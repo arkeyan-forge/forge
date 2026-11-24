@@ -69,4 +69,12 @@ namespace d3d
             return 1.0f;
         return std::clamp(1.0f / reach, 1.0f / wideRatio, 1.0f);
     }
+
+    // The factor on the clip x of a scene draw the game sizes to cover a 16:9 view (game::UltrawideSceneVeilVertexShader):
+    // with the Hor+ camera the scene shows more on each side, so the veil is stretched by the scene's ratio to 16:9.
+    inline float SceneVeilScaleX(float sceneAspect)
+    {
+        constexpr float Wide = 16.0f / 9.0f;
+        return sceneAspect > Wide ? sceneAspect / Wide : 1.0f;
+    }
 }
