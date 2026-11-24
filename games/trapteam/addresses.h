@@ -104,6 +104,9 @@ namespace game
     constexpr uint32_t UltrawideBackdropVposParams = 0;
     constexpr uint64_t UltrawideBackdropDimVertexShader = 0;
     constexpr uint32_t UltrawideBackdropDimMatrix = 0;
+    // The swirl at the end of a villain fight: a mesh in front of the camera, sized to cover a 16:9 view, so stretched
+    // across the wide scene (d3d/frame_anchor.h, SceneVeilScaleX).
+    constexpr uint64_t UltrawideSceneVeilVertexShader = 0x02E5370C68A717D2ull;
     // Upscaling (d3d/upscale.h): the vertex constant where the position matrix starts: c0-c3, row vectors (Alchemy, as
     // Giants'; the camera vote's "[upscale] last 900 frames" line checks it).
     constexpr int32_t UpscalePositionMatrix = 0;

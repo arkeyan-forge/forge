@@ -84,6 +84,13 @@ int main()
     CHECK(near(d3d::WholeScaleX(1.25f, 2.0f), 0.8f));
     CHECK(near(d3d::WholeScaleX(3.0f, 1.0f), 1.0f));
     CHECK(near(d3d::WholeScaleX(0.0f, 2.0f), 1.0f));
+    // A scene veil made for 16:9 (Trap Team's end-of-fight swirl): stretched by the scene's ratio to 16:9 (2.8 wide:
+    // 1.575), so that what covered 16:9 covers the wide scene. 16:9, a narrower scene or none: unchanged.
+    CHECK(near(d3d::SceneVeilScaleX(2.8f), 2.8f * 9.0f / 16.0f));
+    CHECK(near(d3d::SceneVeilScaleX(32.0f / 9.0f), 2.0f));
+    CHECK(near(d3d::SceneVeilScaleX(16.0f / 9.0f), 1.0f));
+    CHECK(near(d3d::SceneVeilScaleX(4.0f / 3.0f), 1.0f));
+    CHECK(near(d3d::SceneVeilScaleX(0.0f), 1.0f));
 
     // One pixel short of the corner (x from 1 to 201): centred.
     const float inset[16] = { 346.41f, 0, 0, 0, 0, 0, 0, 0, 0, -615.84f, 0, 0, -w + 2 * w / 1280, w, 0, w };
