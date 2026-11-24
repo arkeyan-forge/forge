@@ -20,7 +20,7 @@ Code comments may still cite a retired path. Current documentation uses the dest
 | `docs/giants/day1.md` | `docs/porting/day1.md` |
 | `docs/giants/playbook.md` | `docs/porting/problem_catalogue.md` |
 | `docs/launcher.md` | `docs/runtime/host/runtime_launcher.md` |
-| `docs/launcher_ui.md` | `docs/runtime/host/runtime_launcher_ui.md` |
+| `docs/launcher_ui.md` | removed with the runtime's own window: `docs/runtime/host/runtime_launcher.md` |
 | `docs/licensing.md` | `docs/release/licensing.md` |
 | `docs/platforms.md` | `docs/getting-started/platforms/README.md` |
 | `docs/portal.md` | `docs/runtime/host/portal.md` |
@@ -124,7 +124,8 @@ Code comments may still cite a retired path. Current documentation uses the dest
 | `docs/runtime/xbox360/overview.md` | `docs/runtime/xbox360/README.md` (the runtime in one page, its numbers folded in) |
 | `docs/runtime/host/figures_portal.md` | `docs/runtime/host/figures.md` (tag, progress, levels, toys, tests) and `docs/runtime/host/portal.md` (protocol, light, backends, AsyncPortal, UWP routes) |
 | `docs/release/launcher.md` | `docs/runtime/host/runtime_launcher.md` (the runtime's own `--launcher` flow, separate from Arkeyan Launcher) |
-| `docs/release/launcher_ui.md` | `docs/runtime/host/runtime_launcher_ui.md` (the runtime's `--launcher` window: look, code, screenshot test) |
+| `docs/release/launcher_ui.md` | removed with the runtime's own window: `docs/runtime/host/runtime_launcher.md` |
+| `docs/runtime/host/runtime_launcher_ui.md` | removed with the runtime's own window: `docs/runtime/host/runtime_launcher.md` |
 | `docs/architecture/workshop_map.md` | `docs/architecture/layout.md` (per-folder one-liners, "Per folder" section) |
 | `docs/architecture/multi-game.md` | `docs/architecture/layout.md` (current runtime, engine and game layout) |
 | `docs/engines/lux_notes.md` | `docs/engines/lux/engine_notes.md` (archive; section numbers kept, "engine_notes §n") |

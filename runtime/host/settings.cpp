@@ -692,7 +692,7 @@ namespace
                 if (!*game)
                     return false;
             }
-            else if (option == "--select-iso" || option == "--launcher" || !option.starts_with("--"))
+            else if (!option.starts_with("--"))
                 s.arguments.push_back(argv[line.index]);
             else
             {
@@ -775,8 +775,6 @@ std::string SettingsHelp(const char* program)
         "  --voice-language <code>     voice language, same codes\n"
         "  --nightmare-from-start <0|1>\n"
         "                              Swap Force, Trap Team, Imaginators: Nightmare before the story's end\n"
-        "  --select-iso                choose the disc image again\n"
-        "  --launcher                  open the launcher window\n"
         "  --list-gamepads             print the connected gamepads and their GUID, then quit\n"
         "  --portal-probe              look for real portals, print one JSON line per portal, then quit\n"
         "  --help                      this text\n"

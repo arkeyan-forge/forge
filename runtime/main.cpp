@@ -387,14 +387,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // The launcher's own arguments: the disc image, --select-iso, --launcher.
+    // What is left of the command line: the disc image.
     std::vector<char*> arguments{ argv[0] };
     for (std::string& argument : settings.arguments)
         arguments.push_back(argument.data());
     std::string discPath =
         ResolveGameSource(int(arguments.size()), arguments.data(), game, skyenv::Get("SKY_HEADLESS") == nullptr);
-    if (skyenv::Get("SKY_LAUNCHER_SHOTS") != nullptr)
-        return 0; // screenshot test run: the launcher already quit
     if (discPath.empty())
         return 1;
 

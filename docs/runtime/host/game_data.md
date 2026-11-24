@@ -56,7 +56,8 @@ title metadata) reads through the same `Find` / `Read` / `List` and does not kno
 A portable game's own pack comes before everything, the copy included ([portable.md](../../getting-started/portable.md); `Open` also takes a file that ends with a pack).
 `ResolveGameSource` (the runtime's start) then calls `CopiedGameData(game)`: when `Inspect` says `Complete` and `CheckGameSource` accepts
 the folder (its `default.xex` is a release this game was recompiled from), the copy is used **whatever disc image path was given, or
-none**. `--launcher` / `--select-iso` still open the chooser. A `Damaged` copy is said on stderr ("the copy in ... is damaged (...):
+none**. Opened on its own (not by Arkeyan Launcher, no `SKY_GAMES_DIR`), the game looks for the copy in the Games folder
+named in `launcher.ini` (`[launcher] games`), as the launcher would ([runtime_launcher.md](runtime_launcher.md)). A `Damaged` copy is said on stderr ("the copy in ... is damaged (...):
 reading the disc image instead") and the disc image is used; a `Partial` one is ignored silently. `CheckGameSource` accepts a folder only
 when it holds `gamedata.manifest` (any other folder is still "Extracted game folders aren't supported yet").
 

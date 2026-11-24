@@ -228,7 +228,7 @@ set_target_properties(ArkeyanNetplayTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${C
 
 # Our own targets only. ArkeyanRecompLib (generated code), thirdparty/, imgui and ArkeyanXenonUtils are left alone.
 sky_quality(ArkeyanRuntime)
-foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi ArkeyanArtReader ArkeyanHostFiles ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanGameDataTest ArkeyanFileListTest ArkeyanPortablePackTest ArkeyanVfsTest
+foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanArtReader ArkeyanHostFiles ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanGameDataTest ArkeyanFileListTest ArkeyanPortablePackTest ArkeyanVfsTest
         ArkeyanRvzTest ArkeyanWii ArkeyanWiiTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
     if(TARGET ${target})
         sky_quality(${target})

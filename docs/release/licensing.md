@@ -57,7 +57,7 @@ The full notices: `THIRD_PARTY_NOTICES.md` at the repository root; the kit's per
 - **libusb-1.0** (LGPL): loaded at run time by `host/portal_usb.cpp` for Xbox portals; the build does not link it.
 - **Fonts**: Outfit and Bungee (OFL).
 - **Xenia code** (BSD-3-Clause) adapted with attribution in named files: `d3d/xenos.*`, `apu/xma_context.*`,
-  `host/portal_usb.cpp`, `host/launcher_assets.cpp`, `host/art/xenos_texture.cpp` (the tiling, also in Arkeyan Launcher's
+  `host/portal_usb.cpp`, `host/art/xenos_texture.cpp` (the tiling, also in Arkeyan Launcher's
   `src/shared/art/`), `kernel/xmp.cpp` (all under `runtime/`).
 
 ## Projects used for reference only

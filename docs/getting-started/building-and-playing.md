@@ -67,10 +67,11 @@ from [Homebrew](https://brew.sh): `brew install cmake ninja`. Python 3 comes wit
 
    Add `-j<n>` to `ninja` to limit the parallel jobs if the machine has little memory.
 
-3. Run it: `open "build/ArkeyanRuntime/Skylanders Spyro's Adventure.app"`, or from a terminal (to see the log)
-   `"build/ArkeyanRuntime/Skylanders Spyro's Adventure" "<disc>.iso"`. The first time, the app asks for the disc image and remembers it
-   (hold Option at start, or pass `--select-iso`, to choose another one). `"build/ArkeyanRuntime/Skylanders Spyro's Adventure" --version` prints
-   the version.
+3. Run it from a terminal with the disc image: `"build/ArkeyanRuntime/Skylanders Spyro's Adventure" "<disc>.iso"`
+   (`open "build/ArkeyanRuntime/Skylanders Spyro's Adventure.app" --args "<disc>.iso"` without the log). Opened without
+   one, the game plays the disc image Arkeyan Launcher remembered or its copy of the game data, else says to start it from
+   Arkeyan Launcher ([runtime_launcher.md](../runtime/host/runtime_launcher.md)).
+   `"build/ArkeyanRuntime/Skylanders Spyro's Adventure" --version` prints the version.
 
 ### Windows 10/11 x64
 

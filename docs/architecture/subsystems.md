@@ -61,10 +61,10 @@ One section per subsystem of `runtime/` (paths below are relative to it unless t
 ## uwp (`host/uwp/*`)
 CoreApplication entry (`main.cpp`: Activated event, swap chain + black frame before the game loads, UI-thread presents, publisher cache collection folder, LocalState settings/log), `sdl_subset.cpp`, `portal_backends.cpp` (GIP + HID routes), `settings_uwp.cpp` (`[gpu]` safe-mode keys), `cpu_check.cpp`; invariants and the nine-run history: [platforms/xbox_uwp.md](../getting-started/platforms/xbox_uwp.md).
 
-## launcher inside the runtime (`host/launcher*.cpp`, `launcher_ui*.cpp`, `widgets/`, `launcher_assets.*`, `launcher_games.cpp`)
-The first-run flow and the original built-in window (`--launcher`, the screenshot test;
-[runtime_launcher.md](../runtime/host/runtime_launcher.md)); the player-facing launcher is **Arkeyan Launcher** (separate
-repo, [launcher/README.md](../release/launcher/README.md)). This code still holds the disc verification and the
+## launcher inside the runtime (`host/launcher.cpp`, `launcher_games.cpp`)
+How a game finds what it reads, and what it says when opened on its own
+([runtime_launcher.md](../runtime/host/runtime_launcher.md)); the player-facing launcher is **Arkeyan Launcher** (separate
+repo, [launcher/README.md](../release/launcher/README.md)). This code holds the disc verification and the
 settings file; the disc table is each game's `games/<id>/info.cpp`. `CheckGameSource`, `ReadTitleMetadata`, `LoadLauncherConfig/SaveLauncherConfig`, `ResolveGameSource`, `ResolveLanguages`.
 
 ## apu, loader, language, inflate, engine and game hooks

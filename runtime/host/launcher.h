@@ -80,7 +80,11 @@ struct LanguageChoice
 };
 LanguageChoice ResolveLanguages(const GameInfo& game);
 
-// Picks the game's disc image: the command-line path, else the remembered one, else asks with a file dialog
-// and remembers the answer. `--select-iso` or holding Option (macOS) at startup asks again.
-// Returns an empty string when the program should quit. Never shows UI unless `interactive`.
+// What a game opened on its own says when it has nothing to play: the copied game data and the remembered disc image are
+// missing (`rememberedChanged`: the remembered image no longer checks out).
+std::string StartFromLauncherMessage(const GameInfo& game, bool rememberedChanged);
+
+// Picks what the game reads: the command-line path, else the copied game data, else the remembered disc image (launcher.ini
+// `[<game>] iso`), else says to start the game from Arkeyan Launcher. Returns an empty string when the program should quit.
+// Never shows UI unless `interactive`.
 std::string ResolveGameSource(int argc, char** argv, const GameInfo& game, bool interactive);

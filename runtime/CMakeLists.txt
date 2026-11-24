@@ -179,7 +179,7 @@ add_subdirectory(gpu)
 # one (macOS, Linux), else miniz from the tree (Windows).
 find_package(ZLIB QUIET)
 set(ARKEYAN_MINIZ_DIR ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz)
-# miniz (public domain, from the tree; the launcher's PNG reader, and inflate.cpp's without zlib): a library of its own,
+# miniz (public domain, from the tree; inflate.cpp's without zlib): a library of its own,
 # so our warning flags stay off it, and its directory is SYSTEM for the targets that include it.
 add_library(ArkeyanMiniz STATIC ${ARKEYAN_MINIZ_DIR}/miniz.c)
 target_compile_definitions(ArkeyanMiniz PRIVATE MINIZ_NO_STDIO MINIZ_NO_TIME MINIZ_NO_ARCHIVE_APIS MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
@@ -227,10 +227,10 @@ if(ARKEYAN_EDITION)
     list(PREPEND ARKEYAN_GAME_INCLUDES ${ARKEYAN_GAME_DIR}/editions/${ARKEYAN_EDITION})
 endif()
 set_property(SOURCE ${ARKEYAN_ENGINE_SOURCES} ${ARKEYAN_GAME_SOURCES} APPEND PROPERTY INCLUDE_DIRECTORIES ${ARKEYAN_GAME_INCLUDES})
-# Button glyphs are drawn with the embedded Bungee (embedded_fonts.cpp, below); stb_truetype comes from
-# ArkeyanRuntimeLauncherUi's stb_impl.cpp, which the UWP build does not link.
+# Button glyphs are drawn with the embedded Bungee (embedded_fonts.cpp, below) and stb_truetype (stb_impl.cpp).
+target_sources(ArkeyanRuntime PRIVATE host/stb_impl.cpp)
+target_include_directories(ArkeyanRuntime SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb) # stb's warnings are not ours
 if(ARKEYAN_UWP)
-    target_sources(ArkeyanRuntime PRIVATE host/stb_impl.cpp)
     # Xbox present test (tools/xbox/presenttest): a small separate package, built on request.
     add_executable(ArkeyanPresentTest WIN32 EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tools/xbox/presenttest/main.cpp host/uwp/uwp_compat.cpp)
     target_include_directories(ArkeyanPresentTest PRIVATE host/uwp)
@@ -265,22 +265,6 @@ arkeyan_layout_record(ArkeyanRuntime)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_compile_options(ArkeyanRuntime PRIVATE "SHELL:-iquote ${ARKEYAN_XENON_UTILS}")
     set_target_properties(ArkeyanRuntime PROPERTIES ENABLE_EXPORTS ON)
-endif()
-
-# The launcher window: SDL_Renderer drawing, a small TrueType atlas (stb_truetype, MIT/public domain) and two
-# OFL fonts. It links into both the game and the launcher test (the test links it even though it never opens a window,
-# because launcher.cpp calls into it).
-if(NOT ARKEYAN_UWP)
-    add_library(ArkeyanRuntimeLauncherUi STATIC host/launcher_ui.cpp host/launcher_ui_draw.cpp host/launcher_assets.cpp host/stb_impl.cpp host/widgets/launcher_widgets.cpp)
-    target_include_directories(ArkeyanRuntimeLauncherUi PRIVATE .)
-    target_include_directories(ArkeyanRuntimeLauncherUi SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb) # stb's warnings are not ours
-    target_link_libraries(ArkeyanRuntimeLauncherUi PUBLIC SDL3::SDL3-static fmt::fmt ArkeyanXenonUtils ArkeyanMiniz)
-    # A development convenience (fonts are looked for in the source tree); not in the player kit, which holds no path.
-    if(NOT ARKEYAN_KIT_BUILD)
-        target_compile_definitions(ArkeyanRuntimeLauncherUi PRIVATE ARKEYAN_SOURCE_FONT_DIR="${CMAKE_SOURCE_DIR}/resources/launcher/fonts")
-    endif()
-    target_link_libraries(ArkeyanRuntime PRIVATE ArkeyanRuntimeLauncherUi)
-
 endif()
 
 # The Toy Box overlay: Dear ImGui (MIT) rasterized on the CPU by host/imgui_software.cpp (every platform, the Xbox
@@ -321,9 +305,6 @@ target_link_libraries(ArkeyanImguiSoftwareTest PRIVATE imgui)
 add_executable(ArkeyanRuntimeLauncherTest EXCLUDE_FROM_ALL host/launcher_test.cpp host/launcher.cpp host/launcher_games.cpp host/portable.cpp host/xex_title.cpp ${ARKEYAN_GAME_DIR}/info.cpp)
 target_include_directories(ArkeyanRuntimeLauncherTest PRIVATE .)
 target_link_libraries(ArkeyanRuntimeLauncherTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
-if(NOT ARKEYAN_UWP)
-    target_link_libraries(ArkeyanRuntimeLauncherTest PRIVATE ArkeyanRuntimeLauncherUi)
-endif()
 
 # The F3 menu's Commands page on a scratch launcher.ini: keys, pad buttons, swaps, reset (no game data): ./ArkeyanCommandsTest
 # The launcher.ini reader and writer come with ArkeyanRuntimeLauncherTest's sources (its test file aside).
@@ -333,9 +314,6 @@ add_executable(ArkeyanCommandsTest host/commands_test.cpp host/commands.cpp host
     ${ARKEYAN_COMMANDS_TEST_SOURCES})
 target_include_directories(ArkeyanCommandsTest PRIVATE .)
 target_link_libraries(ArkeyanCommandsTest PRIVATE ArkeyanHostFiles ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
-if(NOT ARKEYAN_UWP)
-    target_link_libraries(ArkeyanCommandsTest PRIVATE ArkeyanRuntimeLauncherUi)
-endif()
 
 # DDS reader and writer, content hash and texture pack index (no game data needed): ./ArkeyanTexturePackTest
 add_executable(ArkeyanTexturePackTest EXCLUDE_FROM_ALL host/texture_pack_test.cpp host/dds.cpp host/texture_pack.cpp)
@@ -597,8 +575,6 @@ if(NOT ARKEYAN_UWP)
     else()
         add_custom_command(TARGET ArkeyanRuntime POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/resources/launcher/fonts $<TARGET_FILE_DIR:ArkeyanRuntime>/fonts)
-        add_custom_command(TARGET ArkeyanRuntimeLauncherTest POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/resources/launcher/fonts $<TARGET_FILE_DIR:ArkeyanRuntimeLauncherTest>/fonts)
     endif()
 endif()
 
@@ -807,7 +783,7 @@ if(NOT ARKEYAN_UWP)
     endif()
     target_include_directories(ArkeyanArtTest PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenosRecomp/thirdparty/xxHash)
     target_include_directories(ArkeyanArtTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
-    target_link_libraries(ArkeyanArtTest PRIVATE ArkeyanRuntimeLauncherUi ArkeyanXenonUtils)
+    target_link_libraries(ArkeyanArtTest PRIVATE ArkeyanXenonUtils fmt::fmt SDL3::SDL3-static)
     if(WIN32)
         target_sources(ArkeyanArtTest PRIVATE platform/win32/SSARecomp.rc)
     endif()

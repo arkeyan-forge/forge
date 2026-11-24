@@ -29,9 +29,9 @@ Ad-hoc signatures change with every rebuild: macOS may ask for folder access aga
 clang plus `metal` (Arkeyan-Builder, [../../tools/arkeyan-builder.md](../../tools/arkeyan-builder.md)).
 
 ## Launching and choosing the disc
-`"Skylanders Spyro's Adventure.app"` or `"Skylanders Spyro's Adventure" <iso>`; the first run asks for the ISO and remembers it in `launcher.ini` (`[ssa] iso=`);
-**hold Option** at start (read with `CGEventSourceFlagsState`: SDL only learns modifiers from window events) or pass
-`--select-iso` to choose another; a command-line path is **not saved** (test runs never change the player's choice).
+`"Skylanders Spyro's Adventure" <iso>`; a command-line path is **not saved** (test runs never change the player's choice).
+Opened without one, the app plays the copied game data or the disc image remembered in `launcher.ini` (`[ssa] iso=`),
+else says to start it from Arkeyan Launcher ([runtime_launcher.md](../../runtime/host/runtime_launcher.md)).
 
 ## Behaviour notes
 - Window closed without `SDL_EVENT_QUIT` (an NSWindow ordered out): `IsWindowGone()` checks `NSApplication.isHidden`

@@ -309,10 +309,10 @@ namespace
         CHECK(!badOption.ok && badOption.error == "unknown option --unknown (see --help)" && !badOption.settings.help);
         const auto flags = Parse({}, {},
             { "--portal-probe=ignored", "--help=ignored", "--version", "--list-gamepads", "--fullscreen=0",
-                "--windowed=1", "--select-iso=1", "--launcher=2", "-x", "a=b" });
+                "--windowed=1", "-x", "a=b" });
         CHECK(flags.ok && flags.warnings.empty() && flags.settings.portalProbe && flags.settings.help &&
               flags.settings.version && flags.settings.listGamepads && !flags.settings.fullscreen);
-        CHECK(flags.settings.arguments == (std::vector<std::string>{ "--select-iso=1", "--launcher=2", "-x", "a=b" }));
+        CHECK(flags.settings.arguments == (std::vector<std::string>{ "-x", "a=b" }));
         const auto rumble = Parse({}, {}, { "--rumble=bad" });
         CHECK(rumble.ok && rumble.settings.rumble[0] == "normal" && rumble.settings.rumble[1] == "normal");
         CHECK(rumble.warnings ==
@@ -480,7 +480,7 @@ int main()
     CHECK(run.settings.language == "it" && run.settings.voiceLanguage == "es");
     run = Parse(config, { { "SKY_LANGUAGE", "it" } },
         { "--language", "en", "--scale", "2", "--vsync=1", "--windowed", "--anisotropy", "16", "--input", "gamepad",
-            "--gamepad", "ffff", "--key", "a=Space", "--glyphs=playstation", "game.iso", "--select-iso" });
+            "--gamepad", "ffff", "--key", "a=Space", "--glyphs=playstation", "game.iso" });
     CHECK(run.ok && run.warnings.empty());
     CHECK(run.settings.language == "en" && run.settings.voiceLanguage == "de");
     CHECK(run.settings.resolutionScale == 2 && run.settings.vsync && !run.settings.fullscreen &&
@@ -488,7 +488,10 @@ int main()
     CHECK(run.settings.inputDevice == "gamepad" && run.settings.gamepad == "ffff" &&
           run.settings.keys[KeyIndex("a")] == "Space");
     CHECK(run.settings.glyphs == "playstation");
-    CHECK(run.settings.arguments == (std::vector<std::string>{ "game.iso", "--select-iso" }));
+    CHECK(run.settings.arguments == (std::vector<std::string>{ "game.iso" }));
+    // The runtime's own disc picker is gone: its flags are unknown options.
+    for (const char* option : { "--select-iso", "--launcher" })
+        CHECK(!Parse({}, {}, { option }).ok);
 
     // The last of repeated options wins.
     run = Parse({}, {}, { "--windowed", "--fullscreen", "--scale", "4", "--scale", "5" });

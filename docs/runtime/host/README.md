@@ -22,7 +22,7 @@ runtime's own first-run window. The window, input and audio output are covered i
 | (design, 0.10.0) | online play in input lockstep, the deterministic netplay mode, rooms ([netplay.md](netplay.md)) |
 | `runtime/host/art/` | the disc's pictures (Lux `strm`/APKF, Alchemy IGA/IGZ, Xenos texture decoding, the PNG cache) |
 | `runtime/host/profiles.*`, `runtime/kernel/xam_user.cpp` | the player profiles (name, picture, XUID) served as the console's gamer profiles |
-| `runtime/host/launcher*.cpp`, `launcher_ui*`, `launcher_assets.*`, `widgets/` | the runtime's `--launcher` window and the disc check |
+| `runtime/host/launcher*.cpp` | the disc check, and what a game opened on its own reads |
 | `resources/collection/catalogue.json` | every toy of the six games (271), seats and accepts per game |
 
 ## How to test it
@@ -59,8 +59,7 @@ runtime's own first-run window. The window, input and audio output are covered i
 | [game_music.md](game_music.md) | Each game's main menu theme from the disc (Wwise, FMOD) decoded by Arkeyan-Builder for Arkeyan Launcher's game page |
 | [game_art.md](game_art.md) | Each game's logo, background and portraits from the disc: the provider, the cache, the rule for a toy's picture |
 | [game_data.md](game_data.md) | Copying the disc's files into the game folder (no disc image needed afterwards): the copy, its manifest, the reader's folder mode |
-| [runtime_launcher.md](runtime_launcher.md) | The runtime's own `--launcher` flow: finding, checking and remembering the disc image (not Arkeyan Launcher) |
-| [runtime_launcher_ui.md](runtime_launcher_ui.md) | The look and code of that window, and its screenshot test |
+| [runtime_launcher.md](runtime_launcher.md) | How a game finds and checks its disc image or copied game data, and a game opened on its own (not Arkeyan Launcher) |
 
 Related: [engines/lux/portal_title_side.md](../../engines/lux/portal_title_side.md) (what the title's portal driver
 expects), [release/launcher/](../../release/launcher/README.md) (Arkeyan Launcher).

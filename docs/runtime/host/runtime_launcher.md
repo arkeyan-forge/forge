@@ -1,38 +1,39 @@
-# The runtime's own launcher window (`--launcher`)
+# How a game finds its disc image
 
-> **Purpose:** how does a runtime executable (`Skylanders Spyro's Adventure`, `Skylanders Giants`) find, check and remember the player's disc image, and what is its own `--launcher` window? · **Status:** current (2026-10-26) · **Tags:** [Xbox] [SSA] [Giants]
+> **Purpose:** how does a runtime executable (`Skylanders Spyro's Adventure`, `Skylanders Giants`, ...) find, check and remember the player's disc image, or the copied game data, and what does it do when it is opened on its own? · **Status:** current (2026-11-24) · **Tags:** [Xbox] [SSA] [Giants]
 
-**This is not Arkeyan Launcher.** It is the runtime's built-in first-run window (`runtime/host/launcher*.cpp`, drawn with
-SDL_Renderer, no ImGui), the ancestor of Arkeyan Launcher. **Players use Arkeyan Launcher** (a separate public repo, its own
-ImGui UI, the kit that builds the game: [release/launcher/README.md](../../release/launcher/README.md)), which starts
-the runtime with the disc path on the command line, so this window does not show. It stays for development runs and
-for a runtime started on its own. The "Export for Xbox" section is design (not built; the Xbox port is paused). Its look: [runtime_launcher_ui.md](runtime_launcher_ui.md).
+**Players use Arkeyan Launcher** (a separate public repo: [release/launcher/README.md](../../release/launcher/README.md)),
+which starts the game with the disc image on the command line and the Games folder in `SKY_GAMES_DIR`. The runtime has
+no window of its own to choose a disc any more: the built-in setup window (`--launcher`, `--select-iso`, Option or Shift
+held at start) was removed in 2026-11. A game opened on its own plays when it can, else says to start it from Arkeyan
+Launcher. The "Export for Xbox" section is design for that window (not built; the Xbox port is paused).
 
-The player brings their own disc image. The runtime checks that it is the game it was recompiled from, remembers it,
-and starts the game. Nothing from the game ships with the project.
+The player brings their own disc image. The runtime checks that it is the game it was recompiled from and starts the
+game. Nothing from the game ships with the project.
 
 ## Startup flow
 
 `main()` (`runtime/main.cpp`) calls `ResolveGameSource(argc, argv, *FindGame(ARKEYAN_GAME_ID), interactive)`
 (`runtime/host/launcher.cpp`): the game is the one the runtime was built for (`-DARKEYAN_GAME`), and `interactive` is false
-when `SKY_HEADLESS` is set. The disc path is resolved in this order:
+when `SKY_HEADLESS` is set. What the game reads is resolved in this order:
 
-0. **The copied game data**, when the player made it ("Copy the game data", [game_data.md](game_data.md)) and it is
+0. **A portable copy's own data** ([portable.md](../../getting-started/portable.md)), whatever the arguments.
+1. **The copied game data**, when the player made it ("Copy the game data", [game_data.md](game_data.md)) and it is
    complete and intact (its `default.xex` is a known release): used first, whatever the arguments, with no disc image
-   needed. A damaged copy is said in the log and ignored; `--launcher` / `--select-iso` skip this step.
-1. **Command line**: the first argument that is not a flag. It is verified; on failure the reason is printed (and shown
-   in a message box when interactive) and the program exits with code 1, with no fallback. A command-line path is used
-   for that run only and is **not saved**, so test runs and Arkeyan Launcher never change the saved choice.
-2. **Saved choice**: `[<game id>] iso=` in `launcher.ini`. Skipped when `--launcher` or `--select-iso` is passed or
-   when Shift (or Option on macOS) is held at startup (`SelectionKeyHeld`: `CGEventSourceFlagsState` on macOS,
-   `GetAsyncKeyState(VK_SHIFT)` on Windows, SDL's modifier state elsewhere). If the saved image no longer verifies,
-   the window opens so the player sees why.
-3. **The launcher window** (`RunLauncherWindow`, [runtime_launcher_ui.md](runtime_launcher_ui.md)): choose or drop an
-   image, verification, PLAY. An accepted image is saved to `launcher.ini`; closing the window quits.
+   needed. A damaged copy is said in the log and ignored. Opened on its own (neither `SKY_GAMES_DIR` nor
+   `SKY_LAUNCHER_RESTARTS` set), the game first takes the Games folder from `launcher.ini` (`[launcher] games`) and
+   sets `SKY_GAMES_DIR` to it, as Arkeyan Launcher would, so a copy (and the HD textures) in a moved Games folder are
+   found (`ApplyLauncherGamesFolder`).
+2. **Command line**: the first argument. It is verified; on failure the reason is printed (and shown in a message box
+   when interactive) and the program exits with code 1, with no fallback. A command-line path is used for that run only
+   and is **not saved**.
+3. **The remembered disc image**: `[<game id>] iso=` in `launcher.ini`, when it still checks out.
+4. Otherwise one message, "Start <game name> from Arkeyan Launcher." (`StartFromLauncherMessage`), with "The disc image it
+   used last time is missing or has changed." when a remembered image no longer checks out; the program exits with code
+   1.
 
-Non-interactive mode (`SKY_HEADLESS=1`) never initialises SDL video and never shows a dialog. Without a path it prints
-`usage: <runtime> [--launcher] [--select-iso] [<disc image .iso>]` (`<runtime>` is `Skylanders Spyro's Adventure` or `Skylanders Giants`) and
-exits with code 1.
+Non-interactive mode (`SKY_HEADLESS=1`) never shows a dialog: the message goes to stderr only. Runs outside Arkeyan
+Launcher (development, tests) pass the disc image on the command line.
 
 ## Verification (`CheckGameSource`)
 
@@ -77,12 +78,6 @@ iso=<home>/Games/Skylanders - Spyro's Adventure (USA, Europe) (En,Fr,De,Es,It,Nl
 
 - Rewriting the file drops hand-written comments and keeps every key.
 
-## Choosing another disc image later
-
-Hold **Shift** (or **Option** on macOS) while the app starts, or pass `--launcher` or `--select-iso` (macOS:
-`open "Skylanders Spyro's Adventure.app" --args --launcher`); or delete or edit `launcher.ini`. On Wayland the modifier state may not be
-known at startup [?].
-
 ## The app bundle (macOS)
 
 - `cmake` + `ninja ArkeyanRuntime` build `build/ArkeyanRuntime/<runtime>.app` (`MACOSX_BUNDLE`, `<runtime>` = `ARKEYAN_RUNTIME_NAME`: `Skylanders Spyro's Adventure` or `Skylanders Giants`). The template is `resources/macos/Info.plist.in` (`runtime/CMakeLists.txt`):
@@ -114,7 +109,9 @@ is not in the tree any more.
 - the real image passes, and its XDBF title name and icon can be read
 - each failure status, using synthetic images it writes itself: a missing file, a folder, an unreadable file, empty and random files, an XDVDFS image holding `default.xex` with no XEX2 header, a cut-short file, another title ID, another media ID, and a modified `default.xex`
 - damaged copies of the real image
-- the command line without UI (path, `--select-iso`, no argument, bad path)
+- the command line without UI (path, no argument, bad path)
+- a game opened on its own: the remembered image used while it checks out, the message once it moved, and a copy in a
+  Games folder named only in `launcher.ini` found
 - the settings file: a round trip with spaces, `=`, `#`, `[]`, apostrophes and UTF-8 in paths, a hand-edited file with CRLF and comments, and a missing file
 
 The saved-choice path can be checked end to end without touching the real home folder:
@@ -122,9 +119,8 @@ The saved-choice path can be checked end to end without touching the real home f
 
 ## Not verified (needs a person at the Mac)
 
-- The window and the error boxes by hand (the screenshot test covers the window's states).
-- Launching from Finder. That needs a real home, so the first run shows UI. Expect a one-time macOS prompt for Documents access when the remembered image is in `~/Documents`. Ad-hoc signatures change with every rebuild, so macOS may ask again after a rebuild.
-- That holding Option is detected without any permission prompt.
+- The message boxes by hand.
+- Launching from Finder. That needs a real home. Expect a one-time macOS prompt for Documents access when the remembered image is in `~/Documents`. Ad-hoc signatures change with every rebuild, so macOS may ask again after a rebuild.
 - Gatekeeper on a downloaded copy (the test Mac had assessment disabled).
 
 ## Export for Xbox One / Series X|S (design, not built; Xbox paused)
