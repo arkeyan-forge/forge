@@ -33,8 +33,17 @@ PPC_FUNC(GAME_HOOK(EXIInit)) { wii::os::Skip(ctx, "EXIInit"); }
 PPC_FUNC(GAME_HOOK(SIInit)) { wii::os::Skip(ctx, "SIInit"); }
 PPC_FUNC(GAME_HOOK(__OSInitSram)) { wii::os::Skip(ctx, "__OSInitSram"); }
 PPC_FUNC(GAME_HOOK(__OSInitAudioSystem)) { wii::os::Skip(ctx, "__OSInitAudioSystem"); }
+PPC_FUNC(GAME_HOOK(WUDInit)) { wii::os::Skip(ctx, "WUDInit", 1); } // started, for WPADInit to go on
+PPC_FUNC(GAME_HOOK(WUDGetStatus)) { ctx.r3.u64 = 3; } // set up: the remotes' library ready, none connected
 PPC_FUNC(GAME_HOOK(GXDrawDone)) { wii::os::Skip(ctx, "GXDrawDone"); }
 PPC_FUNC(GAME_HOOK(GXWaitDrawDone)) { wii::os::Skip(ctx, "GXWaitDrawDone"); }
+PPC_FUNC_IMPL(GAME_IMP(GXSetDrawSync));
+PPC_FUNC(GAME_HOOK(GXSetDrawSync))
+{
+    const uint16_t token = uint16_t(ctx.r3.u32);
+    GAME_IMP(GXSetDrawSync)(ctx, base);
+    wii::os::DrawSyncReached(base, token);
+}
 PPC_FUNC(GAME_HOOK(IOS_Open)) { wii::os::IosOpen(ctx, base, false); }
 PPC_FUNC(GAME_HOOK(IOS_OpenAsync)) { wii::os::IosOpen(ctx, base, true); }
 PPC_FUNC(GAME_HOOK(IOS_Close)) { wii::os::IosClose(ctx, base, false); }

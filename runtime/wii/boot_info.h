@@ -4,6 +4,7 @@
 // the arenas, the clocks, the IOS the game runs on. The operating system's start (OSInit) reads them. From the public
 // description of the Wii's low memory (WiiBrew, "Memory map"); docs/runtime/wii/memory_boot.md.
 #include <cstdint>
+#include <vector>
 
 namespace wii
 {
@@ -12,6 +13,7 @@ namespace wii
         uint8_t discHeader[0x20] = {}; // the first bytes of the game partition: its ID, maker, disc number, magic
         uint32_t ios = 0;              // the title metadata's IOS (56 for IOS56)
         uint32_t iosRevision = 0;
+        std::vector<uint8_t> settingText; // the console's region, encrypted (wii/settings.h): at 0x80003800
     };
 
     // Clock speeds of the Wii's bus and processor, in Hz.

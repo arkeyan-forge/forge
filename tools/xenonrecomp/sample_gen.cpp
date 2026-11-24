@@ -245,6 +245,8 @@ int main(int argc, char** argv)
             (23u << 26) | (4 << 21) | (3 << 16) | (5 << 11) | (24 << 6) | (31 << 1) }, // rlwnm r3, r4, r5, 24, 31
         { "sample_mfctr", Spr(339, 3, 9) }, // mfctr r3
         { "sample_mfxer", Spr(339, 3, 1) }, // mfxer r3
+        { "sample_mftb", Spr(371, 3, 268) }, // mftb r3: the timebase's low half
+        { "sample_mftbu", Spr(371, 3, 269) }, // mftb r3, 269 (mftbu): its high half, which 32-bit code reads apart
         { "sample_isync", 0x4C00012C },
         { "sample_icbi", (31u << 26) | (3 << 16) | (4 << 11) | (982 << 1) }, // icbi r3, r4
         { "sample_dcbi", (31u << 26) | (3 << 16) | (4 << 11) | (470 << 1) }, // dcbi r3, r4

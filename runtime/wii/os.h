@@ -17,8 +17,8 @@ namespace wii::os
     void DisableInterrupts(PPCContext& ctx);
     void EnableInterrupts(PPCContext& ctx, uint8_t* base);
     void RestoreInterrupts(PPCContext& ctx, uint8_t* base); // r3: the state to restore
-    void Skip(
-        PPCContext& ctx, const char* function); // a hardware start the host does not need yet: r3 = 0, logged once
+    // A hardware start the host does not need yet: r3 = `result` (0, or a start's success), logged once.
+    void Skip(PPCContext& ctx, const char* function, uint32_t result = 0);
 
     // The context switches (threads.cpp): OSSaveContext(context) and OSLoadContext(context).
     void SaveContext(PPCContext& ctx, uint8_t* base);
@@ -43,6 +43,9 @@ namespace wii::os
     // interface's retrace, 59.94 times a second from VIInit on (its interrupt handler, as the hardware would).
     void SetDecrementer(PPCContext& ctx, uint8_t* base);
     void FrameBuffer(PPCContext& ctx); // VISetNextFrameBuffer(address): the first ones logged
+    // GXSetDrawSync's token as the graphics processor would write it back once its commands reach it (the pixel
+    // engine's token register, which GXReadDrawSync reads): at once, until the host draws.
+    void DrawSyncReached(uint8_t* base, uint16_t token);
     void StartRetrace(uint8_t* base);
 
     // The IOS calls (ios_calls.cpp), on the host's IOS (Hosted, its devices in ios_devices.cpp).
@@ -76,10 +79,16 @@ namespace disc
     class WiiDisc;
 }
 
+namespace wii::nand
+{
+    class FileSystem;
+}
+
 namespace wii
 {
     ios::Ios& Hosted(); // the host's IOS, its devices registered (ios_devices.cpp)
     void SetDisc(const disc::WiiDisc& disc); // the disc /dev/di reads, before the first IOS call
+    void SetNand(nand::FileSystem& nand, uint64_t titleId); // the NAND /dev/fs serves, the title /dev/es tells
 
     // Ends the boot: the host's main returns `code` once the log is written. The calling guest thread never returns.
     [[noreturn]] void StopBoot(int code);

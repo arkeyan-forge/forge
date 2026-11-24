@@ -167,6 +167,7 @@ static void ContextFunctions(PPCContext& ctx)
 
 // The 750CL (recompiler_750cl.inl). Each FPR is a pair: ps0 (ctx.fN) and ps1 (ctx.ps1[N]).
 static uint8_t memory[0x1000]; // the samples' guest memory, from address 0
+extern "C" uint64_t ppc_mftb() { return 0x0123456789ABCDEF; } // the samples' timebase
 static void Pair(PPCContext& ctx, int n, double ps0, double ps1)
 {
     (&ctx.f0)[n].f64 = ps0;
@@ -498,6 +499,10 @@ static void PlainPowerPc(PPCContext& ctx)
     ctx.xer.ca = 1;
     sample_mfxer(ctx, memory);
     CHECK(ctx.r3.u64 == 0xA0000000);
+    sample_mftb(ctx, memory);
+    CHECK(ctx.r3.u32 == 0x89ABCDEF);
+    sample_mftbu(ctx, memory);
+    CHECK(ctx.r3.u32 == 0x01234567);
 
     // Nothing to see: the registers they name and the memory stay as they were.
     static uint8_t before[sizeof(memory)];

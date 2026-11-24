@@ -35,8 +35,19 @@ With the threads, the timers and IOS ([threads.md](../../../docs/runtime/wii/thr
 done", the engine's first thread (priority 17) started and handed back; then the game stops in its network library
 (`bdSingleton.inl` line 29: Demonware's allocator not set), on a path that needs the NAND (`/dev/fs`) or ES.
 
+## The engine's start [V] (2026-11-24)
+With the NAND, ES and the console's settings ([ios.md](../../../docs/runtime/wii/ios.md)): the engine's start goes
+through its saves, streams, resources, input, packages and graphics, hands VI its first frame buffer (`0x90572060`),
+and waits in the audio interface's start (`__AI_SRC_INIT`). Three answers on the way, in `hooks.cpp`:
+- the Bluetooth stack (`WUDInit`) is not started (its HCI over USB is not served) and reports itself ready
+  (`WUDGetStatus` 3), so the remotes' library starts with no remote connected; Wwise waits for it at its start;
+- `GXSetDrawSync`'s token is written back at once (the pixel engine's token register): `Flip` waits for it, and
+  restarts the console (`OSRestart`) when it takes too long;
+- `OSGetTime` reads the timebase's halves apart (`mftbu`, then `mftb`, then `mftbu`, until both high halves agree): the
+  translation read the whole timebase for the high half, so the two rarely agreed and each alarm took about 1.6 ms
+  (KPAD's start never got past them). Fixed in XenonRecomp ([xenonrecomp.md](../../../docs/tools/toolchain/xenonrecomp.md#the-patch-hunks-what-each-fixes-and-why)).
+
 ## Next
-1. IOS: `/dev/fs` (the NAND: the settings, the saves), `/dev/es`, the network devices offline; then EXI, SI and the
-   first GX frame.
+1. The audio: the audio interface, the DSP, AX (Wwise's output); then EXI, SI, and GX's commands drawn.
 2. `gamelogic.rso`: load and translate the module.
 3. The `*_as_local` options, once it boots.

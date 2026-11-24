@@ -1,6 +1,6 @@
-// The Wii host: loads a game from its disc image and runs its translated code. For now it boots to the game's first
-// request to IOS and stops there (docs/runtime/wii/memory_boot.md).
-//   <host> <disc.rvz>
+// The Wii host: loads a game from its disc image and runs its translated code (docs/runtime/wii/memory_boot.md). The
+// NAND folder holds the console's NAND: the game's saves, the console's settings (made on the first run).
+//   <host> <disc.rvz> <NAND folder>
 #include "memory.h"
 #include "platform/platform.h"
 #include "ppc_recomp_shared.h"
@@ -8,6 +8,9 @@
 #include "disc/wii_disc.h"
 #include "wii/boot_info.h"
 #include "wii/executable.h"
+#include "wii/ios_nand.h"
+#include "wii/nand.h"
+#include "wii/settings.h"
 #include "wii/memory_map.h"
 #include "wii/os.h"
 #include <chrono>
@@ -47,7 +50,9 @@ namespace
 
     DiscFileSystem g_disc; // the game's disc, read for as long as it runs
 
-    bool LoadGame(const char* path, uint8_t*& base, uint32_t& entry)
+    std::unique_ptr<wii::nand::FileSystem> g_nand;
+
+    bool LoadGame(const char* path, const char* nandFolder, uint8_t*& base, uint32_t& entry)
     {
         DiscFileSystem& disc = g_disc;
         const disc::WiiDisc* wii = disc.Open(path) ? disc.Wii() : nullptr;
@@ -85,8 +90,26 @@ namespace
         info.ios = wii->Ios();
         if (!wii->Read(0, info.discHeader, sizeof(info.discHeader)))
             return false;
+        info.settingText = wii::MakeSettingText(char(info.discHeader[3]));
         wii::WriteBootInfo(base, info);
         wii::SetDisc(*wii);
+        // The title's ID, from its metadata: the NAND's folder for it, and what ES tells the game.
+        std::vector<uint8_t> tmd;
+        if (!wii->TitleMetadata(tmd) || tmd.size() < 0x194)
+        {
+            fprintf(stderr, "[wii] %s: no title metadata\n", path);
+            return false;
+        }
+        uint64_t title = 0;
+        for (size_t i = 0x18C; i < 0x194; i++)
+            title = title << 8 | tmd[i];
+        g_nand = std::make_unique<wii::nand::FileSystem>(nandFolder);
+        if (!wii::PrepareNand(*g_nand, title, wii::ConsoleSettings{}, char(info.discHeader[3])))
+        {
+            fprintf(stderr, "[wii] %s: the NAND folder could not be made\n", nandFolder);
+            return false;
+        }
+        wii::SetNand(*g_nand, title);
         for (uint64_t address = PPC_CODE_BASE; address < PPC_CODE_BASE + PPC_CODE_SIZE; address += 4)
             PPC_LOOKUP_FUNC(base, address) = Unmapped;
         for (const PPCFuncMapping* mapping = PPCFuncMappings; mapping->host != nullptr; mapping++)
@@ -126,14 +149,14 @@ int main(int argc, char** argv)
 {
     PlatformInit();
     PlatformInstallFaultHandler(OnFault);
-    if (argc != 2)
+    if (argc != 3)
     {
-        fprintf(stderr, "usage: %s <disc.rvz>\n", argv[0]);
+        fprintf(stderr, "usage: %s <disc.rvz> <NAND folder>\n", argv[0]);
         return 2;
     }
     uint8_t* base = nullptr;
     uint32_t entry = 0;
-    if (!LoadGame(argv[1], base, entry))
+    if (!LoadGame(argv[1], argv[2], base, entry))
         return 1;
     g_base = base;
     // The game's first thread, on a host stack deep enough for the translated code's calls.

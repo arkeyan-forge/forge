@@ -95,7 +95,7 @@ build_and_test() { # <section> <build dir> <cmake args...>
             if [ -z "${SSA_ISO:-}" ]; then row "$section" "unit $name" FAIL "set SSA_ISO"; continue; fi
             set -- "$SSA_ISO" "$scratch"
         fi
-        [ "$name" = ArkeyanGameDataTest ] || [ "$name" = ArkeyanFileListTest ] || [ "$name" = ArkeyanPortablePackTest ] || [ "$name" = ArkeyanVfsTest ] || [ "$name" = ArkeyanRvzTest ] && set -- "$scratch"
+        [ "$name" = ArkeyanGameDataTest ] || [ "$name" = ArkeyanFileListTest ] || [ "$name" = ArkeyanPortablePackTest ] || [ "$name" = ArkeyanVfsTest ] || [ "$name" = ArkeyanRvzTest ] || [ "$name" = ArkeyanWiiTest ] && set -- "$scratch"
         [ "$name" = ArkeyanBuilderTest ] || [ "$name" = ArkeyanEditionTest ] && set -- "$root" "$scratch"
         [ "$name" = ArkeyanBuilderGuardTest ] && set -- "$scratch/guard"
         # The achievements tests read this section's own disc (title XDBF counts and gamerscore, the kernel calls on its list).

@@ -16,6 +16,7 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 | The host: address space (MEM1 and MEM2 with their mirrors), executable, boot information, the first boot to the first IOS request | done: [memory_boot.md](memory_boot.md) |
 | Threads, events (the interrupts), the decrementer and the video retrace | done: [threads.md](threads.md) |
 | IOS: the calls, the state module, the disc drive | done: [ios.md](ios.md) |
+| The NAND (`/dev/fs`, in a host folder), ES, the console's settings (SYSCONF, `setting.txt`) | done: [ios.md](ios.md) |
 | Everything else | not started (#82) |
 
 ## Where the code is
@@ -24,13 +25,15 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 750CL mode in [`tools/xenonrecomp/ppc_decoder.cpp`](../../../tools/xenonrecomp/ppc_decoder.cpp), the instructions in
 `XenonRecomp/recompiler_750cl.inl` ([`patches/xenonrecomp.patch`](../../../patches/xenonrecomp.patch)), on with the
 config's `paired_singles`. The host: [`runtime/wii/`](../../../runtime/wii/) (`memory_map`, `executable`, `boot_info`,
-`os`, `processor`, `threads`, `timers`, `ios`, `ios_calls`, `ios_devices`, `ios_disc`, `main`), the game's bindings in `games/racing/` (`addresses.h`, `hooks.cpp`).
+`os`, `processor`, `threads`, `timers`, `ios`, `ios_calls`, `ios_devices`, `ios_disc`, `ios_nand`, `nand`, `settings`,
+`main`), the game's bindings in `games/racing/` (`addresses.h`, `hooks.cpp`).
 
 ## How to test it
 `ArkeyanRvzTest` (in `ctest` and `tools/test_all.sh`) builds synthetic images; `ArkeyanRvzTest --disc <image.rvz>`
 lists a real disc's files and checks its hashes. `ArkeyanXenonRecompTest` and `ArkeyanPpcDecoderTest`: one sample per
-750CL instruction, translated and run on the host. `ArkeyanWiiTest`: the address space's mirrors, synthetic DOLs and ELFs,
-the boot information. `ArkeyanWiiRuntime <disc.rvz>`: the first boot, on the real disc.
+750CL instruction, translated and run on the host. `ArkeyanWiiTest [scratch dir]`: the address space's mirrors, synthetic DOLs and ELFs,
+the boot information, the processor, IOS, the NAND in a scratch folder, SYSCONF and `setting.txt`.
+`ArkeyanWiiRuntime <disc.rvz> <NAND folder>`: the boot, on the real disc (a scratch NAND folder for tests).
 
 ## Gotchas
 - Only RVZ images, compressed with Zstandard (Dolphin's default) or not at all: no ISO or WBFS, which would need the
