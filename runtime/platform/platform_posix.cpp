@@ -278,6 +278,46 @@ uint8_t* PlatformReserveMemory(size_t size)
     return memory != MAP_FAILED ? static_cast<uint8_t*>(memory) : nullptr;
 }
 
+uint8_t* PlatformReserveAddressSpace(size_t size)
+{
+    void* memory = mmap(nullptr, size, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+    return memory != MAP_FAILED ? static_cast<uint8_t*>(memory) : nullptr;
+}
+
+bool PlatformMapPrivate(uint8_t* address, size_t size)
+{
+    return mmap(address, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE | MAP_FIXED, -1, 0) ==
+           address;
+}
+
+PlatformSharedMemory PlatformCreateSharedMemory(size_t size)
+{
+#ifdef __linux__
+    int fd = memfd_create("arkeyan", MFD_CLOEXEC);
+#else
+    // No memfd on macOS: a POSIX shared memory object, unlinked at once so nothing outlives the process.
+    static std::atomic<unsigned> counter{ 0 };
+    char name[64];
+    snprintf(name, sizeof(name), "/arkeyan-%d-%u", int(getpid()), counter.fetch_add(1));
+    int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+    if (fd >= 0)
+        shm_unlink(name);
+#endif
+    if (fd < 0)
+        return -1;
+    if (ftruncate(fd, off_t(size)) != 0)
+    {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+bool PlatformMapShared(uint8_t* address, size_t size, PlatformSharedMemory memory)
+{
+    return mmap(address, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, int(memory), 0) == address;
+}
+
 bool PlatformProtectNoAccess(void* address, size_t size) { return mprotect(address, size, PROT_NONE) == 0; }
 
 bool PlatformProtectReadOnly(void* address, size_t size, bool readOnly)

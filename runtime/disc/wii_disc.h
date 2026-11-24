@@ -37,6 +37,8 @@ namespace disc
         const std::string& Title() const { return m_title; }
         const std::vector<File>& Files() const { return m_files; }
         uint64_t GameDataSize() const;
+        // The IOS the game asks for (its title metadata's system version, low half): 56 for IOS56. 0 before Open.
+        uint32_t Ios() const { return m_partitions.empty() ? 0 : uint32_t(m_partitions[m_game].systemVersion); }
 
         // The game partition's data from `offset`.
         bool Read(uint64_t offset, void* out, uint64_t size) const;
@@ -53,6 +55,7 @@ namespace disc
             size_t image = 0;    // its index in the image's partitions
             uint64_t hashTable = 0;
             Sha1Digest titleHash{}; // the title metadata's hash of the hash table (H3)
+            uint64_t systemVersion = 0; // the title metadata's: the IOS it runs on
         };
 
         RvzImage m_image;

@@ -91,11 +91,15 @@ namespace disc
                 partition.hashTable = partition.offset + (uint64_t(Be32(header + 0x2B4)) << 2);
                 const uint64_t data = partition.offset + (uint64_t(Be32(header + 0x2B8)) << 2);
                 // The hash of the first content (the partition's data): its record starts at 0x1E4.
-                if (tmdSize < 0x1F4 + 20 || !m_image.ReadRaw(tmd + 0x1F4, partition.titleHash.data(), 20))
+                // The system version at 0x184: the IOS the title asks for (0x00000001_000000NN: IOS NN).
+                uint8_t version[8];
+                if (tmdSize < 0x1F4 + 20 || !m_image.ReadRaw(tmd + 0x1F4, partition.titleHash.data(), 20) ||
+                    !m_image.ReadRaw(tmd + 0x184, version, sizeof(version)))
                 {
                     error = "a partition's title metadata is missing";
                     return false;
                 }
+                partition.systemVersion = uint64_t(Be32(version)) << 32 | Be32(version + 4);
                 const auto& stored = m_image.Partitions();
                 auto it = std::find_if(stored.begin(), stored.end(),
                     [&](const RvzImage::Partition& p) { return p.firstSector * WiiSectorSize == data; });

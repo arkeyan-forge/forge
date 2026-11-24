@@ -182,6 +182,25 @@ endif()
 # The runtime is built into build/ArkeyanRuntime/: the executable, the bundle and the test paths keep their names.
 add_subdirectory(runtime ArkeyanRuntime)
 
+# The Wii host (docs/runtime/wii/), built when a Wii game's translation is given: SuperChargers Racing's for now
+# (games/racing/README.md), not one of ARKEYAN_GAME's yet.
+set(ARKEYAN_WII_PPC_DIR "" CACHE PATH "XenonRecomp output of the Wii game (private/racing/ppc): builds ArkeyanWiiRuntime")
+if(ARKEYAN_WII_PPC_DIR)
+    file(GLOB ARKEYAN_WII_PPC_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_WII_PPC_DIR}/ppc_recomp.*.cpp)
+    add_library(ArkeyanWiiRecompLib STATIC ${ARKEYAN_WII_PPC_SOURCES} ${ARKEYAN_WII_PPC_DIR}/ppc_func_mapping.cpp)
+    target_include_directories(ArkeyanWiiRecompLib SYSTEM PUBLIC ${ARKEYAN_WII_PPC_DIR}
+        ${CMAKE_SOURCE_DIR}/thirdparty/XenonRecomp/thirdparty/simde)
+    target_compile_options(ArkeyanWiiRecompLib PRIVATE -fno-strict-aliasing -Wno-unused-label -Wno-unused-variable)
+    add_executable(ArkeyanWiiRuntime runtime/wii/main.cpp runtime/wii/os.cpp runtime/kernel/guest_format.cpp
+        games/racing/hooks.cpp)
+    target_include_directories(ArkeyanWiiRuntime PRIVATE runtime games/racing)
+    # The game's ppc_context.h first: XenonUtils (byteswap.h, for memory.h) has its own.
+    target_include_directories(ArkeyanWiiRuntime SYSTEM BEFORE PRIVATE ${ARKEYAN_WII_PPC_DIR})
+    target_include_directories(ArkeyanWiiRuntime SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/XenonRecomp/XenonUtils)
+    target_link_libraries(ArkeyanWiiRuntime PRIVATE ArkeyanWii ArkeyanWiiRecompLib)
+    sky_quality(ArkeyanWiiRuntime)
+endif()
+
 add_library(ArkeyanNetplay STATIC runtime/netplay/clock.cpp runtime/netplay/delivery.cpp runtime/netplay/events.cpp runtime/netplay/inputs.cpp
     runtime/netplay/state_hash.cpp runtime/netplay/scheduler.cpp runtime/netplay/trace.cpp)
 target_include_directories(ArkeyanNetplay PUBLIC ${CMAKE_SOURCE_DIR}/runtime)
@@ -210,13 +229,13 @@ set_target_properties(ArkeyanNetplayTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${C
 # Our own targets only. ArkeyanRecompLib (generated code), thirdparty/, imgui and ArkeyanXenonUtils are left alone.
 sky_quality(ArkeyanRuntime)
 foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanRuntimeLauncherUi ArkeyanArtReader ArkeyanHostFiles ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanGameDataTest ArkeyanFileListTest ArkeyanPortablePackTest ArkeyanVfsTest
-        ArkeyanRvzTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
+        ArkeyanRvzTest ArkeyanWii ArkeyanWiiTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
     if(TARGET ${target})
         sky_quality(${target})
     endif()
 endforeach()
 # The tests that build by default and need no argument (the others run from tools/test_all.sh with a disc or a scratch folder).
-sky_add_tests(ArkeyanRvzTest ArkeyanTraceTest ArkeyanSchedulerTest ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanUwpSettingsTest ArkeyanGameOptionsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanDatadirTest
+sky_add_tests(ArkeyanRvzTest ArkeyanWiiTest ArkeyanTraceTest ArkeyanSchedulerTest ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanUwpSettingsTest ArkeyanGameOptionsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanDatadirTest
     ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanPackSamplingTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanAddressProtectTest ArkeyanStallWatchTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanPresentRectTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanClockTest ArkeyanCrashSymbolsTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
     ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanFrameAnchorTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanMouseTest ArkeyanWindowSizeTest ArkeyanToyboxLookTest ArkeyanImguiSoftwareTest ArkeyanToyboxInPlayTest ArkeyanToyboxRealCopyTest ArkeyanToyboxPutOnTest ArkeyanToyboxStripTest ArkeyanToyboxKeyMaskTest ArkeyanToyboxWheelKeysTest ArkeyanToyboxPadBindingsTest
     ArkeyanToyboxSwapTest ArkeyanToyboxGridTest ArkeyanToyboxTrapTest ArkeyanToyboxVersionGameTest ArkeyanToyboxAddListTest ArkeyanGlyphModelsTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanToyboxLinkTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest ArkeyanNightmareGateTest

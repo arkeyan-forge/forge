@@ -19,6 +19,18 @@ void PlatformInstallFaultHandler(void (*onFault)(const char* description, const 
 // Returns nullptr on failure.
 uint8_t* PlatformReserveMemory(size_t size);
 
+// An address space mapped range by range, where one memory can sit at several addresses (the Wii's: each memory
+// has a second address, its uncached mirror). `size` bytes, none accessible yet; nullptr on failure. The ranges below
+// are aligned to 64 KB (Windows maps no finer), inside one such reservation, and never overlap.
+uint8_t* PlatformReserveAddressSpace(size_t size);
+// Zero-filled, readable and writable memory at `address`.
+bool PlatformMapPrivate(uint8_t* address, size_t size);
+// Memory to map at several addresses: -1 on failure.
+using PlatformSharedMemory = intptr_t;
+PlatformSharedMemory PlatformCreateSharedMemory(size_t size);
+// The whole of `memory` (`size` bytes, as created) at `address`; every address it is mapped at sees the same bytes.
+bool PlatformMapShared(uint8_t* address, size_t size, PlatformSharedMemory memory);
+
 // Makes the page-aligned range inaccessible: any access faults.
 bool PlatformProtectNoAccess(void* address, size_t size);
 

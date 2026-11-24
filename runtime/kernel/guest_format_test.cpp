@@ -88,21 +88,41 @@ namespace
         EXPECT("end %5", "end %5");
         EXPECT("1.000000 3 4", "%Lf %zu %td", { Bits(1.0), 3, 4 });
     }
+
+    // The 750CL's convention: words in r4-r10 and doubles in f1-f8, each from its own list, whatever their order.
+    void TestSplitArguments()
+    {
+        const std::vector<uint64_t> words = { 42, Narrow, 7 };
+        const std::vector<double> doubles = { 1.5, -0.25 };
+        size_t word = 0, real = 0;
+        const std::string text = FormatGuest("%d %.1f %s %.2f %*d", [&](bool floating) -> uint64_t {
+            if (floating)
+                return real < doubles.size() ? Bits(doubles[real++]) : 0;
+            return word < words.size() ? words[word++] : 0;
+        });
+        g_checks++;
+        if (text != "42 1.5 Skylanders -0.25       0")
+        {
+            g_failures++;
+            fprintf(stderr, "FAIL line %d: the split arguments gave \"%s\"\n", __LINE__, text.c_str());
+        }
+    }
 }
 
 int main()
 {
     g_memory.base = g_guest;
-    strcpy(reinterpret_cast<char*>(g_guest + Narrow), "Skylanders");
+    memcpy(g_guest + Narrow, "Skylanders", sizeof("Skylanders"));
     for (int i = 0; i < 4; i++)
         g_memory.Write<uint16_t>(uint32_t(Wide) + 2 * i, uint16_t("Slot"[i]));
-    strcpy(reinterpret_cast<char*>(g_guest + Short), "ab");
+    memcpy(g_guest + Short, "ab", sizeof("ab"));
 
     TestIntegers();
     TestStarArguments();
     TestStrings();
     TestDoubles();
     TestOther();
+    TestSplitArguments();
     fprintf(stderr, "%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

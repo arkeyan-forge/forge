@@ -29,7 +29,8 @@ namespace
         va_list args, copy;
         va_start(args, format);
         va_copy(copy, args);
-        int size = vsnprintf(nullptr, 0, format, copy);
+        // The analyzer does not follow va_copy: `copy` is initialized on the line above.
+        int size = vsnprintf(nullptr, 0, format, copy); // NOLINT(clang-analyzer-valist.Uninitialized)
         va_end(copy);
         std::string text;
         if (size > 0)
@@ -120,7 +121,7 @@ namespace
     }
 }
 
-std::string FormatGuest(const char* format, const std::function<uint64_t()>& next)
+std::string FormatGuest(const char* format, const std::function<uint64_t(bool floating)>& next)
 {
     std::string out;
     for (const char* p = format; *p != '\0'; p++)
@@ -155,7 +156,7 @@ std::string FormatGuest(const char* format, const std::function<uint64_t()>& nex
             int64_t number = 0;
             if (*p == '*')
             {
-                number = int32_t(next());
+                number = int32_t(next(false));
                 p++;
             }
             else
@@ -215,7 +216,7 @@ std::string FormatGuest(const char* format, const std::function<uint64_t()>& nex
         case 'd':
         case 'i':
         {
-            uint64_t value = next();
+            uint64_t value = next(false);
             int64_t number = size == Size::LongLong ? int64_t(value)
                              : size == Size::Short  ? int16_t(value)
                                                     : int32_t(value);
@@ -227,16 +228,16 @@ std::string FormatGuest(const char* format, const std::function<uint64_t()>& nex
         case 'x':
         case 'X':
         {
-            uint64_t value = next();
+            uint64_t value = next(false);
             uint64_t number = size == Size::LongLong ? value : size == Size::Short ? uint16_t(value) : uint32_t(value);
             AppendInteger(out, spec, conversion, number, false);
             break;
         }
-        case 'p': out += Print("%08X", uint32_t(next())); break;
+        case 'p': out += Print("%08X", uint32_t(next(false))); break;
         case 'c':
         case 'C':
         {
-            const char c = char(uint8_t(next()));
+            const char c = char(uint8_t(next(false)));
             AppendField(out, spec, "", std::string_view(&c, 1), true);
             break;
         }
@@ -244,7 +245,7 @@ std::string FormatGuest(const char* format, const std::function<uint64_t()>& nex
         case 'S':
         {
             bool wide = conversion == 'S' ? size != Size::Short : size == Size::Long;
-            uint32_t address = uint32_t(next());
+            uint32_t address = uint32_t(next(false));
             std::string text = wide ? GuestWideString(address) : GuestNarrowString(address);
             std::string_view body = text;
             AppendField(out, spec, "", spec.precision >= 0 ? body.substr(0, size_t(spec.precision)) : body, true);
@@ -259,14 +260,14 @@ std::string FormatGuest(const char* format, const std::function<uint64_t()>& nex
         case 'a':
         case 'A':
         {
-            uint64_t bits = next();
+            uint64_t bits = next(true);
             double value;
             memcpy(&value, &bits, sizeof(value));
             AppendDouble(out, spec, conversion, value);
             break;
         }
         case 'n':
-            next(); // the count is not written back, as with the Microsoft CRT's default
+            next(false); // the count is not written back, as with the Microsoft CRT's default
             break;
         case '%': out += '%'; break;
         case '\0': out.append(start); return out;
@@ -274,4 +275,9 @@ std::string FormatGuest(const char* format, const std::function<uint64_t()>& nex
         }
     }
     return out;
+}
+
+std::string FormatGuest(const char* format, const std::function<uint64_t()>& next)
+{
+    return FormatGuest(format, [&](bool) { return next(); });
 }
