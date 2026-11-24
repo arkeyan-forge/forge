@@ -558,13 +558,14 @@ namespace toybox
             row(Kind::Toggle, L("Drop to 30 FPS when needed", "Passer à 30 FPS si besoin"), OnOff(v.fpsAutoFallback),
                 L("30 while 60 cannot be held, back to 60 when it can.",
                     "30 tant que 60 ne tient pas, puis 60 dès que possible."));
-        // With FSR on, what it renders at and what it upscales to.
+        // With FSR on, the sizes it renders the scene at and upscales it to.
         std::string scaleText = v.scale == 0 ? std::string(L("Auto", "Auto")) : "x" + std::to_string(v.scale);
         if (v.upscaler == 1 && (upscale::Active() || upscale::SwitchesLive()))
         {
-            const uint32_t frame = upscale::WindowFrameScale();
-            const uint32_t scene = upscalemode::SceneScale(frame, upscalemode::Quality(v.fsrQuality));
-            scaleText = "x" + std::to_string(scene) + L(", FSR 3 to x", ", FSR 3 vers x") + std::to_string(frame);
+            const upscale::Sizes sizes = upscale::PresetSizes(upscalemode::Quality(v.fsrQuality));
+            scaleText = std::to_string(sizes.sceneWidth) + "x" + std::to_string(sizes.sceneHeight) +
+                        L(", FSR 3 to ", ", FSR 3 vers ") + std::to_string(sizes.outputWidth) + "x" +
+                        std::to_string(sizes.outputHeight);
         }
         rows[Scale] = row(Kind::Choice, L("Resolution scale", "Échelle de résolution"), scaleText,
             L("Sharper picture, more work for the graphics card.",

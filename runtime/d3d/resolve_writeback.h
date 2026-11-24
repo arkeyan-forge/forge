@@ -15,11 +15,11 @@ namespace d3d
     bool WriteBackResolvedTexture(uint32_t texture);
 
     // Packs a host read-back (RGBA8, red in the low byte, `hostWidth` x `hostHeight`) into the guest storage of a
-    // k_8_8_8_8 texture whose base level is `level` (TextureLevelLayout): one texel per guest pixel, the average of its
-    // `scale` x `scale` host block starting `offsetX` host pixels in (a frame copy wider than the guest's); X to W are
+    // k_8_8_8_8 texture whose base level is `level` (TextureLevelLayout): one texel per guest pixel, the average of the
+    // host pixels it covers at `scale` (whole, or the upscaled scene's fractional one) from `offsetX` host pixels in (a frame copy wider than the guest's); X to W are
     // the target's red, green, blue, alpha, or blue, green, red, alpha with `swapRB` (the resolve's copy_dest_swap, as
     // sampling reads it back); then the fetch's endian swap and its tiling. `guest`: the level's first byte.
-    void PackResolvedColour(const uint32_t* rgba, uint32_t hostWidth, uint32_t hostHeight, uint32_t scale,
+    void PackResolvedColour(const uint32_t* rgba, uint32_t hostWidth, uint32_t hostHeight, float scale,
         uint32_t offsetX, const xenos::TextureFetch& fetch, const xenos::TextureLevel& level, bool swapRB,
         uint8_t* guest);
 }

@@ -30,10 +30,17 @@ namespace upscale
     void Request(upscalemode::Upscaler upscaler, upscalemode::Quality quality);
 
     bool Active();
-    uint32_t SceneScale();
+    float SceneScale();
     // The window's frame scale (what FSR upscales to), whether or not it is on.
     uint32_t WindowFrameScale();
     uint32_t FrameScale();
+
+    // What a preset renders and upscales to at this window, in host pixels (the F3 menu's Resolution scale row).
+    struct Sizes
+    {
+        uint32_t sceneWidth, sceneHeight, outputWidth, outputHeight;
+    };
+    Sizes PresetSizes(upscalemode::Quality quality);
 
     // This frame's jitter, in host pixels of the scene (x right, y down).
     std::array<float, 2> Jitter();

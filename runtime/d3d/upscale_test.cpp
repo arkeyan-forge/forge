@@ -1,5 +1,6 @@
 #include "upscale_math.h"
 #include "gpu/fsr/spirv_reflect.h"
+#include "d3d/render_scale.h"
 #include "gpu/upscale_mode.h"
 #include <cstdio>
 #include <algorithm>
@@ -182,9 +183,11 @@ namespace
         auto frame = [&](int f) {
             const Matrix vp = upscale::Multiply(projection, view(f));
             for (uint64_t id = 1; id <= 12; id++)
-                CHECK(vote.Add(id, upscale::Multiply(vp, Transform(0.2 * id, id * 3.0, 0.0, id * -2.0)), 1000, true) == 0);
+                CHECK(vote.Add(id, upscale::Multiply(vp, Transform(0.2 * id, id * 3.0, 0.0, id * -2.0)), 1000, true) ==
+                      0);
             numbers[0] = vote.Add(50, upscale::Multiply(vp, hero(f)), 800, true);
-            numbers[1] = vote.Add(50, upscale::Multiply(vp, upscale::Multiply(hero(f), Transform(0.0, 0.0, 1.0, 0.0))), 800, true);
+            numbers[1] = vote.Add(
+                50, upscale::Multiply(vp, upscale::Multiply(hero(f), Transform(0.0, 0.0, 1.0, 0.0))), 800, true);
             numbers[2] = vote.Add(60, upscale::Multiply(vp, hero(f)), 100, false);
         };
         Matrix reprojection;
@@ -204,7 +207,8 @@ namespace
         CHECK(upscale::Distance(motions[1], upscale::Multiply(upscale::Multiply(vp1, hero(1)), inverse)) < 1e-6);
         const Matrix part = Transform(0.0, 0.0, 1.0, 0.0);
         CHECK(upscale::Invert(upscale::Multiply(vp2, upscale::Multiply(hero(2), part)), inverse));
-        CHECK(upscale::Distance(motions[2], upscale::Multiply(upscale::Multiply(vp1, upscale::Multiply(hero(1), part)), inverse)) < 1e-6);
+        CHECK(upscale::Distance(motions[2],
+                  upscale::Multiply(upscale::Multiply(vp1, upscale::Multiply(hero(1), part)), inverse)) < 1e-6);
         CHECK(upscale::Distance(motions[1], reprojection) > 1e-3); // not the camera's
 
         // An object drawn once more than in the frame before has no pair: the camera's motion.
@@ -290,16 +294,36 @@ namespace
 
         CHECK(FrameScale(720) == 1 && FrameScale(1080) == 2 && FrameScale(1440) == 2 && FrameScale(2160) == 3);
         CHECK(FrameScale(0) == 1 && FrameScale(2880) == 4);
-        // Window 720p: FSR at 1:1. 1440p: every preset at scale 1. 4K: 2, 2, 2, 1. 5K: 3, 2, 2, 1. Native: the frame's.
-        const uint32_t expected[5][5] = { {}, { 1, 1, 1, 1, 1 }, { 1, 1, 1, 1, 2 }, { 2, 2, 2, 1, 3 },
-            { 3, 2, 2, 1, 4 } };
+        // A scene as wide as the frame (1280): 720p FSR at 1:1; 1440p quality 1.33, ultra performance 1; native the
+        // frame's scale, whole.
+        CHECK(SceneScale(1, Quality::Quality, 1280, 1280) == 1.0f);
+        CHECK(std::fabs(SceneScale(2, Quality::Quality, 1280, 1280) - 2.0f / 1.5f) < 1e-6f);
+        CHECK(SceneScale(2, Quality::UltraPerformance, 1280, 1280) == 1.0f);
         for (uint32_t frame = 1; frame <= 4; frame++)
+        {
+            CHECK(SceneScale(frame, Quality::Native, 1280, 1000) == float(frame));
             for (uint32_t i = 0; i < QualityCount; i++)
             {
-                const uint32_t scene = SceneScale(frame, all[i]);
-                CHECK(scene == expected[frame][i]);
-                CHECK(scene >= 1 && scene <= frame);
+                const float scene = SceneScale(frame, all[i], 1280, 1000);
+                CHECK(scene >= 1.0f && scene <= float(frame));
             }
+        }
+        // The ratio a preset really gives, output width over the scene's rounded host width, for a 1000 and a 1040
+        // pixel scene in the 1280 pixel frame (Giants; the full-scene games): within 5 % of FSR's from 1440p up, unless
+        // the scene would be under its guest size.
+        for (const uint32_t sceneWidth : { 1000u, 1040u, 1280u })
+            for (uint32_t frame = 2; frame <= 4; frame++)
+                for (uint32_t i = 0; i < 4; i++)
+                {
+                    const double wanted = Ratio(all[i]), output = 1280.0 * frame;
+                    if (output / wanted < sceneWidth)
+                        continue;
+                    const uint32_t width = d3d::HostSize(sceneWidth, SceneScale(frame, all[i], 1280, sceneWidth));
+                    CHECK(std::fabs(output / width / wanted - 1.0) < 0.05);
+                }
+        // 1440p quality, Giants: its 1000x600 scene at 1707x1024 for 2560x1440.
+        const float giants = SceneScale(2, Quality::Quality, 1280, 1000);
+        CHECK(d3d::HostSize(1000, giants) == 1707 && d3d::HostSize(600, giants) == 1024);
         // The jitter phases FSR wants for each ratio (ffxFsr3UpscalerGetJitterPhaseCount: 8 x ratio squared).
         CHECK(
             upscale::JitterPhases(1.0f) == 8 && upscale::JitterPhases(2.0f) == 32 && upscale::JitterPhases(1.5f) == 18);
@@ -423,7 +447,7 @@ namespace
         };
         // The module, and what it must become (`expected`, after the header and the capabilities).
         std::vector<uint32_t> expected;
-        auto both = [&](uint32_t opcode, std::vector<uint32_t> operands, std::vector<uint32_t> after) {
+        auto both = [&](uint32_t opcode, const std::vector<uint32_t>& operands, const std::vector<uint32_t>& after) {
             op(words, opcode, operands);
             if (!after.empty())
                 op(expected, opcode, after);

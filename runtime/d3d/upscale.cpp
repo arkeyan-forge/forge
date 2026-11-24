@@ -1,5 +1,6 @@
 #include "d3d/upscale.h"
 #include "d3d/upscale_math.h"
+#include "d3d/render_scale.h"
 #include "d3d/ultrawide.h"
 #include "game.h"
 #include "gpu/upscale.h"
@@ -15,7 +16,8 @@ namespace
 {
     bool g_active;
     gpu::Upscaler g_upscaler = gpu::Upscaler::Fsr3;
-    uint32_t g_frameScale = 1, g_sceneScale = 1, g_phases = 8;
+    uint32_t g_frameScale = 1, g_phases = 8;
+    float g_sceneScale = 1.0f;
     // FSR's sharpening (RCAS) after the upscale: textures as sharp as at the frame's scale.
     constexpr float Sharpness = 0.5f;
     uint64_t g_frame;
@@ -54,6 +56,8 @@ namespace
 
 namespace
 {
+    uint32_t g_windowFrameScale = 1, g_baseScale = 1; // the window's frame scale; the scale the player chose
+
     // The upscaled picture's size in guest pixels: the whole frame where the composite stretches the scene over it
     // (Alchemy: FSR then does all of the stretch), else the scene's own size (Lux's composite reads by pixel position).
     uint32_t OutputGuestWidth()
@@ -68,10 +72,15 @@ namespace
     // the widths) and the texture LOD bias.
     float Ratio()
     {
-        return float(OutputGuestWidth() * g_frameScale) / float(std::max(ultrawide::SceneWidth(), 1u) * g_sceneScale);
+        return float(OutputGuestWidth() * g_frameScale) /
+               float(std::max(d3d::HostSize(ultrawide::SceneWidth(), g_sceneScale), 1u));
     }
 
-    uint32_t g_windowFrameScale = 1, g_baseScale = 1; // the window's frame scale; the scale the player chose
+    float PresetScale(upscalemode::Quality quality)
+    {
+        return upscalemode::SceneScale(g_windowFrameScale, quality, OutputGuestWidth(), ultrawide::SceneWidth());
+    }
+
     bool g_sceneIsFrame; // the scene at the frame's size this run: FSR waits for the next start
     // The menu's request (main thread) for the render thread's next swap: 0 none, else 0x100 | mode << 4 | quality.
     std::atomic<uint32_t> g_request;
@@ -80,7 +89,8 @@ namespace
     void Apply(upscalemode::Upscaler mode, upscalemode::Quality quality)
     {
         g_active = false;
-        g_frameScale = g_sceneScale = g_baseScale;
+        g_frameScale = g_baseScale;
+        g_sceneScale = float(g_baseScale);
         gpu::g_settings.resolutionScale = g_baseScale;
         if (mode == upscalemode::Upscaler::Off)
         {
@@ -88,26 +98,31 @@ namespace
             return;
         }
         g_upscaler = mode == upscalemode::Upscaler::MetalFx ? gpu::Upscaler::MetalFx : gpu::Upscaler::Fsr3;
-        const uint32_t frameScale = g_windowFrameScale, sceneScale = upscalemode::SceneScale(frameScale, quality);
+        const uint32_t frameScale = g_windowFrameScale;
+        const float sceneScale = PresetScale(quality);
         if (!gpu::UpscalerAvailable(g_upscaler))
         {
             fprintf(stderr, "[upscale] %s asked, but this GPU backend cannot run it: off\n", upscalemode::Name(mode));
             return;
         }
-        if (g_upscaler == gpu::Upscaler::MetalFx && frameScale <= sceneScale)
+        if (g_upscaler == gpu::Upscaler::MetalFx && float(frameScale) <= sceneScale)
         {
-            fprintf(stderr, "[upscale] MetalFX off: the frame's scale %u is not above the scene's %u\n", frameScale,
-                sceneScale);
+            fprintf(stderr, "[upscale] MetalFX off: the frame's scale %u is not above the scene's %.3g\n", frameScale,
+                double(sceneScale));
             return;
         }
         g_frameScale = frameScale;
         g_sceneScale = sceneScale;
-        gpu::g_settings.resolutionScale = sceneScale;
+        // What reads the setting (edge smoothing, the perf hint, the stats) takes the nearest whole scale.
+        gpu::g_settings.resolutionScale = std::max(uint32_t(std::lround(sceneScale)), 1u);
         g_active = true;
         g_phases = upscale::JitterPhases(Ratio());
         g_jitter = upscale::Jitter(g_frame, g_phases);
-        fprintf(stderr, "[upscale] %s %s: the scene at scale %u, upscaled to the frame's scale %u (%u jitter phases)\n",
-            upscalemode::Name(mode), upscalemode::Name(quality), g_sceneScale, g_frameScale, g_phases);
+        fprintf(stderr,
+            "[upscale] %s %s: the scene at scale %.3g, upscaled to the frame's scale %u (ratio %.2f, %u jitter "
+            "phases)\n",
+            upscalemode::Name(mode), upscalemode::Name(quality), double(g_sceneScale), g_frameScale, double(Ratio()),
+            g_phases);
     }
 }
 
@@ -132,13 +147,20 @@ void upscale::Request(upscalemode::Upscaler upscaler, upscalemode::Quality quali
     g_request = 0x100u | uint32_t(upscaler) << 4 | uint32_t(quality);
 }
 
-uint32_t upscale::SceneScale() { return g_sceneScale; }
+float upscale::SceneScale() { return g_sceneScale; }
 
 uint32_t upscale::WindowFrameScale() { return g_windowFrameScale; }
 
 bool upscale::Active() { return g_active; }
 
 uint32_t upscale::FrameScale() { return g_frameScale; }
+
+upscale::Sizes upscale::PresetSizes(upscalemode::Quality quality)
+{
+    const float scale = PresetScale(quality);
+    return { d3d::HostSize(ultrawide::SceneWidth(), scale), d3d::HostSize(ultrawide::SceneHeight(), scale),
+        OutputGuestWidth() * g_windowFrameScale, OutputGuestHeight() * g_windowFrameScale };
+}
 
 std::array<float, 2> upscale::Jitter() { return g_jitter; }
 
@@ -148,7 +170,8 @@ float upscale::MipBias() { return -std::log2(Ratio()); }
 // motion: gpu/fsr/fsr.cpp).
 static bool Objects()
 {
-    static const bool off = skyenv::Get("SKY_FSR_OBJECTS") != nullptr && strcmp(skyenv::Get("SKY_FSR_OBJECTS"), "0") == 0;
+    static const bool off =
+        skyenv::Get("SKY_FSR_OBJECTS") != nullptr && strcmp(skyenv::Get("SKY_FSR_OBJECTS"), "0") == 0;
     return !off;
 }
 
@@ -305,7 +328,8 @@ bool upscale::FrameEnd()
     if (const uint32_t request = g_request.exchange(0); request != 0)
     {
         const bool wasActive = g_active;
-        const uint32_t frameScale = g_frameScale, sceneScale = g_sceneScale;
+        const uint32_t frameScale = g_frameScale;
+        const float sceneScale = g_sceneScale;
         Apply(upscalemode::Upscaler((request >> 4) & 0xF), upscalemode::Quality(request & 0xF));
         changed = g_active != wasActive || g_frameScale != frameScale || g_sceneScale != sceneScale;
         g_composited = g_history = false;

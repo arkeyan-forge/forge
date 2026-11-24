@@ -4,11 +4,10 @@
 // native | quality | balanced | performance | ultra_performance (SKY_UPSCALER, SKY_FSR_QUALITY), and how they set the
 // scales.
 //
-// The game's targets render at a whole multiple of the guest's size, so a preset picks the scene's scale nearest to the
-// frame's scale over its ratio (FSR's 1.5, 1.7, 2, 3): at a 1440p window (frame scale 2) every preset renders the scene
-// at scale 1; at 4K (frame scale 3) quality, balanced and performance at 2, ultra performance at 1. When that is the
-// frame's own scale (a 720p window), FSR runs at 1:1, as anti-aliasing. Native (AMD's native AA, ratio 1) always does:
-// the scene at the frame's scale, so frame generation runs without a smaller picture.
+// A preset renders the scene at the scale that makes the upscaled picture its ratio (FSR's 1.5, 1.7, 2, 3) of the
+// scene, a fractional one (1440p quality, a 1000x600 scene in the 1280x720 frame: 1707x1024 for 2560x1440), never under
+// the scene's guest size: at a 720p window FSR runs nearer 1:1. Native (AMD's native AA, ratio 1) always renders the
+// scene at the frame's scale, so frame generation runs without a smaller picture.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -105,10 +104,15 @@ namespace upscalemode
         return std::max(uint32_t(std::lround(double(windowHeight) / 720.0)), 1u);
     }
 
-    // The scene's scale for a preset: the frame's scale over the preset's ratio, rounded, from 1 to the frame's scale.
-    inline uint32_t SceneScale(uint32_t frameScale, Quality quality)
+    // The scene's scale for a preset: the output (`outputWidth` guest pixels at the frame's scale) over the preset's
+    // ratio, over the scene's `sceneWidth` guest pixels, from 1 to the frame's scale. Native: the frame's scale.
+    inline float SceneScale(uint32_t frameScale, Quality quality, uint32_t outputWidth, uint32_t sceneWidth)
     {
-        const long scale = std::lround(double(frameScale) / double(Ratio(quality)));
-        return uint32_t(std::clamp(scale, 1L, long(std::max(frameScale, 1u))));
+        frameScale = std::max(frameScale, 1u);
+        if (quality == Quality::Native)
+            return float(frameScale);
+        const double scale =
+            double(outputWidth) * frameScale / (double(std::max(sceneWidth, 1u)) * double(Ratio(quality)));
+        return float(std::clamp(scale, 1.0, double(frameScale)));
     }
 }
