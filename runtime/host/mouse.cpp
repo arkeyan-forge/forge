@@ -1,4 +1,5 @@
 #include "mouse.h"
+#include <algorithm>
 #include <cctype>
 
 namespace mouse
@@ -155,5 +156,55 @@ namespace mouse
             for (int i = 0; i < Count; i++)
                 m_swallow[i] = m_swallow[i] || m_down[i]; // held while the pointer was free: not the game's
         m_held = held;
+    }
+
+    bool CanvasPoint(float windowX, float windowY, int width, int height, float& x, float& y)
+    {
+        constexpr float CanvasWidth = 1280, CanvasHeight = 720;
+        if (width <= 0 || height <= 0)
+            return false;
+        const float scale = std::min(float(width) / CanvasWidth, float(height) / CanvasHeight);
+        x = (windowX - (float(width) - CanvasWidth * scale) / 2) / scale;
+        y = (windowY - (float(height) - CanvasHeight * scale) / 2) / scale;
+        return x >= 0 && y >= 0 && x < CanvasWidth && y < CanvasHeight;
+    }
+
+    bool MenuPointer::Update(const State& state)
+    {
+        std::lock_guard lock(m_mutex);
+        const bool active = state.supported && state.gameMenu && !state.overlay;
+        if (!active)
+            m_read.clicks = 0;
+        m_read.active = active;
+        return active;
+    }
+
+    void MenuPointer::Move(float x, float y, bool inside)
+    {
+        std::lock_guard lock(m_mutex);
+        m_read.x = x;
+        m_read.y = y;
+        m_read.inside = inside;
+    }
+
+    void MenuPointer::Click()
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_read.active && m_read.inside)
+            m_read.clicks++;
+    }
+
+    MenuPointer::Read MenuPointer::Take()
+    {
+        std::lock_guard lock(m_mutex);
+        Read read = m_read;
+        m_read.clicks = 0;
+        return read;
+    }
+
+    MenuPointer& Menu()
+    {
+        static MenuPointer menu;
+        return menu;
     }
 }

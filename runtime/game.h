@@ -143,6 +143,12 @@ namespace game
         // picture is 2 wide) before frame generation takes it as a cut and makes no frame. Swap Force's in-game
         // cutscenes orbit at 0.3-0.5 a frame, too fast to interpolate; SuperChargers' races need the default.
         float frameGenerationCutShift = 0.5f;
+        // True while one of the game's menus inside a level is on screen (pause, options, shops), read from its memory
+        // every frame: with menuLevels, what game::InMenu says. nullptr: those menus count as play.
+        bool (*MenuOpen)() = nullptr;
+        // The game's menu hooks take the pointer (mouse::Menu().Take()): hovering an item gives it the focus, a click
+        // picks it. False: the mouse does nothing in the game's menus.
+        bool menuPointer = false;
     };
 
     // The adapter of the game being built, defined by games/<id>/adapter.cpp.
@@ -169,6 +175,9 @@ namespace game
     // True before the first level and while the level is one of the game's menus (Adapter::menuLevels): the mouse does
     // nothing there.
     bool InMenuLevel();
+    // A menu level, or one of the game's menus inside a level (Adapter::MenuOpen): the pointer is free there and goes to
+    // the game's menu (Adapter::menuPointer).
+    bool InMenu();
     // Called for every file the title opens: asks the adapter whether it is a level's.
     void NoteFileOpen(std::string_view path);
 

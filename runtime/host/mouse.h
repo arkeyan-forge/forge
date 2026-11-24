@@ -5,6 +5,7 @@
 // pointer is never hidden or held. Plain C++ (no SDL): ArkeyanMouseTest runs it.
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -97,4 +98,40 @@ namespace mouse
         bool m_down[Count] = {}, m_swallow[Count] = {};
         void Apply();
     };
+
+    // A window point (width x height) on the game's 1280x720 canvas, fitted and centred; false on the black bars.
+    bool CanvasPoint(float windowX, float windowY, int width, int height, float& x, float& y);
+
+    // The pointer in the game's own menus (game::Adapter::menuPointer): free and shown, its place on the canvas and its
+    // left clicks given to the game's menu whatever the switch says. Written by the main thread, taken by the game's
+    // threads from their menu hooks, so that a hook reads its guest memory on the game's own thread.
+    class MenuPointer
+    {
+    public:
+        struct State
+        {
+            bool supported = false; // the game takes the pointer in its menus
+            bool gameMenu = false;  // one of its menus is on screen (game::InMenu)
+            bool overlay = false;   // the F3 menu, the Toy Box or its wheel is over it
+        };
+        struct Read
+        {
+            bool active = false; // the pointer is the menu's
+            bool inside = false; // on the canvas, not the black bars
+            float x = 0, y = 0;  // canvas pixels
+            uint32_t clicks = 0; // left clicks since the last Take
+        };
+
+        // Each frame: whether the pointer is the menu's. Leaving the menu drops the clicks not taken.
+        bool Update(const State& state);
+        void Move(float x, float y, bool inside);
+        void Click(); // the left button went down: counted while the pointer is the menu's and on the canvas
+        Read Take();
+
+    private:
+        std::mutex m_mutex;
+        Read m_read;
+    };
+    // The one the runtime feeds (host/mouse_input.cpp, the Toy Box script) and the games' menu hooks take.
+    MenuPointer& Menu();
 }

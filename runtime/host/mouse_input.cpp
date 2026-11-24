@@ -17,6 +17,7 @@ namespace mouseinput
         uint64_t g_wheelUntil[mouse::Count] = {}; // a wheel tick holds its action this long (ms, SDL_GetTicks)
         bool g_held[mouse::ActionCount] = {};
         bool g_applied = false; // the relative mode as last set
+        bool g_menuActive = false; // the pointer is the game's menu's (mouse::MenuPointer) as last said
 
         constexpr uint64_t WheelPulse = 120;
 
@@ -78,6 +79,16 @@ namespace mouseinput
                 g_capture.ButtonUp(button);
         }
 
+        void MenuMove(SDL_Window* window, float windowX, float windowY)
+        {
+            int width = 0, height = 0;
+            float x = 0, y = 0;
+            if (window == nullptr || !SDL_GetWindowSize(window, &width, &height))
+                return;
+            const bool inside = mouse::CanvasPoint(windowX, windowY, width, height, x, y);
+            mouse::Menu().Move(x, y, inside);
+        }
+
         void Click()
         {
             if (g_capture.On(mouse::Capture::Event::Click))
@@ -109,6 +120,14 @@ namespace mouseinput
 
     void OnEvent(const SDL_Event& event, SDL_Window* window)
     {
+        // The game's menus take the pointer whatever the switch says.
+        if (event.type == SDL_EVENT_MOUSE_MOTION)
+            MenuMove(window, event.motion.x, event.motion.y);
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
+        {
+            MenuMove(window, event.button.x, event.button.y);
+            mouse::Menu().Click();
+        }
         if (!g_mapped)
             return;
         using Event = mouse::Capture::Event;
@@ -135,10 +154,26 @@ namespace mouseinput
         }
     }
 
-    void Frame(SDL_Window* window, bool overlay, bool gameMenu)
+    void Frame(SDL_Window* window, bool overlay, bool gameMenu, bool menuPointer)
     {
         for (bool& held : g_held)
             held = false;
+        mouse::MenuPointer::State menu;
+        menu.supported = menuPointer;
+        menu.gameMenu = gameMenu;
+        menu.overlay = overlay;
+        const bool menuActive = mouse::Menu().Update(menu);
+        if (menuActive != g_menuActive)
+        {
+            if (menuActive) // where the pointer already is: no motion event may come before the first click
+            {
+                float x = 0, y = 0;
+                SDL_GetMouseState(&x, &y);
+                MenuMove(window, x, y);
+            }
+            fprintf(stderr, "[mouse] game menu pointer %s\n", menuActive ? "on" : "off");
+            g_menuActive = menuActive;
+        }
         if (!g_mapped)
         {
             if (g_applied && window != nullptr) // turned off in the F3 menu while held

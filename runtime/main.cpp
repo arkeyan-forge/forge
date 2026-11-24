@@ -633,7 +633,7 @@ int main(int argc, char** argv)
         }
         input.raw = ToyboxWaitsForPadButton();
         // The title gets no input while an overlay is open; physical pad shortcuts reserve their remap targets.
-        mouseinput::Frame(window, ToyboxOverlayOpen(), ::game::InMenuLevel());
+        mouseinput::Frame(window, ToyboxOverlayOpen(), ::game::InMenu(), ::game::Current().menuPointer);
         GamepadState physical;
         GamepadState state = ReadHostGamepad(input, gamepad, mouseinput::HeldActions(), &physical);
         ToyboxFilterGamepad(state, &physical, &settings);
