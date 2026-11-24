@@ -1,10 +1,12 @@
 #pragma once
 
 // The Toy Box's side of the copies of real toys ([portal] keep_real_copies, docs/runtime/host/portal.md "Copies of real
-// toys"): which side the "which one to keep" question focuses, and which waiting toy it asks about next. Plain C++, so a
+// toys"): which side the "which one to keep" question focuses, what it shows beyond level and gold, and which waiting toy
+// it asks about next. Plain C++, so a
 // test can drive it (ArkeyanToyboxRealCopyTest).
 #include "host/figures/figure_tag.h"
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -25,6 +27,42 @@ namespace toybox::realcopy
     inline bool ToyFirst(uint64_t toyPlaced, uint64_t copyPlaced)
     {
         return toyPlaced == 0 || copyPlaced == 0 || toyPlaced >= copyPlaced;
+    }
+
+    // What else differs between the toy and its copy, beyond the level and gold the question always shows: each side then
+    // shows that field too, so two sides never look the same when they are not.
+    enum Difference : uint32_t
+    {
+        Upgrades = 1,
+        HeroPoints = 2,
+        Challenges = 4,
+        Hat = 8,
+        Nickname = 16,
+        PlayTime = 32,
+    };
+    inline uint32_t Differences(const figures::FigureStats& toy, const figures::FigureStats& copy)
+    {
+        uint32_t differs = 0;
+        if (toy.upgrades != copy.upgrades || toy.wowPow != copy.wowPow)
+            differs |= Upgrades;
+        if (toy.heroPoints != copy.heroPoints)
+            differs |= HeroPoints;
+        if (toy.heroicChallenges != copy.heroicChallenges)
+            differs |= Challenges;
+        if (toy.hat != copy.hat)
+            differs |= Hat;
+        if (toy.nickname != copy.nickname)
+            differs |= Nickname;
+        if (toy.playSeconds != copy.playSeconds)
+            differs |= PlayTime;
+        return differs;
+    }
+
+    // The upgrades bought: the basic ones, the chosen path's and the Soul Gem's (bits 2-9; bits 0-1 only say which path is
+    // chosen, collection/upgrades.h), and Giants' Wow Pow.
+    inline int UpgradeCount(const figures::FigureStats& stats)
+    {
+        return std::popcount(unsigned(stats.upgrades & 0x3FC)) + (stats.wowPow & 1);
     }
 
     // One question at a time, about the first toy still waiting. A question the player closed (B) comes back the next

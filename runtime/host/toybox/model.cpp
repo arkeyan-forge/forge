@@ -1454,11 +1454,37 @@ namespace toybox
         const Figure toy = collection::FigureOf(choice.toy);
         const uint64_t toyPlaced = realcopy::PlacedStamp(toy.state, toy.stats);
         const uint64_t copyPlaced = realcopy::PlacedStamp(copy.state, copy.stats);
+        const uint32_t differs = toy.state == figures::AreaState::Valid && copy.state == figures::AreaState::Valid
+                                     ? realcopy::Differences(toy.stats, copy.stats)
+                                     : 0;
+        const bool sameCount = realcopy::UpgradeCount(toy.stats) == realcopy::UpgradeCount(copy.stats);
         auto side = [&](const Figure& f, uint64_t placed) {
             std::string line = collection::LevelText(f, game, French());
             auto append = [&](const std::string& part) { line += (line.empty() ? "" : " · ") + part; };
             if (collection::HasProgress(f) && f.state == figures::AreaState::Valid)
                 append(std::to_string(f.stats.gold) + L(" gold", " or"));
+            if ((differs & realcopy::Upgrades) != 0)
+                append(std::to_string(realcopy::UpgradeCount(f.stats)) + L(" upgrades", " améliorations") +
+                       (sameCount ? L(" (not the same)", " (pas les mêmes)") : ""));
+            if ((differs & realcopy::HeroPoints) != 0)
+                append(std::to_string(f.stats.heroPoints) + L(" hero points", " points de héros"));
+            if ((differs & realcopy::Challenges) != 0)
+                append(std::to_string(std::popcount(f.stats.heroicChallenges)) +
+                       L(" heroic challenges", " défis héroïques"));
+            if ((differs & realcopy::Hat) != 0)
+                append(f.stats.hat == 0 ? std::string(L("no hat", "sans chapeau")) : HatName(f.stats.hat));
+            if ((differs & realcopy::Nickname) != 0)
+            {
+                const std::string nickname = figures::NicknameUtf8(f.stats);
+                append(nickname.empty() ? std::string(L("no nickname", "sans surnom")) : "\"" + nickname + "\"");
+            }
+            if ((differs & realcopy::PlayTime) != 0)
+            {
+                const uint32_t minutes = f.stats.playSeconds / 60;
+                append(std::string(L("played ", "joué ")) +
+                       (minutes >= 60 ? std::to_string(minutes / 60) + " h " : std::string()) +
+                       std::to_string(minutes % 60) + " min");
+            }
             char date[24] = "";
             if (placed != 0)
                 snprintf(date, sizeof(date), "%04u-%02u-%02u %02u:%02u", unsigned(f.stats.lastPlaced.year),
@@ -2578,16 +2604,14 @@ namespace toybox
         std::vector<Action> ActionsFor(const Model& model, const Figure& f)
         {
             std::vector<Action> actions;
-            // A real toy's copy keeps the toy's progress: no edit, no reset (collection::WriteStats refuses them too).
-            const bool editable = KeepsProgress(f) && !f.realCopy;
             if (model.figureMore)
             {
-                if (editable)
+                if (KeepsProgress(f))
                     actions.push_back(Action::Rename);
                 for (Action a :
                     { Action::Pin, Action::Duplicate, Action::BackUp, Action::Restore, Action::Reset, Action::Delete })
                     actions.push_back(a);
-                if (!editable)
+                if (!KeepsProgress(f))
                     std::erase(actions, Action::Reset);
                 return actions;
             }
@@ -2597,12 +2621,12 @@ namespace toybox
                 actions.push_back(Action::TakeOff);
             if (f.lock.Busy())
                 actions.push_back(Action::Unlock);
-            if (!f.realCopy && !model.TrapVillainsOf(f).empty())
+            if (!model.TrapVillainsOf(f).empty())
             {
                 actions.push_back(Action::Villain);
                 actions.push_back(Action::Evolved);
             }
-            actions.push_back(editable ? Action::EditStats : Action::Rename);
+            actions.push_back(KeepsProgress(f) ? Action::EditStats : Action::Rename);
             if (f.IsSwapTop() || f.IsSwapBottom())
                 actions.push_back(Action::ChangeHalf);
             if (model.WheelPossible(f))

@@ -2326,12 +2326,14 @@ namespace
         }
         CHECK(Backups(path).size() == RealBackups && onDisk(original, firstToy));
 
-        // Its progress is the toy's: no stat edit, no reset. Its name, favourite and backups are the player's.
-        std::string refused;
+        // Edited or reset here, it is ahead of the toy: the next placement writes it there.
         figures::FigureStats stats;
-        CHECK(!WriteStats(path, stats, &refused) && refused.find("real toy") != std::string::npos);
-        CHECK(!ResetToNew(path) && !SetNickname(path, "Toy") && !SetTrapVillain(path, 1, false));
-        CHECK(!WriteCrystal(path, figures::CrystalStats{}) && !SetGearbits(path, 1) && onDisk(path, played));
+        stats.gold = 321;
+        CHECK(WriteStats(path, stats) && SetNickname(path, "Mine") && !onDisk(path, played));
+        RealCopy edited = SyncRealCopy(played);
+        CHECK(edited.side == RealSide::CopyAhead && edited.write != 0);
+        CHECK(WriteRealCopy(path, played) && ResetToNew(path) && SyncRealCopy(played).side == RealSide::CopyAhead);
+        CHECK(WriteRealCopy(path, played) && SyncRealCopy(played).side == RealSide::Same);
         CHECK(SetLabel(path, "Mine") && SetFavourite(path, true) && !Backup(path).empty());
         std::string older;
         for (const std::string& backup : Backups(path))
