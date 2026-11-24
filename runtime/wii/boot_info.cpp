@@ -35,7 +35,10 @@ namespace wii
         Put32(base, 0x80003130, Mem2ArenaEnd);   // IOS's IPC buffers
         Put32(base, 0x80003134, IpcBufferEnd);
         Put32(base, 0x80003138, 0x00000011);     // the Hollywood's version
+        // The IOS running, and the one the loader started for the game: OSInit stops when their numbers differ, or
+        // when the first's revision is older ("This firmware is an improper version for this SDK").
         Put32(base, 0x80003140, info.ios << 16 | (info.iosRevision & 0xFFFF));
+        Put32(base, 0x80003188, info.ios << 16 | (info.iosRevision & 0xFFFF));
         memcpy(base + 0x80003180, info.discHeader, 4); // the game's ID again, for IOS's checks
     }
 }

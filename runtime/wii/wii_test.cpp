@@ -2,7 +2,11 @@
 // usage: ArkeyanWiiTest
 #include "wii/boot_info.h"
 #include "wii/executable.h"
+#include "wii/ios.h"
 #include "wii/memory_map.h"
+#include "wii/processor.h"
+#include <atomic>
+#include <thread>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -206,14 +210,101 @@ namespace
         EXPECT(Get32(0x800000F8) == 243000000 && Get32(0x800000FC) == 729000000);
         EXPECT(
             Get32(0x80003118) == wii::Mem2Size && Get32(0x80003128) == 0x933E0000 && Get32(0x80003134) == 0x93400000);
-        EXPECT(Get32(0x80003140) == (56u << 16 | 5918) && memcmp(g_base + 0x80003180, "RTST", 4) == 0);
+        EXPECT(Get32(0x80003140) == (56u << 16 | 5918) && Get32(0x80003188) == (56u << 16 | 5918));
+        EXPECT(memcmp(g_base + 0x80003180, "RTST", 4) == 0);
         EXPECT(g_base[0x80003FFF] == 0 && Get32(0xC0000020) == 0x0D15EA5E); // the rest cleared; through the mirror
     }
 
+    // One processor between host threads: each runs only when handed it, in the order the holder chooses; events run
+    // on the holder, at its safe points or while it waits idle.
+    void ProcessorHandOver()
+    {
+        // As in the host, it outlives every thread that waits on it: the second one waits for good at the end.
+        static wii::Processor& processor = *new wii::Processor;
+        wii::Processor::Thread* main = processor.Start();
+        std::vector<int> order;
+        wii::Processor::Thread* second = processor.Spawn(1 << 20, [&] {
+            order.push_back(2); // only the holder runs: no lock needed around `order`
+            processor.HandTo(main);
+            order.push_back(4);
+            processor.HandTo(main);
+        });
+        EXPECT(processor.Current() == main);
+        order.push_back(1);
+        processor.HandTo(second);
+        order.push_back(3);
+        processor.HandTo(second);
+        order.push_back(5);
+        EXPECT((order == std::vector<int>{ 1, 2, 3, 4, 5 }));
+        processor.HandTo(main); // to itself: returns at once
+        EXPECT(processor.Current() == main);
+
+        // Events: posted from elsewhere, run here, in order; one may post another.
+        const std::thread::id holder = std::this_thread::get_id();
+        std::vector<int> events;
+        std::atomic<bool> onHolder{ true };
+        EXPECT(!processor.RunPending());
+        EXPECT(!processor.WaitForEvent(std::chrono::milliseconds(20))); // nothing will come
+        std::thread poster([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            processor.Post([&] {
+                onHolder = onHolder && std::this_thread::get_id() == holder;
+                events.push_back(1);
+                processor.Post([&] { events.push_back(2); });
+            });
+        });
+        EXPECT(processor.WaitForEvent(std::chrono::seconds(10)));
+        poster.join();
+        EXPECT(onHolder && (events == std::vector<int>{ 1, 2 }));
+        processor.Post([&] { events.push_back(3); });
+        EXPECT(processor.RunPending() && events.size() == 3 && !processor.RunPending());
+    }
+
+    // The host's IOS: paths to devices, descriptors, a device's own answers.
+    void IosDevices()
+    {
+        struct Counter : wii::ios::Device
+        {
+            int* closes;
+            explicit Counter(int* c) : closes(c) {}
+            int32_t Close() override
+            {
+                ++*closes;
+                return wii::ios::Ok;
+            }
+            int32_t Ioctl(uint32_t command, wii::ios::Buffer in, wii::ios::Buffer out) override
+            {
+                return command == 1 ? int32_t(in.size + out.size) : Pending;
+            }
+        };
+        struct Refuses : wii::ios::Device
+        {
+            int32_t Open(uint32_t) override { return wii::ios::NoAccess; }
+        };
+        int closes = 0;
+        wii::ios::Ios ios;
+        ios.Serve("/dev/counter", [&] { return std::make_unique<Counter>(&closes); });
+        ios.Serve("/dev/refuses", [] { return std::make_unique<Refuses>(); });
+        EXPECT(ios.Open("/dev/none", 0) == wii::ios::NotFound);
+        EXPECT(ios.Open("/dev/refuses", 0) == wii::ios::NoAccess);
+        const int32_t first = ios.Open("/dev/counter", 0), second = ios.Open("/dev/counter", 0);
+        EXPECT(first == 0 && second == 1 && ios.PathOf(second) == "/dev/counter" && ios.PathOf(5).empty());
+        EXPECT(ios.Ioctl(first, 1, { 0x80000000, 3 }, { 0x80000100, 4 }) == 7);
+        EXPECT(ios.Ioctl(first, 2, {}, {}) == wii::ios::Device::Pending);
+        EXPECT(ios.Read(first, {}) == wii::ios::Invalid && ios.Ioctlv(first, 0, {}, {}) == wii::ios::Invalid);
+        EXPECT(ios.Close(first) == wii::ios::Ok && closes == 1 && ios.Close(first) == wii::ios::Invalid);
+        EXPECT(ios.Open("/dev/counter", 0) == first); // the lowest free descriptor again
+        for (int i = 2; i < wii::ios::Ios::MaxDescriptors; i++)
+            EXPECT(ios.Open("/dev/counter", 0) == i);
+        EXPECT(ios.Open("/dev/counter", 0) == wii::ios::NoDescriptor);
+        EXPECT(ios.Ioctl(-1, 1, {}, {}) == wii::ios::Invalid && ios.Ioctl(99, 1, {}, {}) == wii::ios::Invalid);
+    }
 } // namespace
 
 int main()
 {
+    ProcessorHandOver();
+    IosDevices();
     AddressSpace();
     if (g_base != nullptr)
     {

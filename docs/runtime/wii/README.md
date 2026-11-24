@@ -14,6 +14,8 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 | CPU: the 750CL's paired singles, quantized loads and stores, GQRs, in XenonRecomp | done: [xenonrecomp.md](../../tools/toolchain/xenonrecomp.md#the-750cl-wii) |
 | The game's code: its ELF translated (functions from its symbols, the jump tables, the CodeWarrior helpers) | done: [games/racing/](../../../games/racing/README.md) |
 | The host: address space (MEM1 and MEM2 with their mirrors), executable, boot information, the first boot to the first IOS request | done: [memory_boot.md](memory_boot.md) |
+| Threads, events (the interrupts), the decrementer and the video retrace | done: [threads.md](threads.md) |
+| IOS: the calls, the state module, the disc drive | done: [ios.md](ios.md) |
 | Everything else | not started (#82) |
 
 ## Where the code is
@@ -22,7 +24,7 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 750CL mode in [`tools/xenonrecomp/ppc_decoder.cpp`](../../../tools/xenonrecomp/ppc_decoder.cpp), the instructions in
 `XenonRecomp/recompiler_750cl.inl` ([`patches/xenonrecomp.patch`](../../../patches/xenonrecomp.patch)), on with the
 config's `paired_singles`. The host: [`runtime/wii/`](../../../runtime/wii/) (`memory_map`, `executable`, `boot_info`,
-`os`, `main`), the game's bindings in `games/racing/` (`addresses.h`, `hooks.cpp`).
+`os`, `processor`, `threads`, `timers`, `ios`, `ios_calls`, `ios_devices`, `ios_disc`, `main`), the game's bindings in `games/racing/` (`addresses.h`, `hooks.cpp`).
 
 ## How to test it
 `ArkeyanRvzTest` (in `ctest` and `tools/test_all.sh`) builds synthetic images; `ArkeyanRvzTest --disc <image.rvz>`
@@ -37,5 +39,7 @@ the boot information. `ArkeyanWiiRuntime <disc.rvz>`: the first boot, on the rea
 ## Pages
 - [disc_rvz.md](disc_rvz.md): the RVZ image, the Wii disc and its hash tree.
 - [memory_boot.md](memory_boot.md): the host's address space, the executable, the boot information, the first boot.
+- [threads.md](threads.md): one processor between the game's threads, events, the timers.
+- [ios.md](ios.md): IOS answered by the host, its devices.
 - [The 750CL](../../tools/toolchain/xenonrecomp.md#the-750cl-wii) (in the recompiler's page): paired singles, GQRs,
   what the game's executable still needs.

@@ -849,7 +849,7 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # --disc <image.rvz>, a real disc's files are listed and its hashes checked.
 # The Wii host's pieces (docs/runtime/wii/): its address space, the executable's loader, the boot information, the
 # guest's messages.
-add_library(ArkeyanWii STATIC wii/boot_info.cpp wii/executable.cpp wii/memory_map.cpp)
+add_library(ArkeyanWii STATIC wii/boot_info.cpp wii/executable.cpp wii/ios.cpp wii/memory_map.cpp wii/processor.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
 target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles)
 # Synthetic executables in a mapped address space: ./ArkeyanWiiTest
