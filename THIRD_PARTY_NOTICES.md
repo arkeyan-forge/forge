@@ -1779,7 +1779,7 @@ That's all there is to it!
 
 
 ## Runtime: Xenia (adapted code)
-- **Source**: Code adapted from Xenia / Xenia Canary (BSD 3-Clause). The adapted files are `runtime/d3d/xenos.cpp`, `runtime/d3d/xenos.h`, `runtime/apu/xma_context.cpp`, `runtime/apu/xma_context.h`, `runtime/host/portal_usb.cpp`, `runtime/host/launcher_assets.cpp`, `runtime/host/art/xenos_texture.cpp` (the 2D tiling) and `runtime/kernel/xmp.cpp` (see the comments in those files for the exact origin).
+- **Source**: Code adapted from Xenia / Xenia Canary (BSD 3-Clause). The adapted files are `runtime/d3d/xenos.cpp`, `runtime/d3d/xenos.h`, `runtime/apu/xma_context.cpp`, `runtime/apu/xma_context.h`, `runtime/host/portal_usb.cpp`, `runtime/host/art/xenos_texture.cpp` (the 2D tiling) and `runtime/kernel/xmp.cpp` (see the comments in those files for the exact origin).
 - **Copyright**: Copyright (c) 2015, Ben Vanik. Additional copyright notices in the adapted files: Copyright 2021 Ben Vanik; Copyright 2024 Xenia Canary.
 - **Licence**: BSD 3-Clause License
 - **Notes**: Adapted with attribution; no Xenia code is used for GPL purposes.
@@ -1854,8 +1854,9 @@ SOFTWARE.
 
 ## Runtime: stb (stb_image, stb_image_write, stb_truetype)
 - **Source**: `thirdparty/stb/` (single-file headers by Sean Barrett)
-- **Used for**: PNG reading/writing of the launcher's and Toy Box's images and font rasterising in the launcher
-  (`host/stb_impl.cpp`, `host/glyphs.cpp`, `host/launcher_ui*.cpp`, `host/launcher_assets.cpp`, `host/uwp/sdl_subset.cpp`).
+- **Used for**: PNG reading/writing of the disc's pictures, the profiles' and the Toy Box's images, and font rasterising
+  for the button glyphs (`host/stb_impl.cpp`, `host/glyphs.cpp`, `host/art/game_art.cpp`, `host/profiles.cpp`,
+  `host/uwp/sdl_subset.cpp`).
 - **Copyright**: Copyright (c) 2017 Sean Barrett
 - **Licence**: MIT License or Public Domain (Unlicense), at your choice
 
@@ -1902,8 +1903,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## Runtime: miniz
 - **Source**: `thirdparty/XenosRecomp/thirdparty/smol-v/testing/external/miniz/` (miniz 1.15, Rich Geldreich)
-- **Used for**: inflating the disc's compressed UI archives for the launcher and the Toy Box portraits
-  (`host/launcher_assets.cpp`).
+- **Used for**: inflating the game's compressed data when the system has no zlib (`inflate.cpp`, Windows).
 - **Licence**: Public Domain (Unlicense), as stated at the end of `miniz.c`: "This is free and unencumbered software
   released into the public domain." No notice is required; it is listed for completeness.
 

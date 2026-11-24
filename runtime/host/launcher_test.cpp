@@ -1,11 +1,12 @@
 // Checks the launcher's disc verification and settings file without showing any UI.
 // usage: ArkeyanRuntimeLauncherTest <game disc .iso> <scratch dir> [<damaged copy of the image>...]
 #include "launcher.h"
-#include "launcher_assets.h"
-#include "launcher_ui.h"
 #include "vfs.h"
+#include "collection/game_data.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -86,7 +87,7 @@ namespace
         Put32LE(entry + 8, uint32_t(file.size()) + extraDeclaredSize);
         entry[12] = 0x80;
         entry[13] = uint8_t(name.size());
-        memcpy(entry + 14, name.data(), name.size());
+        std::copy(name.begin(), name.end(), entry + 14);
 
         memcpy(&image[34 * Sector], file.data(), file.size());
         WriteFile(path, image);
@@ -115,10 +116,29 @@ namespace
         return data;
     }
 
+    void SetVariable(const char* name, const std::string& value)
+    {
+#if defined(_WIN32)
+        _putenv_s(name, value.c_str());
+#else
+        setenv(name, value.c_str(), 1); // NOLINT(concurrency-mt-unsafe): the test has one thread
+#endif
+    }
+
+    void UnsetVariable(const char* name)
+    {
+#if defined(_WIN32)
+        _putenv_s(name, "");
+#else
+        unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+#endif
+    }
+
     std::string ResolveHeadless(std::vector<std::string> arguments)
     {
         arguments.insert(arguments.begin(), "SSARecomp");
         std::vector<char*> argv;
+        argv.reserve(arguments.size());
         for (std::string& argument : arguments)
             argv.push_back(argument.data());
         return ResolveGameSource(int(argv.size()), argv.data(), *FindGame("ssa"), false);
@@ -138,6 +158,12 @@ int main(int argc, char** argv)
     std::filesystem::remove_all(scratch);
     std::filesystem::create_directories(scratch);
     const GameInfo& game = *FindGame("ssa");
+    // Started as a game opened on its own would be: a scratch data folder and launcher.ini, no Games folder given.
+    const std::filesystem::path settings = scratch / "launcher.ini";
+    SetVariable("SKYLANDERS_DATA", (scratch / "data").string());
+    SetVariable("SKY_LAUNCHER_INI", settings.string());
+    for (const char* name : { "SKY_SETTINGS", "SKY_GAMES_DIR", "SKY_LAUNCHER_RESTARTS" })
+        UnsetVariable(name);
     using Clock = std::chrono::steady_clock;
     auto milliseconds = [](Clock::time_point start) {
         return (long long)std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
@@ -178,25 +204,6 @@ int main(int argc, char** argv)
         printf("  XDBF title name \"%s\", icon PNG %ux%u (%zu bytes), read in %lld ms (kept in memory only)\n",
             metadata.name.c_str(), be32(16), be32(20), png.size(), milliseconds(start));
     }
-
-    printf("Disc frontend texture decoder:\n");
-    std::vector<uint8_t> startMenu = disc.ReadAll("ui/eng/startmenu.str");
-    std::vector<uint8_t> logo;
-    start = Clock::now();
-    EXPECT(!startMenu.empty());
-    EXPECT(LauncherAssets::DecodeFrontendTexture(startMenu, "skylanderslogo.dds", 1024, 512, logo));
-    EXPECT(logo.size() == 1024ull * 512 * 4);
-    size_t transparent = 0, opaque = 0;
-    for (size_t i = 3; i < logo.size(); i += 4)
-    {
-        transparent += logo[i] == 0 ? 1 : 0;
-        opaque += logo[i] > 200 ? 1 : 0;
-    }
-    printf("  skylanderslogo.dds 1024x512, %zu transparent and %zu opaque texels, decoded in %lld ms\n", transparent,
-        opaque, milliseconds(start));
-    EXPECT(transparent > 1000);
-    EXPECT(opaque > 1000);
-    EXPECT(!LauncherAssets::DecodeFrontendTexture(startMenu, "missing.dds", 1024, 512, logo));
 
     printf("Wrong inputs:\n");
     EXPECT(Check(scratch / "missing.iso") == GameSourceStatus::NotFound);
@@ -260,75 +267,52 @@ int main(int argc, char** argv)
 
     printf("Command line without UI:\n");
     EXPECT(ResolveHeadless({ iso.string() }) == iso.string());
-    EXPECT(ResolveHeadless({ "--select-iso", iso.string() }) == iso.string());
     EXPECT(ResolveHeadless({}).empty());
     EXPECT(ResolveHeadless({ (scratch / "random.iso").string() }).empty());
 
-    printf("Launcher catalog and display helpers:\n");
-    auto catalog = LauncherGameCatalog();
-    EXPECT(catalog.size() == 6);
-    EXPECT(std::string(catalog.front().id) == "ssa");
-    EXPECT(catalog.front().enabled);
-    EXPECT(std::string(catalog.front().name) == "Spyro's Adventure");
-    size_t enabledEntries = 0;
-    for (const LauncherGameEntry& entry : catalog)
+    printf("Opened on its own:\n");
     {
-        EXPECT(entry.id != nullptr && *entry.id != '\0');
-        EXPECT(entry.name != nullptr && *entry.name != '\0');
-        EXPECT(entry.accent != 0);
-        enabledEntries += entry.enabled ? 1 : 0;
+        LauncherConfig remembered;
+        remembered["ssa"]["iso"] = iso.string();
+        EXPECT(SaveLauncherConfig(settings.string(), remembered));
+        EXPECT(ResolveHeadless({}) == iso.string());
+
+        remembered["ssa"]["iso"] = (scratch / "moved.iso").string();
+        EXPECT(SaveLauncherConfig(settings.string(), remembered));
+        EXPECT(ResolveHeadless({}).empty());
+        EXPECT(StartFromLauncherMessage(game, false) == "Start Skylanders Spyro's Adventure from Arkeyan Launcher.");
+        EXPECT(StartFromLauncherMessage(game, true) ==
+               "Start Skylanders Spyro's Adventure from Arkeyan Launcher.\n\nThe disc image it used last time is "
+               "missing or has changed.");
+
+        // The copied game data in a Games folder named only in launcher.ini (moved by Arkeyan Launcher).
+        std::vector<uint8_t> xex = disc.ReadAll("default.xex");
+        gamedata::Source source;
+        source.files = { { "default.xex", xex.size() } };
+        source.read = [&](const gamedata::SourceFile&, uint64_t position, void* buffer, size_t size) {
+            size_t count = std::min<size_t>(size, xex.size() - size_t(position));
+            memcpy(buffer, xex.data() + position, count);
+            return count;
+        };
+        source.xexSha256 = Sha256Hex(xex);
+        const std::filesystem::path games = scratch / "Games";
+        const std::filesystem::path copy = games / "SSA" / "gamedata";
+        gamedata::CopyOptions options;
+        options.freeBytes = 1ll << 40;
+        EXPECT(gamedata::Copy(source, copy, options).outcome == gamedata::CopyResult::Outcome::Done);
+        remembered["launcher"]["games"] = games.string();
+        EXPECT(SaveLauncherConfig(settings.string(), remembered));
+        std::string found = ResolveHeadless({});
+        EXPECT(std::filesystem::path(found) == copy);
+        UnsetVariable("SKY_GAMES_DIR");
+        std::filesystem::remove(settings);
     }
-    EXPECT(enabledEntries == g_games.size());
-
-    LauncherConfig helperConfig;
-    EXPECT(LauncherLanguageLabel(helperConfig, game) == "English");
-    helperConfig[""]["language"] = "sv";
-    EXPECT(LauncherLanguageLabel(helperConfig, game) == "sv");
-    helperConfig["ssa"]["language"] = "French";
-    EXPECT(LauncherLanguageLabel(helperConfig, game) == "French");
-    helperConfig["launcher"]["language"] = "fr-FR";
-    EXPECT(LauncherLanguageLabel(helperConfig, game) == "fr-FR");
-    helperConfig["launcher"]["language"].clear();
-    helperConfig["ssa"]["language"].clear();
-    helperConfig[""]["language"].clear();
-
-    EXPECT(!LauncherFullscreen(helperConfig));
-    helperConfig["launcher"]["fullscreen"] = "YES";
-    EXPECT(LauncherFullscreen(helperConfig));
-    helperConfig["launcher"]["fullscreen"] = "0";
-    EXPECT(!LauncherFullscreen(helperConfig));
-    helperConfig["launcher"]["fullscreen"].clear();
-    helperConfig[""]["fullscreen"] = "on";
-    EXPECT(LauncherFullscreen(helperConfig));
-
-    EXPECT(LauncherFormatSize(0) == "0 bytes");
-    EXPECT(LauncherFormatSize(1023) == "1023 bytes");
-    EXPECT(LauncherFormatSize(1024) == "1 KB");
-    EXPECT(LauncherFormatSize(5 * 1024) == "5 KB");
-    EXPECT(LauncherFormatSize(5ull * 1024 * 1024) == "5 MB");
-    EXPECT(LauncherFormatSize(2ull * 1024 * 1024 * 1024) == "2.0 GB");
-    EXPECT(LauncherFormatSize(8738846720ull) == "8.1 GB");
-
-    EXPECT(LauncherMiddleEllipsis("hello", 10) == "hello");
-    EXPECT(LauncherMiddleEllipsis("hello", 5) == "hello");
-    EXPECT(LauncherMiddleEllipsis("abcdefghij", 3) == "abc");
-    EXPECT(LauncherMiddleEllipsis("abcdefghij", 7) == "ab...ij");
-    EXPECT(LauncherMiddleEllipsis("d\xc3\xa9j\xc3\xa0 vu's.iso", 9) == "d\xc3\xa9j...iso");
-    std::string longPath = "/Volumes/USB disk/Giants [Disc] #1 = a very long name.iso";
-    std::string shortened = LauncherMiddleEllipsis(longPath, 20);
-    EXPECT(shortened.size() < longPath.size());
-    EXPECT(shortened.find("...") != std::string::npos);
-    EXPECT(shortened.rfind(".iso") == shortened.size() - 4);
-
-    EXPECT(LauncherDisplayName("Skylanders: Spyro's Adventure", game) == "Skylanders: Spyro's Adventure");
-    EXPECT(LauncherDisplayName("", game) == game.name);
 
     printf("Settings file:\n");
     LauncherConfig config;
     config[""]["version"] = "1";
     config["ssa"]["iso"] = iso.string();
     config["giants"]["iso"] = "/Volumes/USB disk/Giants [Disc] #1 = d\xc3\xa9j\xc3\xa0 vu's.iso";
-    std::filesystem::path settings = scratch / "launcher.ini";
     EXPECT(SaveLauncherConfig(settings.string(), config));
     EXPECT(LoadLauncherConfig(settings.string()) == config);
     std::ifstream saved(settings);

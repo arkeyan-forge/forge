@@ -60,7 +60,6 @@ The isolation block every run starts from, the fast recipe and the harness: [../
 | `SKY_PORTAL_LOG=1` | trace the portal protocol (commands, answers, status reports only when they change), `[portal] light:` and `[toybox] portal prompt: mode N, text hash 0x...`, and echo the title's own portal log |
 | `SKY_PORTAL_USB=VVVV:PPPP`, `SKY_LIBUSB=<path>` | pick another USB portal; path of libusb-1.0 |
 | `SKY_TOYBOX_SCRIPT`, `SKY_TOYBOX_SHOTS`, `SKY_TOYBOX_REAL_VIEW=1` | drive the Toy Box unattended / screenshots / show the real-portal view over the emulated portal The script also takes `prompt=1` / `prompt=2d` (the game asks that player for a Skylander for 3 s; `d`: and says its Skylander died) and `level` (a level starts), for the out-of-health test ([toybox_ux.md](../runtime/host/toybox_ux.md), "Out of health"); `place=<dump>`, `remove=<slot>`, `remove=all` change the emulated portal while the game plays (`host/portal_script.h`; the coverage runs' figures, [testing.md](../getting-started/testing.md)) [V] |
-| `SKY_LAUNCHER_SHOTS=<dir>`, `SKY_LAUNCHER_TEST_DROP=<iso>`, `SKY_LAUNCHER_FONT_DIR` | launcher screenshot test (writes `01-no-iso.png`, `02-verified.png`, `03-settings.png`, 1280x800) and fonts folder |
 
 ### Netplay determinism probe [Xbox]
 

@@ -1,5 +1,4 @@
 #include "launcher.h"
-#include "launcher_ui.h"
 #include "portable.h"
 #include "env.h"
 #include "vfs.h"
@@ -16,9 +15,7 @@
 #include <image.h>
 #include <optional>
 
-#ifdef __APPLE__
-#include <CoreGraphics/CoreGraphics.h>
-#elif defined(_WIN32)
+#ifdef _WIN32
 #include <windows.h>
 #endif
 
@@ -49,19 +46,6 @@ namespace
         while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r'))
             text.remove_suffix(1);
         return text;
-    }
-
-    bool SelectionKeyHeld()
-    {
-#ifdef __APPLE__
-        // Asked from the window server: SDL only learns modifier state from window events.
-        CGEventFlags flags = CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState);
-        return (flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskShift)) != 0;
-#elif defined(_WIN32)
-        return (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-#else
-        return (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
-#endif
     }
 
     void ShowError(const GameInfo& game, const std::string& message, bool interactive)
@@ -403,23 +387,39 @@ static std::string CopiedGameData(const GameInfo& game)
     return path;
 }
 
+// Opened on its own, the game is not told where Arkeyan Launcher keeps its Games folder (SKY_GAMES_DIR): it reads launcher.ini
+// as the launcher does. A game the launcher started (SKY_LAUNCHER_RESTARTS) got the folder, or none, from it.
+static void ApplyLauncherGamesFolder(const LauncherConfig& config)
+{
+    if (skyenv::Get("SKY_GAMES_DIR") != nullptr || skyenv::Get("SKY_LAUNCHER_RESTARTS") != nullptr)
+        return;
+    auto section = config.find("launcher");
+    if (section == config.end())
+        return;
+    auto games = section->second.find("games");
+    if (games == section->second.end() || games->second.empty())
+        return;
+    // Before any of the game's threads start (env.h).
+#if defined(_WIN32)
+    _putenv_s("SKY_GAMES_DIR", games->second.c_str());
+#else
+    setenv("SKY_GAMES_DIR", games->second.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+#endif
+}
+
+std::string StartFromLauncherMessage(const GameInfo& game, bool rememberedChanged)
+{
+    std::string message = fmt::format("Start {} from Arkeyan Launcher.", game.name);
+    if (rememberedChanged)
+        message += "\n\nThe disc image it used last time is missing or has changed.";
+    return message;
+}
+
 std::string ResolveGameSource(int argc, char** argv, const GameInfo& game, bool interactive)
 {
-    std::string path;
-    bool selectAgain = false;
-    bool launcherRequested = false;
-    for (int i = 1; i < argc; i++)
-    {
-        std::string_view argument = argv[i];
-        if (argument == "--select-iso")
-            selectAgain = true;
-        else if (argument == "--launcher")
-            launcherRequested = true;
-        else if (path.empty())
-            path = argument;
-    }
+    std::string path = argc > 1 ? argv[1] : "";
 
-    // A portable game reads its own data, whatever the arguments: no disc image, no launcher window (portable.h).
+    // A portable game reads its own data, whatever the arguments: no disc image (portable.h).
     if (const std::string& pack = portable::OwnPack(); !pack.empty())
     {
         GameSourceCheck check = CheckGameSource(pack, game);
@@ -432,63 +432,33 @@ std::string ResolveGameSource(int argc, char** argv, const GameInfo& game, bool 
             game, "This portable copy of the game is damaged: " + check.message + " Export it again.", interactive);
         return {};
     }
+    if (interactive)
+        SDL_InitSubSystem(SDL_INIT_VIDEO);
+
+    LauncherConfig config = LoadLauncherConfig(LauncherConfigPath());
+    ApplyLauncherGamesFolder(config);
 
     // The copy of the game data (Arkeyan Launcher's "Copy the game data") is read in preference to the disc image, and makes it
-    // optional. --launcher and --select-iso still open the launcher window to choose one.
-    if (!launcherRequested && !selectAgain)
+    // optional.
+    if (std::string copied = CopiedGameData(game); !copied.empty())
     {
-        std::string copied = CopiedGameData(game);
-        if (!copied.empty())
-        {
-            fprintf(stderr, "game data: reading the copy in %s\n", copied.c_str());
-            return copied;
-        }
+        fprintf(stderr, "game data: reading the copy in %s\n", copied.c_str());
+        return copied;
     }
 
-    if (!interactive)
-    {
-        if (path.empty())
-        {
-            fprintf(stderr, "usage: %s [--launcher] [--select-iso] [<disc image .iso>]\n", game.runtime);
-            return {};
-        }
-        GameSourceCheck check = CheckGameSource(path, game);
-        if (check.status != GameSourceStatus::Ok)
-        {
-            ShowError(game, check.message, false);
-            return {};
-        }
-        return path;
-    }
-
-    SDL_InitSubSystem(SDL_INIT_VIDEO);
     if (!path.empty())
     {
         GameSourceCheck check = CheckGameSource(path, game);
         if (check.status == GameSourceStatus::Ok)
             return path;
-        ShowError(game, check.message, true);
+        ShowError(game, check.message, interactive);
         return {};
     }
 
-    std::string configPath = LauncherConfigPath();
-    LauncherConfig config = LoadLauncherConfig(configPath);
+    // The disc image Arkeyan Launcher or an older game remembered.
     std::string saved = config[game.id]["iso"];
-    if (!launcherRequested && !selectAgain && !SelectionKeyHeld() && !saved.empty())
-    {
-        GameSourceCheck check = CheckGameSource(saved, game);
-        if (check.status == GameSourceStatus::Ok)
-            return saved;
-        // The remembered image moved or changed: open the launcher so the player can see why and pick another.
-    }
-
-    std::string chosen = RunLauncherWindow(game, configPath, config, saved);
-    if (!chosen.empty())
-    {
-        config[game.id]["iso"] = chosen;
-        if (!SaveLauncherConfig(configPath, config))
-            fprintf(stderr, "launcher: couldn't save %s (%s); the choice will be asked again next time\n",
-                configPath.c_str(), SDL_GetError());
-    }
-    return chosen;
+    if (!saved.empty() && CheckGameSource(saved, game).status == GameSourceStatus::Ok)
+        return saved;
+    ShowError(game, StartFromLauncherMessage(game, !saved.empty()), interactive);
+    return {};
 }

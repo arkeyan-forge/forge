@@ -97,7 +97,7 @@ struct RuntimeSettings
     bool version = false; // --version
     bool listGamepads = false; // --list-gamepads
     bool portalProbe = false; // --portal-probe
-    std::vector<std::string> arguments; // what the settings don't consume: the disc image, --select-iso, --launcher
+    std::vector<std::string> arguments; // what the settings don't consume: the disc image
 };
 
 // Fills `settings` from `config`, the environment (`getenv`) and the command line (argv[1..]). Bad values are reported
