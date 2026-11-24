@@ -205,6 +205,7 @@ arkeyan_setup_ffmpeg(ArkeyanRuntime)
 # override the game's translated functions, the adapter answers game.h.
 file(GLOB ARKEYAN_ENGINE_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_ENGINE_DIR}/*.cpp)
 file(GLOB ARKEYAN_GAME_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_GAME_DIR}/*.cpp)
+list(FILTER ARKEYAN_GAME_SOURCES EXCLUDE REGEX "_test\\.cpp$")
 target_sources(ArkeyanRuntime PRIVATE ${ARKEYAN_ENGINE_SOURCES} ${ARKEYAN_GAME_SOURCES})
 # A disc edition of other code (docs/tools/edition_finder.md): its own addresses.h, made from its edition report by
 # tools/editions/from_report.py, found before the game's.
@@ -561,6 +562,10 @@ add_executable(ArkeyanProfilesTest host/profiles_test.cpp host/profiles.cpp host
 target_include_directories(ArkeyanProfilesTest PRIVATE .)
 target_include_directories(ArkeyanProfilesTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
 
+# The controllers as the title reads them (host/input.h; no SDL, no game data): ./ArkeyanInputTest
+add_executable(ArkeyanInputTest host/input_test.cpp host/input.cpp)
+target_include_directories(ArkeyanInputTest PRIVATE .)
+
 # The mouse's names, bindings and capture (host/mouse.h; no SDL, no game data): ./ArkeyanMouseTest
 add_executable(ArkeyanMouseTest host/mouse_test.cpp host/mouse.cpp)
 target_include_directories(ArkeyanMouseTest PRIVATE .)
@@ -720,6 +725,9 @@ target_include_directories(ArkeyanRingRegistersTest PRIVATE .)
 # Where the PM4 ring scan reads from across command buffer detours (issue #39): ./ArkeyanRingCursorTest
 add_executable(ArkeyanRingCursorTest d3d/ring_cursor_test.cpp)
 target_include_directories(ArkeyanRingCursorTest PRIVATE .)
+
+# The pointer in Spyro's Adventure's menus (games/ssa/menu_pointer.h; no game data): ./ArkeyanSsaMenuTest
+add_executable(ArkeyanSsaMenuTest ${CMAKE_SOURCE_DIR}/games/ssa/menu_pointer_test.cpp ${CMAKE_SOURCE_DIR}/games/ssa/menu_pointer.cpp)
 
 # Protocol test of the emulated Skylanders portal (no game data needed): ./ArkeyanPortalTest
 add_executable(ArkeyanPortalTest host/portal_emulated.cpp host/portal_mixed.cpp host/portal_identity.cpp host/portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/ssa/ssa_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/giants/giants_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/swapforce/swapforce_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/superchargers/superchargers_portal_prompt.cpp host/portal_test.cpp host/figures/figure_data.cpp)

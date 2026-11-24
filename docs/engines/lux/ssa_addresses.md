@@ -25,6 +25,8 @@ Detail: [engine_notes.md](engine_notes.md) §3.17 (verbatim) + `games/ssa/config
 | 0x82631098 | nglSceneTraverse (patched: skip when 0x82BB4F4C == 0) | [V] |
 | 0x822895E0 | nglRenderListSubmit (patched: skip null list) | [V] |
 | 0x8262D690 | nglPresent | [V] |
+| 0x82677DE0 | Ui_ReadPads: the UI copies the pads' buttons into its manager, once a frame (hooked: the menu pointer, `games/ssa/menus.cpp`) | [V] |
+| 0x82C590B0 | the UI manager (`sub_8220CB68`): its nine menus at +368; a page's focus logic `sub_8267FEC0` | [V] |
 | 0x8262D540 | nglResolveTiles | [V] |
 | 0x82631EA8 | sets present interval 2 | [V] |
 | 0x827F6628 | step factor F (smoothed frame time in 60ths, max 3) | [V] |

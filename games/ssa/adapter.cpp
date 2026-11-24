@@ -115,7 +115,7 @@ namespace
     // audio\level_027.lxb and text\<lang>\level_027.lxb.
     const game::Adapter g_adapter = { g_gameInfo, ReadPortalPrompt, true, ssa::SetVoiceLanguage, GlyphTextures,
         IntroMovies, false, nullptr, { "\\level_027", "\\." }, {}, false, {}, nullptr, LevelOfFile, 0, {}, InputRows,
-        MouseDefaults, MenuLevels };
+        MouseDefaults, MenuLevels, 0, {}, 0, {}, true, false, 0.5f, ssa::MenuOpen, true };
 }
 
 const game::Adapter& game::Current() { return g_adapter; }
