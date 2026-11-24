@@ -731,6 +731,16 @@ next frame. Proof on one Mac: with one depth bit in 61 flipped on the guest (`SK
 session test), the title menu desynced at frame 60 and ended at 120 before; after, five minutes played in `level_027`
 (thousands of changed texels a frame, four figure changes) kept 275 checkpoints equal without a repair.
 
+[V] **Two CPUs.** The same two PCs (an AMD Ryzen 7 7700, an Intel i5-12400F) repaired two 64 KB blocks a few seconds
+after each figure was placed, and ended at the third repair within a minute. The Wwise sounds are XMA, decoded by
+FFmpeg (`apu/xma_decoder_ffmpeg.cpp`), whose SIMD code is chosen by the CPU (AVX-512 on one, AVX2 on the other, NEON on
+a Mac) and rounds differently; the title mixes the decoded samples into its own memory. A deterministic run now decodes
+with FFmpeg's plain C code (`av_force_cpu_flags(0)`; `[xma] FFmpeg's plain C code`). Proof on one Mac: with the C code
+on the host and NEON on the guest (`SKY_NETPLAY_TEST_XMA_NATIVE=1`, a session test) a played `level_027` repaired
+`e4d70000` at frame 90, `e4d70000 e4d80000` at 180 and ended at 270, the testers' pattern; with the C code on both,
+81 checkpoints stayed equal through four figure changes, with `SKY_NETPLAY_TEST_DEPTH_NOISE=2` on the guest too (one
+depth texel in 61 at the nearest or farthest value: no leak from the light tile job either).
+
 [V] **Achievements.** Two Windows PCs went out of sync right after "Hello!! Skylander": the title enumerates the
 achievements after an unlock, and each PC answered with its own player's list and wall-clock unlock times
 (`kernel/xam_achievements.cpp`). Online, the title now sees the unlocks of this session alone, timed by the session's

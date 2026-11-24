@@ -10,11 +10,13 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string_view>
 
 extern "C"
 {
 #include <libavcodec/avcodec.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/cpu.h>
 #include <libavutil/log.h>
 #include <libavutil/mem.h>
 }
@@ -179,5 +181,19 @@ namespace
 std::unique_ptr<XmaFrameDecoder> CreateXmaFrameDecoder()
 {
     av_log_set_level(AV_LOG_ERROR);
+    // A deterministic run (an online session, a recording) decodes with FFmpeg's plain C code: its SIMD code is chosen
+    // by the CPU (AVX-512 on one PC, AVX2 on another, NEON on a Mac) and rounds differently, and the title mixes the
+    // decoded samples into its own state. SKY_NETPLAY_TEST_XMA_NATIVE=1 (a session test) keeps the CPU's code.
+    static const bool plain = [] {
+        const char* deterministic = skyenv::Get("SKY_NETPLAY_DETERMINISTIC");
+        const char* native = skyenv::Get("SKY_NETPLAY_TEST_XMA_NATIVE");
+        const bool on = deterministic != nullptr && std::string_view(deterministic) == "1" &&
+                        !(native != nullptr && std::string_view(native) == "1");
+        if (on)
+            av_force_cpu_flags(0);
+        fprintf(stderr, "[xma] FFmpeg's %s code\n", on ? "plain C" : "CPU-specific");
+        return on;
+    }();
+    (void)plain;
     return std::make_unique<FfmpegXmaDecoder>();
 }
