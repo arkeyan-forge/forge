@@ -343,6 +343,24 @@ figure while player 2 plays, then place another). A swap is lift + place in the 
   Skylanders** [V] (the title reads 32 of 64 blocks, mask `88889FF88889FF8B`). A real portal with virtual seats (one
   player real, the other virtual): [portal.md](portal.md#mixed-portal-a-real-portal-and-virtual-seats) (0.9.4).
 
+### Copies of real toys
+
+With `[portal] keep_real_copies` (Arkeyan Launcher, Settings > Controls > Portal of Power) every real toy has one copy
+in My Skylanders ([portal.md](portal.md#copies-of-real-toys-portal-keep_real_copies)); the Toy Box
+(`Model::keepRealCopies`, `host/toybox/real_copy.h`):
+- **The card** carries a "Toy" tag beside the star; its sheet says it is a real toy's copy. Edit, Villain and Reset to
+  new are not offered (the collection refuses them too); Rename, favourite, backups, Restore, Duplicate (a plain figure)
+  and Delete (it unlinks the copy; the toy's first image in `originals/` stays) are. "Save a copy to My Skylanders" is
+  not offered: the copy is kept already.
+- **Which one to keep.** A toy played on a console and here since they last met waits off the game; the Toy Box opens
+  by itself (whatever `toybox_auto_open`) and asks, one toy at a time: the level, gold and date last placed of the toy
+  and of the copy, the one placed last focused (the toy when a date is missing). The side not kept is backed up (the
+  last 5, Restore in the sheet). B or closing the Toy Box leaves the toy waiting; the question comes back the next time
+  the Toy Box opens.
+- **A save that did not reach the toy** (refused, or read back different): "Saved in My Skylanders. The toy is updated
+  the next time it is placed.", over the game; the game goes on. `ArkeyanToyboxRealCopyTest` checks the focus, the
+  order of the questions and the notice; `ArkeyanCollectionTest` the refusals and the swapper's card.
+
 ## 5. In-game quick swap: the wheel
 
 By default, hold **View** (Back on a 360 pad; Tab on the keyboard) for 0.25 s; a short tap still reaches the game as View.

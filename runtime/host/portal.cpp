@@ -331,6 +331,13 @@ namespace
             }
             collection::Touch(copy.path, GameId);
             m_onPortal[Key(toy)] = copy.path;
+            std::vector<std::string> inPlay;
+            inPlay.reserve(m_onPortal.size());
+            for (const auto& [key, path] : m_onPortal)
+                inPlay.push_back(path);
+            if (const std::string other = collection::PairRealHalves(copy.path, inPlay); !other.empty())
+                fprintf(
+                    stderr, "[portal] real toy copy: %s and %s are one swapper\n", copy.path.c_str(), other.c_str());
             static constexpr const char* Sides[] = { "made", "in sync", "updated from the toy", "ahead of the toy",
                 "both changed" };
             fprintf(stderr, "[portal] real toy copy: %s, %s (%d block(s) to write to the toy)\n", copy.path.c_str(),
@@ -827,6 +834,8 @@ void PortalChooseReal(const std::string& path, bool keepToy)
 }
 
 uint64_t PortalRealWriteFailures() { return g_copies != nullptr ? g_copies->Failures() : 0; }
+
+bool PortalKeepsRealCopies() { return g_copies != nullptr; }
 
 PortalLightState PortalLight()
 {

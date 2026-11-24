@@ -197,7 +197,7 @@ namespace toybox
             size_t at = 0;
             while (at < text.size())
             {
-                size_t space = text.find(' ', at);
+                size_t space = text.find_first_of(" \n", at);
                 std::string word = text.substr(at, space == std::string::npos ? std::string::npos : space - at);
                 std::string candidate = line;
                 if (!candidate.empty())
@@ -210,6 +210,11 @@ namespace toybox
                 }
                 else
                     line = candidate;
+                if (space != std::string::npos && text[space] == '\n')
+                {
+                    lines.push_back(line);
+                    line.clear();
+                }
                 at = space == std::string::npos ? text.size() : space + 1;
             }
             if (!line.empty())
@@ -1540,6 +1545,13 @@ namespace toybox
                 Fill(ImVec2(lock.x, lock.y + 7), ImVec2(lock.x + 16, lock.y + 18), Look::DangerText);
                 right -= 24;
             }
+            if (f.realCopy)
+            {
+                const std::string tag = L("Toy", "Jouet");
+                float w = Measure(g_black, 11, tag).x + 20;
+                Pill(ImVec2(right - w / 2, a.y + 17), tag, Look::CardBorder, Look::Text, 11);
+                right -= w + 6;
+            }
             if (f.favourite)
                 Star(ImVec2(right - 10, a.y + 18), 9, Look::Gold);
         }
@@ -2393,6 +2405,9 @@ namespace toybox
             bool crystal = f.toy != nullptr && f.toy->category == Category::CreationCrystal;
             if (f.missingSignature)
                 facts.push_back(VirtualCrystalText());
+            if (f.realCopy)
+                facts.push_back(L("The copy of a real toy: placing the toy keeps both the same.",
+                    "La copie d'un vrai jouet : poser le jouet garde les deux pareils."));
             if (figures::IsVehicleType(f.type))
                 facts.push_back(f.state == figures::AreaState::Valid
                                     ? std::string(L("Gearbits: ", "Gearbits : ")) +

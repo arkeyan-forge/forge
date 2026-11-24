@@ -125,6 +125,8 @@ namespace collection
 
     // Reads one dump (and its metadata and lock). False if it is not a 1 KB tag image.
     bool Read(const std::string& path, Figure& figure);
+    // The figure a dump's image holds (toy, edition, progress), with none of the collection's metadata.
+    Figure FigureOf(const FigureData& tag);
     // Every dump of the folder that passes the filter, by category, element, toy type, variant, file name.
     std::vector<Figure> List(const Filter& filter = {});
 
@@ -167,6 +169,7 @@ namespace collection
     // untouched starters do not count). The portal is left as it is.
     StarterPackResult CreateStarterPack(const std::string& game, const std::vector<Figure>& figures);
 
+    // The progress writers below refuse a real toy's copy (Figure::realCopy): the toy's progress changes in the game only.
     // Writes progress into the dump (both areas, docs/runtime/host/figures.md). Refused while another process uses it.
     bool WriteStats(const std::string& path, const figures::FigureStats& stats, std::string* error = nullptr);
     // Trap Team: makes `villain` (1-46) the trap's selected villain and sets whether it is evolved, keeping the other
@@ -250,6 +253,9 @@ namespace collection
     bool RealCopyWritten(const std::string& path, const FigureData& image, int block, bool confirmed);
     // originals/<toy type>-<serial>.sky: the toy's image the first time it was read.
     std::string RealOriginalPath(const FigureData& toy);
+    // A swapper's half among the copies in play (`onPortal`): it and the other half there become one card (Pair) when
+    // neither has a partner yet. Returns the other half's path; empty when nothing was linked.
+    std::string PairRealHalves(const std::string& path, const std::vector<std::string>& onPortal);
 
     // --- Swappers: two dumps, one card (docs/runtime/host/collection.md "Swappers") ------------------------------------------
 
