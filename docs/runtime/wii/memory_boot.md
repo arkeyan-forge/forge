@@ -39,10 +39,12 @@ bytes (the ID, the maker, the Wii disc's magic `0x5D1C9EA3`) at `0x80000000`, th
 MEM1's size (0x28, 0xF0, 0x3100, 0x3104), MEM2's (0x3118, 0x311C) and its arena (`0x90000800`-`0x933E0000`, IOS's IPC
 buffers above it to `0x93400000`), the bus and processor clocks (243 and 729 MHz at 0xF8, 0xFC; the timebase ticks at
 a quarter of the bus), the IOS version (0x3140: the title metadata's, `disc::WiiDisc::Ios`, 56 for SuperChargers
-Racing) and the game ID again at 0x3180.
+Racing) and the game ID again at 0x3180; the system menu's `setting.txt`, the console's region encrypted, at 0x3800
+([ios.md](ios.md#the-consoles-settings-runtimewiisettingshcpp)).
 
 ## The first boot [V] (2026-11-24)
-`ArkeyanWiiRuntime <disc.rvz>` (`runtime/wii/main.cpp`; built with `-DARKEYAN_WII_PPC_DIR=private/racing/ppc`, not by
+`ArkeyanWiiRuntime <disc.rvz> <NAND folder>` (`runtime/wii/main.cpp`; the NAND folder holds the console's NAND, made on
+the first run: [ios.md](ios.md); built with `-DARKEYAN_WII_PPC_DIR=private/racing/ppc`, not by
 default nor in CI) maps the space, loads `sys/main.dol`, writes the boot information, fills the function table and
 calls the entry on a host thread with a 64 MB stack. The operating system's functions it answers
 (`runtime/wii/os.{h,cpp}`, bound to the game's addresses in `games/racing/hooks.cpp`):

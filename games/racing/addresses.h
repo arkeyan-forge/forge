@@ -33,6 +33,10 @@ namespace game
 #define GAME_HOOK_SIInit sub_802F3390
 #define GAME_HOOK___OSInitSram sub_80293AD0
 #define GAME_HOOK___OSInitAudioSystem sub_8028CCB0
+// The Bluetooth stack's start (the remotes' library, WPAD, under it): its HCI over USB is not served; the remotes
+// come with the host's input.
+#define GAME_HOOK_WUDInit sub_802B58B0
+#define GAME_HOOK_WUDGetStatus sub_802B5C20
 
 // The timers: the decrementer the alarms set, and VI's start, after which its retrace interrupt runs.
 #define GAME_HOOK_PPCMtdec sub_8027AA20
@@ -43,6 +47,8 @@ namespace game
 // The graphics processor's "draw done", which waits for its finish interrupt: done at once until the host draws.
 #define GAME_HOOK_GXDrawDone sub_8027DBE0
 #define GAME_HOOK_GXWaitDrawDone sub_8027DB90
+// The draw sync token, which the graphics processor writes back once it gets there: written back at once.
+#define GAME_HOOK_GXSetDrawSync sub_8027DA10
 
 // IOS's client calls: the host's IOS answers them (runtime/wii/ios_calls.cpp).
 #define GAME_HOOK_IOS_Open sub_8026CAF0

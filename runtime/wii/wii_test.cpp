@@ -1,11 +1,15 @@
-// The Wii host's address space, executable loader and boot information, on synthetic executables. No game data.
-// usage: ArkeyanWiiTest
+// The Wii host's address space, executable loader and boot information, on synthetic executables; its NAND in a
+// scratch folder; the console's settings. No game data.
+// usage: ArkeyanWiiTest [scratch dir]
 #include "wii/boot_info.h"
 #include "wii/executable.h"
 #include "wii/ios.h"
 #include "wii/memory_map.h"
+#include "wii/nand.h"
 #include "wii/processor.h"
+#include "wii/settings.h"
 #include <atomic>
+#include <filesystem>
 #include <thread>
 #include <cstdio>
 #include <cstring>
@@ -203,6 +207,7 @@ namespace
         info.discHeader[0x1B] = 0xA3;
         info.ios = 56;
         info.iosRevision = 5918;
+        info.settingText = { 0x41, 0x42 };
         g_base[0x80003FFF] = 1;
         wii::WriteBootInfo(g_base, info);
         EXPECT(memcmp(g_base + 0x80000000, "RTST01", 6) == 0 && Get32(0x80000018) == 0x5D1C9EA3);
@@ -212,6 +217,7 @@ namespace
             Get32(0x80003118) == wii::Mem2Size && Get32(0x80003128) == 0x933E0000 && Get32(0x80003134) == 0x93400000);
         EXPECT(Get32(0x80003140) == (56u << 16 | 5918) && Get32(0x80003188) == (56u << 16 | 5918));
         EXPECT(memcmp(g_base + 0x80003180, "RTST", 4) == 0);
+        EXPECT(g_base[0x80003800] == 0x41 && g_base[0x80003801] == 0x42 && g_base[0x80003802] == 0);
         EXPECT(g_base[0x80003FFF] == 0 && Get32(0xC0000020) == 0x0D15EA5E); // the rest cleared; through the mirror
     }
 
@@ -298,13 +304,155 @@ namespace
             EXPECT(ios.Open("/dev/counter", 0) == i);
         EXPECT(ios.Open("/dev/counter", 0) == wii::ios::NoDescriptor);
         EXPECT(ios.Ioctl(-1, 1, {}, {}) == wii::ios::Invalid && ios.Ioctl(99, 1, {}, {}) == wii::ios::Invalid);
+
+        // The NAND's files: a path outside /dev/ no device serves, the file's own open answering.
+        wii::ios::Ios files;
+        std::vector<std::string> asked;
+        files.ServeFiles([&](const std::string& path) -> std::unique_ptr<wii::ios::Device> {
+            asked.push_back(path);
+            if (path == "/shared2/missing")
+                return std::make_unique<Refuses>();
+            return std::make_unique<Counter>(&closes);
+        });
+        EXPECT(files.Open("/dev/none", 0) == wii::ios::NotFound && asked.empty());
+        EXPECT(files.Open("/shared2/missing", 1) == wii::ios::NoAccess);
+        EXPECT(
+            files.Open("/title/00010000/data/save.bin", 3) == 0 && files.PathOf(0) == "/title/00010000/data/save.bin");
+        EXPECT(asked.size() == 2);
+    }
+
+    // The NAND in a scratch folder: its paths, folders and files, as ISFS answers them.
+    void NandFiles(const std::filesystem::path& root)
+    {
+        namespace nand = wii::nand;
+        std::error_code error;
+        std::filesystem::remove_all(root, error);
+        nand::FileSystem fs(root);
+        EXPECT(fs.CreateRoot());
+        std::filesystem::path host;
+        for (const char* refused : { "", "title", "/a/../b", "/a//b", "/a/", "/thirteenchars", "/a\\b", "/." })
+            EXPECT(!fs.HostPath(refused, host));
+        EXPECT(fs.HostPath("/", host) && host == root && fs.HostPath("/twelve_chars", host));
+
+        EXPECT(fs.CreateFolder("/title") == nand::Ok && fs.CreateFolder("/title") == nand::AlreadyExists);
+        EXPECT(fs.CreateFolder("/none/sub") == nand::NotFound && fs.CreateFile("/none/a") == nand::NotFound);
+        EXPECT(fs.CreateFolder("/title/sub") == nand::Ok && fs.CreateFile("/title/a.bin") == nand::Ok);
+        EXPECT(fs.CreateFile("/title/a.bin") == nand::AlreadyExists && fs.CreateFolder("/") == nand::Invalid);
+
+        std::unique_ptr<nand::File> file;
+        EXPECT(fs.Open("/title/missing", 1, file) == nand::NotFound && fs.Open("/title/sub", 1, file) == nand::Invalid);
+        EXPECT(fs.Open("/title/a.bin", 3, file) == nand::Ok);
+        const uint8_t data[5] = { 1, 2, 3, 4, 5 };
+        uint8_t back[8] = {};
+        EXPECT(file->Write(data, 5) == 5 && file->Size() == 5 && file->Position() == 5);
+        EXPECT(file->Seek(0, 0) == 0 && file->Read(back, 8) == 5 && memcmp(back, data, 5) == 0);
+        EXPECT(file->Seek(6, 0) == nand::Invalid && file->Seek(-1, 2) == 4 && file->Seek(-2, 1) == 2);
+        EXPECT(file->Seek(0, 3) == nand::Invalid && file->Read(back, 1) == 1 && back[0] == 3);
+        file.reset();
+        EXPECT(fs.Open("/title/a.bin", 1, file) == nand::Ok && file->Write(data, 1) == nand::NoAccess);
+        file.reset();
+        EXPECT(fs.Open("/title/a.bin", 2, file) == nand::Ok && file->Read(back, 1) == nand::NoAccess);
+        file.reset();
+        EXPECT(fs.Open("/title/a.bin", 4, file) == nand::Invalid);
+
+        std::vector<std::string> names;
+        EXPECT(fs.ReadFolder("/title", names) == nand::Ok && (names == std::vector<std::string>{ "a.bin", "sub" }));
+        EXPECT(fs.ReadFolder("/title/a.bin", names) == nand::Invalid && fs.ReadFolder("/x", names) == nand::NotFound);
+        uint32_t clusters = 0, entries = 0;
+        EXPECT(fs.Usage("/title", clusters, entries) == nand::Ok && clusters == 1 && entries == 3);
+
+        nand::Attributes attributes;
+        EXPECT(fs.GetAttributes("/title/sub", attributes) == nand::Ok && attributes.folder);
+        EXPECT(fs.GetAttributes("/title/a.bin", attributes) == nand::Ok && !attributes.folder);
+        EXPECT(fs.GetAttributes("/title/b.bin", attributes) == nand::NotFound);
+
+        EXPECT(fs.Delete("/title") == nand::NotEmpty && fs.Delete("/title/none") == nand::NotFound);
+        EXPECT(fs.Rename("/title/a.bin", "/title/b.bin") == nand::Ok && !fs.Exists("/title/a.bin"));
+        EXPECT(fs.Exists("/title/b.bin") && fs.Rename("/title/b.bin", "/title/sub") == nand::Invalid);
+        EXPECT(fs.Put("/shared2/sys/c.bin", { 9, 9 }) && fs.CreateFile("/title/d.bin") == nand::Ok);
+        EXPECT(fs.Rename("/title/d.bin", "/title/b.bin") == nand::Ok); // replaces what was there
+        EXPECT(fs.Open("/title/b.bin", 1, file) == nand::Ok && file->Size() == 0);
+        file.reset();
+        EXPECT(fs.Open("/shared2/sys/c.bin", 1, file) == nand::Ok && file->Size() == 2);
+        file.reset();
+        EXPECT(fs.Delete("/title/b.bin") == nand::Ok && fs.Delete("/title/sub") == nand::Ok);
+        EXPECT(fs.ReadFolder("/title", names) == nand::Ok && names.empty());
+        std::filesystem::remove_all(root, error);
+    }
+
+    // SYSCONF as the SDK's settings library reads it, and setting.txt under its key.
+    void ConsoleSettingsFiles()
+    {
+        wii::ConsoleSettings settings;
+        settings.language = 3;
+        const std::vector<uint8_t> file = wii::MakeSysconf(settings);
+        EXPECT(file.size() == 0x4000 && memcmp(file.data(), "SCv0", 4) == 0 && memcmp(&file[0x3FFC], "SCed", 4) == 0);
+        auto get16 = [&](size_t at) { return size_t(file[at]) << 8 | file[at + 1]; };
+        const size_t count = get16(4);
+        EXPECT(count == 15 && get16(6) == 6 + 2 * (count + 1));
+        struct Item
+        {
+            int type;
+            std::vector<uint8_t> value;
+        };
+        std::vector<std::pair<std::string, Item>> items;
+        bool laidOut = true;
+        for (size_t i = 0; i < count; i++)
+        {
+            size_t at = get16(6 + 2 * i);
+            const int type = file[at] >> 5;
+            const size_t nameLength = (file[at] & 0x1F) + 1u;
+            const std::string name(reinterpret_cast<const char*>(&file[at + 1]), nameLength);
+            at += 1 + nameLength;
+            size_t size = type == 3 ? 1 : type == 5 ? 4 : 0;
+            if (type == 2)
+                size = file[at++] + 1u;
+            else if (type == 1)
+            {
+                size = get16(at) + 1;
+                at += 2;
+            }
+            items.push_back(
+                { name, { type, std::vector<uint8_t>(file.begin() + long(at), file.begin() + long(at + size)) } });
+            laidOut = laidOut && at + size == get16(6 + 2 * (i + 1));
+        }
+        EXPECT(laidOut && get16(6 + 2 * count) <= 0x4000 - 4 - 76); // the SDK's index goes after the items
+        auto find = [&](const char* name) -> const Item* {
+            for (const auto& item : items)
+                if (item.first == name)
+                    return &item.second;
+            return nullptr;
+        };
+        const Item* language = find("IPL.LNG");
+        const Item* ratio = find("IPL.AR");
+        const Item* remotes = find("BT.DINF");
+        const Item* idle = find("IPL.IDL");
+        const Item* bias = find("IPL.CB");
+        EXPECT(language != nullptr && language->type == 3 && language->value == std::vector<uint8_t>{ 3 });
+        EXPECT(ratio != nullptr && ratio->value == std::vector<uint8_t>{ 1 });
+        EXPECT(remotes != nullptr && remotes->type == 1 && remotes->value.size() == 0x461);
+        EXPECT(idle != nullptr && idle->type == 2 && idle->value.size() == 2);
+        EXPECT(bias != nullptr && bias->type == 5 && bias->value.size() == 4);
+
+        const std::vector<uint8_t> europe = wii::MakeSettingText('P');
+        EXPECT(europe.size() == 0x100 && europe[0] == ('A' ^ 0xFA) &&
+               europe[1] == ('R' ^ 0xF4)); // the key's low byte, rotated
+        const std::string text = wii::DecryptSettingText(europe);
+        EXPECT(text.rfind("AREA=EUR\r\n", 0) == 0 && text.find("VIDEO=PAL\r\n") != std::string::npos);
+        EXPECT(text.find("GAME=EU\r\n") != std::string::npos);
+        EXPECT(wii::DecryptSettingText(wii::MakeSettingText('E')).find("AREA=USA\r\n") == 0);
+        EXPECT(wii::DecryptSettingText(wii::MakeSettingText('J')).find("GAME=JP\r\n") != std::string::npos);
     }
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    const std::filesystem::path scratch =
+        argc > 1 ? std::filesystem::path(argv[1]) : std::filesystem::temp_directory_path();
     ProcessorHandOver();
     IosDevices();
+    NandFiles(scratch / "arkeyan-wii-nand-test");
+    ConsoleSettingsFiles();
     AddressSpace();
     if (g_base != nullptr)
     {

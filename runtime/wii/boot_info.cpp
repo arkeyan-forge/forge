@@ -1,5 +1,6 @@
 #include "wii/boot_info.h"
 #include "wii/memory_map.h"
+#include <algorithm>
 #include <cstring>
 
 namespace wii
@@ -40,5 +41,7 @@ namespace wii
         Put32(base, 0x80003140, info.ios << 16 | (info.iosRevision & 0xFFFF));
         Put32(base, 0x80003188, info.ios << 16 | (info.iosRevision & 0xFFFF));
         memcpy(base + 0x80003180, info.discHeader, 4); // the game's ID again, for IOS's checks
+        if (!info.settingText.empty())
+            memcpy(base + 0x80003800, info.settingText.data(), std::min<size_t>(info.settingText.size(), 0x100));
     }
 }

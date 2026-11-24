@@ -116,7 +116,7 @@ namespace wii::os
     void EnableInterrupts(PPCContext& ctx, uint8_t* base) { Interrupts(ctx, base, true); }
     void RestoreInterrupts(PPCContext& ctx, uint8_t* base) { Interrupts(ctx, base, ctx.r3.u32 != 0); }
 
-    void Skip(PPCContext& ctx, const char* function)
+    void Skip(PPCContext& ctx, const char* function, uint32_t result)
     {
         static std::mutex mutex;
         static std::set<std::string> logged;
@@ -125,7 +125,14 @@ namespace wii::os
             if (logged.insert(function).second)
                 fprintf(stderr, "[os] %s: skipped (the host answers this hardware later)\n", function);
         }
-        ctx.r3.u64 = 0;
+        ctx.r3.u64 = result;
+    }
+
+    void DrawSyncReached(uint8_t* base, uint16_t token)
+    {
+        constexpr uint32_t PixelEngineToken = 0xCC00100E;
+        base[PixelEngineToken] = uint8_t(token >> 8);
+        base[PixelEngineToken + 1] = uint8_t(token);
     }
 
     void FrameBuffer(PPCContext& ctx)

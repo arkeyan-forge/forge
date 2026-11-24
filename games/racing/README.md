@@ -17,7 +17,7 @@ tool) at `private/racing/private/main.elf`, copy `config/` to `private/racing/co
 run `XenonRecomp config/Racing.toml <thirdparty/XenonRecomp/XenonUtils/ppc_context.h>`: `ppc/` (90 files, 81 MB). A
 new disc version: `python3 -I tools/elf_switch_tables.py <elf> > games/racing/config/Racing_switch_tables.toml`.
 Boot: `cmake -S . -B build-wii -G Ninja -DSKY_TESTS_ONLY=ON -DARKEYAN_WII_PPC_DIR=$PWD/private/racing/ppc`, `ninja -C
-build-wii ArkeyanWiiRuntime`, then `build-wii/ArkeyanWiiRuntime <disc.rvz>` ([memory_boot.md](../../docs/runtime/wii/memory_boot.md)).
+build-wii ArkeyanWiiRuntime`, then `build-wii/ArkeyanWiiRuntime <disc.rvz> <NAND folder>` ([memory_boot.md](../../docs/runtime/wii/memory_boot.md)).
 
 ## Docs
 | Page | What |

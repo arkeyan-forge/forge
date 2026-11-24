@@ -7,16 +7,22 @@ namespace wii::ios
         m_paths[path] = std::move(make);
     }
 
+    void Ios::ServeFiles(std::function<std::unique_ptr<Device>(const std::string& path)> make)
+    {
+        m_files = std::move(make);
+    }
+
     int32_t Ios::Open(const std::string& path, uint32_t mode)
     {
         auto served = m_paths.find(path);
-        if (served == m_paths.end())
+        const bool file = served == m_paths.end() && m_files && path.rfind("/dev/", 0) != 0;
+        if (served == m_paths.end() && !file)
             return NotFound;
         for (int32_t fd = 0; fd < MaxDescriptors; fd++)
         {
             if (m_open[size_t(fd)].device != nullptr)
                 continue;
-            std::unique_ptr<Device> device = served->second();
+            std::unique_ptr<Device> device = file ? m_files(path) : served->second();
             const int32_t result = device->Open(mode);
             if (result < 0)
                 return result;

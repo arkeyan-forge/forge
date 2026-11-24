@@ -50,6 +50,9 @@ namespace wii::ios
     public:
         // A device served at `path`: each open makes one from `make`.
         void Serve(const std::string& path, std::function<std::unique_ptr<Device>()> make);
+        // The NAND's files: any path outside /dev/ no device serves, opened by the file `make` gives for it (its Open
+        // the file system's answer: not found, a bad mode).
+        void ServeFiles(std::function<std::unique_ptr<Device>(const std::string& path)> make);
 
         int32_t Open(const std::string& path, uint32_t mode);
         int32_t Close(int32_t fd);
@@ -66,6 +69,7 @@ namespace wii::ios
 
     private:
         std::map<std::string, std::function<std::unique_ptr<Device>()>> m_paths;
+        std::function<std::unique_ptr<Device>(const std::string&)> m_files;
         struct Open_
         {
             std::string path;
