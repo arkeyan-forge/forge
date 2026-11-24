@@ -110,6 +110,8 @@ namespace
         Put32(d.raw, p + 0x2B4, 0x8000 >> 2);
         Put32(d.raw, p + 0x2B8, 0x20000 >> 2);
         Put32(d.raw, p + 0x2BC, uint32_t(d.data.size() >> 2));
+        Put32(d.raw, p + 0x2C0 + 0x184, 1); // the title metadata's system version: IOS 58
+        Put32(d.raw, p + 0x2C0 + 0x188, 58);
 
         Bytes& g = d.data;
         for (size_t i = 0x30000; i < g.size(); i++)
@@ -357,8 +359,8 @@ namespace
         uint64_t bytes = 0;
         for (const disc::WiiDisc::File& file : wii.Files())
             bytes += file.size;
-        printf("%s \"%s\": %zu entries, %llu bytes of files\n", wii.GameId().c_str(), wii.Title().c_str(),
-            wii.Files().size(), (unsigned long long)bytes);
+        printf("%s \"%s\", IOS %u: %zu entries, %llu bytes of files\n", wii.GameId().c_str(), wii.Title().c_str(),
+            wii.Ios(), wii.Files().size(), (unsigned long long)bytes);
         // The game's file reader on it: the executable in the file system starts as one.
         DiscFileSystem files;
         bool elf = false;
@@ -419,6 +421,7 @@ int main(int argc, char** argv)
         EXPECT(wii.Open(good.c_str(), error));
         printf("open: %s\n", error.empty() ? "ok" : error.c_str());
         EXPECT(wii.GameId() == "RTST01" && wii.Title() == "Test");
+        EXPECT(wii.Ios() == 58);
         EXPECT(wii.GameDataSize() == d.data.size());
         size_t found = 0;
         for (const disc::WiiDisc::File& file : wii.Files())

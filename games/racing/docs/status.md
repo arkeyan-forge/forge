@@ -21,14 +21,16 @@ of `.init` and `.text`; the rest are the register-save helpers' entries and the 
   kernel, which the Wii host replaces;
 - 15 data words in `.init` (its first word and the copy and clear tables `__init_data` reads), decoded as code.
 
-## The first boot [V] (2026-11-23)
-A boot outside the runtime (the sections loaded at their addresses, MEM1 and MEM2 mirrored at `0xC0000000` and
-`0xD0000000`, the loader's boot information in low memory, r1 at `_stack_addr`, the entry called through the function
-table): 174 functions run, then `EXISync` waits for the EXI bus (the memory card, clock and SRAM interface) that
-`OSInit` reads. The first wait on the hardware, as expected: the Wii host, with the operating system's functions
-answered by hooks, is the next step (#82).
+## The first boot [V] (2026-11-24)
+On the Wii host (`ArkeyanWiiRuntime`, [memory_boot.md](../../../docs/runtime/wii/memory_boot.md)): `sys/main.dol`
+loaded (11 sections and the zeroed range), the boot information written (IOS 56, from the title metadata), the entry
+called. `OSInit` prints the SDK's banner (`Revolution OS`, kernel built Aug 23 2010, `Firmware : 56.0.0`, MEM1 arena
+`0x80800ec0`-`0x81730000`, MEM2 arena `0x90000800`-`0x933e0000`), with EXI, SI, the SRAM and the DSP skipped, then
+asks IOS for `/dev/stm/immediate`: the first request to IOS, where the host stops (exit code 0), in half a second.
+Before the host answered `OSDisableInterrupts` and the rest, the same boot outside the runtime waited in `EXISync`.
 
 ## Next
-1. The Wii host: memory map, loader, the operating system, EXI, IOS, then the first GX frame.
+1. The Wii host: the operating system's threads, alarms and interrupts; IOS (`/dev/stm`, the file system, the disc,
+   the settings); EXI and SI; then VI and the first GX frame.
 2. `gamelogic.rso`: load and translate the module.
 3. The `*_as_local` options, once it boots.

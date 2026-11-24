@@ -205,6 +205,107 @@ uint8_t* PlatformReserveMemory(size_t size)
     return g_lazyBase;
 }
 
+// The address space of PlatformReserveAddressSpace: a placeholder (Windows 10 1803 and later), split at each range
+// mapped into it. Without the placeholder functions (looked up, as older systems and Wine versions lack them), the
+// reservation is released at once and each range is mapped at its address: nothing else is expected to allocate there
+// in between, as the host maps it right after.
+namespace
+{
+#ifndef MEM_RESERVE_PLACEHOLDER
+    constexpr ULONG MEM_RESERVE_PLACEHOLDER = 0x00040000;
+    constexpr ULONG MEM_REPLACE_PLACEHOLDER = 0x00004000;
+    constexpr ULONG MEM_PRESERVE_PLACEHOLDER = 0x00000002;
+#endif
+    using VirtualAlloc2Function = void*(WINAPI*)(HANDLE, void*, SIZE_T, ULONG, ULONG, void*, ULONG);
+    using MapViewOfFile3Function = void*(WINAPI*)(HANDLE, HANDLE, void*, ULONG64, SIZE_T, ULONG, ULONG, void*, ULONG);
+    struct Placeholders
+    {
+        VirtualAlloc2Function allocate = nullptr;
+        MapViewOfFile3Function map = nullptr;
+    };
+    const Placeholders& PlaceholderFunctions()
+    {
+        static const Placeholders functions = [] {
+            Placeholders found;
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+            if (HMODULE kernel = GetModuleHandleW(L"kernelbase.dll"))
+            {
+                found.allocate = reinterpret_cast<VirtualAlloc2Function>(GetProcAddress(kernel, "VirtualAlloc2"));
+                found.map = reinterpret_cast<MapViewOfFile3Function>(GetProcAddress(kernel, "MapViewOfFile3"));
+            }
+#endif
+            if (found.allocate == nullptr || found.map == nullptr)
+                found = {};
+            return found;
+        }();
+        return functions;
+    }
+} // namespace
+
+uint8_t* PlatformReserveAddressSpace(size_t size)
+{
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+    const Placeholders& placeholders = PlaceholderFunctions();
+    if (placeholders.allocate != nullptr)
+        return static_cast<uint8_t*>(placeholders.allocate(
+            nullptr, nullptr, size, MEM_RESERVE | MEM_RESERVE_PLACEHOLDER, PAGE_NOACCESS, nullptr, 0));
+    void* memory = VirtualAlloc(nullptr, size, MEM_RESERVE, PAGE_NOACCESS);
+    if (memory != nullptr)
+        VirtualFree(memory, 0, MEM_RELEASE);
+    return static_cast<uint8_t*>(memory);
+#else
+    (void)size;
+    return nullptr; // not in the UWP build yet
+#endif
+}
+
+bool PlatformMapPrivate(uint8_t* address, size_t size)
+{
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+    const Placeholders& placeholders = PlaceholderFunctions();
+    if (placeholders.allocate == nullptr)
+        return VirtualAlloc(address, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE) == address;
+    // Splits the range out of the placeholder: refused, harmlessly, when the range is the whole placeholder.
+    VirtualFree(address, size, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER);
+    return placeholders.allocate(nullptr, address, size, MEM_RESERVE | MEM_COMMIT | MEM_REPLACE_PLACEHOLDER,
+               PAGE_READWRITE, nullptr, 0) == address;
+#else
+    (void)address;
+    (void)size;
+    return false;
+#endif
+}
+
+PlatformSharedMemory PlatformCreateSharedMemory(size_t size)
+{
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+    HANDLE mapping = CreateFileMappingW(
+        INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, DWORD(uint64_t(size) >> 32), DWORD(size), nullptr);
+    return mapping != nullptr ? reinterpret_cast<PlatformSharedMemory>(mapping) : -1;
+#else
+    (void)size;
+    return -1;
+#endif
+}
+
+bool PlatformMapShared(uint8_t* address, size_t size, PlatformSharedMemory memory)
+{
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+    HANDLE mapping = reinterpret_cast<HANDLE>(memory);
+    const Placeholders& placeholders = PlaceholderFunctions();
+    if (placeholders.map == nullptr)
+        return MapViewOfFileEx(mapping, FILE_MAP_ALL_ACCESS, 0, 0, size, address) == address;
+    VirtualFree(address, size, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER);
+    return placeholders.map(mapping, GetCurrentProcess(), address, 0, size, MEM_REPLACE_PLACEHOLDER, PAGE_READWRITE,
+               nullptr, 0) == address;
+#else
+    (void)address;
+    (void)size;
+    (void)memory;
+    return false;
+#endif
+}
+
 bool PlatformProtectNoAccess(void* address, size_t size)
 {
     ULONG previous;
