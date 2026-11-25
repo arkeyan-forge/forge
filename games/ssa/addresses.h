@@ -67,6 +67,9 @@
 #define GAME_HOOK_Text_Lookup sub_82861060
 #define GAME_HOOK_Text_Compile sub_82860FC8
 
+// Menus (games/ssa/menu_hook.cpp): the UI copies the pads' buttons into its manager, once a frame (r3 the manager).
+#define GAME_HOOK_Ui_ReadPads sub_82677DE0
+
 // Guest data
 namespace game
 {

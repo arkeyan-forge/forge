@@ -27,13 +27,15 @@ namespace
         GamepadState host;
         uint32_t hostPacket = 0;
         std::vector<ScriptedPress> script;
+        uint16_t pressed = 0; // PressButtons
+        std::chrono::steady_clock::time_point pressedUntil;
         bool connected = false;
         uint16_t vibrationLeft = 0, vibrationRight = 0;
         uint32_t vibrationSerial = 0;
     };
 
     std::mutex g_mutex;
-    User g_users[MaxUsers] = { { .connected = true } };
+    User g_users[MaxUsers]; // user 0 is always connected
     const auto g_launch = std::chrono::steady_clock::now();
 
     uint16_t ButtonByName(const std::string& name)
@@ -99,10 +101,8 @@ void GetHostVibration(int user, uint16_t& left, uint16_t& right, uint32_t& seria
 bool GamepadConnected(int user)
 {
     std::lock_guard lock(g_mutex);
-    // SKY_PRESS_FILE: the first controller is there from the start (a game that saw no pad at its title may wait for one)
-    static const bool pressFile = skyenv::Get("SKY_PRESS_FILE") != nullptr;
-    return user >= 0 && user < MaxUsers &&
-           (g_users[user].connected || !g_users[user].script.empty() || (user == 0 && pressFile));
+    // The first controller is there from the start (a game that saw no pad at its title may wait for one).
+    return user >= 0 && user < MaxUsers && (user == 0 || g_users[user].connected || !g_users[user].script.empty());
 }
 
 // SKY_PRESS_FILE=<file>: lines appended to it while the game runs are presses made at once, "<button>[:<hold seconds>]"
@@ -155,6 +155,16 @@ static void ReadPressFile()
     }
 }
 
+void PressButtons(uint16_t buttons, int user)
+{
+    if (user < 0 || user >= MaxUsers)
+        return;
+    std::lock_guard lock(g_mutex);
+    User& u = g_users[user];
+    u.pressed = buttons;
+    u.pressedUntil = std::chrono::steady_clock::now() + PressLength;
+}
+
 GamepadState GetGamepad(uint32_t& packetNumber, int user)
 {
     std::lock_guard lock(g_mutex);
@@ -162,6 +172,11 @@ GamepadState GetGamepad(uint32_t& packetNumber, int user)
     const User& u = g_users[user];
     GamepadState state = u.host;
     packetNumber = u.hostPacket;
+    if (u.pressed != 0 && std::chrono::steady_clock::now() < u.pressedUntil)
+    {
+        state.buttons |= u.pressed;
+        packetNumber += 0x20000; // distinct from host-only states
+    }
 
     auto now = std::chrono::steady_clock::now() - g_launch;
     for (const auto& press : u.script)
