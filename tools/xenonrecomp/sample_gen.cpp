@@ -366,6 +366,38 @@ int main(int argc, char** argv)
             return 1;
         }
     }
-    std::ofstream(argv[1], std::ios::binary) << recompiler.out << locals.out << paired.out << fromElf.out;
+    // The write-gather pipe (write_gather_pipe): stores through a register lis, addi or mr pointed at it are the
+    // host's (PPC_MM_STORE_*, PPC_MM_STORE_PAIRED); a store through any other register stays a plain one.
+    Recompiler gather;
+    gather.config.pairedSingles = true;
+    gather.config.writeGatherPipe = 0xCC008000;
+    constexpr uint32_t LisPipe4 = (15u << 26) | (4 << 21) | 0xCC01; // lis r4, 0xCC01: the pipe is -0x8000 from it
+    const std::pair<const char*, std::vector<uint32_t>> gatherBodies[] = {
+        { "sample_gather_stw", { LisPipe4, D(36, 3, 4, -0x8000), Blr } }, // stw r3, -0x8000(r4)
+        { "sample_gather_sth", { LisPipe4, D(44, 3, 4, -0x8000), Blr } }, // sth r3, -0x8000(r4)
+        { "sample_gather_stfs", { LisPipe4, D(52, 1, 4, -0x8000), Blr } }, // stfs f1, -0x8000(r4)
+        { "sample_gather_psq", { LisPipe4, D(14, 4, 4, -0x8000), Psq(60, 1, 4, 0, 0, 0), Blr } }, // addi; psq_st
+        // mr r7, r4; stb r3, -0x8000(r7)
+        { "sample_gather_mr",
+            { LisPipe4, (31u << 26) | (4 << 21) | (7 << 16) | (4 << 11) | (444 << 1), D(38, 3, 7, -0x8000), Blr } },
+        { "sample_gather_none", { D(36, 3, 5, 0), Blr } }, // stw r3, 0(r5): no register of the pipe
+    };
+    base = 0x86000000;
+    for (const auto& [name, words] : gatherBodies)
+    {
+        auto& bytes = code.emplace_back();
+        for (uint32_t word : words)
+            for (int i = 0; i < 4; i++)
+                bytes.push_back(uint8_t(word >> (24 - 8 * i)));
+        gather.image.Map(name, base, uint32_t(bytes.size()), SectionFlags_Code, bytes.data());
+        gather.image.symbols.emplace(name, base, bytes.size(), Symbol_Function);
+        if (!gather.Recompile(Function(base, bytes.size())))
+        {
+            fprintf(stderr, "%s: not translated\n", name);
+            return 1;
+        }
+        base += 0x1000;
+    }
+    std::ofstream(argv[1], std::ios::binary) << recompiler.out << locals.out << paired.out << fromElf.out << gather.out;
     return 0;
 }

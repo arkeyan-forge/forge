@@ -2,6 +2,7 @@
 // (addresses.h).
 #include "game_hooks.h"
 #include "ppc_recomp_shared.h"
+#include "wii/gx_fifo.h"
 #include "wii/module.h"
 #include "wii/os.h"
 #include <cstdio>
@@ -25,6 +26,8 @@ PPC_FUNC(GAME_HOOK(OSCreateThread))
 }
 
 PPC_FUNC(GAME_HOOK(PPCMtdec)) { wii::os::SetDecrementer(ctx, base); }
+PPC_FUNC(GAME_HOOK(PPCMfwpar)) { ctx.r3.u64 = wii::gx::GatherAddress; }
+PPC_FUNC(GAME_HOOK(PPCMtwpar)) { wii::gx::GatherReset(); }
 PPC_FUNC_IMPL(GAME_IMP(VIInit));
 PPC_FUNC(GAME_HOOK(VIInit))
 {

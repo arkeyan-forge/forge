@@ -1,6 +1,6 @@
 # Skylanders SuperChargers Racing (racing)
 
-> **Purpose:** which disc SuperChargers Racing needs, how far its port is, and what is next · **Status:** current (2026-11-23) · **Tags:** [V]
+> **Purpose:** which disc SuperChargers Racing needs, how far its port is, and what is next · **Status:** current (2026-11-25) · **Tags:** [V]
 
 ## At a glance
 | | |
@@ -67,7 +67,13 @@ drawn yet: GX's commands are not). Two thread fixes on the way ([threads.md](../
 interrupt switch is each thread's (a thread resumed after a preemption spun in `Flip` with interrupts off), and an
 OSThread made again gets a new host thread (the ended one returned from `OSExitThread`).
 
+## GX's commands [V] (2026-11-25)
+With `write_gather_pipe` (4,644 stores of the translation the host's, 29 of them quantized): the first frame buffer
+after 115 gathered lines (1,011 commands, a draw of 4 vertices, 2 EFB copies), then each frame of the main loop 22 lines,
+90 commands, 3 draws of 4 vertices and one copy; no opcode the command processor does not know
+([gx.md](../../../docs/runtime/wii/gx.md)).
+
 ## Next
-1. GX: the commands drawn, the frames shown.
+1. GX: the draws drawn (vertices, TEV, textures, the EFB copy to the frame buffer), the frames shown.
 2. The audio's mix and the host's output; EXI, SI (the GameCube controllers), the remotes.
 3. The `*_as_local` options; the frame rate (600 frames in a minute, the retrace's 59.94 a second the target).

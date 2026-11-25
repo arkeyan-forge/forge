@@ -235,6 +235,7 @@ assemble() { # <build dir> <kit dir> <platform>
     git -C thirdparty/XenonRecomp/thirdparty/libmspack archive --format=tar.gz --prefix=libmspack/ \
         -o "$kit/licenses/libmspack-source.tar.gz" HEAD
     cp patches/xenonrecomp.patch "$kit/licenses/XenonRecomp-arkeyan.patch"
+    cp patches/xenonrecomp_gather_pipe.patch "$kit/licenses/XenonRecomp-arkeyan-gather-pipe.patch" # on top of the first
 
     # One licence file per component (resources/kit-licenses/COMPONENTS.md is the table). A missing source file stops
     # the build: a component must not be added to a kit without its licence.

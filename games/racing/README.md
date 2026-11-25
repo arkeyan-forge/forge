@@ -2,7 +2,7 @@
 
 > **Purpose:** what is in SuperChargers Racing's game folder, how its code is translated, and where its docs are · **Status:** current (2026-11-23) · **Tags:** none
 
-Status: the game's code and its module translate, compile and boot on the Wii host into the main loop, nothing drawn yet ([status](docs/status.md)). Not in the kit, not
+Status: the game's code and its module translate, compile and boot on the Wii host into the main loop, its GX commands read, nothing drawn yet ([status](docs/status.md)). Not in the kit, not
 a build target (`ARKEYAN_GAME` does not take it yet). The Wii's other pieces: [docs/runtime/wii/](../../docs/runtime/wii/README.md).
 
 | File | What |

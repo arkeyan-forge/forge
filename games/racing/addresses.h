@@ -49,6 +49,9 @@ namespace game
 
 // The timers: the decrementer the alarms set, and VI's start, after which its retrace interrupt runs.
 #define GAME_HOOK_PPCMtdec sub_8027AA20
+// The write-gather pipe's address register, which the translation does not read or write (runtime/wii/gx_fifo.h).
+#define GAME_HOOK_PPCMfwpar sub_8027AB30
+#define GAME_HOOK_PPCMtwpar sub_8027AB40
 #define GAME_HOOK_VIInit sub_802EDE70
 // The first frames: logged.
 #define GAME_HOOK_VISetNextFrameBuffer sub_802EF4A0

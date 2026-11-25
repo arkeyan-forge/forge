@@ -34,12 +34,19 @@ def run(command):
 
 
 def ensure_patch():
+    # The chain cmake/patches.cmake applies: once the last is in, the first's reverse check fails on its context.
     command = ["git", "-C", XENON, "apply"]
-    patch = "../../patches/xenonrecomp.patch"
-    applied = subprocess.run([str(p) for p in command + ["--reverse", "--check", patch]], capture_output=True)
-    if applied.returncode:
-        run(command + ["--check", patch])
-        run(command + [patch])
+    chain = ["../../patches/xenonrecomp.patch", "../../patches/xenonrecomp_gather_pipe.patch"]
+
+    def applied(patch):
+        return subprocess.run([str(p) for p in command + ["--reverse", "--check", patch]], capture_output=True).returncode == 0
+
+    if applied(chain[-1]):
+        return
+    for patch in chain:
+        if not applied(patch):
+            run(command + ["--check", patch])
+            run(command + [patch])
 
 
 def compiler(cxx):
