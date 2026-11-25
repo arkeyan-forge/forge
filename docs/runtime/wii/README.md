@@ -18,6 +18,7 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 | IOS: the calls, the state module, the disc drive | done: [ios.md](ios.md) |
 | The NAND (`/dev/fs`, in a host folder), ES, the console's settings (SYSCONF, `setting.txt`) | done: [ios.md](ios.md) |
 | Audio: the audio interface's DMA, the DSP running AX's task, its command lists (the voices advanced, silent) | started: [audio.md](audio.md) |
+| A module loaded at run time (an RSO): linked offline where the host places it, translated with the game | done: [modules.md](modules.md) |
 | Everything else | not started (#82) |
 
 ## Where the code is
@@ -27,13 +28,13 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 `XenonRecomp/recompiler_750cl.inl` ([`patches/xenonrecomp.patch`](../../../patches/xenonrecomp.patch)), on with the
 config's `paired_singles`. The host: [`runtime/wii/`](../../../runtime/wii/) (`memory_map`, `executable`, `boot_info`,
 `os`, `processor`, `threads`, `timers`, `ios`, `ios_calls`, `ios_devices`, `ios_disc`, `ios_nand`, `nand`, `settings`,
-`audio`, `ax`, `main`), the game's bindings in `games/racing/` (`addresses.h`, `hooks.cpp`).
+`audio`, `ax`, `module`, `main`); the module's link: [`tools/rso_link.py`](../../../tools/rso_link.py), the game's bindings in `games/racing/` (`addresses.h`, `hooks.cpp`).
 
 ## How to test it
 `ArkeyanRvzTest` (in `ctest` and `tools/test_all.sh`) builds synthetic images; `ArkeyanRvzTest --disc <image.rvz>`
 lists a real disc's files and checks its hashes. `ArkeyanXenonRecompTest` and `ArkeyanPpcDecoderTest`: one sample per
 750CL instruction, translated and run on the host. `ArkeyanWiiTest [scratch dir]`: the address space's mirrors, synthetic DOLs and ELFs,
-the boot information, the processor, IOS, the NAND in a scratch folder, SYSCONF and `setting.txt`, AX's command lists.
+the boot information, the processor, IOS, the NAND in a scratch folder, SYSCONF and `setting.txt`, AX's command lists, the module's area and link hash.
 `ArkeyanWiiRuntime <disc.rvz> <NAND folder>`: the boot, on the real disc (a scratch NAND folder for tests).
 
 ## Gotchas
@@ -43,6 +44,7 @@ the boot information, the processor, IOS, the NAND in a scratch folder, SYSCONF 
 ## Pages
 - [disc_rvz.md](disc_rvz.md): the RVZ image, the Wii disc and its hash tree.
 - [audio.md](audio.md): the audio interface, the DSP and AX's command lists.
+- [modules.md](modules.md): an RSO module, linked and translated where the host loads it.
 - [memory_boot.md](memory_boot.md): the host's address space, the executable, the boot information, the first boot.
 - [threads.md](threads.md): one processor between the game's threads, events, the timers.
 - [ios.md](ios.md): IOS answered by the host, its devices.

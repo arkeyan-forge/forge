@@ -145,7 +145,9 @@ CodeWarrior runtime's (`_savegpr_14`...: each entry runs to the `blr`, no `lr` s
 `rlwimi.` sets CR0 (it did not: the Xbox 360's compilers never emitted it; 22 sites in SuperChargers Racing). Jump
 tables: [`tools/elf_switch_tables.py`](../../../tools/elf_switch_tables.py) (the CodeWarrior pattern, each register
 followed back inside its function; an index scaled in place spreads the table over every fourth case; a loop over the
-cases, its offset in a register of its own and its counter bounds-checked, is matched by its table's labels).
+cases, its offset in a register of its own and its counter bounds-checked, is matched by its table's labels). A module the game
+links at run time (an RSO) is linked first where the host loads it and appended to the ELF, functions and all
+([`tools/rso_link.py`](../../../tools/rso_link.py), [modules.md](../../runtime/wii/modules.md)): one image, one translation.
 
 On SuperChargers Racing's ELF (2026-11-23, `ArkeyanXenonRecompTest`'s samples aside): 1,295,544 words in `.init` and
 `.text`, all decoded but 26,467 (zero padding and one data word); 6,303 quantized loads and stores, 470 other

@@ -81,7 +81,19 @@ namespace
             return false;
         }
         std::string error;
-        if (!wii::MapAddressSpace(base, { { uint32_t(FunctionTable), uint32_t(PPC_CODE_SIZE * 2 + 8) } }, error))
+        std::vector<wii::Range> extra = { { uint32_t(FunctionTable), uint32_t(PPC_CODE_SIZE * 2 + 8) } };
+        if (wii::os::g_game.moduleAreaSize != 0) // the game's module, where its translation is for
+        {
+            const uint64_t area = wii::os::g_game.moduleArea, end = area + wii::os::g_game.moduleAreaSize;
+            if (end > FunctionTable && area < FunctionTable + PPC_CODE_SIZE * 2 + 8)
+            {
+                fprintf(stderr, "[wii] the module's area 0x%08llX-0x%08llX meets the function table\n",
+                    (unsigned long long)area, (unsigned long long)end);
+                return false;
+            }
+            extra.push_back({ wii::os::g_game.moduleArea, wii::os::g_game.moduleAreaSize });
+        }
+        if (!wii::MapAddressSpace(base, extra, error))
         {
             fprintf(stderr, "[wii] %s\n", error.c_str());
             return false;

@@ -7,7 +7,7 @@
 |---|---|
 | Disc | the Europe disc, `SKNP52` (Skylanders Superchargers Racing), as an RVZ image ([disc_rvz.md](../../../docs/runtime/wii/disc_rvz.md)) |
 | Executable | `sys/main.dol`, SHA-256 `862c9de4102cd2e69820673fa17d3378c7319d219249e8543273b888c95c54e5`; the disc also ships `files/goliath.engine.wii.final.elf`, SHA-256 `a85732a7a297c4974bbd597e0ce838f085231bac244172b60db8fb1cefc167e9`, the same 11 sections at the same addresses (entry `0x80006310`) with 44,937 symbols: the translation reads the ELF |
-| Code loaded at run time | `files/Data/gamelogic.rso`, a relocatable module: not translated yet |
+| Code loaded at run time | `files/Data/gamelogic.rso`, a relocatable module (the game's logic, 3.1 MB of code): linked at `0x81800000` and translated with the ELF ([modules.md](../../../docs/runtime/wii/modules.md)) |
 | Engine | its own (not Alchemy): nothing in `engines/` applies |
 | Compiler | CodeWarrior for the Wii: paired singles, `lmw`/`stmw` prologues, `_savegpr_14` and its kin, `__ptmf_scall` |
 
@@ -58,7 +58,16 @@ was not translated. Two fixes on the way:
 - a loop's switch in `RSOStaticLocateObject` (its offset in a register of its own, the counter bounds-checked) was
   taken for a call through a pointer: `tools/elf_switch_tables.py` now matches it (201 tables).
 
+## The main loop [V] (2026-11-25)
+With `gamelogic.rso` linked at `0x81800000` and translated with the ELF ([modules.md](../../../docs/runtime/wii/modules.md);
+37,296 functions, 231 jump tables, 147 files, 139 MB): the game's link matches the translation's
+(`[rso] the module at 0x81800000 is linked as its translation`), the module's prolog runs, the sockets library starts,
+the engine's loading threads read the disc, and the main loop runs: 600 frames handed to VI in a minute (nothing
+drawn yet: GX's commands are not). Two thread fixes on the way ([threads.md](../../../docs/runtime/wii/threads.md)): the
+interrupt switch is each thread's (a thread resumed after a preemption spun in `Flip` with interrupts off), and an
+OSThread made again gets a new host thread (the ended one returned from `OSExitThread`).
+
 ## Next
-1. `gamelogic.rso`: translate the module where the engine loads it.
-2. The audio's mix and the host's output; EXI, SI, and GX's commands drawn.
-3. The `*_as_local` options, once it boots.
+1. GX: the commands drawn, the frames shown.
+2. The audio's mix and the host's output; EXI, SI (the GameCube controllers), the remotes.
+3. The `*_as_local` options; the frame rate (600 frames in a minute, the retrace's 59.94 a second the target).
