@@ -1,10 +1,12 @@
 // The Wii host's address space, executable loader and boot information, on synthetic executables; its NAND in a
 // scratch folder; the console's settings. No game data.
 // usage: ArkeyanWiiTest [scratch dir]
+#include "wii/ax.h"
 #include "wii/boot_info.h"
 #include "wii/executable.h"
 #include "wii/ios.h"
 #include "wii/memory_map.h"
+#include "wii/module.h"
 #include "wii/nand.h"
 #include "wii/processor.h"
 #include "wii/settings.h"
@@ -208,6 +210,8 @@ namespace
         info.ios = 56;
         info.iosRevision = 5918;
         info.settingText = { 0x41, 0x42 };
+        info.fileSystemTable = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 }; // a root holding nothing
+        const uint32_t table = wii::FileSystemTableAddress(12);
         g_base[0x80003FFF] = 1;
         wii::WriteBootInfo(g_base, info);
         EXPECT(memcmp(g_base + 0x80000000, "RTST01", 6) == 0 && Get32(0x80000018) == 0x5D1C9EA3);
@@ -218,7 +222,142 @@ namespace
         EXPECT(Get32(0x80003140) == (56u << 16 | 5918) && Get32(0x80003188) == (56u << 16 | 5918));
         EXPECT(memcmp(g_base + 0x80003180, "RTST", 4) == 0);
         EXPECT(g_base[0x80003800] == 0x41 && g_base[0x80003801] == 0x42 && g_base[0x80003802] == 0);
+        EXPECT(table == 0x817FFFE0 && Get32(0x80000038) == table && Get32(0x8000003C) == 12);
+        EXPECT(Get32(0x80003110) == table && g_base[table] == 1 && Get32(table + 8) == 1);
         EXPECT(g_base[0x80003FFF] == 0 && Get32(0xC0000020) == 0x0D15EA5E); // the rest cleared; through the mirror
+    }
+
+    void Set16(uint32_t address, uint16_t value)
+    {
+        g_base[address] = uint8_t(value >> 8);
+        g_base[address + 1] = uint8_t(value);
+    }
+    void Set32(uint32_t address, uint32_t value)
+    {
+        Set16(address, uint16_t(value >> 16));
+        Set16(address + 2, uint16_t(value));
+    }
+    uint16_t Get16(uint32_t address) { return uint16_t(g_base[address] << 8 | g_base[address + 1]); }
+
+    // A voice's parameter block at `block` (a cached address), cleared, then playing `format` from `current` to `end`.
+    void Voice(uint32_t block, uint16_t format, uint32_t current, uint32_t end, uint32_t ratio, uint16_t source = 1)
+    {
+        namespace pb = wii::ax::pb;
+        memset(g_base + block, 0, wii::ax::BlockSize);
+        Set16(block + pb::State, 1);
+        Set16(block + pb::Format, format);
+        Set16(block + pb::Source, source);
+        Set32(block + pb::CurrentAddress, current);
+        Set32(block + pb::EndAddress, end);
+        Set32(block + pb::Ratio, ratio);
+    }
+
+    // AX's command lists as the host's DSP runs them: the voices' positions over a frame, their ends and loops, ADPCM's
+    // frame headers, the volume ramps; the list's commands and its end.
+    void AxFrames()
+    {
+        namespace ax = wii::ax;
+        namespace pb = wii::ax::pb;
+        const uint32_t block = 0x80100000;
+        Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x10000, 2); // no converter: one input sample for each output one
+        ax::AdvanceVoice(g_base, block);
+        EXPECT(Get32(block + pb::CurrentAddress) == 0x1000 + 96 && Get16(block + pb::State) == 1);
+        Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x8000); // half the rate: 48 samples
+        ax::AdvanceVoice(g_base, block);
+        EXPECT(Get32(block + pb::CurrentAddress) == 0x1000 + 48 && Get16(block + pb::Fraction) == 0);
+        Voice(block, ax::Pcm8, 0x1000, 0x2000, 0x18000); // one and a half: 144, the fraction kept
+        Set16(block + pb::Fraction, 0x8000);
+        ax::AdvanceVoice(g_base, block);
+        EXPECT(Get32(block + pb::CurrentAddress) == 0x1000 + 144 && Get16(block + pb::Fraction) == 0x8000);
+
+        Voice(block, ax::Pcm16, 0x1000, 0x1009, 0x10000); // ends after ten samples
+        ax::AdvanceVoice(g_base, block);
+        EXPECT(Get16(block + pb::State) == 0 && Get32(block + pb::CurrentAddress) == 0x1009);
+        Voice(block, ax::Pcm16, 0x1000, 0x1009, 0x10000); // loops to 0x1004: 96 = 10 + 86, 86 = 14 * 6 + 2
+        Set16(block + pb::Loops, 1);
+        Set32(block + pb::LoopAddress, 0x1004);
+        ax::AdvanceVoice(g_base, block);
+        EXPECT(Get16(block + pb::State) == 1 && Get32(block + pb::CurrentAddress) == 0x1006);
+
+        // ADPCM: nibble addresses, two header nibbles at each 16; the header read into the predictor and scale.
+        const uint32_t samples = 0x80200000;
+        for (uint32_t frame = 0; frame < 16; frame++)
+            g_base[samples + 8 * frame] = uint8_t(0x40 + frame);
+        const uint32_t start = (samples & 0x1FFFFFFF) * 2; // the DSP's nibble address of the samples
+        Voice(block, ax::Adpcm, start + 2, start + 0x1000, 0x10000);
+        ax::AdvanceVoice(g_base, block);
+        // 96 samples: 14 in frames 0-5, the 7th's first 12 (its header read): the next nibble is 2 + 12 into it.
+        EXPECT(
+            Get32(block + pb::CurrentAddress) == start + 6 * 16 + 2 + 12 && Get16(block + pb::PredictorScale) == 0x46);
+        Voice(block, ax::Adpcm, start + 2, start + 15, 0x10000); // one frame, looped: its loop state, not a stream
+        Set16(block + pb::Loops, 1);
+        Set32(block + pb::LoopAddress, start + 2);
+        Set16(block + pb::LoopPredictorScale, 0x77);
+        Set16(block + pb::LoopHistory1, 0x1234);
+        ax::AdvanceVoice(g_base, block);
+        EXPECT(Get16(block + pb::History1) == 0x1234 && Get16(block + pb::State) == 1);
+        EXPECT(Get16(block + pb::PredictorScale) == 0x77); // past the header: the loop state's, not read again
+
+        Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x10000); // a ramp: the volume's step for each of the 96 samples
+        Set16(block + pb::Volume, 0x1000);
+        Set16(block + pb::VolumeStep, uint16_t(-16));
+        ax::AdvanceVoice(g_base, block);
+        EXPECT(Get16(block + pb::Volume) == 0x1000 - 16 * 96);
+        Set16(block + pb::VolumeStep, uint16_t(-0x100));
+        ax::AdvanceVoice(g_base, block);
+        EXPECT(Get16(block + pb::Volume) == 0); // never below silence
+        Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x10000);
+        Set16(block + pb::State, 0);
+        ax::AdvanceVoice(g_base, block); // stopped: left as it is
+        EXPECT(Get32(block + pb::CurrentAddress) == 0x1000);
+
+        // A list: the studio, the voices (two linked blocks, the second stopped), an aux bus, the final mix, the end.
+        const uint32_t list = 0x80110000, second = 0x80100200;
+        Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x10000);
+        Voice(second, ax::Pcm16, 0x3000, 0x4000, 0x10000);
+        Set16(second + pb::State, 0);
+        Set32(block + pb::Next, second & 0x1FFFFFFF);
+        const uint16_t words[] = { 0, 0x0012, 0x0000, 4, 0x0010, 0x0000, 5, 0x8000, 0, 0, 0, 0, 11, 0x8000, 0, 0,
+            0x0013, 0x4000, 14 };
+        for (size_t i = 0; i < sizeof(words) / 2; i++)
+            Set16(list + uint32_t(2 * i), words[i]);
+        ax::Frame frame = ax::RunCommandList(g_base, list & 0x1FFFFFFF);
+        EXPECT(frame.complete && frame.voices == 2 && frame.playing == 1 && frame.output == 0x80134000);
+        EXPECT(Get32(block + pb::CurrentAddress) == 0x1000 + 96 && Get32(second + pb::CurrentAddress) == 0x3000);
+        Set16(list + 6, 99); // a command not known: the list stops there
+        frame = ax::RunCommandList(g_base, list);
+        EXPECT(!frame.complete && frame.unknownCommand == 99 && frame.voices == 0);
+        Set16(list + 6, 4);
+        Set32(block + pb::Next, block & 0x1FFFFFFF); // a block linked to itself: the list stops, the frame ends
+        frame = ax::RunCommandList(g_base, list);
+        EXPECT(frame.complete && frame.voices == 512);
+    }
+
+    // The module's area: its blocks in order, aligned, none past its end; the linked sections' hash, its BSS left out.
+    void ModuleArea()
+    {
+        wii::module::Area area(0x81800000, 0x1000);
+        EXPECT(area.Place(0x101) == 0x81800000 && area.Place(0x10) == 0x81800120 && area.Place(0x1000) == 0);
+        EXPECT(area.Holds(0x81800FFF) && !area.Holds(0x81801000) && !area.Holds(0x817FFFFF));
+        // An RSO linked at 0x80300000: two sections (8 bytes at 0x20, 4 at 0x28) and a BSS past the file.
+        const uint32_t module = 0x80300000;
+        memset(g_base + module, 0, 0x40);
+        Set32(module + 8, 3);
+        Set32(module + 12, module + 0x30);
+        Set32(module + 0x30, module + 0x20);
+        Set32(module + 0x34, 8);
+        Set32(module + 0x38, module + 0x28);
+        Set32(module + 0x3C, 4);
+        Set32(module + 0x40, 0x80400000); // the BSS
+        Set32(module + 0x44, 0x100);
+        const uint8_t bytes[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+        memcpy(g_base + module + 0x20, bytes, sizeof(bytes));
+        uint32_t expected = 0x811C9DC5;
+        for (uint8_t b : bytes)
+            expected = (expected ^ b) * 0x01000193;
+        EXPECT(wii::module::LinkedHash(g_base, module, 0x48) == expected);
+        g_base[module + 0x2B] ^= 1; // one byte linked otherwise
+        EXPECT(wii::module::LinkedHash(g_base, module, 0x48) != expected);
     }
 
     // One processor between host threads: each runs only when handed it, in the order the holder chooses; events run
@@ -459,6 +598,8 @@ int main(int argc, char** argv)
         Elf();
         Dol();
         BootInformation();
+        AxFrames();
+        ModuleArea();
     }
     printf("wii test: %d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

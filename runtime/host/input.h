@@ -41,6 +41,10 @@ GamepadState GetGamepad(uint32_t& packetNumber, int user = 0);
 // the same script for the second controller (user 1), which then exists.
 void LoadInputScript(const char* script, int user = 0);
 
+// Presses these buttons on a user's controller for as long as a SKY_PRESS item (150 ms) from now, over the player's own:
+// the title sees a real press. A game's menu pointer picks an item with it (host/mouse.h, MenuPointer). Any thread.
+void PressButtons(uint16_t buttons, int user = 0);
+
 // The vibration the title asked for (XamInputSetState): both motors, 0-65535, per user. The host's main loop sends it to
 // that user's pad, scaled by the player's rumble setting (pad_map.h). `serial` changes with every request.
 void SetHostVibration(int user, uint16_t left, uint16_t right);

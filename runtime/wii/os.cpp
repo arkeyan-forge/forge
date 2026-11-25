@@ -112,6 +112,15 @@ namespace wii::os
         StopBoot(1);
     }
 
+    bool InterruptsEnabled() { return g_interrupts; }
+    void SetInterrupts(bool on) { g_interrupts = on; }
+
+    void Poll(PPCContext& ctx, uint8_t* base)
+    {
+        if (g_interrupts && !InHandler())
+            PollEvents(ctx, base);
+    }
+
     void DisableInterrupts(PPCContext& ctx) { Interrupts(ctx, nullptr, false); }
     void EnableInterrupts(PPCContext& ctx, uint8_t* base) { Interrupts(ctx, base, true); }
     void RestoreInterrupts(PPCContext& ctx, uint8_t* base) { Interrupts(ctx, base, ctx.r3.u32 != 0); }

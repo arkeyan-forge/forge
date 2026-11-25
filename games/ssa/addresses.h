@@ -67,6 +67,9 @@
 #define GAME_HOOK_Text_Lookup sub_82861060
 #define GAME_HOOK_Text_Compile sub_82860FC8
 
+// Menus (games/ssa/menu_hook.cpp): the UI copies the pads' buttons into its manager, once a frame (r3 the manager).
+#define GAME_HOOK_Ui_ReadPads sub_82677DE0
+
 // Spoken lines (engines/lux/dialogue_skip.cpp): lux::UITextDialog's update (r3 the box), lux::CinemaTrigger's update
 // (r3 the cinematic, f1 its time step: 0 while it waits) and its end. Found from the voice events posted with markers
 // during level_027's cinematic, and the classes' RTTI names.

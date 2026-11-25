@@ -1,6 +1,6 @@
 // Giants' adapter: what the runtime asks of the game (runtime/game.h). Its voice language is language.cpp's; its portal prompt
 // is read from the game script's variables (giants_portal_prompt.h); its button glyphs are cells of its font atlases;
-// ultrawide sets the display's aspect (below).
+// ultrawide sets the display's aspect (below); its menus and the pointer in them are menus.cpp's.
 #include "game.h"
 #include "d3d/ultrawide.h"
 #include "game_hooks.h"
@@ -221,7 +221,8 @@ namespace
     // SKY_LEVEL: the first level is the tutorial, level\level_213_tutotial.arc and .bld (and that path alone).
     const game::Adapter g_adapter = { g_gameInfo, ReadPortalPrompt, true, giants::SetVoiceLanguage, GlyphTextures,
         IntroMovies, true, giants::SetTextLanguage, { "\\level\\level_213_tutotial", std::string_view("\0.", 2) }, {},
-        false, {}, nullptr, game::LevelArcOfFile, 60, {}, InputRows, MouseDefaults, MenuLevels };
+        false, {}, nullptr, game::LevelArcOfFile, 60, {}, InputRows, MouseDefaults, MenuLevels, 0, {}, 0, {}, true,
+        false, 0.5f, giants::MenuOpen, true };
 }
 
 const game::Adapter& game::Current() { return g_adapter; }

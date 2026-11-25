@@ -9,4 +9,6 @@ namespace giants
     bool SetVoiceLanguage(std::string_view code);
     // The text in any of the disc's twelve languages, whatever the console language (language.cpp).
     bool SetTextLanguage(std::string_view code);
+    // One of the game's menu pages is on screen (menus.cpp); the pointer in it is driven from there.
+    bool MenuOpen();
 }

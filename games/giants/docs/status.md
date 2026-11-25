@@ -45,6 +45,13 @@ Feature by feature against SSA: [parity.md](parity.md); what is left: [100.md](1
   Resolve/DrawIndexed arguments with SSA's layout ([boot.md](boot.md)).
 - Real portals and a real LightCore with Giants; a full playthrough by people ([playtest.md](playtest.md)).
 
+## The mouse in the game's menus (2026-11-25) [Giants] [V]
+The pointer works in the game's own menus whatever the mouse switch says: the title screens, the notices, CHOOSE PLAY,
+the save slots, the difficulty, the pause menu and its pages. Hover moves the focus (not in the pause carousel), a
+click picks the item; the focus moves by d-pad presses since the game's script takes no other request. How the menus
+are read: [input.md](../../../docs/runtime/xbox360/input.md), "Giants' menus". Test:
+`tools/regress/giants_menu_mouse.sh <disc>`. Not tried: Battle Mode's menus, the collection pages' grids, shops.
+
 ## Difficulty (2026-10-28) [Giants] [V]
 A new game's difficulty screen has three choices (Easy, "Cyclops Crusher (Medium)" the default, "Heavy Hitter (Hard)"), all open on a
 new save: Giants has no locked difficulty and no Nightmare, so `nightmare_from_start` does nothing here (the runtime says so in the

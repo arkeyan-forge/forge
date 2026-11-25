@@ -205,6 +205,7 @@ arkeyan_setup_ffmpeg(ArkeyanRuntime)
 # override the game's translated functions, the adapter answers game.h.
 file(GLOB ARKEYAN_ENGINE_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_ENGINE_DIR}/*.cpp)
 file(GLOB ARKEYAN_GAME_SOURCES CONFIGURE_DEPENDS ${ARKEYAN_GAME_DIR}/*.cpp)
+list(FILTER ARKEYAN_GAME_SOURCES EXCLUDE REGEX "_test\\.cpp$")
 target_sources(ArkeyanRuntime PRIVATE ${ARKEYAN_ENGINE_SOURCES} ${ARKEYAN_GAME_SOURCES})
 # A disc edition of other code (docs/tools/edition_finder.md): its own addresses.h, made from its edition report by
 # tools/editions/from_report.py, found before the game's.
@@ -544,6 +545,10 @@ add_executable(ArkeyanProfilesTest host/profiles_test.cpp host/profiles.cpp host
 target_include_directories(ArkeyanProfilesTest PRIVATE .)
 target_include_directories(ArkeyanProfilesTest SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/stb)
 
+# The controllers as the title reads them (host/input.h; no SDL, no game data): ./ArkeyanInputTest
+add_executable(ArkeyanInputTest host/input_test.cpp host/input.cpp)
+target_include_directories(ArkeyanInputTest PRIVATE .)
+
 # The mouse's names, bindings and capture (host/mouse.h; no SDL, no game data): ./ArkeyanMouseTest
 add_executable(ArkeyanMouseTest host/mouse_test.cpp host/mouse.cpp)
 target_include_directories(ArkeyanMouseTest PRIVATE .)
@@ -702,6 +707,13 @@ target_include_directories(ArkeyanRingRegistersTest PRIVATE .)
 add_executable(ArkeyanRingCursorTest d3d/ring_cursor_test.cpp)
 target_include_directories(ArkeyanRingCursorTest PRIVATE .)
 
+# The pointer in Spyro's Adventure's menus (games/ssa/menu_pointer.h; no game data): ./ArkeyanSsaMenuTest
+add_executable(ArkeyanSsaMenuTest ${CMAKE_SOURCE_DIR}/games/ssa/menu_pointer_test.cpp ${CMAKE_SOURCE_DIR}/games/ssa/menu_pointer.cpp)
+
+# The pointer in the Alchemy games' menus (engines/alchemy/menu_pointer.h; no game data): ./ArkeyanAlchemyMenuTest
+add_executable(ArkeyanAlchemyMenuTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/menu_pointer_test.cpp ${CMAKE_SOURCE_DIR}/engines/alchemy/menu_pointer.cpp)
+target_include_directories(ArkeyanAlchemyMenuTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
+
 # Protocol test of the emulated Skylanders portal (no game data needed): ./ArkeyanPortalTest
 add_executable(ArkeyanPortalTest host/portal_emulated.cpp host/portal_mixed.cpp host/portal_identity.cpp host/portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/ssa/ssa_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/giants/giants_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/swapforce/swapforce_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/superchargers/superchargers_portal_prompt.cpp host/portal_test.cpp host/figures/figure_data.cpp)
 target_include_directories(ArkeyanPortalTest PRIVATE . ${CMAKE_SOURCE_DIR}/games/ssa ${CMAKE_SOURCE_DIR}/games/giants ${CMAKE_SOURCE_DIR}/games/swapforce ${CMAKE_SOURCE_DIR}/games/superchargers)
@@ -830,8 +842,8 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # --disc <image.rvz>, a real disc's files are listed and its hashes checked.
 # The Wii host's pieces (docs/runtime/wii/): its address space, the executable's loader, the boot information, the
 # guest's messages.
-add_library(ArkeyanWii STATIC wii/boot_info.cpp wii/executable.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp
-    wii/processor.cpp wii/settings.cpp)
+add_library(ArkeyanWii STATIC wii/ax.cpp wii/boot_info.cpp wii/executable.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp
+    wii/module.cpp wii/processor.cpp wii/settings.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
 target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles)
 # Synthetic executables in a mapped address space, the NAND in a scratch folder: ./ArkeyanWiiTest [scratch dir]
