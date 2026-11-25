@@ -88,7 +88,9 @@ game-menu pointer), `ArkeyanSettingsTest` (the lines), `ArkeyanInputTest` (`Pres
   each left click; the game's own menu hook takes them on the game's thread (`Take`: the place, and the clicks since the last call),
   gives the focus to the item under the pointer and picks it on a click. Leaving the menu drops the clicks not taken, so a click never
   carries over into the next menu. Out of the menus nothing changes; a game without `menuPointer` behaves as before. The log says
-  `[mouse] game menu pointer on` / `off`. The menu hooks are per game: Spyro's Adventure's below; the other games have none yet.
+  `[mouse] game menu pointer on` / `off`. In an online session or a recording (`netplay::Enabled`, `State::session`) it stays
+  out and the pads drive the menus: the focus its hook writes would move one game's menu only. The menu hooks are per game:
+  Spyro's Adventure's below; the other games have none yet.
 - **Spyro's Adventure's menus** (`games/ssa/menus.cpp`, `menu_pointer.{h,cpp}`, hooked after the UI copies the pads,
   `GAME_HOOK_Ui_ReadPads`): the UI manager holds nine menus, each a tree of pages; a page that takes input holds a tree of items, the
   focused one, and up/down/left/right links between items by id. A page with the focus is a menu, one without but with its own

@@ -216,6 +216,17 @@ int main()
         menu.Click();
         EXPECT(menu.Take().clicks == 0);
     }
+    // An online session or a recording: the pointer stays out of the game's menus, the pads drive them.
+    {
+        MenuPointer menu;
+        MenuPointer::State state;
+        state.supported = state.gameMenu = state.session = true;
+        EXPECT(!menu.Update(state));
+        menu.Move(400, 300, true);
+        menu.Click();
+        const MenuPointer::Read read = menu.Take();
+        EXPECT(!read.active && read.clicks == 0);
+    }
     // Leaving the menu drops a click the game has not taken: it never becomes a click in the next menu.
     {
         MenuPointer menu;

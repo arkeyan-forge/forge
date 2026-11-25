@@ -754,6 +754,10 @@ may). Settled already: the video mode (1280x720 at 60 Hz, fixed), directory list
 the settings the host sends. `ArkeyanNetplayTest` covers the helpers (`netplay/clock.h`). Test switch:
 `SKY_NETPLAY_TEST_HOST_RANDOM=1` gives the host's random bytes again.
 
+[V] **The menu pointer.** The mouse in the game's own menus (SSA, `mouse::MenuPointer`) writes the menu's focus into
+the title's memory from one computer only. In a deterministic run it stays out (`State::session`) and the pads,
+which go through the session, drive the menus (`ArkeyanMouseTest`).
+
 [V] **Achievements.** Two Windows PCs went out of sync right after "Hello!! Skylander": the title enumerates the
 achievements after an unlock, and each PC answered with its own player's list and wall-clock unlock times
 (`kernel/xam_achievements.cpp`). Online, the title now sees the unlocks of this session alone, timed by the session's
