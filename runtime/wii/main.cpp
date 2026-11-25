@@ -26,12 +26,21 @@ namespace
 {
     uint8_t* g_base = nullptr;
 
+    // The translated code's function table, after the image: 8 bytes for each 4 of code.
+    constexpr uint64_t FunctionTable = PPC_IMAGE_BASE + PPC_IMAGE_SIZE;
+
     // A fault: where in the guest's address space, then the platform's backtrace (the translated functions' names).
+    // One in the function table past its end is an indirect call to code that was not translated (a module loaded at
+    // run time): its target.
     void OnFault(const char* description, const void* address)
     {
         const auto* at = static_cast<const uint8_t*>(address);
-        if (g_base != nullptr && at >= g_base && at < g_base + 0x100000000ull)
-            fprintf(stderr, "[wii] %s at guest address 0x%08X\n", description, uint32_t(at - g_base));
+        const uint64_t guest = g_base != nullptr ? uint64_t(at - g_base) : 0;
+        if (g_base != nullptr && at >= g_base + FunctionTable + PPC_CODE_SIZE * 2 && at < g_base + 0x100000000ull)
+            fprintf(stderr, "[wii] %s: an indirect call to 0x%08X, outside the translated code\n", description,
+                uint32_t(PPC_CODE_BASE + (guest - FunctionTable) / 2));
+        else if (g_base != nullptr && at >= g_base && at < g_base + 0x100000000ull)
+            fprintf(stderr, "[wii] %s at guest address 0x%08X\n", description, uint32_t(guest));
         else
             fprintf(stderr, "[wii] %s at host address %p\n", description, address);
     }
@@ -71,10 +80,20 @@ namespace
             fprintf(stderr, "[wii] %s: no executable (sys/main.dol)\n", path);
             return false;
         }
-        // The translated code's function table, after the image: 8 bytes for each 4 of code.
-        const uint64_t table = PPC_IMAGE_BASE + PPC_IMAGE_SIZE;
         std::string error;
-        if (!wii::MapAddressSpace(base, { { uint32_t(table), uint32_t(PPC_CODE_SIZE * 2 + 8) } }, error))
+        std::vector<wii::Range> extra = { { uint32_t(FunctionTable), uint32_t(PPC_CODE_SIZE * 2 + 8) } };
+        if (wii::os::g_game.moduleAreaSize != 0) // the game's module, where its translation is for
+        {
+            const uint64_t area = wii::os::g_game.moduleArea, end = area + wii::os::g_game.moduleAreaSize;
+            if (end > FunctionTable && area < FunctionTable + PPC_CODE_SIZE * 2 + 8)
+            {
+                fprintf(stderr, "[wii] the module's area 0x%08llX-0x%08llX meets the function table\n",
+                    (unsigned long long)area, (unsigned long long)end);
+                return false;
+            }
+            extra.push_back({ wii::os::g_game.moduleArea, wii::os::g_game.moduleAreaSize });
+        }
+        if (!wii::MapAddressSpace(base, extra, error))
         {
             fprintf(stderr, "[wii] %s\n", error.c_str());
             return false;
@@ -91,6 +110,18 @@ namespace
         if (!wii->Read(0, info.discHeader, sizeof(info.discHeader)))
             return false;
         info.settingText = wii::MakeSettingText(char(info.discHeader[3]));
+        // The file system table: its offset and size in the partition's header, in words.
+        uint8_t words[8];
+        if (!wii->Read(0x424, words, sizeof(words)))
+            return false;
+        const uint64_t fstOffset = uint64_t(uint32_t(words[0]) << 24 | words[1] << 16 | words[2] << 8 | words[3]) << 2;
+        const uint64_t fstSize = uint64_t(uint32_t(words[4]) << 24 | words[5] << 16 | words[6] << 8 | words[7]) << 2;
+        info.fileSystemTable.resize(size_t(fstSize));
+        if (fstSize == 0 || fstSize > wii::Mem1Size / 2 || !wii->Read(fstOffset, info.fileSystemTable.data(), fstSize))
+        {
+            fprintf(stderr, "[wii] %s: no file system table\n", path);
+            return false;
+        }
         wii::WriteBootInfo(base, info);
         wii::SetDisc(*wii);
         // The title's ID, from its metadata: the NAND's folder for it, and what ES tells the game.

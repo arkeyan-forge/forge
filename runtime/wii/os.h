@@ -2,6 +2,7 @@
 
 // The Wii operating system's functions the host answers in place of the game's own (games/<id>/addresses.h binds them
 // to the game's addresses: games/<id>/hooks.cpp). Each takes the guest's registers as the translated code passes them.
+#include <chrono>
 #include <cstdint>
 #include <functional>
 
@@ -19,10 +20,15 @@ namespace wii::os
     void RestoreInterrupts(PPCContext& ctx, uint8_t* base); // r3: the state to restore
     // A hardware start the host does not need yet: r3 = `result` (0, or a start's success), logged once.
     void Skip(PPCContext& ctx, const char* function, uint32_t result = 0);
+    // The interrupt switch's state (the MSR's EE bit), which each thread has its own of: a switch sets it as the thread
+    // resumed had it (threads.cpp), with no safe point.
+    bool InterruptsEnabled();
+    void SetInterrupts(bool on);
 
     // The context switches (threads.cpp): OSSaveContext(context) and OSLoadContext(context).
     void SaveContext(PPCContext& ctx, uint8_t* base);
     void LoadContext(PPCContext& ctx, uint8_t* base);
+    void ThreadCreated(PPCContext& ctx); // OSCreateThread(thread, ...), before the SDK's own: its context is new
     // The calling host thread holds the processor, as the game's first thread (the boot).
     void StartProcessor();
     // An event for the processor's holder, from any host thread (an IOS reply, an alarm). The holder runs them at
@@ -30,6 +36,10 @@ namespace wii::os
     // as an interrupt handler (the operating system's current context the idle one meanwhile: no switch inside).
     void PostEvent(std::function<void()> event);
     void RunPendingEvents(PPCContext& ctx, uint8_t* base);
+    // A loop that waits for an interrupt by polling (VIGetRetraceCount until it changes): the events run there, and
+    // with none pending the processor waits up to 1 ms for one, as the loop would spin until the interrupt.
+    void Poll(PPCContext& ctx, uint8_t* base);
+    void PollEvents(PPCContext& ctx, uint8_t* base);
     bool WaitForEvent(PPCContext& ctx); // false when none came for 10 s
     void LogThreads(const uint8_t* base); // each guest thread the host knows: its state and what it waits on
     void CallGuest(uint8_t* base, uint32_t function, uint32_t r3, uint32_t r4);
@@ -47,6 +57,18 @@ namespace wii::os
     // engine's token register, which GXReadDrawSync reads): at once, until the host draws.
     void DrawSyncReached(uint8_t* base, uint16_t token);
     void StartRetrace(uint8_t* base);
+    // The audio interface's interrupt, every `period` from StartAudio to StopAudio (AudioInterrupt, an event).
+    void StartAudio(uint8_t* base, std::chrono::nanoseconds period);
+    void StopAudio();
+
+    // The audio hardware (audio.cpp): the audio interface's DMA and the DSP running AX's task.
+    void AiRegisterDmaCallback(PPCContext& ctx); // AIRegisterDMACallback(callback): the previous one back
+    void AiInitDma(PPCContext& ctx); // AIInitDMA(address, length): the buffer the next DMA plays
+    void AiStartDma(uint8_t* base);
+    void AiStopDma();
+    void AudioInterrupt(uint8_t* base); // the DMA's end: its callback
+    void DspAddTask(PPCContext& ctx, uint8_t* base); // DSPAddTask(task): the task started at once
+    void DspSendMail(PPCContext& ctx, uint8_t* base); // DSPSendMailToDSP(mail): AX's command lists run
 
     // The IOS calls (ios_calls.cpp), on the host's IOS (Hosted, its devices in ios_devices.cpp).
     void IosOpen(PPCContext& ctx, uint8_t* base, bool async);
@@ -65,6 +87,9 @@ namespace wii::os
         uint32_t reschedule = 0; // __OSReschedule: switches to a thread an event made ready, when it should
         uint32_t decrementerHandler = 0; // DecrementerExceptionCallback(exception, context): the alarms
         uint32_t retraceHandler = 0; // __VIRetraceHandler(interrupt, context)
+        // The area the host keeps for the game's module (wii/module.h), mapped past MEM1: none when 0.
+        uint32_t moduleArea = 0;
+        uint32_t moduleAreaSize = 0;
     };
     extern const GameAddresses g_game;
 }

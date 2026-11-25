@@ -1,6 +1,7 @@
 # XenonRecomp config for Skylanders: SuperChargers Racing (Wii, SKNP52, the Europe disc). The input is the ELF the disc
 # ships beside its main.dol (files/goliath.engine.wii.final.elf: the same sections at the same addresses, with its
-# symbols): its functions come from the symbol table, the register-save helpers are the CodeWarrior runtime's
+# symbols) with the game's module (files/Data/gamelogic.rso) linked in at 0x81800000 by tools/rso_link.py: its
+# functions come from the symbol tables, the register-save helpers are the CodeWarrior runtime's
 # (_savegpr_14, _restgpr_14, _savefpr_14, _restfpr_14), the switch tables from tools/elf_switch_tables.py. Paths are
 # relative to this file laid out as the kit does (config/Racing.toml, private/main.elf, ppc/). Output: ppc/
 # (private/racing/ppc in the workshop).

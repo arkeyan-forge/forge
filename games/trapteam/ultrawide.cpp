@@ -141,7 +141,9 @@ PPC_FUNC_IMPL(GAME_IMP(Ultrawide_Projection));
 // (the aspect of the scene's target, already wide) and sub_8230F3D8 (the display's aspect global, 16:9: two calls, from the
 // return addresses below, get the window's aspect here). The global itself stays: the camera rig reads it and with 16:9 it
 // follows the character as before, but with a wide one it pulls back and tilts away from him. The HUD's 3D cameras and the
-// shadow maps come with 16:9 or a tall aspect and are left alone.
+// shadow maps come with 16:9 or a tall aspect and are left alone. At the first call r3 is the camera's +176; the camera
+// keeps the field of view it was given (+48, degrees, before the zoom) and the aspect (+52), which the game reads again for
+// the shadows: they get the wide values too, or the shadows stop short of the sides.
 constexpr uint32_t WorldCameraCalls[] = { 0x8230F788, 0x8230F7F4 };
 PPC_FUNC(GAME_HOOK(Ultrawide_Projection))
 {
@@ -169,6 +171,15 @@ PPC_FUNC(GAME_HOOK(Ultrawide_Projection))
         const double original = ctx.f1.f64;
         ctx.f1.f64 = double(float(2.0 * std::atan(std::tan(original / 2.0) * aspect / Wide)));
         ctx.f3.f64 = double(float(aspect));
+        const uint32_t camera = ctx.r3.u32 - 176;
+        if (world && uint32_t(ctx.lr) == WorldCameraCalls[0] &&
+            std::fabs(g_memory.Read<float>(camera + 52) - Wide) < 0.01)
+        {
+            const double degrees = g_memory.Read<float>(camera + 48);
+            g_memory.Write<float>(
+                camera + 48, float(360.0 / M_PI * std::atan(std::tan(degrees * M_PI / 360.0) * aspect / Wide)));
+            g_memory.Write<float>(camera + 52, float(aspect));
+        }
         static std::atomic<bool> logged;
         if (!logged.exchange(true))
             fprintf(stderr, "[ultrawide] horizontal field of view %.1f -> %.1f degrees (aspect %.3f)\n",

@@ -14,7 +14,13 @@ namespace wii
         uint32_t ios = 0;              // the title metadata's IOS (56 for IOS56)
         uint32_t iosRevision = 0;
         std::vector<uint8_t> settingText; // the console's region, encrypted (wii/settings.h): at 0x80003800
+        // The disc's file system table, which the loader copies to MEM1's top for the DVD library (__DVDFSInit
+        // reads its address at 0x80000038); MEM1's arena then ends below it.
+        std::vector<uint8_t> fileSystemTable;
     };
+
+    // Where WriteBootInfo puts a file system table of `size` bytes: MEM1's last bytes, 32-byte aligned.
+    uint32_t FileSystemTableAddress(uint32_t size);
 
     // Clock speeds of the Wii's bus and processor, in Hz.
     constexpr uint32_t BusClock = 243000000;

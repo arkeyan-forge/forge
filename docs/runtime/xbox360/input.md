@@ -64,7 +64,7 @@ Code: `host/mouse.{h,cpp}` (the names, the bindings over the game's defaults, th
 `host/mouse_input.{h,cpp}` (the SDL side: events, SDL's relative mouse mode, the actions held), `main.cpp` (`ReadHostGamepad` takes the
 mouse's actions for Player 1 beside the keyboard's), `game::Adapter::mouseDefaults` and `menuLevels` (each game's adapter),
 `game::InMenuLevel` and `game::InMenu` (`game.cpp`). Test: `ArkeyanMouseTest` (names, bindings, every capture transition below, the
-game-menu pointer), `ArkeyanSettingsTest` (the lines).
+game-menu pointer), `ArkeyanSettingsTest` (the lines), `ArkeyanInputTest` (`PressButtons`).
 
 - **Off by default.** `[<game>.input] mouse=1` turns it on ([settings.md](../../getting-started/settings.md)). Off, or nothing mapped:
   `mouseinput` makes no SDL call, `ReadHostGamepad` gets `nullptr` and runs the path it ran before; the pointer is never hidden.
@@ -88,7 +88,19 @@ game-menu pointer), `ArkeyanSettingsTest` (the lines).
   each left click; the game's own menu hook takes them on the game's thread (`Take`: the place, and the clicks since the last call),
   gives the focus to the item under the pointer and picks it on a click. Leaving the menu drops the clicks not taken, so a click never
   carries over into the next menu. Out of the menus nothing changes; a game without `menuPointer` behaves as before. The log says
-  `[mouse] game menu pointer on` / `off`. The menu hooks are per game (none yet).
+  `[mouse] game menu pointer on` / `off`. The menu hooks are per game: Spyro's Adventure's below; the other games have none yet.
+- **Spyro's Adventure's menus** (`games/ssa/menus.cpp`, `menu_pointer.{h,cpp}`, hooked after the UI copies the pads,
+  `GAME_HOOK_Ui_ReadPads`): the UI manager holds nine menus, each a tree of pages; a page that takes input holds a tree of items, the
+  focused one, and up/down/left/right links between items by id. A page with the focus is a menu, one without but with its own
+  actions a notice (its OK); either makes `MenuOpen` true, until none has been seen for 1 s (a page holds no focus for a frame while
+  it moves it, and none for a moment while one screen replaces another). Each item's box is its model's bounds at its place (the UI
+  camera looks straight on, 480 units high: 1.5 canvas pixels a unit). Hover: the game's own focus request (the page moves the focus
+  on its next frame, with its own animations), only when the pointer moves, so a pointer at rest never takes the focus from the keys.
+  A click: on the focused item Accept, on another item the focus first then Accept once the game has moved it; a page with a single
+  item (the title's Press START) or none (a notice) takes a click anywhere. Accept is A on player 1's controller for 150 ms
+  (`PressButtons`, `host/input.h`): the title's Press START also starts the game's session from the pads. The log says
+  `[menu] focus <item id>` and `[menu] accept`. Test: `ArkeyanSsaMenuTest`, `tools/regress/ssa_menu_mouse.sh <disc>` (title to
+  `level_027` with clicks, then hover and a click in the pause menu). Back has no mouse button: B on the keys or a pad.
 - **Test aid**: `SKY_PRESS` items `mleft`, `mright`, `mmiddle`, `m4`, `m5` (`mleft:20` clicks at 20 s, `mleft:20:1` holds 1 s) and
   `wheelup`, `wheeldown` (one tick) go through the same bindings and capture; a script stands for a focused window. Each logs
   `[mouse] script: Mouse Left (held pointer: the game's)` or `(free pointer: not the game's)`; `SKY_INPUT_LOG=1` shows what the title read.

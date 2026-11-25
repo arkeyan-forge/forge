@@ -15,6 +15,8 @@ namespace wii
         }
     } // namespace
 
+    uint32_t FileSystemTableAddress(uint32_t size) { return (Mem1Cached + Mem1Size - size) & ~31u; }
+
     void WriteBootInfo(uint8_t* base, const BootInfo& info)
     {
         memset(base + Mem1Cached, 0, 0x4000);
@@ -41,6 +43,15 @@ namespace wii
         Put32(base, 0x80003140, info.ios << 16 | (info.iosRevision & 0xFFFF));
         Put32(base, 0x80003188, info.ios << 16 | (info.iosRevision & 0xFFFF));
         memcpy(base + 0x80003180, info.discHeader, 4); // the game's ID again, for IOS's checks
+        if (!info.fileSystemTable.empty() && info.fileSystemTable.size() < Mem1Size / 2)
+        {
+            const uint32_t size = uint32_t(info.fileSystemTable.size());
+            const uint32_t at = FileSystemTableAddress(size);
+            memcpy(base + at, info.fileSystemTable.data(), size);
+            Put32(base, 0x80000038, at);
+            Put32(base, 0x8000003C, size); // its largest size, for a disc changed later: this one's
+            Put32(base, 0x80003110, at); // MEM1's arena top, which OSInit takes when it is set
+        }
         if (!info.settingText.empty())
             memcpy(base + 0x80003800, info.settingText.data(), std::min<size_t>(info.settingText.size(), 0x100));
     }

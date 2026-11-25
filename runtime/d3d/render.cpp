@@ -1338,6 +1338,10 @@ namespace
             yScale = -float(size.height) / targetScale.y / 2;
             yOffset = -yScale;
         }
+        // A scene veil the game sizes for a 16:9 view: stretched across the wide scene (d3d::SceneVeilScaleX).
+        if (game::UltrawideSceneVeilVertexShader != 0 && g_drawVertexShader == game::UltrawideSceneVeilVertexShader &&
+            !frame && size.height != 0)
+            draw.positionScale[0] *= d3d::SceneVeilScaleX(float(size.width) / float(size.height));
         // An inverted depth range (MinZ > MaxZ) is kept as it is: Swap Force draws its scene with viewports 1..0.2 and
         // 1..0 into a depth buffer cleared to 0 with GEQUAL (reversed depth through the viewport). Swapping the two
         // inverted every depth: the sky dome, drawn last at the far plane, won every test and covered the scene.

@@ -30,6 +30,15 @@ are no safe point (no event nests in another).
 - **Idle**: the scheduler clears its current thread (`0x800000E4`), turns interrupts on and spins until a priority is
   ready (`RunQueueBits`, at the game's address): the host waits for events instead, until one readies a thread. Nothing
   for 10 s: every thread's state and the queue it waits on are logged, and the boot stops.
+- **A poll**: a loop that waits for an interrupt by reading what it changes (the engine's `Flip` reads
+  `VIGetRetraceCount` until the retrace changes it) is a poll point: the events run there, and with none pending the
+  processor waits up to 1 ms for one.
+- **The interrupt switch is each thread's** (the MSR's EE bit): a thread handed the processor back resumes with it as it
+  had it when it switched; one an event preempted (`__OSReschedule`, which turns interrupts off to switch) resumes with
+  them on, as interrupted; a new thread starts with its context's `SRR1`. Before, one switch for all: a thread resumed
+  after a preemption spun in `Flip` with interrupts off, and no retrace came.
+- **An OSThread made again** (`OSCreateThread` on the structure of a thread that ended) gets a new host thread; before,
+  the old one, ended in `OSExitThread`, was handed the processor and returned from it.
 
 ## Timers (`runtime/wii/timers.cpp`)
 One host thread waits for the next of two:
@@ -38,10 +47,12 @@ One host thread waits for the next of two:
 - the **video retrace**, 59.94 times a second from `VIInit` on: VI's first display interrupt's status bit
   (`0xCC002030`, 0x8000) set, then the SDK's `__VIRetraceHandler` (the retrace callbacks, `VIWaitForRetrace`'s
   waiters). One at a time: a retrace still pending is not posted again.
+- the **audio interface's** interrupt, every buffer (3 ms) from `AIStartDMA` on: the DMA callback ([audio.md](audio.md)),
+  one at a time likewise.
 
 ## What the game's addresses give (`games/racing/`)
-`OSSaveContext`, `OSLoadContext`, the interrupt switch, `PPCMtdec`, `VIInit` (the host starts the retrace after it)
-are hooks; the scheduler's `RunQueueBits`, its idle context, `__OSReschedule`, `DecrementerExceptionCallback` and
+`OSSaveContext`, `OSLoadContext`, `OSCreateThread`, the interrupt switch, `PPCMtdec`, `VIInit` (the host starts the
+retrace after it), `VIGetRetraceCount` (a poll point) are hooks; the scheduler's `RunQueueBits`, its idle context, `__OSReschedule`, `DecrementerExceptionCallback` and
 `__VIRetraceHandler` are addresses (`wii::os::GameAddresses`). The OS's own globals in low memory (the current thread
 at `0x800000E4`, the current context at `0x800000D4`) are the same in every Wii game.
 

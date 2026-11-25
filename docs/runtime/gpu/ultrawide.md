@@ -279,9 +279,19 @@ scene showed untouched at the sides. In a wide frame a `Whole` quad now gets the
 times the frame's ratio to 1280) and its clip x a factor (`d3d::WholeScaleX`, applied to c0-c3's x): the least stretch
 that still covers the frame, from 1 (a quad of the frame's size, a fade: stretched with it) to 1280 / frame width (a
 quad reaching that far past the sides, the flash: its shape kept). Not during a movie. A textured full-screen page of
-the frame's size (the start-up page) is stretched too. Left: the swirl's ~50 sprites along the screen's edge stay
-centred (`Centre`) while its four corner pieces go to the window's corners, so past about 2.4:1 bands without the
-swirl show between them [?].
+the frame's size (the start-up page) is stretched too.
+
+The blue swirl after the zoom (2026-11-24, forge issue 136) is not a HUD draw: it is a 3D mesh (8 vertices, 12 indices,
+vertex shader `02E5370C68A717D2`, the only draw of that shader, for about 300 frames) drawn into the scene in front of the
+camera and sized to cover a 16:9 view. With the wider camera its hard sides showed, at 2.3 to 2.5:1 of a 2.8 scene.
+`game::UltrawideSceneVeilVertexShader` names it and its clip x is stretched by the scene's ratio to 16:9
+(`d3d::SceneVeilScaleX`, 1.575 at 2.8), so it reaches both sides; 16:9 is unchanged. Writing the wide field of view into
+the camera (below) does not change it.
+
+The camera object keeps the field of view it was given (+48, in degrees, before the zoom) and the aspect (+52) next to
+the matrix the hook builds (r3 = camera + 176 at the first call, `0x8230F788`); the game reads them again for the
+shadows, which stopped short of the sides on the way to the tutorial's first jump. The hook writes the wide values there
+too; the camera's framing is unchanged (tutorial snapshots at 40 s, with and without).
 
 The 16:9 aspect global (`0x82826308`) is left alone: the camera rig reads it, and a wide value pulls the camera back from the character. Details and the limits:
 [games/trapteam/docs/status.md](../../../games/trapteam/docs/status.md) ("The picture", "The constant blur").

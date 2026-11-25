@@ -26,6 +26,9 @@ Windows on a real PC, builds and runs on Linux (Docker; Linux kit since Arkeyan 
 from the player's disc through the player kit (kit 0.5.0 builds SSA and Giants). The Toy Box, the shared collection,
 the smart portal and the portal identity work. The Xbox UWP port is paused. Feature by feature:
 [parity.md](parity.md); what is left: [100.md](100.md).
+The mouse works in the game's own menus (launcher issue #52, 2026-11-24): hovering an item gives it the focus, a click picks
+it, on the title, the front end, notices and the pause menu, whatever the mouse switch says
+([input.md](../../../docs/runtime/xbox360/input.md), "Spyro's Adventure's menus"; `tools/regress/ssa_menu_mouse.sh`).
 The game also plays from a copy of the disc's data, with no disc image (2026-10-26,
 [game_data.md](../../../docs/runtime/host/game_data.md): 1142 files, 8.10 GB copied and verified in 16 s, then 1150
 frames at 30 fps from the title).

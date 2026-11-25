@@ -157,6 +157,7 @@ namespace game
     constexpr uint32_t UltrawideBackdropVposParams = 0;
     constexpr uint64_t UltrawideBackdropDimVertexShader = 0;
     constexpr uint32_t UltrawideBackdropDimMatrix = 0;
+    constexpr uint64_t UltrawideSceneVeilVertexShader = 0; // none seen (d3d/frame_anchor.h, SceneVeilScaleX)
     // Upscaling (d3d/upscale.h): the vertex constant where the position matrix starts: c0-c3, row vectors (Alchemy, as
     // Giants'; the camera vote's "[upscale] last 900 frames" line checks it).
     constexpr int32_t UpscalePositionMatrix = 0;
