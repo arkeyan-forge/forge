@@ -70,9 +70,26 @@
 // Menus (games/ssa/menu_hook.cpp): the UI copies the pads' buttons into its manager, once a frame (r3 the manager).
 #define GAME_HOOK_Ui_ReadPads sub_82677DE0
 
+// Spoken lines (engines/lux/dialogue_skip.cpp): lux::UITextDialog's update (r3 the box), lux::CinemaTrigger's update
+// (r3 the cinematic, f1 its time step: 0 while it waits) and its end. Found from the voice events posted with markers
+// during level_027's cinematic, and the classes' RTTI names.
+#define GAME_HOOK_TextDialog_Update sub_826C1930
+#define GAME_HOOK_Cinematic_Update sub_827C79A0
+#define GAME_HOOK_Cinematic_End sub_827C3338
+
 // Guest data
 namespace game
 {
+    // Spoken lines (engines/lux/dialogue_skip.cpp). The pads' state: four records of PadStride bytes from PadButtons
+    // (the buttons pressed this frame), each connected when bit 0 of the word PadConnected bytes before is set. The mask
+    // of the button that skips cutscenes (B) is at SkipMask. The game is paused while the word at PausedFlag or
+    // the one at MenuState is not 0 (the conditions the cinematic's own skip checks).
+    constexpr uint32_t PadButtons = 0x82BC8DE8 + 148, PadStride = 252, PadConnected = 140, PadCount = 4;
+    constexpr uint32_t SkipMask = 0x82C4DAA8 + 244;
+    constexpr uint32_t PausedFlag = 0x82C569B0 + 56, MenuState = 0x82C58EE0 + 172;
+    // The hero's controls are locked while the word at ControlLocks (one bit per reason: 0x10000 the level script's
+    // game_lock_control, 0x100000 a text box that freezes the hero) or the byte at ControlLockCount is not 0.
+    constexpr uint32_t ControlLocks = 0x82CA3700 + 80, ControlLockCount = 0x82CA3700 + 116;
     // D3D device fields from the vertex declaration on sit this many bytes later than in SSA's XDK (d3d/device.h).
     constexpr uint32_t DeviceVertexDeclaration = 0x2F58; // the current vertex declaration on the device
     // D3DDevice_DrawIndexedVertices takes a base vertex (r5) before the start index and count.

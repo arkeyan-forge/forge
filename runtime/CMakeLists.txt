@@ -505,6 +505,11 @@ target_include_directories(ArkeyanAddressProtectTest PRIVATE .)
 add_executable(ArkeyanFrameLimiterTest kernel/frame_limiter_test.cpp)
 target_include_directories(ArkeyanFrameLimiterTest PRIVATE .)
 
+# The spoken-line skip: which presses close a line, the cinematic played fast (engines/lux/dialogue_skip.h; no game
+# data): ./ArkeyanDialogueSkipTest
+add_executable(ArkeyanDialogueSkipTest ${CMAKE_SOURCE_DIR}/engines/lux/tests/dialogue_skip_test.cpp)
+target_include_directories(ArkeyanDialogueSkipTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/lux)
+
 # The texts that name the Start button, shown as its picture (engines/alchemy/prompt_text.h; no game data): ./ArkeyanPromptTextTest
 add_executable(ArkeyanPromptTextTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/prompt_text_test.cpp)
 target_include_directories(ArkeyanPromptTextTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
@@ -708,6 +713,10 @@ target_include_directories(ArkeyanRingCursorTest PRIVATE .)
 
 # The pointer in Spyro's Adventure's menus (games/ssa/menu_pointer.h; no game data): ./ArkeyanSsaMenuTest
 add_executable(ArkeyanSsaMenuTest ${CMAKE_SOURCE_DIR}/games/ssa/menu_pointer_test.cpp ${CMAKE_SOURCE_DIR}/games/ssa/menu_pointer.cpp)
+
+# The pointer in the Alchemy games' menus (engines/alchemy/menu_pointer.h; no game data): ./ArkeyanAlchemyMenuTest
+add_executable(ArkeyanAlchemyMenuTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/menu_pointer_test.cpp ${CMAKE_SOURCE_DIR}/engines/alchemy/menu_pointer.cpp)
+target_include_directories(ArkeyanAlchemyMenuTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
 
 # Protocol test of the emulated Skylanders portal (no game data needed): ./ArkeyanPortalTest
 add_executable(ArkeyanPortalTest host/portal_emulated.cpp host/portal_mixed.cpp host/portal_identity.cpp host/portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/ssa/ssa_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/giants/giants_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/swapforce/swapforce_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/superchargers/superchargers_portal_prompt.cpp host/portal_test.cpp host/figures/figure_data.cpp)

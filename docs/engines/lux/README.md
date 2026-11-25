@@ -61,6 +61,7 @@ behaviour, **[SSA]** this build, **[Xbox]** platform.
 | [bink.md](bink.md) | Bink structures, YUV, run-time shaders, movie voice tracks (and where Bink 2 is) |
 | [wwise_audio.md](wwise_audio.md) | Wwise init, banks, the XMP mute trap, XMA, languages of voices |
 | [frame_pacing.md](frame_pacing.md) | The variable step (`mftb`), vblank-counted time, 30 vs 60 fps |
+| [dialogue_skip.md](dialogue_skip.md) | Spoken lines in cinematics: the text box, the cinematic's clock, B skipping a line |
 | [languages.md](languages.md) | `sku.lxb`, the language table, text/voice/movie split, hooks |
 | [portal_title_side.md](portal_title_side.md) | The title's portal driver and the protocol it expects |
 | [ssa_addresses.md](ssa_addresses.md) | Every engine function and data address SSA depends on, with its role |

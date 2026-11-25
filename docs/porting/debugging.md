@@ -170,6 +170,7 @@ All logs go to stderr (= `Arkeyan.log`, flushed per line). Grep, don't read.
 | `[collection]` | `host/collection` | `built-in catalogue: ...`, `catalogue additions from ...`, `migrated <old>: N copied, M already there, K failed (originals kept)`, `import: ...`, `tidy: N never-played figure(s) ... moved to the trash`, `<file>: <reason>; kept as ...` (a `collection.json` that failed to load) |
 | `[toybox]` | Toy Box | `P1: the game took <name> (slot n, x s after the change)` |
 | `[glyphs]`, `[input]` | host | `[glyphs] playstation` (a style change), `[input] gamepad <name> (<GUID>)` |
+| `[dialogue]` | `engines/lux/dialogue_skip.cpp` | `line skipped at <s> s[, the cinematic plays fast]` (B on a spoken line, [dialogue_skip.md](../engines/lux/dialogue_skip.md)) |
 | `[movie]`, `[bink]` | `engines/lux/movie.cpp`, `d3d/bink_display.cpp` | `[movie] skipped <name>` (intro skip); `[bink] open <name> WxH, N frames`; `[bink] t=.. frame n of N` with `SKY_BINK_LOG` |
 | `[video]` | `kernel/video.cpp` | `present interval 0x.. seen (fps limit N)`: the title's own present interval |
 | `[shader]` | `d3d/shaders.cpp` | `vertex\|pixel object 0x..: no container at +0x..`: a shader object the runtime cannot read |

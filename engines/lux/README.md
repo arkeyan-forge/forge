@@ -11,6 +11,7 @@ addresses come from `games/ssa/addresses.h`.
 | `patches.cpp` | `Ngl_SceneTraversal`, `Ngl_ListSubmit` (empty NGL lists), `Heap_Free` (a free that would corrupt the heap) |
 | `movie.cpp` | `Movie_Update`: skipping movies (`SKY_SKIP_MOVIES`, `[video] skip_intro_movies`) |
 | `light_tiles.cpp` | `LightTile_ClassifyJob`: which scene depth the light tile job reads; online, its depth, outputs and stack marked render-only (they differ between two GPUs) |
+| `dialogue_skip.cpp` | `TextDialog_Update`, `Cinematic_Update`, `Cinematic_End`: B skips a spoken line the game keeps unskippable (`dialogue_skip.h`) |
 | `ultrawide.cpp` | the 16:9 scene targets and the sun tile grid, widened for ultrawide (`runtime/d3d/ultrawide.h`) |
 
 Documentation: [docs/engines/lux/README.md](../../docs/engines/lux/README.md) (the engine, its pages, the gotchas).
