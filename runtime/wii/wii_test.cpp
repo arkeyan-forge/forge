@@ -6,6 +6,7 @@
 #include "wii/executable.h"
 #include "wii/ios.h"
 #include "wii/memory_map.h"
+#include "wii/module.h"
 #include "wii/nand.h"
 #include "wii/processor.h"
 #include "wii/settings.h"
@@ -332,6 +333,33 @@ namespace
         EXPECT(frame.complete && frame.voices == 512);
     }
 
+    // The module's area: its blocks in order, aligned, none past its end; the linked sections' hash, its BSS left out.
+    void ModuleArea()
+    {
+        wii::module::Area area(0x81800000, 0x1000);
+        EXPECT(area.Place(0x101) == 0x81800000 && area.Place(0x10) == 0x81800120 && area.Place(0x1000) == 0);
+        EXPECT(area.Holds(0x81800FFF) && !area.Holds(0x81801000) && !area.Holds(0x817FFFFF));
+        // An RSO linked at 0x80300000: two sections (8 bytes at 0x20, 4 at 0x28) and a BSS past the file.
+        const uint32_t module = 0x80300000;
+        memset(g_base + module, 0, 0x40);
+        Set32(module + 8, 3);
+        Set32(module + 12, module + 0x30);
+        Set32(module + 0x30, module + 0x20);
+        Set32(module + 0x34, 8);
+        Set32(module + 0x38, module + 0x28);
+        Set32(module + 0x3C, 4);
+        Set32(module + 0x40, 0x80400000); // the BSS
+        Set32(module + 0x44, 0x100);
+        const uint8_t bytes[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+        memcpy(g_base + module + 0x20, bytes, sizeof(bytes));
+        uint32_t expected = 0x811C9DC5;
+        for (uint8_t b : bytes)
+            expected = (expected ^ b) * 0x01000193;
+        EXPECT(wii::module::LinkedHash(g_base, module, 0x48) == expected);
+        g_base[module + 0x2B] ^= 1; // one byte linked otherwise
+        EXPECT(wii::module::LinkedHash(g_base, module, 0x48) != expected);
+    }
+
     // One processor between host threads: each runs only when handed it, in the order the holder chooses; events run
     // on the holder, at its safe points or while it waits idle.
     void ProcessorHandOver()
@@ -571,6 +599,7 @@ int main(int argc, char** argv)
         Dol();
         BootInformation();
         AxFrames();
+        ModuleArea();
     }
     printf("wii test: %d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

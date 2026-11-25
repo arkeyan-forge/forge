@@ -17,8 +17,9 @@ namespace wii::os
     {
         // The OSContext's fields [the SDK's own: OSInitContext and OSCreateThread write them there].
         constexpr uint32_t ContextGpr = 0x000, ContextCr = 0x080, ContextLr = 0x084, ContextCtr = 0x088,
-                           ContextXer = 0x08C, ContextFpr = 0x090, ContextSrr0 = 0x198, ContextGqr = 0x1A4,
-                           ContextPs1 = 0x1C8;
+                           ContextXer = 0x08C, ContextFpr = 0x090, ContextSrr0 = 0x198, ContextSrr1 = 0x19C,
+                           ContextGqr = 0x1A4, ContextPs1 = 0x1C8;
+        constexpr uint32_t MsrInterrupts = 0x8000; // EE
         constexpr size_t GuestThreadStack = 8 << 20; // the host's, for the translated code's calls
         constexpr uint32_t CurrentContext = 0x800000D4; // the operating system's, in low memory
         thread_local PPCContext* t_interrupted = nullptr; // the holder's registers while its events run
@@ -99,6 +100,8 @@ namespace wii::os
             const uint32_t exit = uint32_t(ctx->lr);
             fprintf(stderr, "[os] thread 0x%08X starts at 0x%08X, priority %d\n", context, entry,
                 int32_t(Read32(base, context + 0x2D0)));
+            // As the processor's return into it would: its saved MSR's interrupt bit (OSCreateThread sets it).
+            SetInterrupts((Read32(base, context + ContextSrr1) & MsrInterrupts) != 0);
             PPCFunc* function = PPC_LOOKUP_FUNC(base, entry);
             function(*ctx, base);
             // The thread's function returned: to its link register, OSExitThread with the result, as on the console.
@@ -133,6 +136,13 @@ namespace wii::os
         ctx.r3.u64 = 0; // saved: resuming it returns from OSLoadContext (the scheduler then returns too)
     }
 
+    void ThreadCreated(PPCContext& ctx)
+    {
+        // A thread made in an OSThread another one ended in: its context is new, so is its host thread (the old one
+        // stays where it ended, handed nothing again).
+        g_contexts.erase(ctx.r3.u32);
+    }
+
     void LoadContext(PPCContext& ctx, uint8_t* base)
     {
         const uint32_t context = ctx.r3.u32;
@@ -148,8 +158,10 @@ namespace wii::os
             target = processor.Spawn(GuestThreadStack, [base, context] { RunThread(base, context); });
             g_contexts[context] = target;
         }
+        const bool interrupts = InterruptsEnabled();
         processor.HandTo(target);
-        // Handed back: the scheduler loaded this thread's context again.
+        // Handed back: the scheduler loaded this thread's context again, with its interrupt switch as it saved it.
+        SetInterrupts(interrupts);
     }
 
     namespace
@@ -164,7 +176,10 @@ namespace wii::os
                 t_ranGuest = false;
                 PPCFunc* reschedule = PPC_LOOKUP_FUNC(base, g_game.reschedule);
                 PPCContext scratch = ctx;
+                // The scheduler turns interrupts off to switch; this thread, interrupted with them on, resumes so.
+                const bool interrupts = InterruptsEnabled();
                 reschedule(scratch, base);
+                SetInterrupts(interrupts);
             }
             t_ranGuest = false;
         }
@@ -177,6 +192,16 @@ namespace wii::os
         t_interrupted = previous;
         t_ranGuest = false; // idle: the scheduler's loop picks the thread
         return ran;
+    }
+
+    void PollEvents(PPCContext& ctx, uint8_t* base)
+    {
+        PPCContext* previous = std::exchange(t_interrupted, &ctx);
+        Processor& processor = TheProcessor();
+        const bool ran = processor.RunPending() || processor.WaitForEvent(std::chrono::milliseconds(1));
+        t_interrupted = previous;
+        if (ran)
+            Reschedule(ctx, base);
     }
 
     void RunPendingEvents(PPCContext& ctx, uint8_t* base)

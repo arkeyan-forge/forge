@@ -834,7 +834,7 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # The Wii host's pieces (docs/runtime/wii/): its address space, the executable's loader, the boot information, the
 # guest's messages.
 add_library(ArkeyanWii STATIC wii/ax.cpp wii/boot_info.cpp wii/executable.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp
-    wii/processor.cpp wii/settings.cpp)
+    wii/module.cpp wii/processor.cpp wii/settings.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
 target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles)
 # Synthetic executables in a mapped address space, the NAND in a scratch folder: ./ArkeyanWiiTest [scratch dir]
