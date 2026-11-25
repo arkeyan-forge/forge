@@ -851,7 +851,8 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # The Wii host's pieces (docs/runtime/wii/): its address space, the executable's loader, the boot information, the
 # guest's messages.
 add_library(ArkeyanWii STATIC wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp wii/gx_fifo.cpp
-    wii/gx_texture.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp wii/processor.cpp wii/settings.cpp)
+    wii/gx_texture.cpp wii/gx_vertex.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp wii/processor.cpp
+    wii/settings.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
 target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles)
 # Synthetic executables in a mapped address space, the NAND in a scratch folder: ./ArkeyanWiiTest [scratch dir]
@@ -862,6 +863,9 @@ target_link_libraries(ArkeyanAxMixTest PRIVATE ArkeyanWii)
 # GX's FIFO: the write-gather pipe's lines, the command processor on hand-made commands: ./ArkeyanGxFifoTest
 add_executable(ArkeyanGxFifoTest wii/gx_fifo_test.cpp)
 target_link_libraries(ArkeyanGxFifoTest PRIVATE ArkeyanWii)
+# GX's vertices decoded and its primitives as triangle lists: ./ArkeyanGxVertexTest
+add_executable(ArkeyanGxVertexTest wii/gx_vertex_test.cpp)
+target_link_libraries(ArkeyanGxVertexTest PRIVATE ArkeyanWii)
 
 # The GX texture formats decoded from pictures the test encodes: ./ArkeyanGxTextureTest
 add_executable(ArkeyanGxTextureTest wii/gx_texture_test.cpp)

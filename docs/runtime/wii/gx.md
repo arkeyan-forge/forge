@@ -49,7 +49,38 @@ draws through the engine's GX.
 - **The counters**: `[vi] frame buffer N` logs the lines, commands, draws, vertices, lists and copies since the last
   frame buffer (frames 1-3, 60, 600).
 
-**Not yet**: the draws drawn (the vertices decoded and transformed, TEV, the textures, the EFB copies to the frame
+## Vertices
+[`runtime/wii/gx_vertex.h`](../../../runtime/wii/gx_vertex.h) exposes `Vertex` and `DecodeVertices`: a draw's raw
+bytes become positions, normal/binormal/tangent vectors, two RGBA byte colours, eight texture coordinates and their
+matrix indices, without allocation or a GPU. The descriptor (CP `0x50`/`0x60`) selects absent, direct, 8-bit indexed
+or 16-bit indexed attributes; the draw's VAT slot selects CP `0x70`/`0x80`/`0x90` plus its format. Sizes agree with
+`CommandProcessor::VertexSize`. Absent components are zero, including z for xy positions and t for s-only texture
+coordinates. Absent matrix indices use CP `0x30` (position, then textures 0-3 in six-bit fields) and `0x40`
+(textures 4-7); present indices retain the vertex's byte.
+
+Position and texture components are big-endian u8, s8, u16, s16 divided by `2^shift`, or f32 unchanged. The position's
+shift is VAT A bits 4-8; texture 0's is A bits 25-29; textures 1-3 use B bits 4-8, 13-17, 22-26; textures 4-7 use C
+bits 0-4, 9-13, 18-22, 27-31. Normals use s8/64, s16/16384 or f32; NBT contains nine components in normal, binormal,
+tangent order. Colours decode RGB565, RGB888 and RGB888x as opaque (x ignored), and RGBA4444, RGBA6666 and RGBA8888
+with alpha. Packed channels expand by bit replication; RGBA6666 takes R, G, B, A as six bits each, high first.
+
+An indexed attribute reads array 0 (position), 1 (normal), 2-3 (colours), or 4-11 (textures), at physical base
+CP `0xA0 + array` plus index times stride CP `0xB0 + array`. The cached address is `0x80000000 | (physical & 0x1FFFFFFF)`;
+the entire attribute must pass `InMemory` before it is read. Failure returns false and may leave partial output.
+NBT uses one index to nine consecutive components, or, with VAT A bit 31 set, three indices to three components each.
+
+`TriangleListSize` gives the output index count and `TriangleList` writes indices offset by `first`. Both quad
+opcodes produce `(0,1,2), (0,2,3)` for each four vertices. Triangles retain their order. Strip triangle i uses
+`(i,i+1,i+2)` when even and `(i+1,i,i+2)` when odd, preserving winding. Fans use `(0,i,i+1)` for i starting at 1.
+Incomplete quads or triangles are omitted; strips and fans below three vertices, lines, line strips and points
+produce no indices. Lines and points will use a separate drawing path.
+
+`ArkeyanGxVertexTest` (in `ctest`) uses synthetic vertices: every numeric and colour format, xy positions, normal
+and NBT encodings, all eight texture shifts, explicit and default matrices, both index widths in mapped MEM1 and
+MEM2, and rejected out-of-memory attributes. Each decode case checks its byte size against `VertexSize`; primitive
+tests check the lists, their winding, offsets and short counts. No game data or renderer is needed.
+
+**Not yet**: the draws drawn (the vertices transformed, TEV, the textures, the EFB copies to the frame
 buffer), the draw-done and token interrupts (`GXDrawDone`, `GXWaitDrawDone` skipped; `GXSetDrawSync`'s token written
 back by its hook), an unlinked GP FIFO (a game that fills one FIFO while the GP reads another).
 
