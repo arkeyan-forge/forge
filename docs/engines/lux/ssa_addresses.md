@@ -49,6 +49,11 @@ Detail: [engine_notes.md](engine_notes.md) §3.17 (verbatim) + `games/ssa/config
 | 0x827FD4D8 → 0x82864B90 | audio language (hooked) | [V] |
 | 0x82156A00 | file package current language | [V] |
 | 0x827F4400 | cutscene Bink voice track (hooked) | [V] |
+| 0x826C1930 | `lux::UITextDialog` update, a spoken line's box (hooked: [dialogue_skip.md](dialogue_skip.md)) | [V] |
+| 0x827C79A0 | `lux::CinemaTrigger` update, its skip and its end (hooked) | [V] |
+| 0x827C3338 | `lux::CinemaTrigger` end (hooked) | [V] |
+| 0x8289BE28 | an animation's step: time += rate * step, the end counted | [V] |
+| 0x829382A8 | the script command `game_lock_control`: sets or reads the hero's lock (`game::ControlLocks`, 0x82CA3700 + 80) | [V] |
 | 0x8215B030 | save manager singleton | [V] |
 | 0x82853428 / 0x82853530 / 0x828536C0 | device selector / poll / open content | [V] |
 | 0x828538E8 / 0x828539F8 | SaveSlot / LoadSlot | [V] |

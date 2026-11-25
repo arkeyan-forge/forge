@@ -500,6 +500,11 @@ target_include_directories(ArkeyanAddressProtectTest PRIVATE .)
 add_executable(ArkeyanFrameLimiterTest kernel/frame_limiter_test.cpp)
 target_include_directories(ArkeyanFrameLimiterTest PRIVATE .)
 
+# The spoken-line skip: which presses close a line, the cinematic played fast (engines/lux/dialogue_skip.h; no game
+# data): ./ArkeyanDialogueSkipTest
+add_executable(ArkeyanDialogueSkipTest ${CMAKE_SOURCE_DIR}/engines/lux/tests/dialogue_skip_test.cpp)
+target_include_directories(ArkeyanDialogueSkipTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/lux)
+
 # The texts that name the Start button, shown as its picture (engines/alchemy/prompt_text.h; no game data): ./ArkeyanPromptTextTest
 add_executable(ArkeyanPromptTextTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/prompt_text_test.cpp)
 target_include_directories(ArkeyanPromptTextTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)

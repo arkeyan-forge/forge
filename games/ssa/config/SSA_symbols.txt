@@ -117,6 +117,9 @@
 
 # Engine
 0x827F5E80 GameMaster_IntroMovies         # main-thread loop over the 4 intro movies (legal, atvilogo, xpeclogo, tfb)
+0x826C1930 TextDialog_Update              # lux::UITextDialog's update: +12 done, +63 hand advance, +84 voice
+0x827C79A0 Cinematic_Update               # lux::CinemaTrigger's update (f1 the step in seconds): its skip, its end
+0x827C3338 Cinematic_End                  # lux::CinemaTrigger's end, natural or skipped
 0x82852D90 Movie_Update                   # BinkWait/BinkDoFrame/BinkNextFrame, done when FrameNum == Frames
 0x82635CF8 JobWorker_Loop                 # "JQ Worker" thread body
 0x826360F8 JobGroup_Wait                  # executes pending jobs on the caller while the group counters are non-zero

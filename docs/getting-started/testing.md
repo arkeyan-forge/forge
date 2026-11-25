@@ -122,7 +122,7 @@ What happens (3 runs, shared machine; `SKY_TRACE_FILES=1` shows the file opens):
 | intro movies (legal, atvilogo, xpeclogo, tfb) end at once, the frontend loads | ~1.3 s |
 | START: title -> autosave notice; A: "Skyland Adventures" -> "Start a New Game" -> slot 1 -> save | 17-18.5 s |
 | story movie `sl_sc01.bik` opens and ends at once, `levels\level_027\mission.str` opens | 20.8-22.3 s |
-| B skips the in-level cutscene ("B Skip"); Hugo's lines play (not skippable, ~40 s) | |
+| B skips the in-level cutscene ("B Skip") and a line of the next cinematic; Hugo's lines play (~20 s; B skips them: `tools/regress/ssa_dialogue_skip.sh`, [dialogue_skip.md](../engines/lux/dialogue_skip.md)) | |
 | "This Skylander is visiting from another adventure" dialog (and a save) | 65-73 s |
 
 The run ends on that dialog; A on it ("No") enters play. Kill at 90 s for margin; level frames are drawn from ~22 s.
