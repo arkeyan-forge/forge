@@ -1,6 +1,6 @@
 # Skylanders SuperChargers Racing (racing)
 
-> **Purpose:** which disc SuperChargers Racing needs, how far its port is, and what is next · **Status:** current (2026-11-25) · **Tags:** [V]
+> **Purpose:** which disc SuperChargers Racing needs, how far its port is, and what is next · **Status:** current (2026-11-26) · **Tags:** [V]
 
 ## At a glance
 | | |
@@ -72,6 +72,11 @@ With `write_gather_pipe` (4,644 stores of the translation the host's, 29 of them
 after 115 gathered lines (1,011 commands, a draw of 4 vertices, 2 EFB copies), then each frame of the main loop 22 lines,
 90 commands, 3 draws of 4 vertices and one copy; no opcode the command processor does not know
 ([gx.md](../../../docs/runtime/wii/gx.md)).
+
+## Remote 1 [V] (2026-11-26)
+`WPADProbe` and `KPADRead` answered by the host ([remotes.md](../../../docs/runtime/wii/remotes.md)): the input
+manager finds remote 1 and reads one sample a frame. With `SKY_WII_PRESS=A@60+5` the game leaves the wrist-strap
+screen: by frame 600 it draws the language menu (106 draws, 20 display lists a frame, where the strap screen has 3).
 
 ## Next
 1. GX: the draws drawn (vertices, TEV, textures, the EFB copy to the frame buffer), the frames shown.

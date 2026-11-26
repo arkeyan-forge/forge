@@ -1,5 +1,8 @@
 #include "wii/os.h"
 #include "wii/gx_fifo.h"
+#include "wii/memory_map.h"
+#include "wii/remote.h"
+#include "host/env.h"
 #include "kernel/guest_format.h"
 #include "ppc_context.h"
 #include <atomic>
@@ -53,6 +56,11 @@ namespace wii::os
         {
             const uint8_t* p = base + address;
             return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
+        }
+        void Write32(uint8_t* base, uint32_t address, uint32_t value)
+        {
+            for (int i = 0; i < 4; i++)
+                base[address + i] = uint8_t(value >> (24 - 8 * i));
         }
 
         // Interrupts turned on. With a thread running, the events posted meanwhile run now. With none (the scheduler
@@ -136,6 +144,41 @@ namespace wii::os
                 fprintf(stderr, "[os] %s: skipped (the host answers this hardware later)\n", function);
         }
         ctx.r3.u64 = result;
+    }
+
+    void WpadProbe(PPCContext& ctx, uint8_t* base)
+    {
+        constexpr int32_t NoController = -1;
+        constexpr uint32_t NotFound = 253; // WPAD_DEV_NOT_FOUND
+        const bool first = ctx.r3.u32 == 0;
+        if (ctx.r4.u32 != 0 && InMemory(ctx.r4.u32, 4))
+            Write32(base, ctx.r4.u32, first ? 0 : NotFound);
+        ctx.r3.s64 = first ? 0 : NoController;
+    }
+
+    void KpadRead(PPCContext& ctx, uint8_t* base)
+    {
+        const uint32_t status = ctx.r4.u32;
+        if (ctx.r3.u32 != 0 || ctx.r5.u32 == 0 || !InMemory(status, remote::StatusSize))
+        {
+            ctx.r3.u64 = 0;
+            return;
+        }
+        static const bool scripted = [] {
+            if (const char* text = skyenv::Get("SKY_WII_PRESS"))
+            {
+                std::vector<remote::Press> presses;
+                std::string error;
+                if (remote::ParseScript(text, presses, error))
+                    remote::First().SetScript(std::move(presses));
+                else
+                    fprintf(stderr, "[remote] SKY_WII_PRESS: %s\n", error.c_str());
+            }
+            return true;
+        }();
+        (void)scripted;
+        remote::First().Sample(base + status);
+        ctx.r3.u64 = 1;
     }
 
     void DrawSyncReached(uint8_t* base, uint16_t token)
