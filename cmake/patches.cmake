@@ -14,8 +14,22 @@ function(arkeyan_apply_patch directory patch)
     endif()
 endfunction()
 
-# XenonRecomp: missing instructions, fixes.
-arkeyan_apply_patch(${ARKEYAN_PATCH_ROOT}/thirdparty/XenonRecomp ${ARKEYAN_PATCH_ROOT}/patches/xenonrecomp.patch)
+# Patches that change the lines around each other's: applied in order unless the last one already is (the first's
+# reverse check fails once a later one changed its context).
+function(arkeyan_apply_patch_chain directory)
+    list(GET ARGN -1 last)
+    execute_process(COMMAND git apply --reverse --check ${last}
+        WORKING_DIRECTORY ${directory} RESULT_VARIABLE already_applied OUTPUT_QUIET ERROR_QUIET)
+    if(NOT already_applied EQUAL 0)
+        foreach(patch IN LISTS ARGN)
+            arkeyan_apply_patch(${directory} ${patch})
+        endforeach()
+    endif()
+endfunction()
+
+# XenonRecomp: missing instructions, fixes; then the Wii's write-gather pipe, its stores the host's (write_gather_pipe).
+arkeyan_apply_patch_chain(${ARKEYAN_PATCH_ROOT}/thirdparty/XenonRecomp ${ARKEYAN_PATCH_ROOT}/patches/xenonrecomp.patch
+    ${ARKEYAN_PATCH_ROOT}/patches/xenonrecomp_gather_pipe.patch)
 # XenosRecomp: Skylanders shader conventions; shaders it cannot translate are skipped instead of aborting.
 arkeyan_apply_patch(${ARKEYAN_PATCH_ROOT}/thirdparty/XenosRecomp ${ARKEYAN_PATCH_ROOT}/patches/xenosrecomp.patch)
 # plume: MinGW headers, UWP CoreWindow swapchains, pipelines Metal rejects reported as null.

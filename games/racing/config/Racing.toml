@@ -11,6 +11,8 @@ out_directory_path = "../ppc"
 switch_table_file_path = "Racing_switch_tables.toml"
 # The 750CL's paired singles and quantized loads and stores (docs/tools/toolchain/xenonrecomp.md, "The 750CL").
 paired_singles = true
+# The write-gather pipe: GX's commands, which the host's FIFO takes (docs/runtime/wii/gx.md).
+write_gather_pipe = 0xCC008000
 
 # Every register in the context for now: the *_as_local options wait for the first boot.
 skip_lr = false

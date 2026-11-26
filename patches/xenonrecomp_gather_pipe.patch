@@ -1,0 +1,136 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index 0089025..40d1a99 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -379,7 +379,13 @@ bool Recompiler::Recompile(
+     // TODO (Sajid): Check for out of bounds access
+     auto mmioStore = [&]() -> bool
+         {
+-            return *(data + 1) == c_eieio;
++            // A store's address registers are its operands 1 and 2 (rA and rB indexed, the displacement and rA
++            // otherwise); a displacement read as a register only adds a store the host checks for nothing.
++            const auto gather = [&](size_t index) {
++                return index < 8 && insn.operands[index] < 32 &&
++                    (gatherRegisters >> insn.operands[index] & 1) != 0;
++            };
++            return *(data + 1) == c_eieio || gather(1) || gather(2);
+         };
+ 
+     auto printFunctionCall = [&](uint32_t address)
+@@ -2767,11 +2773,59 @@ void Recompiler::FindContextFunctions()
+     fmt::println("{} functions keep every register in the context", contextFunctions.size());
+ }
+ 
++uint32_t Recompiler::GatherRegisters(const Function& fn)
++{
++    // The registers that hold the pipe's address anywhere in the function: set by lis to its upper half (what the
++    // SDK's inline GX writes compile to, the store's displacement then reaching it), or copied from one by mr, addi or
++    // addis. Flow-insensitive: a register that also holds other addresses elsewhere only makes those stores checked.
++    if (config.writeGatherPipe == 0)
++        return 0;
++    const auto* words = (const uint32_t*)image.Find(fn.base);
++    if (words == nullptr)
++        return 0;
++    uint32_t set = 0;
++    for (bool grew = true; grew;)
++    {
++        grew = false;
++        for (size_t at = 0; at < fn.size / 4; at++)
++        {
++            ppc_insn insn;
++            ppc::Disassemble(words + at, 4, fn.base + at * 4, insn);
++            if (insn.opcode == nullptr || insn.operands[0] >= 32)
++                continue;
++            const uint32_t d = insn.operands[0];
++            bool points = false;
++            switch (insn.opcode->id)
++            {
++            case PPC_INST_LIS:
++            {
++                const int64_t high = int64_t(int32_t(insn.operands[1] << 16));
++                const int64_t pipe = int64_t(int32_t(config.writeGatherPipe));
++                points = pipe - high >= -0x8000 && pipe - high < 0x8000;
++                break;
++            }
++            case PPC_INST_MR:
++            case PPC_INST_ADDI:
++            case PPC_INST_ADDIS:
++                points = insn.operands[1] < 32 && (set >> insn.operands[1] & 1) != 0;
++                break;
++            }
++            if (points && (set >> d & 1) == 0)
++            {
++                set |= 1u << d;
++                grew = true;
++            }
++        }
++    }
++    return set;
++}
++
+ bool Recompiler::Recompile(const Function& fn)
+ {
+     auto base = fn.base;
+     auto end = base + fn.size;
+     auto* data = (uint32_t*)image.Find(base);
++    gatherRegisters = GatherRegisters(fn);
+ 
+     static std::unordered_set<size_t> labels;
+     labels.clear();
+diff --git a/XenonRecomp/recompiler.h b/XenonRecomp/recompiler.h
+index 758d789..285f172 100644
+--- a/XenonRecomp/recompiler.h
++++ b/XenonRecomp/recompiler.h
+@@ -72,6 +72,10 @@ struct Recompiler
+ 
+     bool Recompile(const Function& fn);
+ 
++    // The registers the function being translated points at the write-gather pipe, a bit each (GatherRegisters).
++    uint32_t gatherRegisters = 0;
++    uint32_t GatherRegisters(const Function& fn);
++
+     void Recompile(const std::filesystem::path& headerFilePath);
+ 
+     void SaveCurrentOutData(const std::string_view& name = std::string_view());
+diff --git a/XenonRecomp/recompiler_config.h b/XenonRecomp/recompiler_config.h
+index 1d488ab..21b6117 100644
+--- a/XenonRecomp/recompiler_config.h
++++ b/XenonRecomp/recompiler_config.h
+@@ -42,6 +42,9 @@ struct RecompilerConfig
+     bool nonVolatileRegistersAsLocalVariables = false;
+     // The 750CL's code (Wii, GameCube): paired singles and quantized loads and stores (recompiler_750cl.inl).
+     bool pairedSingles = false;
++    // The write-gather pipe's address (the Wii's 0xCC008000), 0 for none: the stores through a register a function
++    // points at it are translated as PPC_MM_STORE_* (and PPC_MM_STORE_PAIRED), which the host routes to its FIFO.
++    uint32_t writeGatherPipe = 0;
+     uint32_t restGpr14Address = 0;
+     uint32_t saveGpr14Address = 0;
+     uint32_t restFpr14Address = 0;
+diff --git a/XenonRecomp/recompiler_config.cpp b/XenonRecomp/recompiler_config.cpp
+index 616ab1c..e6a6f82 100644
+--- a/XenonRecomp/recompiler_config.cpp
++++ b/XenonRecomp/recompiler_config.cpp
+@@ -27,6 +27,7 @@ void RecompilerConfig::Load(const std::string_view& configFilePath)
+         nonArgumentRegistersAsLocalVariables = main["non_argument_as_local"].value_or(false);
+         nonVolatileRegistersAsLocalVariables = main["non_volatile_as_local"].value_or(false);
+         pairedSingles = main["paired_singles"].value_or(false);
++        writeGatherPipe = main["write_gather_pipe"].value_or(0u);
+ 
+         restGpr14Address = main["restgprlr_14_address"].value_or(0u);
+         saveGpr14Address = main["savegprlr_14_address"].value_or(0u);
+diff --git a/XenonRecomp/recompiler_750cl.inl b/XenonRecomp/recompiler_750cl.inl
+index a934377..0564af3 100644
+--- a/XenonRecomp/recompiler_750cl.inl
++++ b/XenonRecomp/recompiler_750cl.inl
+@@ -170,8 +170,9 @@
+             println("\tPPCLoadPaired(base, {}, ctx.gqr[{}], {}, {}, {});", ea(), i, w != 0 ? "true" : "false",
+                 PS_HALF(d, 0), PS_HALF(d, 1));
+         else
+-            println("\tPPCStorePaired(base, {}, ctx.gqr[{}], {}, {}, {});", ea(), i, w != 0 ? "true" : "false",
+-                PS_HALF(d, 0), PS_HALF(d, 1));
++            println("\t{}(base, {}, ctx.gqr[{}], {}, {}, {});",
++                (gatherRegisters >> ra & 1) != 0 ? "PPC_MM_STORE_PAIRED" : "PPCStorePaired", ea(), i,
++                w != 0 ? "true" : "false", PS_HALF(d, 0), PS_HALF(d, 1));
+         if (update)
+             println("\t{}.u32 = {};", r(ra), ea());
+         break;

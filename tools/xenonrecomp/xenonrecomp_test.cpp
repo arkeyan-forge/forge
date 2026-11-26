@@ -1,4 +1,24 @@
 // Runs XenonRecomp's translation of invented samples (sample_gen.cpp) on the host against the PowerPC semantics.
+#include <cstdint>
+
+// The write-gather pipe's stores, recorded instead of made (their address is past the samples' memory).
+struct GatherStore
+{
+    uint32_t address, bytes;
+    uint64_t value;
+};
+static GatherStore g_gather[8];
+static int g_gathered = 0;
+static void Gather(uint32_t address, uint32_t bytes, uint64_t value)
+{
+    if (g_gathered < 8)
+        g_gather[g_gathered++] = { address, bytes, value };
+}
+#define PPC_MM_STORE_U8(x, y) Gather(x, 1, y)
+#define PPC_MM_STORE_U16(x, y) Gather(x, 2, y)
+#define PPC_MM_STORE_U32(x, y) Gather(x, 4, y)
+#define PPC_MM_STORE_U64(x, y) Gather(x, 8, y)
+#define PPC_MM_STORE_PAIRED(base, ea, gqr, single, ps0, ps1) Gather(ea, (single) ? 4 : 8, uint64_t(ps0 * 1000 + ps1))
 #include <xenonrecomp_sample.h>
 #include <cmath>
 #include <cstdio>
@@ -535,9 +555,39 @@ static void FromElf(PPCContext& ctx)
     CHECK(ctx.r3.u32 == 0x8000AB11 && ctx.cr0.lt && !ctx.cr0.gt && !ctx.cr0.eq);
 }
 
+// The pipe's stores go to the host with their value; others stay plain.
+static void GatherPipe(PPCContext& ctx)
+{
+    static uint8_t pipeMemory[0x100];
+    ctx.r3.u64 = 0x11223344;
+    g_gathered = 0;
+    sample_gather_stw(ctx, pipeMemory);
+    sample_gather_sth(ctx, pipeMemory);
+    sample_gather_mr(ctx, pipeMemory);
+    CHECK(g_gathered == 3 && g_gather[0].address == 0xCC008000 && g_gather[0].bytes == 4 &&
+          g_gather[0].value == 0x11223344);
+    CHECK(g_gather[1].bytes == 2 && g_gather[1].value == 0x3344 && g_gather[2].bytes == 1 && g_gather[2].value == 0x44);
+    g_gathered = 0;
+    ctx.f1.f64 = 1.5;
+    sample_gather_stfs(ctx, pipeMemory);
+    float single = 0;
+    const uint32_t bits = uint32_t(g_gather[0].value);
+    memcpy(&single, &bits, 4);
+    CHECK(g_gathered == 1 && g_gather[0].address == 0xCC008000 && single == 1.5f);
+    g_gathered = 0;
+    ctx.ps1[1] = 2;
+    sample_gather_psq(ctx, pipeMemory);
+    CHECK(g_gathered == 1 && g_gather[0].address == 0xCC008000 && g_gather[0].bytes == 8 && g_gather[0].value == 1502);
+    g_gathered = 0;
+    ctx.r5.u64 = 0x10;
+    sample_gather_none(ctx, pipeMemory);
+    CHECK(g_gathered == 0 && pipeMemory[0x10] == 0x11 && pipeMemory[0x13] == 0x44);
+}
+
 int main()
 {
     static PPCContext ctx{};
+    GatherPipe(ctx);
     Shifts(ctx);
     Compare(ctx, sample_vcmpgtsb, 1, 0x05, 0xF0); // signed: 5 > -16
     Compare(ctx, sample_vcmpgtsh, 2, 0x05, 0xF0);

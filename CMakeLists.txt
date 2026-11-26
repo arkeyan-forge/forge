@@ -196,6 +196,8 @@ if(ARKEYAN_WII_PPC_DIR)
     target_include_directories(ArkeyanWiiRecompLib SYSTEM PUBLIC ${ARKEYAN_WII_PPC_DIR}
         ${CMAKE_SOURCE_DIR}/thirdparty/XenonRecomp/thirdparty/simde)
     target_compile_options(ArkeyanWiiRecompLib PRIVATE -fno-strict-aliasing -Wno-unused-label -Wno-unused-variable)
+    # The stores to the write-gather pipe go to the host's GX FIFO (runtime/wii/gather_pipe.h).
+    target_compile_options(ArkeyanWiiRecompLib PRIVATE -include ${CMAKE_SOURCE_DIR}/runtime/wii/gather_pipe.h)
     add_executable(ArkeyanWiiRuntime runtime/wii/main.cpp runtime/wii/os.cpp runtime/wii/threads.cpp
         runtime/wii/ios_calls.cpp runtime/wii/ios_devices.cpp runtime/wii/ios_disc.cpp runtime/wii/ios_nand.cpp
         runtime/wii/timers.cpp runtime/wii/audio.cpp
@@ -237,13 +239,13 @@ set_target_properties(ArkeyanNetplayTest PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${C
 # Our own targets only. ArkeyanRecompLib (generated code), thirdparty/, imgui and ArkeyanXenonUtils are left alone.
 sky_quality(ArkeyanRuntime)
 foreach(target ArkeyanRecompGpu ArkeyanRecompGpuTest ArkeyanArtReader ArkeyanHostFiles ArkeyanTexturePackTest ArkeyanRuntimeLauncherTest ArkeyanGameDataTest ArkeyanFileListTest ArkeyanPortablePackTest ArkeyanVfsTest
-        ArkeyanRvzTest ArkeyanWii ArkeyanWiiTest ArkeyanGxTextureTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
+        ArkeyanRvzTest ArkeyanWii ArkeyanWiiTest ArkeyanGxFifoTest ArkeyanGxTextureTest ArkeyanProgressTest ArkeyanAchievementsKernelTest ArkeyanGuestThreadTest)
     if(TARGET ${target})
         sky_quality(${target})
     endif()
 endforeach()
 # The tests that build by default and need no argument (the others run from tools/test_all.sh with a disc or a scratch folder).
-sky_add_tests(ArkeyanRvzTest ArkeyanWiiTest ArkeyanAxMixTest ArkeyanGxTextureTest ArkeyanTraceTest ArkeyanSchedulerTest ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanUwpSettingsTest ArkeyanGameOptionsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanDatadirTest
+sky_add_tests(ArkeyanRvzTest ArkeyanWiiTest ArkeyanAxMixTest ArkeyanGxFifoTest ArkeyanGxTextureTest ArkeyanTraceTest ArkeyanSchedulerTest ArkeyanNetplayTest ArkeyanSettingsTest ArkeyanUwpSettingsTest ArkeyanGameOptionsTest ArkeyanAudioDeviceTest ArkeyanPortalTest ArkeyanPortalAdpcmTest ArkeyanPortalHidReportTest ArkeyanPortalUsbTest ArkeyanPortalSpeakerTest ArkeyanSpeakersTest ArkeyanPortalAsyncTest ArkeyanFigureTest ArkeyanArtTest ArkeyanCollectionTest ArkeyanPictureLookupTest ArkeyanDatadirTest
     ArkeyanSavesTest ArkeyanGuestFormatTest ArkeyanVersionResourceTest ArkeyanRenderScaleTest ArkeyanPackSamplingTest ArkeyanUpscaleTest ArkeyanFrameGenTest ArkeyanSwapChainRecoveryTest ArkeyanGpuBackendTest ArkeyanFrameLimiterTest ArkeyanAddressProtectTest ArkeyanStallWatchTest ArkeyanFrameRateFallbackTest ArkeyanYieldBackOffTest ArkeyanPresentModeTest ArkeyanPresentRectTest ArkeyanRangeHashTest ArkeyanIndexConvertTest ArkeyanClockTest ArkeyanCrashSymbolsTest ArkeyanHeapViewTest ArkeyanWriteWatchTest ArkeyanReadFullyTest ArkeyanTiledDepthTest ArkeyanAutoScaleTest ArkeyanFirstFrameTest
     ArkeyanThunkSlotTest ArkeyanGuestLayoutTest ArkeyanVertexPairsTest ArkeyanFrameAnchorTest ArkeyanMrtAliasTest ArkeyanTargetWritesTest ArkeyanFloatScanTest ArkeyanStepPacerTest ArkeyanRingCursorTest ArkeyanRingRegistersTest ArkeyanUltrawideTest ArkeyanCommandsTest ArkeyanInputTest ArkeyanMouseTest ArkeyanSsaMenuTest ArkeyanAlchemyMenuTest ArkeyanJuiceMenuTest ArkeyanWindowSizeTest ArkeyanToyboxLookTest ArkeyanImguiSoftwareTest ArkeyanToyboxInPlayTest ArkeyanToyboxRealCopyTest ArkeyanToyboxPutOnTest ArkeyanToyboxOnlineBannerTest ArkeyanToyboxStripTest ArkeyanToyboxKeyMaskTest ArkeyanToyboxWheelKeysTest ArkeyanToyboxPadBindingsTest
     ArkeyanToyboxSwapTest ArkeyanToyboxGridTest ArkeyanToyboxTrapTest ArkeyanToyboxVersionGameTest ArkeyanToyboxAddListTest ArkeyanGlyphModelsTest ArkeyanProfilesTest ArkeyanPromptTextTest ArkeyanToyboxLinkTest ArkeyanPortalScriptTest ArkeyanZoneNameTest ArkeyanLevelRedirectTest ArkeyanLiveBlocksTest ArkeyanNightmareGateTest ArkeyanDialogueSkipTest

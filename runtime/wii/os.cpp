@@ -1,4 +1,5 @@
 #include "wii/os.h"
+#include "wii/gx_fifo.h"
 #include "kernel/guest_format.h"
 #include "ppc_context.h"
 #include <atomic>
@@ -147,7 +148,16 @@ namespace wii::os
     void FrameBuffer(PPCContext& ctx)
     {
         static int count = 0;
+        gx::CommandProcessor& gp = gx::Processor();
         if (++count <= 3 || count == 60 || count == 600)
-            fprintf(stderr, "[vi] frame buffer %d at 0x%08X\n", count, ctx.r3.u32);
+        {
+            const gx::Stats& stats = gp.Counters();
+            fprintf(stderr,
+                "[vi] frame buffer %d at 0x%08X; GX since the last: %u lines, %u commands, %u draws (%u vertices), "
+                "%u lists (%u bad), %u copies, %u unknown\n",
+                count, ctx.r3.u32, stats.lines, stats.commands, stats.draws, stats.vertices, stats.lists,
+                stats.badLists, stats.copies, stats.unknown);
+        }
+        gp.ResetCounters();
     }
 }
