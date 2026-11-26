@@ -127,7 +127,8 @@ namespace collection
     bool Read(const std::string& path, Figure& figure);
     // The figure a dump's image holds (toy, edition, progress), with none of the collection's metadata.
     Figure FigureOf(const FigureData& tag);
-    // Every dump of the folder that passes the filter, by category, element, toy type, variant, file name.
+    // Every dump of the folder that passes the filter, by category, element, toy type, variant, file name. Never a toy
+    // that comes with a trophy (Toy::FromTrophy).
     std::vector<Figure> List(const Filter& filter = {});
 
     // A new never-played swapper: both halves, linked (the toy types of a top and a bottom, 2000-2015 and 1000-1015; a
@@ -185,6 +186,9 @@ namespace collection
     // SuperChargers: a vehicle's gearbits (figures::SetGearbits), the rest of the dump kept. Refused for another toy, or a
     // vehicle the game never used (its first use writes the fields the gearbits sit beside).
     bool SetGearbits(const std::string& path, uint32_t gearbits, std::string* error = nullptr);
+    // SuperChargers: the villains a racing trophy captured (figures::SetTrophyVillains, bit i its i-th racing villain),
+    // the rest of the dump kept. Refused for another toy, a damaged trophy, or while another process uses it.
+    bool SetTrophyVillains(const std::string& path, uint8_t captured, std::string* error = nullptr);
     // Renames the dump (and its metadata and backups). `file` is a bare file name; the extension is kept if missing.
     bool Rename(const std::string& path, const std::string& file, std::string* error = nullptr);
 

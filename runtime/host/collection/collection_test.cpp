@@ -645,6 +645,30 @@ namespace
         CHECK(WriteStats(car, used) && Read(car, figure) &&
               LevelText(figure, "superchargers") == "Shield 2 · Weapon 1" &&
               LevelText(figure, "superchargers", true) == "Bouclier 2 · Arme 1");
+
+        // A racing trophy's captured villains (bit i, its i-th racing villain): written, read back, another write
+        // replaces them; the Kaos Trophy and other toys are refused. The racing villains and their vehicles come with a
+        // trophy, never as toys: a dump of one is never listed (issue #165).
+        const Toy* sky = catalogue.Find(3500);
+        CHECK(sky != nullptr && sky->racingVillains == std::vector<uint16_t>({ 3440, 3441, 3442, 3443 }) &&
+              catalogue.Find(3503) != nullptr && catalogue.Find(3503)->racingVillains.empty());
+        CHECK(catalogue.Find(3440)->FromTrophy() && catalogue.Find(3467)->FromTrophy() &&
+              catalogue.Find(3470)->FromTrophy() && catalogue.Find(3497)->FromTrophy() && !sky->FromTrophy() &&
+              !vehicle->FromTrophy() && !fiesta->FromTrophy());
+        std::string trophy = Create(3500), kaos = Create(3503), pepper = Create(3440), toaster = Create(3470);
+        CHECK(Read(trophy, figure) && figures::TrophyVillains(figure.stats) == 0);
+        CHECK(SetTrophyVillains(trophy, 0x09) && Read(trophy, figure) && figure.state == figures::AreaState::Valid &&
+              figures::TrophyVillains(figure.stats) == 0x09);
+        CHECK(SetTrophyVillains(trophy, 0x06) && Read(trophy, figure) && figures::TrophyVillains(figure.stats) == 0x06);
+        CHECK(!SetTrophyVillains(kaos, 1, &error) && error == "not a racing trophy");
+        CHECK(!SetTrophyVillains(fiestaDump, 1, &error) && error == "not a racing trophy");
+        std::vector<Figure> listed = List();
+        auto listedHas = [&listed](const std::string& path) {
+            return std::any_of(listed.begin(), listed.end(), [&path](const Figure& f) { return f.path == path; });
+        };
+        CHECK(listedHas(trophy) && listedHas(kaos) && !listedHas(pepper) && !listedHas(toaster));
+        for (const std::string& path : { trophy, kaos, pepper, toaster })
+            CHECK(Delete(path));
         CHECK(Delete(car) && Delete(fiestaDump));
     }
 

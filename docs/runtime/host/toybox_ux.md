@@ -307,6 +307,17 @@ the in-game twin of Arkeyan Launcher's Edit ("villain list + Evolved switch", 0.
   Water Trap holding the Gulper in the tutorial, LT plays the Gulper, the trap's page goes to Chill Bill, A, and LT
   plays Chill Bill (`\character\1019_*.arc` opens).
 
+
+### A trophy's villains [SuperChargers] (built 2026-11-25, issue #165)
+
+A Sky, Land or Sea Trophy's Figure page has, under Put on / Take off, one row per villain it can capture (the
+catalogue's `racing_villains`, four each): the villain's name and **"captured: races in Racing"** or **"not captured"**
+(**capturé** / **pas capturé**), the in-game twin of Arkeyan Launcher's Edit switches. A, Left or Right flips the row and
+writes at once (`Model::PutCaptured`: `collection::SetTrophyVillains`, the trophy lifted off the emulated portal and put
+back so that the game reads it again; a real portal's trophy says **"Take the trophy off the portal first"**). The game
+shows a captured villain at Racing's driver select, with its own vehicle (`games/superchargers/docs/toybox.md`, "Racing
+villains"). Add a figure never lists a racing villain or its vehicle, and the shelf never shows a dump of one
+(`Toy::FromTrophy`): they are no toys. Proof: `ArkeyanCollectionTest` (the write, the list), `ArkeyanToyboxAddListTest`.
 ### Prepared in the launcher, live in the game
 
 - The launcher prepares **the portal at the next start** of a game that can start with prepared seats (one with a

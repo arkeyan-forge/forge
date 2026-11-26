@@ -40,6 +40,10 @@ namespace toybox
             Unlock,
             Villain, // a trap: the villain it holds (Left / Right choose, A puts it in)
             Evolved, // ...and whether that villain is evolved
+            Captured0, // a racing trophy: whether it captured its first racing villain (A flips it)
+            Captured1,
+            Captured2,
+            Captured3,
             EditStats,
             ChangeHalf,
             Rename,
@@ -56,6 +60,17 @@ namespace toybox
         };
 
         std::string FileName(const std::string& path) { return path.substr(path.find_last_of("/\\") + 1); }
+
+        // A racing trophy's villain rows: one per villain it can capture (Catalogue: racing_villains), none for a
+        // damaged one. `index` of a Captured row: its villain's bit (figures::TrophyVillains).
+        size_t CapturedRows(const Figure& f)
+        {
+            if (f.toy == nullptr || f.state == figures::AreaState::Damaged)
+                return 0;
+            return std::min<size_t>(f.toy->racingVillains.size(), figures::TrophyVillainCount);
+        }
+        bool IsCaptured(Action action) { return action >= Action::Captured0 && action <= Action::Captured3; }
+        int CapturedIndex(Action action) { return int(action) - int(Action::Captured0); }
 
         bool PlayerSeat(const SeatState& s) { return s.seat.player > 0 && s.seat.id.starts_with('p'); }
 
@@ -2626,6 +2641,8 @@ namespace toybox
                 actions.push_back(Action::Villain);
                 actions.push_back(Action::Evolved);
             }
+            for (size_t i = 0; i < CapturedRows(f); i++)
+                actions.push_back(Action(int(Action::Captured0) + int(i)));
             actions.push_back(KeepsProgress(f) ? Action::EditStats : Action::Rename);
             if (f.IsSwapTop() || f.IsSwapBottom())
                 actions.push_back(Action::ChangeHalf);
@@ -2699,6 +2716,20 @@ namespace toybox
                         : f.stats.villainEvolved ? L("on: its evolved look", "oui : son apparence évoluée")
                                                  : L("off", "non")));
                 break;
+            case Action::Captured0:
+            case Action::Captured1:
+            case Action::Captured2:
+            case Action::Captured3:
+            {
+                const int bit = CapturedIndex(a);
+                const Toy* villain = Catalogue::Get().Find(f.toy->racingVillains[size_t(bit)]);
+                const bool captured = (figures::TrophyVillains(f.stats) >> bit & 1) != 0;
+                lines.push_back((villain != nullptr ? villain->name : std::string("?")) + "\t" +
+                                (!busy.empty() ? busy
+                                    : captured ? L("captured: races in Racing", "capturé : court en mode Course")
+                                               : L("not captured", "pas capturé")));
+                break;
+            }
             case Action::EditStats:
                 lines.push_back(std::string(L("Edit", "Modifier")) + "\t" +
                                 (!busy.empty() ? busy
@@ -2823,6 +2854,42 @@ namespace toybox
                         : name + L(" is in the trap", " est dans le piège"));
     }
 
+    // A racing trophy's villain captured, or set free (collection::SetTrophyVillains). On the emulated portal the trophy is
+    // lifted and put back around the write, so that the game reads it again; a real portal's trophy is taken off first.
+    void Model::PutCaptured(int bit)
+    {
+        const Figure& f = figures[figure];
+        std::string path = f.path;
+        for (const SeatState& s : seats)
+        {
+            if (s.physical && s.physicalKnown && s.physicalType == f.type)
+            {
+                Toast(L("Take the trophy off the portal first", "Retirez d'abord le trophée du portail"), 5);
+                return;
+            }
+        }
+        const Toy* villain = Catalogue::Get().Find(f.toy->racingVillains[size_t(bit)]);
+        std::string villainName = villain != nullptr ? villain->name : std::string();
+        const uint8_t captured = uint8_t(figures::TrophyVillains(f.stats) ^ (1u << bit));
+        const bool on = (captured >> bit & 1) != 0;
+        int s = SeatOf(path);
+        int slot = s >= 0 ? seats[s].slot : -1;
+        if (slot >= 0)
+            PortalRemoveFigure(slot);
+        std::string error;
+        bool done = SetTrophyVillains(path, captured, &error);
+        if (slot >= 0)
+            PortalPlaceFigureAt(path, slot);
+        fprintf(stderr, "[toybox] trophy %s: villains %X%s\n", f.file.c_str(), unsigned(captured),
+            done ? (slot >= 0 ? ", lifted and put back" : "") : " not written");
+        Reload();
+        figure = FindFigure(path);
+        BuildList();
+        Toast(!done ? L("Could not save: ", "Échec de l'enregistrement : ") + error
+              : on  ? villainName + L(" is captured", " est capturé")
+                    : villainName + L(" is free", " est libre"));
+    }
+
     void Model::RunFigure(Command command)
     {
         int count = int(FigureActions().size());
@@ -2839,7 +2906,7 @@ namespace toybox
             Action action = figureAction < int(actions.size()) ? actions[figureAction] : Action::More;
             if (action == Action::Villain)
                 trapPick = StepVillain(TrapVillainsOf(figures[figure]), TrapPick(), command == Command::Right ? 1 : -1);
-            else if (action == Action::Evolved)
+            else if (action == Action::Evolved || IsCaptured(action))
                 DoFigureAction(figureAction);
             break;
         }
@@ -2889,7 +2956,7 @@ namespace toybox
         Action action = actions[index];
         bool writes = action == Action::EditStats || action == Action::Rename || action == Action::Restore ||
                       action == Action::Reset || action == Action::Delete || action == Action::ChangeHalf ||
-                      action == Action::Villain || action == Action::Evolved;
+                      action == Action::Villain || action == Action::Evolved || IsCaptured(action);
         if (writes && netplay::Online())
         {
             Toast(L(
@@ -2969,6 +3036,10 @@ namespace toybox
             else
                 PutVillain(uint8_t(f.stats.villain), !f.stats.villainEvolved);
             break;
+        case Action::Captured0:
+        case Action::Captured1:
+        case Action::Captured2:
+        case Action::Captured3: PutCaptured(CapturedIndex(action)); break;
         case Action::ChangeHalf: OpenHalf(); break;
         case Action::Rename:
         {

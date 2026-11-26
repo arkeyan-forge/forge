@@ -416,6 +416,27 @@ Crusher to the end of the rift tunnel ride, then the same with that Crypt Crushe
   not known), the vehicle's level (the HUD's "1"), 0x80+2 (a counter both figures advance at each write), +0x03 and +0x06.
 - **Research tool**: `ArkeyanFigureTest --diff <before> <after>` lists every decrypted byte two tags differ in (trailers left out).
 
+## SuperChargers' trophies [Alchemy] [SuperChargers] (2026-11-25, issue #165)
+
+**Captured villains: the first area's 0x14** [V], in both copies (the area checksums as for a character):
+`figures::TrophyVillains` / `SetTrophyVillains` (`FigureStats::ssaHat`'s low bits), `collection::SetTrophyVillains`.
+Bit i is the trophy's i-th racing villain, the toy type `base + i` (the catalogue's `racing_villains`): the Sky Trophy
+(3500) Chef Pepper Jack, Stratosfear, Cap'n Cluck, Wolfgang (3440-3443); the Land Trophy (3501) Glumshanks, Dragon
+Hunter, Moneybone, Chompy Mage (3450-3453); the Sea Trophy (3502) Mesmeralda, Captain Frightbeard, Golden Queen,
+Spellslamzer (3460-3463). The Kaos Trophy (3503) needs none: Kaos comes with it.
+- **How it was found** (runs `race1`-`race11`, Europe disc, the 0.9.10b2 kit, emulated portal; Racing > Single Player >
+  Single Race, the trophy of the track's type on the portal): the driver select shows the trophy's four villains in a
+  row under the drivers, padlocked. A trophy with every byte of one region set was swapped in while that screen was
+  open; the first area unlocked them, the extra area did not, and halving the bytes led to 0x12-0x17, then 0x14: each bit
+  alone unlocked one villain about 10 s after the trophy arrived, and the names the game shows on focus gave the order.
+  A blank trophy made by our tools with the bits set works the same; the game keeps the byte when it writes the trophy.
+- **Not where the public notes put it**: they give one byte "at offset 0x04" (a Wii racing edition); the first area's
+  0x04 (the gold's high byte) and the extra area's +0x04 were tried and unlock nothing on this disc.
+- **The game's own way** to set it, Boss Pursuit (a won race captures its villain), was not run [?].
+- **What a captured villain does**: it is chosen at the driver select and races with its own vehicle, which the trophy
+  brings too (run `race8`: Wolfgang on Sub Woofer, Cloud Factory, 60 s with the accelerator held, no fault). The same
+  villain or vehicle as a toy of its own is no use: [toybox.md](../../../games/superchargers/docs/toybox.md#racing-villains-issue-165).
+
 ## Owner (block 6) [Alchemy] [SwapForce] [SuperChargers] [Imaginators] (2026-11-11, Arkeyan Launcher issue #28)
 
 **What it is** [V]. A game that registers a toy writes its player's owner in block 6 (plain): a kind byte, then the id,

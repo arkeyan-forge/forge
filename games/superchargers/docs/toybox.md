@@ -11,7 +11,7 @@ fields of the tag ([figures.md](../../../docs/runtime/host/figures.md#supercharg
 | Seats | Player 1, **Vehicle 1**, Player 2, **Vehicle 2**, Magic item / trophy, **Trap**; a vehicle seat takes a supported vehicle only, never a racing villain's (3470-3497, issue #135: the game crashes after one arrives in the Academy), Trap takes traps only (host tests; the trap's in-game reward remains to check) |
 | Vehicles | 20 types (3220-3241), 13 decos from the owner's dumps (Dark, Legendary, Power Blue, Nitro, Golden, E3, holiday, chase); a blank one made by the Toy Box or `new:<type>` is read and driven (`undeadcar.pak` opens when the game reads Crypt Crusher, 181 s into a new game) |
 | A vehicle's card and sheet | the card "Shield 2 · Weapon 1" (the garage's upgrades, [figures.md](../../../docs/runtime/host/figures.md#superchargers-vehicles-alchemy-superchargers)), the sheet "Gearbits: N · shield 2/5 · weapon 1/5 · driven <time>" once the game used it, "New: never driven" before; gearbits change through `collection::SetGearbits` (the launcher's Edit) |
-| Trophies | 3500 Sky, 3501 Land, 3502 Sea, 3503 Kaos (the dumps' tags; the public list had two swapped); the item seat |
+| Trophies | 3500 Sky, 3501 Land, 3502 Sea, 3503 Kaos (the dumps' tags; the public list had two swapped); the item seat; the villains a racing trophy captured, a row each on its Figure page (A flips it) and a switch each in the launcher's Edit ([Racing villains](#racing-villains-issue-165)) |
 | Pictures | the disc's 469 round badges (88 px, `archives/toycollectionmaterials.pak`, [art.md](art.md)): 363 toys and variants mapped in the catalogue's `portraits` (SuperChargers' 44 and their decos, every older toy Swap Force and Trap Team name the same way). Drawn icons left: Smash Hit (no badge of its own on this disc) and the UFO Hat (only its variant's). `SUPERCHARGERS_ISO=<disc> ArkeyanArtTest` checks them |
 
 ## Traps (issue #101)
@@ -38,6 +38,28 @@ Stinger `lifecopter` (its plain badge is named `plane`), Dive Bomber `watertorpe
 Splasher `magicsub`, Soda Skimmer `magicfloat`, Barrel Blaster `dkcart`, Buzz Wing `lifeplane`; trophies `racepack_<sea, land, air,
 kaos>`. Matched by looking at each badge and by the decos the dumps hold (a Power Blue badge for the toy that has a Power Blue
 figure); Gold Rusher and Shield Striker by that rule only [?].
+
+## Racing villains (issue #165)
+
+[V] (2026-11-25, Europe disc, the 0.9.10b2 kit, emulated portal; runs `race1`-`race11`, `acad1`-`acad4`.) The 13 racing
+villains (3440-3467) and their 14 vehicles (3470-3497) are in the game's toy tables but are no toys: the game plays
+them from a trophy.
+- **In Racing** (Single Player, Single Race): the driver select ("ASSOCIE UN PILOTE") shows, under the drivers, the four
+  villains of the trophy for the track's type, padlocked until the trophy captured them. A captured one is chosen there
+  and races with its own vehicle (Wolfgang on Sub Woofer, Cloud Factory, 60 s, no fault). The Kaos Trophy adds Kaos to the
+  drivers, unlocked. Where the trophy keeps them: [figures.md](../../../docs/runtime/host/figures.md#superchargers-trophies-alchemy-superchargers-2026-11-25-issue-165).
+- **A villain as a toy** (Chef Pepper Jack, 3440, alone on the portal in the Academy): the portal's entry plays and names
+  him, then he stays in the tunnel about a minute and the Academy shows his name on the HUD with no character to play
+  (nothing moves for 30 s of presses): not playable.
+- **A villain's vehicle as a toy** in the Academy: Steam Roller (land, 3480) and Wave Singer (sea, 3490) load the
+  villain's vehicle and driver banks (`vehicleglumshanks.pak`, `vehiclemesmeralda.pak`), then the main thread faults at
+  guest `0x2C` in `sub_82DDE2C0` 3-4 s later: launcher issue #263's crash, on this Mac. Toaster Bomber (sky) is not
+  taken there (the Academy wants a land vehicle).
+- **So**: no seat takes either (`Seat::Takes`), Add a figure never offers them and the shelf never shows a dump of one
+  (`Toy::FromTrophy`); a racing trophy's Figure page has a row per villain, captured or not (A flips it: `Model::PutCaptured`,
+  [toybox_ux.md](../../../docs/runtime/host/toybox_ux.md)), and the launcher's Edit a switch each.
+- **Not run** [?]: Boss Pursuit (the game's own way to capture), a villain in Cup or Time Trial, two players, a Land or
+  Sea villain racing (their bits were only seen unlocking them).
 
 ## Proof
 - `tools/regress/superchargers_toybox.sh` (`SUPERCHARGERS_ISO`, `build-superchargers/`, about 4 min, through `../gamelock.sh`): a
