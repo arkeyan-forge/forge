@@ -860,8 +860,8 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # The Wii host's pieces (docs/runtime/wii/): its address space, the executable's loader, the boot information, the
 # guest's messages.
 add_library(ArkeyanWii STATIC wii/audio_out.cpp wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp
-    wii/gx_fifo.cpp wii/gx_texture.cpp wii/gx_vertex.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp
-    wii/processor.cpp wii/remote.cpp wii/settings.cpp)
+    wii/gx_efb.cpp wii/gx_fifo.cpp wii/gx_raster.cpp wii/gx_texture.cpp wii/gx_vertex.cpp wii/ios.cpp wii/memory_map.cpp
+    wii/nand.cpp wii/module.cpp wii/processor.cpp wii/remote.cpp wii/settings.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
 target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles PRIVATE SDL3::SDL3-static)
 # Synthetic executables in a mapped address space, the NAND in a scratch folder: ./ArkeyanWiiTest [scratch dir]
@@ -885,6 +885,12 @@ target_link_libraries(ArkeyanGxTextureTest PRIVATE ArkeyanWii)
 # Remote 1's samples and the test script's presses: ./ArkeyanWiiRemoteTest
 add_executable(ArkeyanWiiRemoteTest wii/remote_test.cpp)
 target_link_libraries(ArkeyanWiiRemoteTest PRIVATE ArkeyanWii)
+# The EFB's copy to the external frame buffer (YUYV) and back: ./ArkeyanGxEfbTest
+add_executable(ArkeyanGxEfbTest wii/gx_efb_test.cpp)
+target_link_libraries(ArkeyanGxEfbTest PRIVATE ArkeyanWii)
+# GX's software rasteriser on synthetic vertices and FIFO state: ./ArkeyanGxRasterTest
+add_executable(ArkeyanGxRasterTest wii/gx_raster_test.cpp)
+target_link_libraries(ArkeyanGxRasterTest PRIVATE ArkeyanWii)
 
 add_executable(ArkeyanRvzTest disc/rvz_test.cpp)
 target_include_directories(ArkeyanRvzTest PRIVATE .)

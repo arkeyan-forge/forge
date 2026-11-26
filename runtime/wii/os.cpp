@@ -2,6 +2,7 @@
 #include "wii/gx_fifo.h"
 #include "wii/memory_map.h"
 #include "wii/remote.h"
+#include "wii/video.h"
 #include "host/env.h"
 #include "kernel/guest_format.h"
 #include "ppc_context.h"
@@ -188,7 +189,7 @@ namespace wii::os
         base[PixelEngineToken + 1] = uint8_t(token);
     }
 
-    void FrameBuffer(PPCContext& ctx)
+    void FrameBuffer(PPCContext& ctx, uint8_t* base)
     {
         static int count = 0;
         gx::CommandProcessor& gp = gx::Processor();
@@ -202,5 +203,6 @@ namespace wii::os
                 stats.badLists, stats.copies, stats.unknown);
         }
         gp.ResetCounters();
+        video::Show(base, ctx.r3.u32);
     }
 }

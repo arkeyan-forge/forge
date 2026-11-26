@@ -52,7 +52,7 @@ namespace wii::os
     // The timers (timers.cpp): PPCMtdec(ticks), the decrementer, whose exception runs the alarms; and the video
     // interface's retrace, 59.94 times a second from VIInit on (its interrupt handler, as the hardware would).
     void SetDecrementer(PPCContext& ctx, uint8_t* base);
-    void FrameBuffer(PPCContext& ctx); // VISetNextFrameBuffer(address): the first ones logged
+    void FrameBuffer(PPCContext& ctx, uint8_t* base); // VISetNextFrameBuffer(address): shown, the first ones logged
     // GXSetDrawSync's token as the graphics processor would write it back once its commands reach it (the pixel
     // engine's token register, which GXReadDrawSync reads): at once, until the host draws.
     void DrawSyncReached(uint8_t* base, uint16_t token);

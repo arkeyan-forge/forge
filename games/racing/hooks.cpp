@@ -43,7 +43,7 @@ PPC_FUNC(GAME_HOOK(VIGetRetraceCount))
 PPC_FUNC_IMPL(GAME_IMP(VISetNextFrameBuffer));
 PPC_FUNC(GAME_HOOK(VISetNextFrameBuffer))
 {
-    wii::os::FrameBuffer(ctx);
+    wii::os::FrameBuffer(ctx, base);
     GAME_IMP(VISetNextFrameBuffer)(ctx, base);
 }
 
