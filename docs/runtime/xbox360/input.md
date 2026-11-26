@@ -64,7 +64,7 @@ Code: `host/mouse.{h,cpp}` (the names, the bindings over the game's defaults, th
 `host/mouse_input.{h,cpp}` (the SDL side: events, SDL's relative mouse mode, the actions held), `main.cpp` (`ReadHostGamepad` takes the
 mouse's actions for Player 1 beside the keyboard's), `game::Adapter::mouseDefaults` and `menuLevels` (each game's adapter),
 `game::InMenuLevel` and `game::InMenu` (`game.cpp`). Test: `ArkeyanMouseTest` (names, bindings, every capture transition below, the
-game-menu pointer), `ArkeyanAlchemyMenuTest`, `ArkeyanSettingsTest` (the lines), `ArkeyanInputTest` (`PressButtons`).
+game-menu pointer), `ArkeyanAlchemyMenuTest`, `ArkeyanJuiceMenuTest`, `ArkeyanSettingsTest` (the lines), `ArkeyanInputTest` (`PressButtons`).
 
 - **Off by default.** `[<game>.input] mouse=1` turns it on ([settings.md](../../getting-started/settings.md)). Off, or nothing mapped:
   `mouseinput` makes no SDL call, `ReadHostGamepad` gets `nullptr` and runs the path it ran before; the pointer is never hidden.
@@ -90,7 +90,7 @@ game-menu pointer), `ArkeyanAlchemyMenuTest`, `ArkeyanSettingsTest` (the lines),
   carries over into the next menu. Out of the menus nothing changes; a game without `menuPointer` behaves as before. The log says
   `[mouse] game menu pointer on` / `off`. In an online session or a recording (`netplay::Enabled`, `State::session`) it stays
   out and the pads drive the menus: the focus its hook writes would move one game's menu only. The menu hooks are per game:
-  Spyro's Adventure's and Giants' below; the other games have none yet.
+  Spyro's Adventure's, Giants' and the Juice menus (Swap Force) below; the other games have none yet.
 - **Spyro's Adventure's menus** (`games/ssa/menus.cpp`, `menu_pointer.{h,cpp}`, hooked after the UI copies the pads,
   `GAME_HOOK_Ui_ReadPads`): the UI manager holds nine menus, each a tree of pages; a page that takes input holds a tree of items, the
   focused one, and up/down/left/right links between items by id. A page with the focus is a menu, one without but with its own
@@ -119,6 +119,22 @@ game-menu pointer), `ArkeyanAlchemyMenuTest`, `ArkeyanSettingsTest` (the lines),
   <address>: <n> items` with each item's box, `[menu] focus: d-pad <buttons> from <item>` and `[menu] accept`. Test:
   `ArkeyanAlchemyMenuTest`, `tools/regress/giants_menu_mouse.sh <disc>` (title to the tutorial with clicks and a hover,
   then a click on Settings in the pause menu). Back has no mouse button.
+- **Juice menus** (Swap Force; `engines/alchemy/juice_menu.{h,cpp}`, `juice_pointer.cpp`, started by `games/swapforce/menus.cpp`):
+  every page is a Juice list (`igJuiceList`) of items, each with a box (`_min`, `_max`) in the list's scroll placeable, under a
+  tree of placeables. A placeable maps a point of its own space to its parent's: its pivot (a fraction of its `_extent`) sits at
+  its `_position`, scaled by `_scale` about it; the top one is the 1280×720 canvas. Nothing is looked up by address: the game
+  keeps metadata for each class, and the reader finds the lists' vtable from it (each vtable's first entry, getMeta, is
+  `lis; lwz r3; blr`, loading the class's metadata: its name at +8; its fields at +0x14, the list's size in bytes in the word
+  before; a field's offset in the high half of +0x10, its name at +0x1C, a bit field's shift at +0x28), then every field by
+  name. The lists are found by a scan of the physical heap (~0.1 s; every 2 s on the front end while no page is on screen, every
+  10 s in play: the game reuses its lists, the pause menu takes the main menu's). A page is a list with `_hasFocus`, items and no
+  placeable above it `_finalHidden` (bit 8; `_hidden`, bit 5, is not what the engine shows) or at alpha 0: a page under another
+  keeps its focus but is hidden; when two are on screen, the newest wins. That is `MenuOpen` (kept 300 ms across a change of
+  page). The focused item is `_focusItem` (player 1's); a list showing fewer items than it holds (`_visibleItems`) counts as a
+  carousel. The focus moves and Accept as in Giants (`alchemymenu::Driver`), with the same log lines and `[menu] <n> Juice
+  lists (<ms>)` at each scan that finds a different number. Test: `ArkeyanJuiceMenuTest`,
+  `tools/regress/swapforce_menu_mouse.sh <disc>` (title to the tutorial with clicks and a hover, then a hover and a click on
+  OPTIONS in the pause menu). Back has no mouse button.
 - **Test aid**: `SKY_PRESS` items `mleft`, `mright`, `mmiddle`, `m4`, `m5` (`mleft:20` clicks at 20 s, `mleft:20:1` holds 1 s) and
   `wheelup`, `wheeldown` (one tick) go through the same bindings and capture; a script stands for a focused window. Each logs
   `[mouse] script: Mouse Left (held pointer: the game's)` or `(free pointer: not the game's)`; `SKY_INPUT_LOG=1` shows what the title read.

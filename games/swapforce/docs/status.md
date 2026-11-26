@@ -83,3 +83,10 @@ dynamic buffer got a copy: 12.8 MB in 596 blocks when the pool ran out. The kern
 was allocated with (`kernel/address_protect.h`): no copy is made, the pool holds 200 MB with 18 MB free in `ww2`, and
 its allocations drop from about 1800 to a few a second. The scene's size (1040x620 or 1280x720), the frame rate and
 figure swaps did not change the pool's use.
+
+## The mouse in the game's menus (2026-11-25) [V]
+The pointer works in the game's own menus whatever the mouse switch says: the title, the main menu, the save slots, the
+difficulty and the pause menu with its pages. Hover moves the focus, a click picks the item; the focus moves by d-pad
+presses, as in Giants. The menus are Juice pages, read through the game's class metadata, so the code is the engine's
+and no address is Swap Force's: [input.md](../../../docs/runtime/xbox360/input.md), "Juice menus". Test:
+`tools/regress/swapforce_menu_mouse.sh <disc>`. Not tried: Arena Modes, the collection and upgrade pages, the shops.
