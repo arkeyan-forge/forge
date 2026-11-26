@@ -13,7 +13,7 @@ samples at 32 kHz), from the game's own code (`__AXOutInit`, `__AXOutNewFrame`, 
 - the DSP runs the list, then yields its task; the task's resume callback, `__AXDSPResumeCallback`, marks the frame
   done (or starts the next at once, when the interface asked meanwhile).
 
-## On the host (`runtime/wii/audio.cpp`, `ax.{h,cpp}`, `timers.cpp`)
+## On the host (`runtime/wii/audio.cpp`, `ax.{h,cpp}`, `ax_mix.{h,cpp}`, `timers.cpp`)
 - `AIInit` is skipped (it times the interface's sample counter); `AIRegisterDMACallback`, `AIInitDMA` (kept, and its
   registers written too), `AIStartDMA`, `AIStopDMA` are the host's; `AIGetDMABytesLeft` is 0. From `AIStartDMA` on,
   the host's timers post the interface's interrupt every buffer (3 ms), which calls the DMA callback as an event
@@ -35,13 +35,39 @@ the mix (20), the volume envelope (106, its signed step for each sample at 108),
 the format, then the loop, end and current addresses, 32 bits each, in nibbles for ADPCM, samples for 16-bit PCM,
 bytes for 8-bit), ADPCM's coefficients and state (126: the header in use at 160, the last two samples at 162 and 164),
 the rate (166: 16.16 input samples for each output one, the position between two at 170), the loop's ADPCM state
-(180). ADPCM is in 8-byte frames: a header byte (the predictor and the scale), a padding byte, 14 samples; each frame's
+(180). ADPCM is in 8-byte frames: one header byte (the predictor and the scale), then 14 sample nibbles; each frame's
 first two nibbles are its header.
 
-For now the host plays nothing: each playing voice **advances** by one frame at its rate (a frame header read where one
-begins; at its end the voice loops, to its loop's ADPCM state unless it is a stream, or stops), its volume ramp
-advances, and the output buffer stays silent. The mix (decoding, the converter, the volumes, the aux buses, the
-remotes) and the host's audio output come next (#82).
+**Voice rendering** (`wii::ax::RenderVoice`) works on a plain voice state: 96 output samples, decoding signed
+PCM8, big-endian PCM16 or ADPCM with eight predictor pairs, rounding and saturation. Reads use cached MEM1/MEM2
+addresses and stop on unmapped memory. The end address is inclusive; a voice then stops or loops, restoring its
+saved ADPCM state unless it is a stream. Envelope and all twelve gain ramps clamp to 0..65535, with 32768 as unity,
+and accumulate into the main L/R/S and aux A/B/C L/R/S buses. `FinalMix` folds surround into left and right at
+-3 dB (23170/32768), saturates, and writes 384 bytes of interleaved big-endian stereo. Neither function allocates.
+
+The converter consumes the integer carry of a 16.16 phase accumulator each output sample. Mode 2 ignores the ratio
+and consumes one input. Mode 1 linearly interpolates the last two inputs; mode 0 uses a causal four-tap Lagrange cubic
+with 128 phases, Q15 weights computed at compile time and summing exactly to unity. Linear and cubic add one and two
+input samples of delay respectively at unity ratio. Four past inputs (PB offsets 172..178, oldest first) and the
+fraction carry between frames. This is an interpolation filter, without a separate anti-alias low-pass for downsampling.
+
+`ReadVoice`/`WriteVoice` transfer the parameter block's state, including the coefficients at 126. Mix gains stay in
+the plain voice: their PB layout still needs verification. `AdvanceVoice` renders into a discarded scratch bus and
+writes the voice back with the histories it decoded. Envelope and gain ramps advance across all 96 output slots,
+even when the voice ends early; a voice stopped at entry is left alone.
+
+Still to connect: the mix gains' PB layout, command-list input/output buffers, aux bus callback transfers and effects,
+the remotes' speakers, and the host's audio output. The command-list path therefore still produces no host sound.
+
+Synthetic tests (no game data or game run):
+```sh
+ninja -C build-tests -j4 ArkeyanAxMixTest ArkeyanWiiTest
+./build-tests/ArkeyanRuntime/ArkeyanAxMixTest
+./build-tests/ArkeyanRuntime/ArkeyanWiiTest .scratch/wii
+```
+`ArkeyanAxMixTest` checks an encoded sine, known ADPCM samples, PCM formats, loops, bounds, all converters at ratios
+0.5/1/2/1.37, phase and history continuity, ramps, buses, and final byte order/clipping. It also reports the time for
+96 ADPCM voices over 1000 frames and requires less than one second in Release.
 
 ## How far it boots [V] (2026-11-24)
 SuperChargers Racing: Wwise's start goes through (the audio interface's DMA, AX's task, its frames with 96 voices),

@@ -295,7 +295,8 @@ namespace
         Set16(block + pb::LoopPredictorScale, 0x77);
         Set16(block + pb::LoopHistory1, 0x1234);
         ax::AdvanceVoice(g_base, block);
-        EXPECT(Get16(block + pb::History1) == 0x1234 && Get16(block + pb::State) == 1);
+        // The loop's history, then the samples decoded from it (zero coefficients, zero nibbles: silence).
+        EXPECT(Get16(block + pb::History1) == 0 && Get16(block + pb::State) == 1);
         EXPECT(Get16(block + pb::PredictorScale) == 0x77); // past the header: the loop state's, not read again
 
         Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x10000); // a ramp: the volume's step for each of the 96 samples
