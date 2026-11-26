@@ -1,8 +1,10 @@
 // Swap Force's adapter: what the runtime asks of the game (runtime/game.h). Its portal prompt is read from the
 // CMagicMoment object (swapforce_portal_prompt.h); ultrawide is ultrawide.cpp's; its button glyphs are pictures its CPU text renderer
-// copies into strings, redrawn in guest memory (glyphs::MemoryImage; games/swapforce/docs/art.md, "Button pictures").
+// copies into strings, redrawn in guest memory (glyphs::MemoryImage; games/swapforce/docs/art.md, "Button pictures");
+// its menus are Juice pages, which the pointer reads (menus.cpp).
 #include "game.h"
 #include "host/portal.h"
+#include "juice_menu.h"
 #include "memory.h"
 #include "swapforce.h"
 #include "swapforce_portal_prompt.h"
@@ -102,7 +104,7 @@ namespace
 
     // The mouse once on: attack 1 on the left button, attack 2 on the right (Arkeyan Launcher's rows name them so).
     constexpr mouse::Default MouseDefaults[] = { { "x", mouse::Left }, { "b", mouse::Right } };
-    // The front end: the game's own menus, where the mouse does nothing.
+    // The front end: the game's own menus.
     constexpr std::string_view MenuLevels[] = { "ui\\mainmenubackground\\mainmenubackground" };
 
     // fullScene: the scene at the frame's size (games/swapforce/ultrawide.cpp: the scene chain's size, its tiling and EDRAM plan).
@@ -118,8 +120,8 @@ namespace
 
     const game::Adapter g_adapter = { g_gameInfo, ReadPortalPrompt, true, swapforce::SetVoiceLanguage, GlyphTextures,
         IntroMovies, false, nullptr, {}, GlyphImages, true, { 1280, 720 }, AlchemySetNightmareFromStart, nullptr, 0, {},
-        InputRows, MouseDefaults, MenuLevels, 0, {}, 0, {}, FrameGeneration, SceneMotionLayers,
-        FrameGenerationCutShift };
+        InputRows, MouseDefaults, MenuLevels, 0, {}, 0, {}, FrameGeneration, SceneMotionLayers, FrameGenerationCutShift,
+        juicemenu::MenuOpen, true };
 }
 
 const game::Adapter& game::Current() { return g_adapter; }

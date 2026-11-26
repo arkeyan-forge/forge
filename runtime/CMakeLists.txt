@@ -718,6 +718,10 @@ add_executable(ArkeyanSsaMenuTest ${CMAKE_SOURCE_DIR}/games/ssa/menu_pointer_tes
 add_executable(ArkeyanAlchemyMenuTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/menu_pointer_test.cpp ${CMAKE_SOURCE_DIR}/engines/alchemy/menu_pointer.cpp)
 target_include_directories(ArkeyanAlchemyMenuTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
 
+# The Juice menus as the pointer reads them (engines/alchemy/juice_menu.h; no game data): ./ArkeyanJuiceMenuTest
+add_executable(ArkeyanJuiceMenuTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/juice_menu_test.cpp ${CMAKE_SOURCE_DIR}/engines/alchemy/juice_menu.cpp)
+target_include_directories(ArkeyanJuiceMenuTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
+
 # Protocol test of the emulated Skylanders portal (no game data needed): ./ArkeyanPortalTest
 add_executable(ArkeyanPortalTest host/portal_emulated.cpp host/portal_mixed.cpp host/portal_identity.cpp host/portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/ssa/ssa_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/giants/giants_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/swapforce/swapforce_portal_prompt.cpp ${CMAKE_SOURCE_DIR}/games/superchargers/superchargers_portal_prompt.cpp host/portal_test.cpp host/figures/figure_data.cpp)
 target_include_directories(ArkeyanPortalTest PRIVATE . ${CMAKE_SOURCE_DIR}/games/ssa ${CMAKE_SOURCE_DIR}/games/giants ${CMAKE_SOURCE_DIR}/games/swapforce ${CMAKE_SOURCE_DIR}/games/superchargers)
