@@ -737,6 +737,8 @@ namespace collection
         std::vector<Figure> list;
         Json index = LoadJson(PathOf(IndexName));
         auto passes = [&](const Figure& figure) {
+            if (figure.toy != nullptr && figure.toy->FromTrophy())
+                return false; // a racing villain or its vehicle: the game plays it from a trophy (Toy::FromTrophy)
             if (!filter.game.empty() && !catalogue.Accepts(filter.game, figure.type))
                 return false;
             if (filter.category >= 0 && (figure.toy == nullptr || int(figure.toy->category) != filter.category))
@@ -1062,6 +1064,19 @@ namespace collection
         if (figure.state != figures::AreaState::Valid)
             return Refuse(error, "never used by the game");
         figures::SetGearbits(figure.stats, gearbits);
+        return WriteStats(path, figure.stats, error);
+    }
+
+    bool SetTrophyVillains(const std::string& path, uint8_t captured, std::string* error)
+    {
+        Figure figure;
+        if (!Read(path, figure))
+            return Refuse(error, "not a figure dump");
+        if (figure.toy == nullptr || figure.toy->racingVillains.empty())
+            return Refuse(error, "not a racing trophy");
+        if (figure.state == figures::AreaState::Damaged)
+            return Refuse(error, "damaged");
+        figures::SetTrophyVillains(figure.stats, captured);
         return WriteStats(path, figure.stats, error);
     }
 

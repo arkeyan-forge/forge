@@ -74,6 +74,8 @@ namespace collection
             toy.elementIcon = json["element_icon"].AsString();
             toy.ride = json["ride"].AsString();
             toy.villainVehicle = json["villain_vehicle"].AsBool();
+            for (const Json& item : json["racing_villains"].Items())
+                toy.racingVillains.push_back(uint16_t(item.AsInt(0)));
             toy.game = json["game"].AsString();
             if (toy.element == Element::Count || toy.category == Category::Count || toy.edition == VariantKind::Count)
             {

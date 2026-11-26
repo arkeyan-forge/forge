@@ -622,6 +622,18 @@ namespace
         figures::SetNicknameUtf8(again, "Racer");
         figures::WriteStats(tag, again);
         CHECK(figures::ReadStats(tag, stats) == figures::AreaState::Valid && figures::NicknameUtf8(stats) == "Racer");
+
+        // A racing trophy's captured villains: the first area's 0x14, bits 0-3, both copies, the byte's high bits kept.
+        FigureData trophy = figures::CreateFigure(3500);
+        figures::FigureStats captured;
+        captured.ssaHat = 0x0130;
+        figures::SetTrophyVillains(captured, 0xFA);
+        CHECK(figures::TrophyVillains(captured) == 0x0A && captured.ssaHat == 0x013A);
+        figures::WriteStats(trophy, captured);
+        FigureData plainTrophy = figures::Decrypt(trophy);
+        CHECK(figures::ReadStats(trophy, again) == figures::AreaState::Valid && figures::TrophyVillains(again) == 0x0A);
+        CHECK(plainTrophy[9 * 16 + 4] == 0x3A && plainTrophy[(9 + 28) * 16 + 4] == 0x3A &&
+              plainTrophy[9 * 16 + 5] == 0x01 && plainTrophy[(9 + 28) * 16 + 5] == 0x01);
     }
 
     // A creation's parameters (the disc's recipe format) and the 80 levels; a crystal made from them reads back.

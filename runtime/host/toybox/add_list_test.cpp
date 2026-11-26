@@ -97,7 +97,8 @@ int main()
     }
 
     // SuperChargers' and Imaginators' vehicle seats: the real vehicles, never a racing villain's (3470-3497), which the
-    // games define but which crash SuperChargers once one arrives outside a race. Show all figures still lists them.
+    // games define but which crash SuperChargers once one arrives outside a race. Nor does any list: the racing
+    // villains and their vehicles come with a trophy (Toy::FromTrophy, issue #165), the trophies stay.
     for (const char* game : { "superchargers", "imaginators" })
     {
         const Seat* vehicle1 = FindSeat(game, "vehicle1");
@@ -112,7 +113,10 @@ int main()
         CHECK(std::none_of(toys.begin(), toys.end(), villainVehicle));
         std::vector<const Toy*> all;
         AddGrid(AddGroups(game, nullptr), Columns, false, all);
-        CHECK(std::any_of(all.begin(), all.end(), villainVehicle));
+        CHECK(std::none_of(all.begin(), all.end(), villainVehicle));
+        CHECK(std::none_of(
+            all.begin(), all.end(), [](const Toy* toy) { return toy->type >= 3440 && toy->type <= 3467; }));
+        CHECK(std::any_of(all.begin(), all.end(), [](const Toy* toy) { return toy->type == 3500; })); // Sky Trophy
     }
 
     printf("toybox add list test: %d checks, %d failures\n", g_checks, g_failures);

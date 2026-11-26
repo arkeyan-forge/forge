@@ -10,6 +10,8 @@ namespace toybox
     {
         const Catalogue& catalogue = Catalogue::Get();
         std::vector<const Toy*> toys = catalogue.Accepted(game);
+        // A racing villain or its vehicle is no toy: the game plays it from a trophy (Toy::FromTrophy).
+        std::erase_if(toys, [](const Toy* toy) { return toy->FromTrophy(); });
         // A swapper is added as one card (its top): the bottom of the same swapper is made with it.
         auto madeWithTop = [&](const Toy& toy) {
             return toy.category == Category::SwapBottom && catalogue.Accepts(game, MatchingHalf(toy.type));

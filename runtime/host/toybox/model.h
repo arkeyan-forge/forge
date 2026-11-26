@@ -629,6 +629,8 @@ namespace toybox
         void OpenStats(int index);
         // Into the Figure page's trap, lifted off the emulated portal around the write.
         void PutVillain(uint8_t id, bool evolved);
+        // A racing trophy's villain `bit` captured or set free, lifted off the emulated portal around the write.
+        void PutCaptured(int bit);
         void SaveStats();
         void OpenName(NameEntry entry);
         void CreateFrom(const Version& version);
