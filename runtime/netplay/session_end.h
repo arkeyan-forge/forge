@@ -93,6 +93,21 @@ namespace netplay
         default: return "The online session was refused";
         }
     }
+    // "Play together again" from the game's banner: the launcher reopens (host) or rejoins (guest) the same room and
+    // both start again from the host's save.
+    inline bool WriteReplayFile(const std::filesystem::path& folder)
+    {
+        std::error_code error;
+        if (!folder.empty())
+            std::filesystem::create_directories(folder, error);
+        if (error)
+            return false;
+        std::ofstream file(folder / "online-replay.txt", std::ios::trunc);
+        file << "replay\n";
+        file.close();
+        return !file.fail();
+    }
+
     inline bool WriteEndFile(const std::filesystem::path& folder, EndReason reason)
     {
         std::error_code error;

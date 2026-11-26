@@ -3,12 +3,14 @@
 // system's achievement app 0xFB) are kept in the game's data folder (host/collection/progress.h) with their time and shown
 // as a notice; the enumerations answer from both, so the title's own checks (sub_8264ACF8 [SSA]: "every other achievement
 // is unlocked") see the real state.
+#include "kernel/objects.h"
 #include "kernel/overlapped.h"
 #include "kernel/xam_enumerator.h"
 #include "host/collection/achievements.h"
 #include "host/collection/progress.h"
 #include "host/toybox.h"
 #include "language.h"
+#include "netplay/session_runtime.h"
 #include "vfs.h"
 #include <algorithm>
 #include <cstdio>
@@ -70,13 +72,22 @@ namespace
             unlocked, score, g_list.TotalGamerscore());
     }
 
-    const progress::Unlock* UnlockOf(uint32_t id)
+    // Online, the title sees the unlocks of this session alone, timed by the session's clock: each player's own list
+    // and the wall-clock times differ, and the title copies what it reads into its state (two games went out of sync
+    // right after "Hello!! Skylander"). Each player's progress file still gets the unlock, with its real time.
+    std::vector<progress::Unlock> g_sessionUnlocks;
+
+    const progress::Unlock* Find(const std::vector<progress::Unlock>& unlocks, uint32_t id)
     {
-        for (const progress::Unlock& unlock : g_unlocks)
+        for (const progress::Unlock& unlock : unlocks)
             if (unlock.id == id)
                 return &unlock;
         return nullptr;
     }
+    // What the title sees.
+    const progress::Unlock* UnlockOf(uint32_t id) { return Find(netplay::Online() ? g_sessionUnlocks : g_unlocks, id); }
+    // The overlay's page: the player's own list.
+    const progress::Unlock* PlayerUnlockOf(uint32_t id) { return Find(g_unlocks, id); }
 
     // UTF-8 text as big-endian UTF-16 with its terminator, as the guest reads it.
     std::vector<uint8_t> GuestText(const std::string& text)
@@ -206,7 +217,7 @@ namespace
         std::vector<ToyboxAchievementRow> rows;
         for (const achievements::Info& info : g_list.items)
         {
-            const progress::Unlock* unlock = UnlockOf(info.id);
+            const progress::Unlock* unlock = PlayerUnlockOf(info.id);
             ToyboxAchievementRow row;
             row.points = info.gamerscore;
             row.unlocked = unlock != nullptr ? std::max<int64_t>(unlock->time, 1) : 0;
@@ -252,6 +263,9 @@ PPC_FUNC(__imp__XMsgStartIORequest)
         for (const achievements::Info& candidate : g_list.items)
             if (candidate.id == id)
                 info = &candidate;
+        if (netplay::Online() && Find(g_sessionUnlocks, id) == nullptr)
+            g_sessionUnlocks.push_back(
+                { id, int64_t(GuestSystemTime() / 10000000ull) - FileTimeUnixEpoch }); // the same on both computers
         bool added = false;
         if (!g_folder.empty() && !progress::WriteUnlock(g_folder, id, int64_t(std::time(nullptr)), &added))
             fprintf(stderr, "[achievement] cannot write the unlock in %s\n", g_folder.string().c_str());

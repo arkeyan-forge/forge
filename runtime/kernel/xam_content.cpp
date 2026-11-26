@@ -8,6 +8,7 @@
 #include "host/collection/save_backup.h"
 #include "netplay/session_runtime.h"
 #include "host/profiles.h"
+#include "netplay/clock.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cstdio>
@@ -186,8 +187,9 @@ PPC_FUNC(__imp__XamContentGetDeviceData)
     memset(g_memory.Translate(data), 0, 0x50);
     g_memory.Write<uint32_t>(data + 0x00, HardDriveId);
     g_memory.Write<uint32_t>(data + 0x04, DeviceTypeHardDrive);
-    g_memory.Write<uint64_t>(data + 0x08, space.capacity);
-    g_memory.Write<uint64_t>(data + 0x10, space.available);
+    const auto told = netplay::TitleDiskSpace(netplay::Enabled(), space.capacity, space.available);
+    g_memory.Write<uint64_t>(data + 0x08, told.capacity);
+    g_memory.Write<uint64_t>(data + 0x10, told.available);
     const char name[] = "Hard Drive";
     for (size_t i = 0; i < sizeof(name) - 1; i++)
         g_memory.Write<uint16_t>(data + 0x18 + uint32_t(i) * 2, uint16_t(name[i]));

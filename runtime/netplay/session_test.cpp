@@ -1,6 +1,9 @@
 #include "netplay/session.h"
+#include "netplay/net_sim.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <functional>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -398,6 +401,225 @@ namespace
         link.time += 61000;
         Check(first.Stats().waitedFrames == 0 && first.Stats().waitMs == 0, "input waits expire after sixty seconds");
     }
+    // A dropped connection pauses both games and resumes on its own; after the wait the player is asked, and a peer
+    // that answers but does not advance is waited for.
+    void Reconnection()
+    {
+        using namespace netplay;
+        Link link;
+        std::atomic<uint64_t> time{ 0 };
+        const auto configure = [&](bool host) {
+            auto config = Config(host);
+            config.now = [&] { return time.load(); };
+            config.delay = 2;
+            config.timeoutMs = 60000;
+            config.lostMs = 3000;
+            config.askBeforeEnding = true;
+            return config;
+        };
+        Session host(configure(true), std::make_unique<Wire>(link, 0));
+        Session guest(configure(false), std::make_unique<Wire>(link, 1));
+        Check(host.WaitReady() && guest.WaitReady(), "ready before the drop");
+        std::atomic<uint64_t> hostFrame{ 0 }, guestFrame{ 0 };
+        std::atomic<bool> stop{ false };
+        const auto play = [&](Session& session, size_t seat, std::atomic<uint64_t>& frame) {
+            InputFrame pads;
+            while (!stop && session.Failure().reason == EndReason::None)
+            {
+                if (!session.Exchange(frame, Pad(frame, seat), pads))
+                    break;
+                ++frame;
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+            }
+        };
+        std::jthread a([&] { play(host, 0, hostFrame); });
+        std::jthread b([&] { play(guest, 1, guestFrame); });
+        const auto until = [&](const std::function<bool()>& done) {
+            for (unsigned i = 0; i < 20000 && !done(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            return done();
+        };
+        Check(until([&] { return hostFrame > 100 && guestFrame > 100; }), "frames advance before the drop");
+        {
+            std::lock_guard lock(link.mutex);
+            link.silent = true;
+        }
+        // Ten seconds without a packet: both hold, report a lost connection, and nothing ends.
+        for (unsigned i = 0; i < 100; ++i)
+        {
+            time.fetch_add(100);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        Check(until([&] { return host.Stats().connectionLost && guest.Stats().connectionLost; }),
+            "a silence of lostMs is a lost connection on both sides");
+        const uint64_t held = hostFrame;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        Check(hostFrame <= held + 3 && host.Failure().reason == EndReason::None && !host.Stats().askContinue,
+            "a lost connection holds the game without ending it");
+        {
+            std::lock_guard lock(link.mutex);
+            link.silent = false;
+        }
+        Check(until([&] {
+            return !host.Stats().connectionLost && !guest.Stats().connectionLost && hostFrame > held + 100;
+        }),
+            "the connection comes back on its own and frames advance again");
+        Check(host.Stats().reconnects == 1 && guest.Stats().reconnects == 1, "each side counts the reconnection");
+        // A minute and more: the player is asked; waiting more clears the question, continuing alone ends.
+        {
+            std::lock_guard lock(link.mutex);
+            link.silent = true;
+        }
+        for (unsigned i = 0; i < 700; ++i)
+        {
+            time.fetch_add(100);
+            std::this_thread::sleep_for(std::chrono::microseconds(300));
+        }
+        Check(until([&] { return host.Stats().askContinue; }) && host.Failure().reason == EndReason::None,
+            "after timeoutMs the player is asked, the session still open");
+        host.KeepWaiting();
+        Check(!host.Stats().askContinue && host.Stats().connectionLost, "waiting more clears the question");
+        host.ContinueAlone();
+        Check(host.Failure().reason == EndReason::Timeout, "continuing alone ends the session for the solo path");
+        stop = true;
+        guest.Stop();
+    }
+
+    // Each side moves its own input delay during play: the frames it skips repeat its last input and the input of a
+    // frame that falls on one already sent is dropped, so both games still read the same pads for every frame.
+    void AdaptiveDelay()
+    {
+        using namespace netplay;
+        const auto ms = [] {
+            return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                    .count());
+        };
+        for (const bool network : { true, false })
+        {
+            Link link;
+            const auto configure = [&](bool host) {
+                auto config = Config(host);
+                config.delay = 1;
+                config.timeoutMs = 100000;
+                config.adaptiveDelay = true;
+                return config;
+            };
+            // 60 ms each way with 20 ms of jitter (reordering): a round trip near 140 ms asks for four frames at 30.
+            NetSim sim;
+            sim.delayMs = network ? 60 : 0;
+            sim.jitterMs = network ? 20 : 0;
+            Session host(configure(true), SimulateNetwork(std::make_unique<Wire>(link, 0), sim, ms));
+            Session guest(configure(false), SimulateNetwork(std::make_unique<Wire>(link, 1), sim, ms));
+            Check(host.WaitReady() && guest.WaitReady(), "ready before the adaptive delay");
+            const uint64_t frames = network ? 300 : 600;
+            std::vector<std::pair<uint16_t, uint16_t>> seen[2];
+            uint32_t highest[2] = {};
+            const auto play = [&](Session& session, size_t seat, bool slow) {
+                seen[seat].resize(frames);
+                InputFrame pads;
+                for (uint64_t frame = 0; frame < frames; ++frame)
+                {
+                    if (network)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                    // Without network delay, the guest is a slow PC between frames 100 and 400.
+                    if (slow && frame > 100 && frame < 400)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+                    Check(session.Exchange(frame, Pad(frame, seat), pads), "adaptive exchange");
+                    seen[seat][frame] = { pads[0].state.buttons, pads[1].state.buttons };
+                    highest[seat] = std::max(highest[seat], session.Delay());
+                }
+            };
+            std::jthread a([&] { play(host, 0, false); });
+            play(guest, 1, !network);
+            a.join();
+            Check(seen[0] == seen[1], "both games read the same pads for every frame while the delay moves");
+            if (network)
+                Check(highest[0] >= 3 && highest[1] >= 3, "the delay rises with the round trip");
+            else
+                Check(highest[0] <= 3, "a slower PC's waits add one frame at most");
+            host.Stop();
+            guest.Stop();
+        }
+    }
+
+    // The side that runs ahead slows a little every 30 frames; the pads both games read stay the same.
+    void BalancedAdvantage()
+    {
+        using namespace netplay;
+        Link link;
+        const auto configure = [&](bool host) {
+            auto config = Config(host);
+            config.delay = 4;
+            config.timeoutMs = 100000;
+            config.balanceAdvantage = true;
+            return config;
+        };
+        Session host(configure(true), std::make_unique<Wire>(link, 0));
+        Session guest(configure(false), std::make_unique<Wire>(link, 1));
+        Check(host.WaitReady() && guest.WaitReady(), "ready before the balance");
+        constexpr uint64_t Frames = 240;
+        std::vector<std::pair<uint16_t, uint16_t>> seen[2];
+        const auto play = [&](Session& session, size_t seat, int frameMs) {
+            seen[seat].resize(Frames);
+            InputFrame pads;
+            for (uint64_t frame = 0; frame < Frames; ++frame)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(frameMs));
+                Check(session.Exchange(frame, Pad(frame, seat), pads), "balanced exchange");
+                seen[seat][frame] = { pads[0].state.buttons, pads[1].state.buttons };
+            }
+        };
+        // The host's frames are quicker: it keeps running into the delay's edge, ahead, until the balance slows it.
+        std::jthread a([&] { play(host, 0, 2); });
+        play(guest, 1, 9);
+        a.join();
+        Check(seen[0] == seen[1], "both games read the same pads while one slows");
+        Check(host.Stats().balanceSlows > guest.Stats().balanceSlows, "the side ahead is the one that slows");
+        host.Stop();
+        guest.Stop();
+    }
+
+    // A peer that answers but does not advance (a long load on a slower PC) is not a lost connection and ends nothing.
+    void SlowPeer()
+    {
+        using namespace netplay;
+        Link link;
+        std::atomic<uint64_t> time{ 0 };
+        const auto configure = [&](bool host) {
+            auto config = Config(host);
+            config.now = [&] { return time.load(); };
+            config.delay = 2;
+            config.timeoutMs = 5000;
+            config.askBeforeEnding = true;
+            return config;
+        };
+        Session host(configure(true), std::make_unique<Wire>(link, 0));
+        Session guest(configure(false), std::make_unique<Wire>(link, 1));
+        Check(host.WaitReady() && guest.WaitReady(), "ready before the slow peer");
+        std::jthread clock([&](const std::stop_token& stop) {
+            while (!stop.stop_requested())
+            {
+                time.fetch_add(50);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+        InputFrame pads;
+        // The guest never sends frame 2 and on: the host waits through many timeouts, with pings answered meanwhile.
+        std::jthread waiting([&] {
+            for (uint64_t frame = 0; frame < 10 && host.Failure().reason == EndReason::None; ++frame)
+                host.Exchange(frame, Pad(frame, 0), pads);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        const auto stats = host.Stats();
+        Check(host.Failure().reason == EndReason::None && stats.waiting && !stats.connectionLost,
+            "a peer that answers but does not advance is waited for, not lost");
+        host.ContinueAlone();
+        Check(host.Failure().reason == EndReason::Timeout, "the waiting player may continue alone");
+        clock.request_stop();
+        guest.Stop();
+    }
+
     void RemoteDeparture()
     {
         using namespace netplay;
@@ -575,11 +797,109 @@ namespace
             Check(ended, "end notification reaches the host without another frame");
         }
     }
-
+    // A repair at the late check: both games hold 8 frames after the checkpoint, and the guest must keep acknowledging
+    // the commit until the host is past that frame, though the host's inputs already reach beyond it.
+    void LateRepair(bool chaos)
+    {
+        using namespace netplay;
+        Link link;
+        link.chaos = chaos;
+        Blocks hostBlocks(80), guestBlocks = hostBlocks;
+        auto host = Config(true), guest = Config(false);
+        std::atomic<uint64_t> time{ 2000 };
+        host.now = guest.now = [&] { return time.load(); };
+        host.timeoutMs = guest.timeoutMs = 100000;
+        host.blocks = &hostBlocks;
+        guest.blocks = &guestBlocks;
+        Session first(host, std::make_unique<Wire>(link, 0));
+        Session second(guest, std::make_unique<Wire>(link, 1));
+        Check(first.WaitReady() && second.WaitReady(), "late repair: ready");
+        const auto advance = [&](Session& session, size_t seat, uint64_t from, uint64_t to) {
+            InputFrame pads;
+            for (uint64_t f = from; f < to; ++f)
+                Check(session.Exchange(f, Pad(f, seat), pads), "late repair: frames advance");
+        };
+        const auto both = [&](auto&& step) {
+            std::thread a([&] { step(first, 0); });
+            std::thread b([&] { step(second, 1); });
+            a.join();
+            b.join();
+        };
+        both([&](Session& session, size_t seat) { advance(session, seat, 0, 30); });
+        guestBlocks.bytes[3][0] ^= 0x80;
+        const uint64_t hashes[2] = { hostBlocks.TotalHash(), guestBlocks.TotalHash() };
+        std::array<bool, 2> repaired{}, checked{};
+        both([&](Session& session, size_t seat) {
+            Check(session.PostHash(30, hashes[seat]), "late repair: posted");
+            advance(session, seat, 30, 38);
+            bool done = false;
+            checked[seat] = session.CheckPostedHash(30, done);
+            repaired[seat] = done;
+        });
+        Check(checked[0] && checked[1] && repaired[0] && repaired[1], "late repair: both repaired at the late check");
+        Check(hostBlocks.bytes == guestBlocks.bytes, "late repair: the guest's block put back");
+        both([&](Session& session, size_t seat) {
+            advance(session, seat, 38, 60);
+            Check(session.CheckHash(60, seat == 0 ? hostBlocks.TotalHash() : guestBlocks.TotalHash()),
+                "late repair: in sync after it");
+        });
+        Check(first.Failure().reason == EndReason::None && second.Failure().reason == EndReason::None,
+            "late repair: the session goes on");
+    }
+    // A checkpoint posted at its frame and compared 8 frames later: both games play those frames without waiting for
+    // the other's hash, an equal one counts as a good check, an unequal one ends the session there (no block source).
+    void LateCheck(bool differ)
+    {
+        Link link;
+        link.chaos = true;
+        netplay::Session first(Config(true), std::make_unique<Wire>(link, 0));
+        netplay::Session second(Config(false), std::make_unique<Wire>(link, 1));
+        std::array<uint64_t, 2> stopped{};
+        const auto play = [&](netplay::Session& session, size_t seat) {
+            Check(session.WaitReady(), "late check: ready");
+            uint64_t posted = 0;
+            for (uint64_t frame = 0; frame < 150; ++frame)
+            {
+                netplay::InputFrame pads{};
+                Check(session.Exchange(frame, Pad(frame, seat), pads), "late check: exchange");
+                const uint64_t next = frame + 1;
+                if (next % 30 == 0)
+                {
+                    Check(session.PostHash(next, differ && seat == 1 && next == 60 ? 7 : next), "hash posted");
+                    posted = next;
+                }
+                else if (next % 30 == 8 && posted)
+                {
+                    bool repaired = true;
+                    if (!session.CheckPostedHash(std::exchange(posted, 0), repaired))
+                    {
+                        stopped[seat] = next;
+                        Check(session.Failure().reason == netplay::EndReason::Desync && session.Failure().frame == 60,
+                            "a late difference ends at its checkpoint's frame");
+                        return;
+                    }
+                    Check(!repaired, "an equal hash needs no repair");
+                }
+            }
+        };
+        std::thread a([&] { play(first, 0); });
+        std::thread b([&] { play(second, 1); });
+        a.join();
+        b.join();
+        if (differ)
+            Check(stopped[0] == 68 && stopped[1] == 68, "both stop at the late check of frame 60");
+        else
+            Check(first.Stats().goodChecks == 4 && second.Stats().goodChecks == 4, "every late check is good");
+    }
 }
+
 int main()
 {
     using namespace netplay;
+    LateCheck(false);
+    LateCheck(true);
+    LateRepair(false);
+    LateRepair(true);
     Repair(false);
     Repair(true);
     Repair(true, 64);
@@ -596,6 +916,10 @@ int main()
     for (const auto text : { "", ":123", "::1:123", "[::1]", "host:0", "host:65536", "host:+2", "host:12x" })
         Check(!ParseEndpoint(text, endpointHost, port), "invalid endpoint refused");
     OnlineMenuAndStats();
+    Reconnection();
+    AdaptiveDelay();
+    BalancedAdvantage();
+    SlowPeer();
     RemoteDeparture();
     RoundTrips();
     Bursts();
@@ -635,6 +959,42 @@ int main()
         auto join = OpenUdp("127.0.0.1", host->Port(), false, error);
         Check(bool(join), "join UDP socket");
         Run(std::move(host), std::move(join), desync);
+    }
+    {
+        // The launcher's punched path: a host knocks at the joiner's address until the joiner's first packet, and a
+        // joiner binds the port its launcher used.
+        std::string error;
+        auto receiver = OpenUdp("", 0, true, error);
+        if (receiver)
+        {
+            UdpOptions knocking;
+            knocking.knockHost = "127.0.0.1";
+            knocking.knockPort = receiver->Port();
+            auto host = OpenUdp("", 0, true, error, knocking);
+            Check(bool(host), "a host with a knock target opens");
+            host->Knock();
+            std::array<uint8_t, 64> bytes{};
+            size_t got = Transport::NoDatagram;
+            for (unsigned i = 0; i < 200 && got == Transport::NoDatagram; ++i)
+            {
+                got = receiver->Receive(bytes);
+                if (got == Transport::NoDatagram)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            Check(got == 1, "the host's knock reaches the joiner's address");
+            uint16_t free = 0;
+            {
+                auto probe = OpenUdp("", 0, true, error);
+                Check(bool(probe), "a port to reuse");
+                free = probe->Port();
+            }
+            UdpOptions local;
+            local.localPort = free;
+            auto join = OpenUdp("127.0.0.1", host->Port(), false, error, local);
+            Check(join && join->Port() == free, "a joiner binds the port its launcher punched through");
+        }
+        else
+            fprintf(stderr, "SKIP real UDP knock: %s\n", error.c_str());
     }
     std::puts("session: 600 frames, loss, duplicates, reordering, desync and timeout passed");
 }

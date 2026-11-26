@@ -172,7 +172,7 @@ namespace mouse
     bool MenuPointer::Update(const State& state)
     {
         std::lock_guard lock(m_mutex);
-        const bool active = state.supported && state.gameMenu && !state.overlay;
+        const bool active = state.supported && state.gameMenu && !state.overlay && !state.session;
         if (!active)
             m_read.clicks = 0;
         m_read.active = active;

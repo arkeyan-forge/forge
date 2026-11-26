@@ -241,7 +241,11 @@ namespace toybox
         if (online)
             rows[MainQuit].label = L("Leave the session", "Quitter la session");
         else
-            rows[MainPlayOnline] = row(Kind::Action, L("Play online", "Jouer en ligne"), "");
+            // After a session that ended, the same row sets the room up again for both players.
+            rows[MainPlayOnline] = row(Kind::Action,
+                netplay::SessionContinues() ? L("Play together again", "Rejouer ensemble")
+                                            : L("Play online", "Jouer en ligne"),
+                "");
         return rows;
     }
 
@@ -321,17 +325,24 @@ namespace toybox
             if (step == 0)
             {
                 const bool online = netplay::Online(), playOnline = row == MainPlayOnline;
+                const bool again = playOnline && netplay::SessionContinues();
                 if (playOnline && online)
                     return;
-                Ask({ playOnline ? L("Close the game and open Online in the launcher?",
-                                       "Fermer le jeu et ouvrir En ligne dans le launcher ?")
-                      : online   ? L("Leave the session?", "Quitter la session ?")
-                                 : L("Quit to the launcher?", "Quitter vers le launcher ?"),
+                Ask({ again        ? L("Close the game and play together again?", "Fermer le jeu et rejouer ensemble ?")
+                      : playOnline ? L("Close the game and open Online in the launcher?",
+                                         "Fermer le jeu et ouvrir En ligne dans le launcher ?")
+                      : online     ? L("Leave the session?", "Quitter la session ?")
+                                   : L("Quit to the launcher?", "Quitter vers le launcher ?"),
                     L("What the game has not saved is lost.", "Ce que le jeu n'a pas enregistré est perdu."),
                     { online ? L("Leave", "Quitter") : L("Quit", "Quitter"), L("Keep playing", "Continuer") }, 1, false,
-                    [this, online, playOnline](int choice) {
+                    [this, online, playOnline, again](int choice) {
                         if (choice != 0)
                             return;
+                        if (again)
+                        {
+                            netplay::PlayTogetherAgain();
+                            return;
+                        }
                         if (playOnline && !netplay::WriteOpenOnlineFile(PortalSessionFolder(), game))
                         {
                             Toast(L("Could not open Online in the launcher",

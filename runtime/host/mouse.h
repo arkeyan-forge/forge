@@ -113,12 +113,15 @@ namespace mouse
             bool supported = false; // the game takes the pointer in its menus
             bool gameMenu = false;  // one of its menus is on screen (game::InMenu)
             bool overlay = false;   // the F3 menu, the Toy Box or its wheel is over it
+            // An online session or a recording (netplay::Enabled): the focus a hook writes would move one game's menu
+            // only, and the two games would differ.
+            bool session = false;
         };
         struct Read
         {
             bool active = false; // the pointer is the menu's
             bool inside = false; // on the canvas, not the black bars
-            float x = 0, y = 0;  // canvas pixels
+            float x = 0, y = 0; // canvas pixels
             uint32_t clicks = 0; // left clicks since the last Take
         };
 

@@ -345,6 +345,10 @@ target_include_directories(ArkeyanToyboxRealCopyTest PRIVATE .)
 # Which refusal a seat gives a card, for the toast and the seats a drag greys out (host/toybox/put_on.h): ./ArkeyanToyboxPutOnTest
 add_executable(ArkeyanToyboxPutOnTest host/toybox/put_on_test.cpp)
 target_include_directories(ArkeyanToyboxPutOnTest PRIVATE .)
+# What the game shows of an online session, banner and chip (host/toybox/online_banner.h): ./ArkeyanToyboxOnlineBannerTest
+add_executable(ArkeyanToyboxOnlineBannerTest host/toybox/online_banner_test.cpp)
+target_include_directories(ArkeyanToyboxOnlineBannerTest PRIVATE .)
+target_link_libraries(ArkeyanToyboxOnlineBannerTest PRIVATE ArkeyanNetplay)
 
 # The section strip's chips wrapping onto rows (host/toybox/strip.h): ./ArkeyanToyboxStripTest
 add_executable(ArkeyanToyboxStripTest host/toybox/strip_test.cpp)
@@ -957,9 +961,10 @@ set_source_files_properties(main.cpp host/uwp/main.cpp PROPERTIES COMPILE_DEFINI
 # The game's id, for the same reason: only the files that read it (and toybox/model.h's includers) differ between games.
 set_property(SOURCE main.cpp host/log.cpp host/portal.cpp host/portal_mixed.cpp host/gamemenu.cpp host/gamemenu_debug.cpp
     host/toybox.cpp host/toybox/draw.cpp host/toybox/menu.cpp host/toybox/model.cpp kernel/files.cpp
-    kernel/xam_achievements.cpp kernel/xam_content.cpp APPEND PROPERTY COMPILE_DEFINITIONS ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
+    kernel/xam_achievements.cpp kernel/xam_achievements_test.cpp kernel/xam_content.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    ARKEYAN_GAME_ID="${ARKEYAN_GAME}")
 
-add_library(ArkeyanNetplayTransport STATIC netplay/protocol.cpp netplay/session.cpp netplay/socket.cpp netplay/portmap.cpp)
+add_library(ArkeyanNetplayTransport STATIC netplay/chacha20.cpp netplay/protocol.cpp netplay/session.cpp netplay/socket.cpp netplay/portmap.cpp)
 target_include_directories(ArkeyanNetplayTransport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ArkeyanNetplayTransport PUBLIC ArkeyanNetplay)
 if(WIN32)

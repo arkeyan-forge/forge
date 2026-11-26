@@ -965,8 +965,9 @@ PPC_FUNC(__imp__NtQueryVolumeInformationFile)
             space = {};
     }
 
-    g_memory.Write<uint64_t>(info + 0x00, space.capacity / (BytesPerSector * SectorsPerUnit));
-    g_memory.Write<uint64_t>(info + 0x08, space.available / (BytesPerSector * SectorsPerUnit));
+    const auto told = netplay::TitleDiskSpace(netplay::Enabled(), space.capacity, space.available);
+    g_memory.Write<uint64_t>(info + 0x00, told.capacity / (BytesPerSector * SectorsPerUnit));
+    g_memory.Write<uint64_t>(info + 0x08, told.available / (BytesPerSector * SectorsPerUnit));
     g_memory.Write<uint32_t>(info + 0x10, SectorsPerUnit);
     g_memory.Write<uint32_t>(info + 0x14, BytesPerSector);
     WriteIoStatus(ioStatusBlock, StatusSuccess, 0x18);

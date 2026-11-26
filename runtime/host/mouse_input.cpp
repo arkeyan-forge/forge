@@ -1,6 +1,7 @@
 #include "host/mouse_input.h"
 #include "host/env.h"
 #include "host/settings.h"
+#include "netplay/clock.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -162,6 +163,7 @@ namespace mouseinput
         menu.supported = menuPointer;
         menu.gameMenu = gameMenu;
         menu.overlay = overlay;
+        menu.session = netplay::Enabled();
         const bool menuActive = mouse::Menu().Update(menu);
         if (menuActive != g_menuActive)
         {

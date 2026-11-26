@@ -36,7 +36,9 @@ namespace gameoptions
             constexpr const char* Blocked[] = { "SKY_LEVEL", "SKY_LEVEL_FROM", "SKY_NEXT_LEVEL", "SKY_MOVIE_SWAP",
                 "SKY_SKIP_MOVIES", "SKY_CLOCK_STEP", "SKY_FPS_TEST_LATE_MS", "SKY_HOST_LZMA", "SKY_SWAP_WAIT",
                 "SKY_TEST_READ_FAIL", "SKY_RESOLVE_DEFER", "SKY_CLEAR_NEW_TEXTURES", "SKY_SKIP_PS", "SKY_PORTAL_MODEL",
-                "SKY_TOYBOX_CLOCK", "SKY_TOYBOX_REAL_VIEW", "SKY_CRASH_TEST", "SKY_NETPLAY_TEST_DESYNC" };
+                "SKY_TOYBOX_CLOCK", "SKY_TOYBOX_REAL_VIEW", "SKY_CRASH_TEST", "SKY_NETPLAY_TEST_DESYNC",
+                "SKY_NETPLAY_TEST_NET", "SKY_NETPLAY_TEST_SLOW", "SKY_NETPLAY_TEST_DEPTH_NOISE",
+                "SKY_NETPLAY_TEST_XMA_NATIVE", "SKY_NETPLAY_TEST_HOST_RANDOM" };
             for (const char* variable : Blocked)
             {
                 if (test)

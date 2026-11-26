@@ -2,6 +2,7 @@
 #include "netplay/scheduler.h"
 #include "netplay/events.h"
 #include "netplay/inputs.h"
+#include "netplay/net_sim.h"
 #include "netplay/state_hash.h"
 #ifdef ARKEYAN_NETPLAY_TRACE
 #include "netplay/trace.h"
@@ -18,8 +19,11 @@
 #include "host/env.h"
 #include "host/launcher.h"
 #include "host/profiles.h"
+#include "host/log.h"
 #include "memory.h"
+#include <SDL3/SDL_events.h>
 #include <algorithm>
+#include <filesystem>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -55,6 +59,9 @@ namespace netplay
             uint32_t delay = 0;
             std::string address, password, dump, error;
             uint64_t testDesync = 0;
+            UdpOptions udp; // the launcher's punched path: the joiner's local port, the host's knock target
+            uint32_t testSlowMs = 0;
+            std::optional<NetSim> testNet;
             EndReason errorReason = EndReason::Invalid;
 
             NetworkOptions()
@@ -106,6 +113,23 @@ namespace netplay
                     error = "JOIN must be host:port or [IPv6]:port";
                     return;
                 }
+                if (const char* value = skyenv::Get("SKY_NETPLAY_LOCAL_PORT"))
+                {
+                    if (host || !ParseCount(value, 1, 65535, false, number))
+                    {
+                        error = "LOCAL_PORT is a joiner's UDP port from 1 to 65535";
+                        return;
+                    }
+                    udp.localPort = uint16_t(number);
+                }
+                if (const char* value = skyenv::Get("SKY_NETPLAY_PEER"))
+                {
+                    if (!host || !ParseEndpoint(value, udp.knockHost, udp.knockPort))
+                    {
+                        error = "PEER is the joiner's address for a host, host:port or [IPv6]:port";
+                        return;
+                    }
+                }
                 if (const char* value = skyenv::Get("SKY_NETPLAY_DELAY"))
                 {
                     if (!ParseCount(value, 1, 8, false, number))
@@ -121,6 +145,24 @@ namespace netplay
                     dump = value;
                 if (const char* value = skyenv::Get("SKY_NETPLAY_TEST_DESYNC"))
                     testDesync = std::strtoull(value, nullptr, 10);
+                if (const char* value = skyenv::Get("SKY_NETPLAY_TEST_NET"))
+                {
+                    testNet.emplace();
+                    if (!ParseNetSim(value, *testNet, error))
+                    {
+                        error = "SKY_NETPLAY_TEST_NET: " + error;
+                        return;
+                    }
+                }
+                if (const char* value = skyenv::Get("SKY_NETPLAY_TEST_SLOW"))
+                {
+                    if (!ParseCount(value, 0, UINT32_MAX, false, number))
+                    {
+                        error = "SKY_NETPLAY_TEST_SLOW must be milliseconds from 0 to 4294967295";
+                        return;
+                    }
+                    testSlowMs = uint32_t(number);
+                }
                 crossPlatform = is("SKY_NETPLAY_CROSS_PLATFORM", "1");
             }
         };
@@ -130,15 +172,42 @@ namespace netplay
             return options;
         }
 
+        // The session's inputs (both players' pads, frame by frame), recorded in its folder: an unrepaired desync keeps
+        // them beside the game's log, to replay the session alone (SKY_NETPLAY_REPLAY) and find where it went apart.
+        std::filesystem::path SessionInputs()
+        {
+            return std::filesystem::path(PortalSessionFolder()) / "online-inputs.rec";
+        }
+        void KeepDesyncInputs()
+        {
+            std::error_code error;
+            const std::filesystem::path log = LogPath();
+            if (log.empty() || !std::filesystem::exists(SessionInputs(), error))
+                return;
+            const auto kept = log.parent_path() / "netplay-desync.rec";
+            if (std::filesystem::copy_file(
+                    SessionInputs(), kept, std::filesystem::copy_options::overwrite_existing, error))
+                fprintf(stderr,
+                    "[netplay] desync report: the session's inputs are in %s (replay alone with SKY_NETPLAY_REPLAY; "
+                    "figure changes made during the session are not in it)\n",
+                    kept.string().c_str());
+            else
+                fprintf(
+                    stderr, "[netplay] desync report: cannot copy the session's inputs: %s\n", error.message().c_str());
+        }
+
         void ExitSession(const SessionFailure& failure)
         {
             std::lock_guard lock(g_sessionExitMutex);
             if (g_endReason.load(std::memory_order_relaxed) != EndReason::None)
                 return;
             if (failure.reason == EndReason::Desync)
+            {
                 fprintf(stderr, "[netplay] session ended: desync frame %llu local=%016llx remote=%016llx\n",
                     static_cast<unsigned long long>(failure.frame), static_cast<unsigned long long>(failure.localHash),
                     static_cast<unsigned long long>(failure.remoteHash));
+                KeepDesyncInputs();
+            }
             else
                 fprintf(stderr, "[netplay] session %s: %s\n",
                     failure.reason >= EndReason::Protocol && failure.reason <= EndReason::Seats ? "refused" : "ended",
@@ -199,6 +268,10 @@ namespace netplay
 
         struct Probe;
         std::atomic<Probe*> g_probe{ nullptr };
+        // Render-only ranges marked by guest code, taken into the hash's skips at the next frame's hash.
+        std::mutex g_renderOnlyMutex;
+        std::vector<Range> g_renderOnly;
+        bool g_renderOnlyChanged = false;
         std::atomic<uint32_t> g_bundle{ 0 };
         std::mutex g_inputMutex;
         InputLatch g_latch;
@@ -268,7 +341,13 @@ namespace netplay
             std::vector<Range> skips, imageRanges;
             std::vector<Block> blocks;
             std::vector<netplay::Allocation> allocations; // of the hash being made
-            std::vector<uint64_t> ends;                   // each block's end, while locating blocks
+            std::array<std::vector<netplay::Allocation>, 30> slices; // the network window's parts (PlanWindow)
+            std::vector<Block> windowBlocks;
+            bool windowFull = false, discardWindow = false;
+            uint64_t postedFrame = 0; // the checkpoint whose hash went out, compared at the window's LateCheck frame
+            // The other player's hash rides on its inputs, which come within its input delay (8 frames at most).
+            static constexpr uint64_t LateCheck = 8;
+            std::vector<uint64_t> ends; // each block's end, while locating blocks
             std::vector<Range> repairRanges;
             bool locatingBlocks = false;
 
@@ -305,6 +384,15 @@ namespace netplay
                     if (replaying)
                         Refuse("record and replay are mutually exclusive");
                     record = Open(path, "wb");
+                    const auto header = InputHeader(g_gameInfo.id, 0);
+                    Write(record, header.data(), header.size());
+                }
+                else if (Network().enabled)
+                {
+                    // An online session always records its inputs, for the desync report.
+                    std::error_code error;
+                    std::filesystem::create_directories(SessionInputs().parent_path(), error);
+                    record = Open(SessionInputs().string().c_str(), "wb");
                     const auto header = InputHeader(g_gameInfo.id, 0);
                     Write(record, header.data(), header.size());
                 }
@@ -361,6 +449,12 @@ namespace netplay
                         byte = uint8_t(random());
                     config.password = Network().password;
                     config.delay = Network().delay;
+                    // A lost connection holds both games and resumes on its own; after a minute the player decides.
+                    config.timeoutMs = 60000;
+                    config.lostMs = 3000;
+                    config.askBeforeEnding = true;
+                    config.adaptiveDelay = true;
+                    config.balanceAdvantage = true;
                     config.slotPlayers = PortalOnlinePlayers();
                     config.prepareEvent = PortalPrepareOnline;
                     config.applyEvents = PortalApplyOnline;
@@ -373,13 +467,19 @@ namespace netplay
                         }
                     };
                     std::string error;
-                    auto transport = OpenUdp(Network().address, Network().port, Network().host, error);
+                    auto transport = OpenUdp(Network().address, Network().port, Network().host, error, Network().udp);
                     if (!transport)
                     {
                         SessionRefuse(error.c_str(), EndReason::Transport);
                         g_probe.store(this, std::memory_order_release);
                         return;
                     }
+                    if (const auto& simulated = Network().testNet)
+                        transport = SimulateNetwork(std::move(transport), *simulated, [] {
+                            return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch())
+                                    .count());
+                        });
                     session = std::make_unique<Session>(std::move(config), std::move(transport));
                     g_activeSession.store(session.get(), std::memory_order_release);
                 }
@@ -604,26 +704,90 @@ namespace netplay
                 if (locatingBlocks)
                     for (size_t i = 0; i < blocks.size(); ++i)
                         repairRanges.push_back({ blocks[i].address, ends[i] });
-                uint64_t total = HashSeed;
-                for (const auto& block : blocks)
-                {
-                    total = Mix(total, (uint64_t(block.address) << 32) | uint32_t(block.heap));
-                    total = Mix(total, block.hash);
-                }
-                return total;
+                return CombineBlocks(blocks);
+            }
+
+            // The checkpoint's memory cut into 30 parts of about the same size, on block boundaries: one is hashed at
+            // each frame of the window (at 60 FPS a whole hash would take a frame and more at once). Both games are at
+            // the same frame, so each block is hashed at the same moment on both sides.
+            void PlanWindow()
+            {
+                allocations.clear();
+                Scan(g_virtualHeap4K, Heap::Virtual4K, 0x00010000);
+                Scan(g_virtualHeap64K, Heap::Virtual64K, 0x40000000);
+                Scan(g_physicalHeap, Heap::Physical, 0x00010000);
+                for (const auto range : imageRanges)
+                    Allocation(uint32_t(range.begin), uint32_t(range.end - range.begin), Heap::Image);
+                SliceAllocations(allocations, uint32_t(blockBytes), slices);
+                allocations.clear();
             }
 
             void Hash()
             {
-                const bool networkHash = session && !session->ContinuingSolo() && frames % 30 == 0;
+                {
+                    std::lock_guard lock(g_renderOnlyMutex);
+                    if (std::exchange(g_renderOnlyChanged, false))
+                        for (const auto range : g_renderOnly)
+                            AddSkip(skips, range);
+                }
+                const bool online = session && !session->ContinuingSolo();
                 const bool fileHash = totals && frames % hashEvery == 0;
-                if (!networkHash && !fileHash)
+                if (!online && !fileHash)
                     return;
                 const auto start = std::chrono::steady_clock::now();
-                if (networkHash && !Hosting() && Network().testDesync != 0 && frames == Network().testDesync)
-                    BreakOneBlock();
+                if (online)
+                {
+                    const uint64_t phase = frames % slices.size();
+                    if (phase == 0)
+                    {
+                        if (!Hosting() && Network().testDesync != 0 && frames == Network().testDesync)
+                            BreakOneBlock();
+                        // The window that just ended: its hash goes out with the inputs, and is compared LateCheck
+                        // frames later, when the other player's has come, so the game never holds for it. A window
+                        // that saw a repair is not posted (both games repaired at the same frame).
+                        if (windowFull && !discardWindow)
+                        {
+                            if (!session->PostHash(frames, CombineBlocks(windowBlocks)))
+                            {
+                                SessionExit();
+                                return;
+                            }
+                            postedFrame = frames;
+                        }
+                        discardWindow = false;
+                        PlanWindow();
+                        windowBlocks.clear();
+                        windowFull = false;
+                    }
+                    else if (phase == LateCheck && postedFrame)
+                    {
+                        NetworkWait waiting;
+                        bool repaired = false;
+                        if (!session->CheckPostedHash(std::exchange(postedFrame, 0), repaired))
+                        {
+                            SessionExit();
+                            return;
+                        }
+                        // The window's first frames were hashed before the repair.
+                        if (repaired)
+                        {
+                            windowBlocks.clear();
+                            discardWindow = true;
+                        }
+                    }
+                    HashAllocations(slices[phase], skips, windowBlocks, uint32_t(blockBytes));
+                    windowFull = phase + 1 == slices.size();
+                }
+                if (!fileHash)
+                {
+                    const double ms =
+                        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                    totalMs += ms;
+                    maxMs = std::max(maxMs, ms);
+                    ++hashed;
+                    return;
+                }
                 const uint64_t total = TotalHash();
-                if (fileHash)
                 {
                     if (fprintf(totals, "%llu %016llx\n", static_cast<unsigned long long>(frames),
                             static_cast<unsigned long long>(total)) < 0)
@@ -632,15 +796,6 @@ namespace netplay
                         WriteBlocks(sidecar);
                     if (fflush(totals) != 0 || (sidecar && fflush(sidecar) != 0))
                         Refuse("hash output flush failed");
-                }
-                if (networkHash)
-                {
-                    NetworkWait waiting;
-                    if (!session->CheckHash(frames, total))
-                    {
-                        SessionExit();
-                        return;
-                    }
                 }
                 const double ms =
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -677,6 +832,37 @@ namespace netplay
         if (auto* session = g_activeSession.load(std::memory_order_acquire))
             session->SetMenuOpen(open);
     }
+    void SkipRenderOnly(uint32_t begin, uint32_t end)
+    {
+        std::lock_guard lock(g_renderOnlyMutex);
+        if (AddSkip(g_renderOnly, { begin, end }))
+        {
+            g_renderOnlyChanged = true;
+            fprintf(stderr, "[netplay] render-only memory left out of the state check: %08x-%08x\n", begin, end);
+        }
+    }
+
+    void ContinueAlone()
+    {
+        if (auto* session = g_activeSession.load(std::memory_order_acquire))
+            session->ContinueAlone();
+    }
+    void KeepWaiting()
+    {
+        if (auto* session = g_activeSession.load(std::memory_order_acquire))
+            session->KeepWaiting();
+    }
+    void PlayTogetherAgain()
+    {
+        if (!WriteReplayFile(PortalSessionFolder()))
+            fprintf(stderr, "[netplay] cannot write online-replay.txt\n");
+        fprintf(stderr, "[netplay] the player chose to play together again: quitting to the launcher\n");
+        LeaveSession();
+        SDL_Event quit{};
+        quit.type = SDL_EVENT_QUIT;
+        SDL_PushEvent(&quit);
+    }
+    std::string OtherPlayerName() { return profiles::Current()[Hosting() ? 1 : 0].name; }
     void LeaveSession()
     {
         g_leftLocally = true;
@@ -724,6 +910,8 @@ namespace netplay
         park();
         if (probe.finished)
             return;
+        if (Network().testSlowMs)
+            std::this_thread::sleep_for(std::chrono::milliseconds(Network().testSlowMs));
         if (probe.events && !probe.events->EndFrame(probe.frames))
             Refuse("event log write failed");
 #ifdef ARKEYAN_NETPLAY_TRACE

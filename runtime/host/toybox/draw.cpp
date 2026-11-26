@@ -1,4 +1,5 @@
 #include "host/toybox/draw.h"
+#include "host/toybox/online_banner.h"
 #include "host/gamemenu.h"
 #include "netplay/session_runtime.h"
 #include "host/toybox/hit.h"
@@ -4427,13 +4428,70 @@ namespace toybox
         if (!model.open) // it would sit on the corner buttons of the full-screen pages
             DrawFps(model);
         const auto online = netplay::SessionStatus();
-        if (netplay::Online() && (online.backInSync || online.peerMenuOpen))
+        const OnlineBanner banner = netplay::Online() ? OnlineBannerOf(online) : OnlineBanner::None;
+        if (netplay::Online() && banner == OnlineBanner::None && (online.backInSync || online.peerMenuOpen))
         {
             const char* text =
                 online.backInSync ? L("Back in sync", "Synchronisation rétablie") : L("in the menu", "dans le menu");
             const float width = g_bold->CalcTextSizeA(14, FLT_MAX, 0, text).x + 24;
             Fill(ImVec2(18, 18), ImVec2(18 + width, 50), look::Colour::Surface, 0.85f);
             Text(g_bold, 14, ImVec2(30, 25), Look::Text, text);
+        }
+        // A slow connection: the round trip in a corner chip, nothing else while it plays.
+        if (netplay::Online() && OnlineChipShown(online))
+        {
+            char text[32];
+            snprintf(text, sizeof(text), "%llu ms", static_cast<unsigned long long>(online.roundTripMs));
+            const float width = g_bold->CalcTextSizeA(14, FLT_MAX, 0, text).x + 40;
+            const float right = CanvasWidth - 18.0f;
+            Fill(ImVec2(right - width, 18), ImVec2(right, 50), look::Colour::Surface, 0.85f);
+            Fill(ImVec2(right - width + 14, 30), ImVec2(right - width + 22, 38), look::Colour::Warning);
+            Text(g_bold, 14, ImVec2(right - width + 30, 25), Look::Text, text);
+        }
+        // The game is held for the other player: what happens, and the player's way out.
+        if (banner != OnlineBanner::None)
+        {
+            char detail[96] = {}, titleText[96] = {};
+            const std::string other = netplay::OtherPlayerName();
+            const char* title = "";
+            const char* hint = "";
+            switch (banner)
+            {
+            case OnlineBanner::Lost:
+                snprintf(titleText, sizeof(titleText), L("Connection lost with %s", "Connexion perdue avec %s"),
+                    other.c_str());
+                title = titleText;
+                snprintf(detail, sizeof(detail), L("Reconnecting... %llu s", "Reconnexion... %llu s"),
+                    static_cast<unsigned long long>(OnlineSecondsLeft(online)));
+                hint = L("Esc or B: continue alone  ·  R or Y: play together again",
+                    "Échap ou B : continuer seul  ·  R ou Y : rejouer ensemble");
+                break;
+            case OnlineBanner::Ask:
+                snprintf(titleText, sizeof(titleText), L("Still no answer from %s", "Toujours pas de réponse de %s"),
+                    other.c_str());
+                title = titleText;
+                snprintf(detail, sizeof(detail), "%s",
+                    L("Wait one more minute, or play on alone.", "Attendre encore une minute, ou jouer seul."));
+                hint = L("Enter or A: wait  ·  Esc or B: continue alone  ·  R or Y: play together again",
+                    "Entrée ou A : attendre  ·  Échap ou B : seul  ·  R ou Y : rejouer ensemble");
+                break;
+            case OnlineBanner::Waiting:
+                snprintf(
+                    titleText, sizeof(titleText), L("Waiting for %s's game", "En attente du jeu de %s"), other.c_str());
+                title = titleText;
+                snprintf(detail, sizeof(detail),
+                    L("It is still loading or catching up (%llu s).",
+                        "Il charge encore ou rattrape son retard (%llu s)."),
+                    static_cast<unsigned long long>(online.waitedMs / 1000));
+                hint = L("Esc or B: continue alone", "Échap ou B : continuer seul");
+                break;
+            case OnlineBanner::None: break;
+            }
+            const float top = CanvasHeight - 150.0f, left = 60.0f, right = CanvasWidth - 60.0f;
+            Fill(ImVec2(left, top), ImVec2(right, top + 112), look::Colour::Surface, 0.92f);
+            Text(g_black, 20, ImVec2(left + 24, top + 16), Look::Text, title);
+            Text(g_bold, 15, ImVec2(left + 24, top + 50), Look::Text, detail);
+            Text(g_bold, 13, ImVec2(left + 24, top + 80), look::Colour::TextSoft, hint);
         }
         if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())
         {

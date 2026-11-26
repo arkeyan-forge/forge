@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <random>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace
@@ -72,6 +73,28 @@ namespace
             "host file times do not depend on the host clock");
         Check(
             netplay::HostFileTime(false, 5000, 1234) == 3766, "host file times follow the file's age outside netplay");
+        Check(netplay::TitleDiskSpace(true, 7, 3).capacity == 120ull << 30 &&
+                  netplay::TitleDiskSpace(true, 9, 1).available == 100ull << 30,
+            "a deterministic run's disk is the same whatever the host's");
+        {
+            uint64_t a = netplay::DeterministicRandomSeed, b = netplay::DeterministicRandomSeed;
+            bool same = true, varied = false;
+            uint8_t first = netplay::DeterministicByte(a);
+            same = same && first == netplay::DeterministicByte(b);
+            for (int i = 0; i < 64; ++i)
+            {
+                const uint8_t x = netplay::DeterministicByte(a);
+                same = same && x == netplay::DeterministicByte(b);
+                varied = varied || x != first;
+            }
+            Check(same && varied, "a deterministic run's random bytes are the same on both computers, and vary");
+        }
+        Check(netplay::TitleTimeZoneBias(true, -60) == 0 && netplay::TitleTimeZoneBias(false, -60) == -60 &&
+                  std::string_view(netplay::TitleTimeZoneName(true, "CEST")) == "UTC" &&
+                  std::string_view(netplay::TitleTimeZoneName(false, "CEST")) == "CEST",
+            "a deterministic run's time zone is UTC, the host's otherwise");
+        Check(netplay::TitleDiskSpace(false, 7, 3).capacity == 7 && netplay::TitleDiskSpace(false, 7, 3).available == 3,
+            "outside netplay the title sees the host's disk");
         // A cooperative flip waits for its blanks' wall time; a late one shows at once and paces the next from now.
         Check(netplay::FlipDue(0, 7000, 2, 100) == 7000, "the first cooperative flip is not held");
         Check(netplay::FlipDue(1000, 1050, 2, 100) == 1200,
@@ -199,6 +222,27 @@ namespace
             Check(netplay::HashBytes(lanes, 0x2000, {}) != base, "two words swapped between lanes change the hash");
         }
         {
+            // A checkpoint spread over 30 frames: its parts, hashed one after the other, give the whole hash's blocks.
+            std::vector<uint8_t> first(3u << 20), second(700000), third(5u << 20);
+            for (auto* memory : { &first, &second, &third })
+                for (size_t i = 0; i < memory->size(); ++i)
+                    (*memory)[i] = uint8_t((i * 2654435761u) >> 11);
+            const std::vector<netplay::Allocation> all = { { first, 0x10000, netplay::Heap::Virtual4K },
+                { second, 0x40008000, netplay::Heap::Virtual64K }, { third, 0x50000000, netplay::Heap::Physical } };
+            const std::vector<netplay::Range> holes = { { 0x40010000, 0x40010010 } };
+            std::vector<netplay::Block> whole, spread;
+            netplay::HashAllocations(all, holes, whole);
+            std::array<std::vector<netplay::Allocation>, 30> parts;
+            netplay::SliceAllocations(all, 0x10000, parts);
+            size_t nonEmpty = 0;
+            for (const auto& part : parts)
+            {
+                nonEmpty += !part.empty();
+                netplay::HashAllocations(part, holes, spread);
+            }
+            Check(spread == whole && nonEmpty >= 25, "a checkpoint spread over its frames hashes the same blocks");
+        }
+        {
             // The probe's walk over a heap: the allocation holding the address, else the next one.
             const std::map<uint32_t, uint32_t> used = { { 0x10000, 0x2000 }, { 0x40000, 0x1000 } };
             Check(AllocationAtOrAfter(used, 0x10000)->first == 0x10000 &&
@@ -246,6 +290,20 @@ namespace
                   blocks[2].address == 0x30000 && blocks[3].address == 0x40000,
             "block edges");
         blocks.clear();
+        {
+            // Render-only memory a game marks during a session: kept sorted and merged, a covered range is no change.
+            std::vector<netplay::Range> marked;
+            Check(netplay::AddSkip(marked, { 0x3000, 0x4000 }) && netplay::AddSkip(marked, { 0x1000, 0x2000 }),
+                "skips added");
+            Check(!netplay::AddSkip(marked, { 0x3100, 0x3200 }) && !netplay::AddSkip(marked, { 0x5000, 0x5000 }),
+                "a covered or empty skip changes nothing");
+            Check(netplay::AddSkip(marked, { 0x1800, 0x3000 }) && marked.size() == 1 && marked[0].begin == 0x1000 &&
+                      marked[0].end == 0x4000,
+                "a skip touching two others merges them");
+            Check(netplay::AddSkip(marked, { 0x8000, 0x9000 }) && netplay::AddSkip(marked, { 0x6000, 0x7000 }) &&
+                      marked.size() == 3 && marked[1].begin == 0x6000 && marked[2].begin == 0x8000,
+                "skips stay sorted");
+        }
         Check(netplay::ParseSkips("20000-30000", skips, error), "whole block skip parse");
         netplay::HashAllocation(bytes, 0x1FFFF, netplay::Heap::Physical, skips, blocks);
         Check(blocks.size() == 3 && blocks[1].address == 0x30000 && blocks[1].heap == netplay::Heap::Physical,

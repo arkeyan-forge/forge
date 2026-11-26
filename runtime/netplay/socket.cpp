@@ -45,17 +45,31 @@ namespace netplay
         {
         public:
             Udp(Socket socket, bool listen, uint16_t port) : m_socket(socket), m_listen(listen), m_port(port) {}
+            void SetKnock(const sockaddr_storage& address, SocketLength length)
+            {
+                m_knock = address;
+                m_knockLength = length;
+            }
+            void Knock() override
+            {
+                if (m_accepted || !m_knockLength)
+                    return;
+                const char byte = 0;
+                sendto(m_socket, &byte, 1, 0, reinterpret_cast<const sockaddr*>(&m_knock), m_knockLength);
+            }
             ~Udp() override { Close(m_socket); }
             uint16_t Port() const override { return m_port; }
             bool Healthy() const override { return m_healthy; }
-            void AcceptPeer() override
+            bool AcceptPeer() override
             {
-                if (!m_accepted && m_candidateLength)
-                {
-                    m_peer = m_candidate;
-                    m_peerLength = m_candidateLength;
-                    m_accepted = true;
-                }
+                if (!m_candidateLength)
+                    return false;
+                const bool moved = m_accepted && (m_candidateLength != m_peerLength ||
+                                                     std::memcmp(&m_candidate, &m_peer, size_t(m_peerLength)) != 0);
+                m_peer = m_candidate;
+                m_peerLength = m_candidateLength;
+                m_accepted = true;
+                return moved;
             }
             bool Send(std::span<const uint8_t> bytes) override
             {
@@ -84,8 +98,8 @@ namespace netplay
                     m_healthy = WouldBlock();
                     return NoDatagram;
                 }
-                if (m_accepted && (length != m_peerLength || std::memcmp(&address, &m_peer, size_t(length)) != 0))
-                    return bytes.size() + 1;
+                // Another address may be the peer after its router restarted: the session follows it only once the
+                // datagram proves to be an authenticated, new packet (AcceptPeer); anything else is dropped there.
                 m_candidate = address;
                 m_candidateLength = length;
                 return size_t(got);
@@ -95,8 +109,8 @@ namespace netplay
             Socket m_socket;
             bool m_listen, m_accepted = false, m_healthy = true;
             uint16_t m_port;
-            sockaddr_storage m_peer{}, m_candidate{};
-            SocketLength m_peerLength = 0, m_candidateLength = 0;
+            sockaddr_storage m_peer{}, m_candidate{}, m_knock{};
+            SocketLength m_peerLength = 0, m_candidateLength = 0, m_knockLength = 0;
         };
         bool Prepare(Socket socket)
         {
@@ -128,7 +142,44 @@ namespace netplay
         port = uint16_t(number);
         return true;
     }
-    std::unique_ptr<Transport> OpenUdp(std::string_view host, uint16_t port, bool listen, std::string& error)
+    namespace
+    {
+        // The knock target in the listening socket's family: an IPv4 address on a dual-stack IPv6 socket is mapped.
+        void SetKnockTarget(Udp& udp, int family, const std::string& host, uint16_t port)
+        {
+            addrinfo hints{};
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_DGRAM;
+            hints.ai_flags = AI_NUMERICHOST;
+            addrinfo* found = nullptr;
+            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &found) != 0 || !found)
+                return;
+            sockaddr_storage target{};
+            SocketLength length = 0;
+            if (found->ai_family == family)
+            {
+                std::memcpy(&target, found->ai_addr, found->ai_addrlen);
+                length = SocketLength(found->ai_addrlen);
+            }
+            else if (family == AF_INET6 && found->ai_family == AF_INET)
+            {
+                const auto& v4 = *reinterpret_cast<const sockaddr_in*>(found->ai_addr);
+                auto& v6 = reinterpret_cast<sockaddr_in6&>(target);
+                v6.sin6_family = AF_INET6;
+                v6.sin6_port = v4.sin_port;
+                v6.sin6_addr.s6_addr[10] = 0xFF;
+                v6.sin6_addr.s6_addr[11] = 0xFF;
+                std::memcpy(&v6.sin6_addr.s6_addr[12], &v4.sin_addr, 4);
+                length = sizeof(sockaddr_in6);
+            }
+            freeaddrinfo(found);
+            if (length)
+                udp.SetKnock(target, length);
+        }
+    }
+
+    std::unique_ptr<Transport> OpenUdp(
+        std::string_view host, uint16_t port, bool listen, std::string& error, const UdpOptions& options)
     {
 #if defined(_WIN32)
         static const bool started = [] {
@@ -169,8 +220,33 @@ namespace netplay
                     const int dual = 0;
                     setsockopt(socket, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char*>(&dual), sizeof(dual));
                 }
-                const bool opened = listen ? bind(socket, address->ai_addr, SocketLength(address->ai_addrlen)) == 0
-                                           : connect(socket, address->ai_addr, SocketLength(address->ai_addrlen)) == 0;
+                // A joiner whose launcher punched through its router keeps that port: the router's opening is for it.
+                bool bindable = true;
+                if (!listen && options.localPort)
+                {
+                    const int on = 1;
+                    setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&on), sizeof(on));
+                    sockaddr_storage any{};
+                    SocketLength anyLength = 0;
+                    if (family == AF_INET6)
+                    {
+                        auto& v6 = reinterpret_cast<sockaddr_in6&>(any);
+                        v6.sin6_family = AF_INET6;
+                        v6.sin6_port = htons(options.localPort);
+                        anyLength = sizeof(sockaddr_in6);
+                    }
+                    else
+                    {
+                        auto& v4 = reinterpret_cast<sockaddr_in&>(any);
+                        v4.sin_family = AF_INET;
+                        v4.sin_port = htons(options.localPort);
+                        anyLength = sizeof(sockaddr_in);
+                    }
+                    bindable = bind(socket, reinterpret_cast<const sockaddr*>(&any), anyLength) == 0;
+                }
+                const bool opened =
+                    bindable && (listen ? bind(socket, address->ai_addr, SocketLength(address->ai_addrlen)) == 0
+                                        : connect(socket, address->ai_addr, SocketLength(address->ai_addrlen)) == 0);
                 sockaddr_storage local{};
                 SocketLength length = sizeof(local);
                 if (!opened || !Prepare(socket) ||
@@ -182,7 +258,10 @@ namespace netplay
                 const uint16_t bound = local.ss_family == AF_INET6
                                            ? ntohs(reinterpret_cast<const sockaddr_in6*>(&local)->sin6_port)
                                            : ntohs(reinterpret_cast<const sockaddr_in*>(&local)->sin_port);
-                result = std::make_unique<Udp>(socket, listen, bound);
+                auto udp = std::make_unique<Udp>(socket, listen, bound);
+                if (listen && !options.knockHost.empty())
+                    SetKnockTarget(*udp, family, options.knockHost, options.knockPort);
+                result = std::move(udp);
             }
         freeaddrinfo(addresses);
         if (!result)

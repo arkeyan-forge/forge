@@ -6,6 +6,7 @@
 #include "host/gamemenu.h"
 #include "host/mouse.h"
 #include "netplay/session_runtime.h"
+#include "host/toybox/online_banner.h"
 #include "netplay/session_end.h"
 #include "host/glyphs.h"
 #include "host/pad_map.h"
@@ -757,7 +758,8 @@ namespace
         const auto online = netplay::SessionStatus();
         bool visible = (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues()) ||
                        model.open || !model.toast.empty() || !model.fps.empty() || gamemenu::Current().debugScreen ||
-                       (netplay::Online() && (online.peerMenuOpen || online.backInSync));
+                       (netplay::Online() && (online.peerMenuOpen || online.backInSync ||
+                                                 toybox::OnlineBannerShown(online) || toybox::OnlineChipShown(online)));
         if (!visible)
         {
             if (g_overlayShown)
@@ -829,6 +831,38 @@ bool ToyboxHandleEvent(const SDL_Event& event)
 {
     if (netplay::SessionEndReason() != netplay::EndReason::None && !netplay::SessionContinues())
         return true;
+    // The online banner's answers while the other player is lost or stuck: Escape or B continues alone, Enter or A
+    // waits a minute more once the game asks, R or Y quits for the launcher to set the room up again.
+    if (netplay::Online() && !M().open)
+    {
+        const auto online = netplay::SessionStatus();
+        if (toybox::OnlineBannerShown(online))
+        {
+            const bool key = event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat;
+            const bool button = event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+            const bool alone =
+                (key && event.key.key == SDLK_ESCAPE) || (button && event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST);
+            const bool wait = (key && (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER)) ||
+                              (button && event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH);
+            const bool again =
+                (key && event.key.key == SDLK_R) || (button && event.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH);
+            if (again)
+            {
+                netplay::PlayTogetherAgain();
+                return true;
+            }
+            if (alone)
+            {
+                netplay::ContinueAlone();
+                return true;
+            }
+            if (wait && online.askContinue)
+            {
+                netplay::KeepWaiting();
+                return true;
+            }
+        }
+    }
     if (!g_enabled)
         return false;
     toybox::Model& model = M();
@@ -1381,8 +1415,14 @@ void ToyboxUpdate()
     netplay::SetMenuOpen(model.open && (MenuScreen(model) || model.fromMenu));
     static unsigned onlineNotice = 0;
     const auto online = netplay::SessionStatus();
-    const unsigned noticeNow =
-        netplay::Online() ? unsigned(online.peerMenuOpen) | (unsigned(online.backInSync) << 1) : 0;
+    // The banner's countdown changes every second: the overlay is drawn again then.
+    const unsigned noticeNow = netplay::Online() ? unsigned(online.peerMenuOpen) | (unsigned(online.backInSync) << 1) |
+                                                       (unsigned(toybox::OnlineBannerShown(online)) << 2) |
+                                                       (unsigned(toybox::OnlineChipShown(online)) << 3) |
+                                                       (unsigned(online.askContinue) << 4) |
+                                                       (unsigned((online.lostMs + online.waitedMs) / 1000) << 5) |
+                                                       (unsigned(online.roundTripMs / 10) << 16)
+                                                 : 0;
     if (noticeNow != onlineNotice)
     {
         onlineNotice = noticeNow;

@@ -30,6 +30,8 @@ namespace netplay
     struct Session::Repair
     {
         uint64_t frame = 0, start = 0, total = 0;
+        uint64_t hold = 0; // the frame both games hold at: the checkpoint's, or the late check's after it
+        std::vector<size_t> changed; // the blocks put back, for the log
         std::vector<Block> blocks;
         std::vector<uint8_t> outgoing, incoming, received;
         uint64_t sinceRequest = UINT64_MAX;
@@ -57,7 +59,7 @@ namespace netplay
     uint32_t Session::Delay() const
     {
         std::lock_guard lock(m_mutex);
-        return m_delay;
+        return m_localDelay ? m_localDelay : m_delay;
     }
     SessionFailure Session::Failure() const
     {
@@ -94,7 +96,10 @@ namespace netplay
         stats.roundTripMs = m_rtt == UINT64_MAX ? 0 : m_rtt;
         stats.goodHash = m_goodHash;
         stats.goodChecks = m_goodChecks;
-        stats.delay = m_delay;
+        stats.delay = m_localDelay ? m_localDelay : m_delay;
+        stats.delayChanges = m_delayChanges;
+        stats.frameAdvantage = m_advantage;
+        stats.balanceSlows = m_balanceSlows;
         stats.peerMenuOpen = m_peerMenuOpen;
         stats.lost = m_lost;
         stats.rejected = m_rejected;
@@ -103,6 +108,12 @@ namespace netplay
         stats.backInSync = m_resyncs && now - m_lastResync < 2000 && m_failure.reason == EndReason::None;
         stats.repairing = m_repair && !m_repair->done && m_failure.reason == EndReason::None;
         stats.waiting = m_waiting && m_failure.reason == EndReason::None;
+        stats.connectionLost = m_connectionLost && m_failure.reason == EndReason::None;
+        stats.askContinue = m_askContinue && m_failure.reason == EndReason::None;
+        stats.lostMs = m_connectionLost ? now - m_lostSince : 0;
+        stats.reconnects = m_reconnects;
+        stats.waitedMs = stats.waiting ? now - m_waitSince : 0;
+        stats.answerMs = m_config.timeoutMs;
         const auto second = now / 1000;
         uint64_t frames = 0, wait = 0, minPing = UINT64_MAX;
         for (const auto& bucket : m_seconds)
@@ -138,6 +149,55 @@ namespace netplay
         }
         return stats;
     }
+    void Session::ContinueAlone()
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_failure.reason != EndReason::None)
+            return;
+        fprintf(stderr, "[netplay] the player chose to continue alone\n");
+        End(EndReason::Timeout);
+    }
+
+    void Session::KeepWaiting()
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_askContinue)
+            return;
+        m_askContinue = false;
+        m_lostSince = m_config.now();
+        fprintf(stderr, "[netplay] the player waits %llu s more for the other player\n",
+            static_cast<unsigned long long>(m_config.timeoutMs / 1000));
+    }
+
+    // Under the lock, from the session thread: a silent peer is a lost connection, not the end of the session.
+    void Session::CheckSilence()
+    {
+        if (m_failure.reason != EndReason::None)
+            return;
+        const uint64_t now = m_config.now(), silent = now - m_lastReceive;
+        if (!m_ready || !m_config.askBeforeEnding)
+        {
+            if (silent >= m_config.timeoutMs)
+                End(EndReason::Timeout);
+            return;
+        }
+        if (!m_connectionLost && silent >= m_config.lostMs)
+        {
+            m_connectionLost = true;
+            m_lostSince = m_lastReceive;
+            fprintf(stderr, "[netplay] connection lost: nothing received for %llu ms; trying to reconnect\n",
+                static_cast<unsigned long long>(silent));
+            m_changed.notify_all();
+        }
+        if (m_connectionLost && !m_askContinue && now - m_lostSince >= m_config.timeoutMs)
+        {
+            m_askContinue = true;
+            fprintf(stderr, "[netplay] still no answer after %llu s: asking the player\n",
+                static_cast<unsigned long long>((now - m_lostSince) / 1000));
+            m_changed.notify_all();
+        }
+    }
+
     void Session::SetMenuOpen(bool open)
     {
         std::lock_guard lock(m_mutex);
@@ -197,14 +257,18 @@ namespace netplay
                 return true;
             }
             const uint64_t elapsed = m_config.now() - start;
-            if (m_failure.reason == EndReason::None && elapsed >= m_config.timeoutMs)
-                End(m_repair && !m_repair->done ? EndReason::Desync : EndReason::Timeout, m_hashFrame, m_hash,
-                    m_peerHash);
+            // A peer that answers but does not advance (a long load on a slower PC) is waited for when the player
+            // decides; a repair keeps its own limit.
+            const bool repairing = m_repair && !m_repair->done;
+            if (m_failure.reason == EndReason::None && elapsed >= m_config.timeoutMs &&
+                (repairing || !m_config.askBeforeEnding))
+                End(repairing ? EndReason::Desync : EndReason::Timeout, m_hashFrame, m_hash, m_peerHash);
             if (!warned && m_failure.reason == EndReason::None && elapsed >= m_config.waitingMs)
             {
                 fprintf(stderr, "[netplay] waiting for the other player\n");
                 warned = true;
                 m_waiting = true;
+                m_waitSince = start;
             }
             const auto before = m_config.now();
             m_changed.wait_for(lock, std::chrono::milliseconds(2));
@@ -220,11 +284,79 @@ namespace netplay
         m_established = true;
         return true;
     }
+    // Every 30 frames: up by one at once when the round trip or the waits ask for it, down by one after five calm
+    // seconds. The worst of the last three round trips covers the jitter.
+    void Session::AdaptDelay(uint64_t frame)
+    {
+        if (!m_config.adaptiveDelay || frame % 30 || frame == 0)
+            return;
+        uint64_t worst = 0;
+        for (size_t i = 0; i < std::min<size_t>(3, m_pingSamplesCount); ++i)
+            worst = std::max(worst, m_pingSamples[(m_pingSamplesCount - 1 - i) % m_pingSamples.size()].ms);
+        const uint32_t fps = std::max<uint32_t>(m_config.hello.fps, 1);
+        const uint32_t network = ChooseDelay(worst, fps);
+        uint32_t wanted = network;
+        // Waits beyond the round trip's share are jitter: one frame more absorbs them. A slower PC waits all the time;
+        // a longer delay would not help it (the pace does), so the waits never add more than that frame.
+        const uint64_t frameMs = 1000 / fps;
+        if (m_recentWaitMs > 3 * frameMs)
+            wanted = std::min(std::max(wanted, m_localDelay + 1), network + 1);
+        const uint32_t before = m_localDelay;
+        if (wanted > m_localDelay && m_localDelay < 8)
+        {
+            ++m_localDelay;
+            m_calmChecks = 0;
+        }
+        else if (wanted < m_localDelay && m_localDelay > 1)
+        {
+            if (++m_calmChecks >= 5)
+            {
+                --m_localDelay;
+                m_calmChecks = 0;
+            }
+        }
+        else
+            m_calmChecks = 0;
+        if (m_localDelay != before)
+        {
+            ++m_delayChanges;
+            fprintf(stderr, "[netplay] input delay %u -> %u frames (round trip %llu ms, waited %llu ms in 30 frames)\n",
+                before, m_localDelay, static_cast<unsigned long long>(worst),
+                static_cast<unsigned long long>(m_recentWaitMs));
+        }
+        m_recentWaitMs = 0;
+    }
+
+    void Session::BalanceAdvantage(std::unique_lock<std::mutex>& lock, uint64_t frame)
+    {
+        if (!m_config.balanceAdvantage || m_peerFrame == 0)
+            return;
+        const double frameMs = 1000.0 / std::max<uint32_t>(m_config.hello.fps, 1);
+        const double transit = m_rtt == UINT64_MAX ? 0 : double(m_rtt) / 2 / frameMs;
+        // Sampled every frame, judged on the average of 30: one late packet (jitter) does not slow a side that is not
+        // ahead, which would only make both sides slower.
+        m_advantageSum += double(frame) - (double(m_peerFrame) + transit);
+        if (++m_advantageCount < 30)
+            return;
+        m_advantage = m_advantageSum / double(m_advantageCount);
+        m_advantageSum = 0;
+        m_advantageCount = 0;
+        if (m_advantage <= 1.5)
+            return;
+        // Half the advantage, two frames at most: the other side closes the rest in its own frames.
+        const auto until = std::chrono::steady_clock::now() +
+                           std::chrono::microseconds(int64_t(std::min(m_advantage / 2, 2.0) * frameMs * 1000));
+        ++m_balanceSlows;
+        while (m_failure.reason == EndReason::None && std::chrono::steady_clock::now() < until)
+            m_changed.wait_until(lock, until);
+    }
+
     void Session::SetDelay(uint32_t delay)
     {
         if (m_delay)
             return;
         m_delay = delay;
+        m_localDelay = delay;
         m_ack = m_remoteAck = delay - 1;
         m_ready = true;
         m_changed.notify_all();
@@ -263,7 +395,11 @@ namespace netplay
         if (m_failure.reason != EndReason::None)
             return Solo(frame, local, pads, events);
         uint64_t inputWait = 0;
-        const uint64_t target = frame + m_delay;
+        BalanceAdvantage(lock, frame);
+        if (m_failure.reason != EndReason::None)
+            return Solo(frame, local, pads, events);
+        AdaptDelay(frame);
+        const uint64_t target = frame + m_localDelay;
         if (!Wait(
                 lock,
                 [&] {
@@ -275,17 +411,28 @@ namespace netplay
             CountInputWait(inputWait);
             return Solo(frame, local, pads, events);
         }
-        for (size_t i = 0; i < m_history->pending.count; ++i)
+        // A lower delay lands this frame's input on a frame already sent: it is dropped and its events wait for the
+        // next one. A higher delay leaves frames without input: they repeat the last one sent, as the other game sees.
+        if (m_latest == UINT64_MAX || target > m_latest)
         {
-            auto event = m_history->pending.events[i];
-            event.sequence = ++m_eventSequence;
-            event.frame = target;
-            m_history->local[event.sequence % m_history->local.size()] = event;
+            if (m_latest != UINT64_MAX)
+                for (uint64_t gap = m_latest + 1; gap < target; ++gap)
+                {
+                    const auto& last = m_local[m_latest % m_local.size()];
+                    m_local[gap % m_local.size()] = { gap, last.pad, last.events };
+                }
+            for (size_t i = 0; i < m_history->pending.count; ++i)
+            {
+                auto event = m_history->pending.events[i];
+                event.sequence = ++m_eventSequence;
+                event.frame = target;
+                m_history->local[event.sequence % m_history->local.size()] = event;
+            }
+            m_history->pending.count = 0;
+            m_local[target % m_local.size()] = { target, local, m_eventSequence };
+            m_latest = target;
+            m_changed.notify_all();
         }
-        m_history->pending.count = 0;
-        m_local[target % m_local.size()] = { target, local, m_eventSequence };
-        m_latest = target;
-        m_changed.notify_all();
         if (!Wait(
                 lock,
                 [&] {
@@ -298,6 +445,7 @@ namespace netplay
             return Solo(frame, local, pads, events);
         }
         CountInputWait(inputWait);
+        m_recentWaitMs += inputWait;
         pads = {};
         if (!events && m_config.applyEvents)
             events = &m_history->application;
@@ -349,7 +497,7 @@ namespace netplay
         ++m_next;
         return true;
     }
-    bool Session::CheckHash(uint64_t frame, uint64_t hash)
+    bool Session::PostHash(uint64_t frame, uint64_t hash)
     {
         std::unique_lock lock(m_mutex);
         if (!frame || frame % 30 || frame != m_next || frame <= m_hashFrame)
@@ -362,17 +510,40 @@ namespace netplay
         if (m_peerEnd.reason == EndReason::Desync && m_peerEnd.frame == frame)
             End(EndReason::Desync, frame, hash, m_peerEnd.remoteHash);
         m_changed.notify_all();
-        if (!Wait(lock, [&] { return m_peerHashFrame == frame; }))
+        return m_failure.reason == EndReason::None;
+    }
+    bool Session::CheckPostedHash(uint64_t frame, bool& repaired)
+    {
+        std::unique_lock lock(m_mutex);
+        repaired = false;
+        if (!frame || frame != m_hashFrame || frame > m_next)
+        {
+            End(EndReason::Invalid);
             return false;
-        if (m_peerHash != hash)
+        }
+        // The other player is at most its input delay ahead (8 frames), so it cannot post the next checkpoint first.
+        if (!Wait(lock, [&] { return m_peerHashFrame >= frame; }))
+            return false;
+        if (m_peerHashFrame != frame)
+        {
+            End(EndReason::Invalid);
+            return false;
+        }
+        if (m_peerHash != m_hash)
         {
             StartRepair();
             if (!Wait(lock, [&] { return m_repair && m_repair->done; }))
                 return false;
+            repaired = true;
         }
         m_goodHash = frame;
         ++m_goodChecks;
         return true;
+    }
+    bool Session::CheckHash(uint64_t frame, uint64_t hash)
+    {
+        bool repaired = false;
+        return PostHash(frame, hash) && CheckPostedHash(frame, repaired);
     }
     void Session::StartRepair()
     {
@@ -386,9 +557,12 @@ namespace netplay
         m_repair = std::make_unique<Repair>();
         auto& repair = *m_repair;
         repair.frame = m_hashFrame;
+        repair.hold = m_next;
         repair.start = now;
-        repair.total = m_hash;
         const auto blocks = m_config.blocks->ListBlocks();
+        // The barrier's own total: the checkpoint's hash may have been made over the window's frames (the probe spreads
+        // it), while the repair compares the memory as it is now.
+        repair.total = CombineBlocks(blocks);
         if (blocks.size() > (MaxBlockListBytes - 4) / 16)
         {
             End(EndReason::Desync, m_hashFrame, m_hash, m_peerHash);
@@ -412,9 +586,19 @@ namespace netplay
             return;
         m_repair->done = true;
         ++m_resyncs;
-        fprintf(stderr, "[netplay] state repaired at frame %llu (%zu bytes sent)\n",
+        // Where the games differed (guest addresses, the same on both computers): what to look for in a player's log.
+        std::string where;
+        for (size_t i = 0; i < m_repair->changed.size() && i < 8; ++i)
+        {
+            char text[16];
+            snprintf(text, sizeof text, " %08llx",
+                static_cast<unsigned long long>(m_repair->blocks[m_repair->changed[i]].address));
+            where += text;
+        }
+        fprintf(stderr, "[netplay] state repaired at frame %llu (%zu bytes sent): %zu blocks, at%s%s\n",
             static_cast<unsigned long long>(m_repair->frame),
-            m_config.hello.host ? m_repair->outgoing.size() : m_repair->incoming.size());
+            m_config.hello.host ? m_repair->outgoing.size() : m_repair->incoming.size(), m_repair->changed.size(),
+            where.c_str(), m_repair->changed.size() > 8 ? " ..." : "");
         m_lastResync = m_config.now();
         m_changed.notify_all();
     }
@@ -440,6 +624,7 @@ namespace netplay
                 if (different.size() > MaxRepairBlocks)
                     return fail();
             }
+            repair.changed = different;
             Append(repair.outgoing, different.size(), 4);
             std::vector<uint8_t> bytes;
             for (const auto index : different)
@@ -480,6 +665,7 @@ namespace netplay
                 const auto index = Take(repair.incoming, at, 4), size = Take(repair.incoming, at, 4);
                 if (!m_config.blocks->WriteBlock(size_t(index), std::span(repair.incoming).subspan(at, size_t(size))))
                     return fail();
+                repair.changed.push_back(size_t(index));
                 at += size_t(size);
             }
             repair.total = m_config.blocks->TotalHash();
@@ -570,8 +756,10 @@ namespace netplay
         if (!m_repair || m_failure.reason != EndReason::None)
             return;
         auto& repair = *m_repair;
-        // New host input proves it received the commit acknowledgement and released its barrier.
-        if (repair.done && (m_config.hello.host || m_remoteAck >= repair.frame + m_delay))
+        // The host past the held frame proves it received the commit acknowledgement and released its barrier. (Its
+        // inputs are no proof: those it sent before holding reach the held frame plus its delay, which may be longer
+        // than the session's first one.)
+        if (repair.done && (m_config.hello.host || m_peerFrame > repair.hold))
             return;
         if (!repair.done && m_config.now() - repair.start >= 5000)
         {
@@ -633,7 +821,8 @@ namespace netplay
         Datagram bytes;
         packet.sequence = ++m_sequence;
         packet.ack = m_remoteAck;
-        if (EncodePacket(packet, bootstrap ? HelloKey(m_password, packet.hello) : m_key, bytes))
+        const Cipher cipher = bootstrap ? Cipher::None : m_config.hello.host ? Cipher::FromHost : Cipher::FromGuest;
+        if (EncodePacket(packet, bootstrap ? HelloKey(m_password, packet.hello) : m_key, bytes, cipher))
         {
             if (!m_transport->Send(bytes.View()))
                 End(EndReason::Transport);
@@ -705,7 +894,17 @@ namespace netplay
             return;
         if (!AcceptSequence(packet.sequence))
             return;
+        // An authenticated, new packet from another address: the peer's address changed (a router that restarted).
+        if (m_transport->AcceptPeer())
+            fprintf(stderr, "[netplay] the other player's address changed; following it\n");
         m_lastReceive = m_config.now();
+        if (m_connectionLost)
+        {
+            fprintf(stderr, "[netplay] reconnected after %.1f s\n", double(m_lastReceive - m_lostSince) / 1000.0);
+            m_connectionLost = m_askContinue = false;
+            ++m_reconnects;
+            m_changed.notify_all();
+        }
         switch (packet.type)
         {
         case PacketType::BlockList:
@@ -773,6 +972,8 @@ namespace netplay
             }
             m_ack = std::max(m_ack, packet.ack);
             m_eventAck = std::max(m_eventAck, packet.eventAck);
+            if (packet.value < m_next + 1024)
+                m_peerFrame = std::max(m_peerFrame, packet.value);
             for (size_t i = 0; i < packet.count; ++i)
             {
                 const auto& entry = packet.pads[i];
@@ -852,14 +1053,19 @@ namespace netplay
                 const bool bootstrap = size > 10 && bytes.bytes[10] == uint8_t(PacketType::Hello);
                 const auto view = std::span(bytes.bytes).first(size);
                 if (bootstrap ? DecodeHello(view, m_password, packet, m_dropped, &m_rejected)
-                              : DecodePacket(view, m_key, packet, m_dropped, &m_rejected))
+                              : DecodePacket(view, m_key, packet, m_dropped, &m_rejected,
+                                    m_config.hello.host ? Cipher::FromGuest : Cipher::FromHost))
                     Receive(packet, bootstrap);
             }
             if (!m_transport->Healthy())
                 End(EndReason::Transport);
+            if (m_config.hello.host && !m_havePeer && m_config.now() - m_lastKnock >= 100)
+            {
+                m_transport->Knock();
+                m_lastKnock = m_config.now();
+            }
             SendRepair();
-            if (m_config.now() - m_lastReceive >= m_config.timeoutMs)
-                End(EndReason::Timeout);
+            CheckSilence();
             if ((!m_ready || m_failure.reason != EndReason::None) && (m_havePeer || !m_config.hello.host))
             {
                 Packet hello;
@@ -902,6 +1108,7 @@ namespace netplay
                     frames.hash = m_hash;
                     frames.eventAck = m_receivedEvent;
                     frames.menuOpen = m_menuOpen;
+                    frames.value = m_next;
                     Send(frames);
                     const uint64_t end = std::min(m_eventSequence, m_eventAck + 8);
                     for (uint64_t sequence = m_eventAck + 1; sequence <= end; ++sequence)

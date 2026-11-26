@@ -8,7 +8,7 @@
 
 namespace netplay
 {
-    inline constexpr uint16_t ProtocolVersion = 2;
+    inline constexpr uint16_t ProtocolVersion = 3;
     using Key = std::array<uint8_t, 16>;
     using Nonce = std::array<uint8_t, 16>;
     enum class PacketType : uint8_t
@@ -126,8 +126,16 @@ namespace netplay
     Key HelloKey(const Key& password, const Hello& hello);
     bool DecodeHello(std::span<const uint8_t> bytes, const Key& password, Packet& packet, uint64_t& dropped,
         uint64_t* rejected = nullptr);
-    bool EncodePacket(const Packet& packet, const Key& key, Datagram& bytes);
+    // A session's packets after the hellos are encrypted (ChaCha20, a key per session from its key, the nonce from the
+    // sender's side and the packet's sequence), then tagged: the tag covers the ciphertext and is checked first.
+    enum class Cipher : uint8_t
+    {
+        None, // the hellos, and the protocol's tests of the plain layout
+        FromHost,
+        FromGuest,
+    };
+    bool EncodePacket(const Packet& packet, const Key& key, Datagram& bytes, Cipher cipher = Cipher::None);
     bool DecodePacket(std::span<const uint8_t> bytes, const Key& key, Packet& packet, uint64_t& dropped,
-        uint64_t* rejected = nullptr);
+        uint64_t* rejected = nullptr, Cipher cipher = Cipher::None);
     uint32_t ChooseDelay(uint64_t roundTripMs, uint32_t fps);
 }

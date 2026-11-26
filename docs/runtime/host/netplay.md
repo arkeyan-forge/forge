@@ -42,7 +42,7 @@ of the runtime must make it so; each point below is a known source of divergence
 | Time | `mftb` is translated to the host counter (`__rdtsc()`, XenonRecomp); `KeQuerySystemTime`, `KeQueryPerformance*` from host clocks | virtual time from the frame number and a fixed step: XenonRecomp emits `mftb` as a read of a runtime counter (a patch: every player's game is rebuilt, as on any game update) |
 | Thread scheduling | each guest thread is a host thread, run in parallel | a deterministic guest scheduler: one guest thread runs at a time, switched only at kernel calls (waits, signals, sleeps, yields, thread start and end) in a fixed order; host parallelism stays for the GPU, audio mixing and file reads |
 | Interrupts and callbacks | VBlank and GPU interrupts from a wall-clock thread; the audio driver calls the game's render callback from its own thread at the device's pace | delivered by the scheduler at fixed points of the frame: one VBlank per frame, the audio callbacks a fixed number per frame (fractional accumulator), the GPU's swap and fence interrupts after the frame's commands |
-| GPU results the game reads | fences, ring read pointer, resolves into guest memory, written by the host GPU thread when done | the guest sees the GPU done at fixed points (its waits complete deterministically); GPU-written memory (resolve targets) is left out of the state hash (its bytes differ between Metal, D3D12 and Vulkan); a per-game audit that the game logic never reads it |
+| GPU results the game reads | fences, ring read pointer, resolves into guest memory, written by the host GPU thread when done | the guest sees the GPU done at fixed points (its waits complete deterministically); what the host GPU writes for the game's CPU differs between two GPUs, so a game's hook marks it and what the game derives from it for drawing alone as render-only (`netplay::SkipRenderOnly`), left out of the state hash and the repair; a per-game audit that the game logic never reads it (SSA: the light tile job, below) |
 | File reads | synchronous (`kernel/files.cpp`) | already deterministic; loading time differs per PC, the lockstep waits for the slower one |
 | Randomness | game RNGs seeded from time; `<random>` in the host's XNet stubs | follows from virtual time; host randomness seeded from the session seed |
 | Floating point | native, same code on both PCs; x64 and arm64 differ in fused multiply-add and some library math | the same build flags on every platform (no FMA contraction in the game code: a recompiler option), or Mac-Mac and PC-PC only at first (to measure) |
@@ -57,8 +57,10 @@ scheduler. XenonRecomp can mark the console's spin hints (`db16cyc`, `or r31,r31
 loops) as yield points; the step-0 probe finds any loop that hangs.
 
 ## 4. Desyncs, input delay, rollback
-- **Desync detection**: every 30 frames, each PC hashes the game's state (the guest heaps, without GPU-written memory and
-  audio buffers) and sends it. On a mismatch both games hold that checkpoint while the guest sends its block hashes.
+- **Desync detection**: every 30 frames, each PC hashes the game's state (the guest heaps, without the render-only
+  memory a game's hook marks: what the host GPU computed for the game's CPU) and sends it with its inputs; 8 frames
+  later, when the other player's hash has come, they are compared, so no game holds for it. On a mismatch both games
+  hold at that frame while the guest sends its block hashes.
   With identical layouts and at most 64 different blocks, the host supplies their hashed bytes and both verify the
   repaired total. Success resumes the session with **Back in sync** for two seconds. A changed layout, too many blocks,
   an unequal final total, five seconds without completing repair or a third repair within sixty seconds ends online
@@ -671,6 +673,128 @@ portal. Live: the host put Gill Grunt on slot 0 from the Toy Box; the guest rece
 
 [V] The version. A game that plays online takes a minor version (SSA 0.10.0). In an online session the window title and
 the F3 menu show `-o` after it (`netplay::VersionLabel`); the room compares the plain version.
+
+## Step 6: a quality online [Xbox] [SSA]
+
+The owner's bar (2026-11-22): solid and secure, playable with some latency and with a PC that cannot keep up, at 30 and
+at 60 FPS. Measured on an M1 Pro, two SSA instances on one Mac, offscreen, the front end.
+
+[V] **A lost connection.** No packet for `lostMs` (3 s) is a lost connection, not the end: both games hold, the session
+keeps sending, and the first authenticated packet back resumes it (`[netplay] connection lost`, `[netplay] reconnected
+after 10.1 s`). After `timeoutMs` (60 s) the game asks the player (`SessionConfig::askBeforeEnding`): wait a minute more
+(`KeepWaiting`) or continue alone (`ContinueAlone`, the solo path of a timeout). A peer that answers but does not advance
+(a long load on a slower PC) is waited for the same way instead of ending after 15 s. The UDP transport follows a peer
+whose address changed (a router that restarted), only on a packet that is authenticated and new (`AcceptPeer` after the
+sequence check). Live: the guest's process stopped for 10 s mid-session; the host reported the loss, then the
+reconnection after 10.1 s, and the 39 checkpoints that followed were equal.
+
+[V] **The input delay follows the network.** Each side moves its own delay (`adaptiveDelay`): the other game reads the
+pads by frame number, so a frame skipped by a longer delay repeats the last pad sent and the pad of a frame that falls
+on one already sent is dropped; both games read the same pads for every frame. Every 30 frames the worst of the last
+three round trips sets it (one frame more at once, one less after five calm checks); waits add one frame at most (a
+slower PC's waits would not be helped by more delay).
+
+[V] **The frame advantage.** A side whose frame is ahead of the other's (counting half the round trip), on average over
+30 frames by more than 1.5, sleeps half of it, two frames at most (`balanceAdvantage`, after GGPO's time
+synchronisation): neither side runs ahead into the delay's edge and then waits in bursts.
+
+[V] **60 FPS.** The checkpoint's hash is spread over the 30 frames of its window (`SliceAllocations`, `PlanWindow`): each
+frame hashes one part on block boundaries, the window's total is compared at the next barrier, and a repair compares the
+barrier's own blocks (`CombineBlocks`). At 60 FPS, scale 1: both games at 60.0 FPS, p95 16.7 ms; the hash 0.47 ms per
+frame instead of 16 ms every 30th. A guest byte changed at frame 900 was repaired at 930 and every later checkpoint was
+equal. At scale 2 the two instances share one GPU and hold 56 FPS; the online path itself holds 60.
+
+[V] **A slower PC.** Both games follow the slower one frame by frame, evenly: a guest slowed by 30 ms a frame
+(`SKY_NETPLAY_TEST_SLOW`) held both at 19.5 FPS, p95 within 6 ms of the median. The launcher's room says so beforehand and
+starts a GPU-bound PC one resolution scale lower (`SKY_RESOLUTION_SCALE`, this run only): two games at scales 1 and 2
+kept identical hashes. The scale cannot change in play (render targets and resolved textures keep it).
+
+[V] **Security.** The session's packets after the hellos are encrypted with ChaCha20 (`netplay/chacha20.h`, our own
+code checked against RFC 8439's vectors), a key from the session key, the nonce from the sender's side and the packet's
+sequence; the tag covers the ciphertext and is checked before anything inside is read. Protocol version 3. The launcher's
+room carries a secret in its code, encrypts its own messages and refuses guessing (described in the launcher's online page).
+
+[V] **The banner.** Nothing on screen while it plays; a corner chip with the round trip from 120 ms; a banner while the
+game is held: "Connection lost with Kaos, reconnecting... 42 s", "Still no answer", "Waiting for Kaos's game", with Esc
+or B to continue alone, Enter or A to wait more, R or Y to play together again (`host/toybox/online_banner.h`). After a
+session the F3 menu's "Play online" reads "Play together again". Either writes `online-replay.txt` and quits; the
+launcher sets the same room up again. Closing the window during a session writes `quit`.
+
+[V] **Two GPUs.** The first session between two Windows PCs (an AMD and an NVIDIA card) went out of sync in the
+first lit scene, the title menu, about 20 s in: two 64 KB blocks differed at every checkpoint, the repair put them
+back and they differed again. Lux's light tile job (`sub_821404D8`, the "ZtoLOD" worker threads) reads the scene depth
+that the runtime writes back from the host GPU ([level_frame_lightprepass.md](../../engines/lux/level_frame_lightprepass.md)),
+and two GPUs round its last bits differently. Its depth (4 KB a tile), its outputs (a class byte and two floats a
+tile, read by the sun's tile draws) and its threads' stack frames are marked render-only from the job's hook
+(`engines/lux/light_tiles.cpp`), at the same guest point on both computers, and taken into the hash's skips at the
+next frame. Proof on one Mac: with one depth bit in 61 flipped on the guest (`SKY_NETPLAY_TEST_DEPTH_NOISE=1`, a
+session test), the title menu desynced at frame 60 and ended at 120 before; after, five minutes played in `level_027`
+(thousands of changed texels a frame, four figure changes) kept 275 checkpoints equal without a repair.
+
+[V] **Two CPUs.** The same two PCs (an AMD Ryzen 7 7700, an Intel i5-12400F) repaired two 64 KB blocks a few seconds
+after each figure was placed, and ended at the third repair within a minute. The Wwise sounds are XMA, decoded by
+FFmpeg (`apu/xma_decoder_ffmpeg.cpp`), whose SIMD code is chosen by the CPU (AVX-512 on one, AVX2 on the other, NEON on
+a Mac) and rounds differently; the title mixes the decoded samples into its own memory. A deterministic run now decodes
+with FFmpeg's plain C code (`av_force_cpu_flags(0)`; `[xma] FFmpeg's plain C code`). Proof on one Mac: with the C code
+on the host and NEON on the guest (`SKY_NETPLAY_TEST_XMA_NATIVE=1`, a session test) a played `level_027` repaired
+`e4d70000` at frame 90, `e4d70000 e4d80000` at 180 and ended at 270, the testers' pattern; with the C code on both,
+81 checkpoints stayed equal through four figure changes, with `SKY_NETPLAY_TEST_DEPTH_NOISE=2` on the guest too (one
+depth texel in 61 at the nearest or farthest value: no leak from the light tile job either).
+
+[V] **The disk.** `XamContentGetDeviceData` and `NtQueryVolumeInformationFile` told the title the host disk's size
+and free space, which differ between two PCs and change with every file written. A deterministic run now tells it a
+fixed 120 GB drive with 100 GB free (`netplay::TitleDiskSpace`, `ArkeyanNetplayTest`).
+
+[V] **What else the host told the title.** A review of the kernel calls that answer from the host, after the two PCs:
+the time zone and its name (`ExGetXConfigSetting` 3/1-3/3, which the title stamps its saves with; the testers' PCs were
+two hours apart) are UTC in a deterministic run; `XAudioGetSpeakerConfig` says stereo whatever the device (Wwise mixes
+for the layout it is told, in the title's memory); `XNetRandom` gives bytes from a fixed SplitMix64 seed, the same on
+both computers and in a replay (SSA never calls it, a played session with a blank figure logged no call; other titles
+may). Settled already: the video mode (1280x720 at 60 Hz, fixed), directory listings (sorted), the clocks (virtual),
+the settings the host sends. `ArkeyanNetplayTest` covers the helpers (`netplay/clock.h`). Test switch:
+`SKY_NETPLAY_TEST_HOST_RANDOM=1` gives the host's random bytes again.
+
+[V] **The menu pointer.** The mouse in the game's own menus (SSA, `mouse::MenuPointer`) writes the menu's focus into
+the title's memory from one computer only. In a deterministic run it stays out (`State::session`) and the pads,
+which go through the session, drive the menus (`ArkeyanMouseTest`).
+
+[V] **Achievements.** Two Windows PCs went out of sync right after "Hello!! Skylander": the title enumerates the
+achievements after an unlock, and each PC answered with its own player's list and wall-clock unlock times
+(`kernel/xam_achievements.cpp`). Online, the title now sees the unlocks of this session alone, timed by the session's
+clock (`GuestSystemTime`); each player's progress file still gets the unlock with its real time, and the overlay's page
+shows the player's own list. `ArkeyanAchievementsKernelTest` runs itself a third time as a session to check it.
+
+[V] **Where a repair was.** `[netplay] state repaired at frame N (B bytes sent): K blocks, at <address> ...` names up to
+eight repaired blocks (guest addresses, the same on both computers), so a player's log says which memory differed.
+
+[V] **The late check.** The checkpoint held both games until the other player's hash came: one network leg every 30
+frames, which cost 3 to 9 FPS at 60 FPS with 50 to 150 ms of round trip. The hash now rides on the inputs at the
+window's end (`Session::PostHash`) and is compared 8 frames later (`CheckPostedHash`), when it has come within the
+input delay (at most 8 frames). A repair then happens at that frame, both games at once, and the window that began
+before it is not posted. `ArkeyanNetplaySessionTest` (`LateCheck`) covers both cases.
+
+[V] **A punched path.** For players without UPnP the launcher punches through both routers before the game starts
+(the launcher's online page). The game keeps that path: a joiner binds the same local port (`SKY_NETPLAY_LOCAL_PORT`,
+`UdpOptions::localPort`), and a host knocks at the joiner's public address until its first packet arrives
+(`SKY_NETPLAY_PEER`, `Transport::Knock`), so the host's router lets the joiner in. A knock is one byte, which the joiner
+drops as too short.
+
+[V] **The desync report.** An online session records its inputs, both players' pads frame by frame, in its folder
+(`online-inputs.rec`, the `SKY_NETPLAY_RECORD` format); a desync the repair could not mend copies it beside the game's log
+(`netplay-desync.rec`) to replay the session alone (`SKY_NETPLAY_REPLAY`); figure changes made during the session are not
+in it.
+
+## Testing a bad network
+
+With `SKY_NETPLAY_TEST=1`, set
+`SKY_NETPLAY_TEST_NET=delay=150,jitter=20,loss=2,dup=1,cut=30000-35000,cut=60000-120000,seed=7`
+to delay outgoing datagrams by 150 ± 20 ms, lose 2%, duplicate 1%, and cut both sending and receiving during the
+specified intervals in milliseconds since the transport opened (start included, end excluded). Any subset is valid;
+omitted values are zero. Jitter is uniform, negative delays clamp to zero, and datagrams may reorder. Only sending
+is delayed: set the switch on both games to affect both directions. The same seed reproduces the random choices
+for the same sends and clock schedule. Set `SKY_NETPLAY_TEST_SLOW=40` on one game to add a 40 ms sleep each frame,
+simulating a PC that cannot keep up. Malformed values refuse the session; both switches are removed unless
+`SKY_NETPLAY_TEST=1`. Use separate save and figure folders under `.scratch/` for each game.
 
 ## Decisions (owner, 2026-11-08)
 1. **Shared camera in lockstep for 0.10.0; free exploration stays the goal.** 0.10.0 ships the game's own co-op (one

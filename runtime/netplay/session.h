@@ -19,11 +19,22 @@ namespace netplay
         virtual ~Transport() = default;
         virtual bool Send(std::span<const uint8_t> bytes) = 0;
         virtual size_t Receive(std::span<uint8_t> bytes) = 0;
-        virtual void AcceptPeer() {}
+        // The last datagram's sender becomes the peer; true when that changed the peer's address.
+        virtual bool AcceptPeer() { return false; }
+        // A host that knows the guest's public address (the launcher punched through to it) sends it a tiny datagram
+        // until the guest's first packet arrives, so the host's own router lets that guest in.
+        virtual void Knock() {}
         virtual bool Healthy() const { return true; }
         virtual uint16_t Port() const { return 0; }
     };
-    std::unique_ptr<Transport> OpenUdp(std::string_view host, uint16_t port, bool listen, std::string& error);
+    struct UdpOptions
+    {
+        uint16_t localPort = 0;      // a joiner binds this port first (the port its launcher punched through)
+        std::string knockHost;       // a host knocks at this address (the joiner's public one) until it is reached
+        uint16_t knockPort = 0;
+    };
+    std::unique_ptr<Transport> OpenUdp(
+        std::string_view host, uint16_t port, bool listen, std::string& error, const UdpOptions& options = {});
     bool ParseEndpoint(std::string_view text, std::string& host, uint16_t& port);
     struct SessionFailure
     {
@@ -39,6 +50,14 @@ namespace netplay
         uint32_t delay = 0;
         bool peerMenuOpen = false;
         bool repairing = false, backInSync = false, waiting = false;
+        // No packet for lostMs: both games hold, the session keeps sending and resumes on the first packet back.
+        bool connectionLost = false, askContinue = false;
+        uint64_t lostMs = 0, reconnects = 0;
+        uint64_t waitedMs = 0;
+        uint64_t delayChanges = 0;
+        double frameAdvantage = 0; // this side's frames ahead of the other at the last check
+        uint64_t balanceSlows = 0;     // how long the game has been held for the other player's input, while waiting
+        uint64_t answerMs = 60000; // the wait before the player is asked (SessionConfig::timeoutMs)
         std::array<float, 60> pingMs{};
         size_t pingCount = 0;
     };
@@ -48,6 +67,17 @@ namespace netplay
         std::string password;
         uint32_t delay = 0;
         uint64_t timeoutMs = 15000, waitingMs = 1000;
+        // A silence of lostMs is a lost connection. With askBeforeEnding, a peer silent for timeoutMs, or alive but not
+        // advancing, does not end the session: the player is asked (ContinueAlone or KeepWaiting); without it (tests,
+        // the handshake) the session ends after timeoutMs as before.
+        uint64_t lostMs = 3000;
+        bool askBeforeEnding = false;
+        // The local input delay follows the round trip and the waits during play (each side its own: the other game
+        // reads the pads by frame number); off, it stays the room's.
+        bool adaptiveDelay = false;
+        // The side ahead (its frame past the other's, counting half the round trip) slows by a little every 30 frames,
+        // so that neither runs ahead and then waits in bursts.
+        bool balanceAdvantage = false;
         std::function<uint64_t()> now;
         std::function<void(const SessionFailure&)> ended;
         std::array<uint8_t, 16> slotPlayers{};
@@ -65,12 +95,20 @@ namespace netplay
         bool QueueEvents(std::span<const PortalEvent> events);
         uint64_t RoundTripMs() const;
         uint64_t LastGoodHash() const;
+        // A checkpoint in two steps, so that the game never holds for the other player's hash: PostHash at the
+        // window's end sends ours (it rides on the inputs), CheckPostedHash a few frames later compares it with theirs,
+        // which has come by then, and repairs a difference (`repaired`). CheckHash does both at once.
+        bool PostHash(uint64_t frame, uint64_t hash);
+        bool CheckPostedHash(uint64_t frame, bool& repaired);
         bool CheckHash(uint64_t frame, uint64_t hash);
         uint32_t Delay() const;
         SessionFailure Failure() const;
         uint64_t Dropped() const;
         SessionStats Stats() const;
         void SetMenuOpen(bool open);
+        // The player's answer to a lost connection: end the session and play alone, or wait timeoutMs more.
+        void ContinueAlone();
+        void KeepWaiting();
         bool ContinuingSolo() const;
         void Stop();
 
@@ -92,6 +130,16 @@ namespace netplay
         std::array<uint64_t, 2> m_repairTimes{};
         uint64_t m_repairAttempts = 0, m_resyncs = 0, m_lastResync = 0;
         bool m_waiting = false;
+        bool m_connectionLost = false, m_askContinue = false;
+        uint64_t m_lostSince = 0, m_reconnects = 0, m_waitSince = 0, m_lastKnock = 0;
+        void CheckSilence();
+        void AdaptDelay(uint64_t frame);
+        void BalanceAdvantage(std::unique_lock<std::mutex>& lock, uint64_t frame);
+        uint64_t m_peerFrame = 0, m_balanceSlows = 0;
+        double m_advantage = 0, m_advantageSum = 0;
+        uint32_t m_advantageCount = 0;
+        uint32_t m_localDelay = 0, m_calmChecks = 0;
+        uint64_t m_recentWaitMs = 0, m_delayChanges = 0;
         struct Second
         {
             uint64_t stamp = UINT64_MAX, sent = 0, received = 0, sentBytes = 0, receivedBytes = 0;

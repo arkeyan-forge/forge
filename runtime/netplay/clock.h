@@ -18,6 +18,36 @@ namespace netplay
         return deterministic ? EpochFileTime : now - age;
     }
 
+    // The bytes a deterministic run gives for the title's random requests (XNetRandom): SplitMix64 from a fixed seed, so
+    // both computers, and a replay, give the same ones in the same order.
+    inline constexpr uint64_t DeterministicRandomSeed = 0x9E3779B97F4A7C15ull;
+    inline uint8_t DeterministicByte(uint64_t& state)
+    {
+        uint64_t z = (state += 0x9E3779B97F4A7C15ull);
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+        return uint8_t(z ^ (z >> 31));
+    }
+
+    // The time zone the title is told about (it stamps its saves with it): the host's, or UTC in deterministic mode, since
+    // two players' zones differ. `bias` in minutes to add to local time to get UTC; `name` four characters.
+    inline int32_t TitleTimeZoneBias(bool deterministic, int32_t hostBias) { return deterministic ? 0 : hostBias; }
+    inline const char* TitleTimeZoneName(bool deterministic, const char* hostName)
+    {
+        return deterministic ? "UTC" : hostName;
+    }
+
+    // The storage the title is told about (XamContentGetDeviceData, NtQueryVolumeInformationFile): the host disk's, or in
+    // deterministic mode a fixed 120 GB drive with 100 GB free: two PCs' disks differ, and the title keeps what it reads.
+    struct DiskSpace
+    {
+        uint64_t capacity = 0, available = 0;
+    };
+    inline DiskSpace TitleDiskSpace(bool deterministic, uint64_t capacity, uint64_t available)
+    {
+        return deterministic ? DiskSpace{ 120ull << 30, 100ull << 30 } : DiskSpace{ capacity, available };
+    }
+
     struct ReadCursor
     {
         uint64_t frame = UINT64_MAX;
