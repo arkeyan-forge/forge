@@ -1,8 +1,8 @@
 // ArkeyanRecompGpuTest [output directory]: draws test images through the present pass into an offscreen target (no
 // window), reads the result back and compares it with a CPU reference: bilinear, clamped sampling inside the
 // letterboxed rectangle (or the filled one, its sides past the output), black elsewhere. Writes <dir>/gpu_<case>_{actual,expected}.ppm when given a directory.
-// Then two producer threads at once ("producers"), and FSR 3 through the running backend ("fsr"). Exit code 0 when every
-// case matches.
+// Then two producer threads at once ("producers"), the texture threads beside the render thread's index and vertex
+// staging ("upload threads"), and FSR 3 through the running backend ("fsr"). Exit code 0 when every case matches.
 #include "d3d/upscale_math.h"
 #include "gpu/buffer_cache.h"
 #include "gpu/draw.h"
@@ -10,6 +10,7 @@
 #include "gpu/gpu.h"
 #include "gpu/present_rect.h"
 #include "gpu/upscale.h"
+#include <SDL3/SDL.h>
 #include <algorithm>
 #include <bit>
 #include <atomic>
@@ -17,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -205,6 +207,57 @@ namespace
         gpu::Shutdown();
         printf("producers: %u presents during %u vertex and index ranges\n", presents, ranges.load());
         return true;
+    }
+
+    // The texture threads fill uploads while the render thread stages new index and vertex ranges in the same upload
+    // block, as when a level has loaded. Mapping and unmapping one buffer from two threads is a race on Vulkan (VMA does
+    // not lock an allocation's map count), which unmapped the block under the render thread's index writes. Passes when
+    // nothing crashes and every texture holds its last upload.
+    bool RunUploadThreads()
+    {
+        if (!gpu::Init(nullptr, 64, 64))
+            return false;
+        constexpr uint32_t Size = 32, Count = 16, Frames = 120, RangesPerUpload = 8;
+        std::vector<gpu::Texture*> textures;
+        for (uint32_t i = 0; i < Count; i++)
+            textures.push_back(
+                gpu::CreateTexture({ .width = Size, .height = Size, .format = gpu::Format::R8G8B8A8_UNORM }));
+        std::vector<Image> last(Count);
+        std::vector<uint8_t> data(4096, 0x5A);
+        uint32_t address = 0x40000000;
+        for (uint32_t frame = 0; frame < Frames; frame++)
+        {
+            for (uint32_t i = 0; i < Count; i++)
+            {
+                last[i] = Pattern(Size, Size, frame + i);
+                gpu::UploadTextureAsync(textures[i], 0, 0, [image = last[i]](uint8_t* destination, uint32_t pitch) {
+                    for (uint32_t y = 0; y < image.height; y++)
+                        memcpy(destination + uint64_t(y) * pitch, image.rgba.data() + uint64_t(y) * image.width,
+                            image.width * 4);
+                });
+                for (uint32_t k = 0; k < RangesPerUpload; k++, address += 0x1000)
+                {
+                    uint32_t minIndex, maxIndex;
+                    gpu::CacheIndices(data.data(), address, 1024, minIndex, maxIndex);
+                    gpu::CacheVertices(data.data(), address + 0x800, 2048);
+                }
+            }
+            gpu::Present(textures[frame % Count]);
+        }
+        uint32_t wrong = 0;
+        for (uint32_t i = 0; i < Count; i++)
+        {
+            Image actual{};
+            if (!gpu::ReadbackTexture(textures[i], actual.rgba, actual.width, actual.height) ||
+                actual.rgba != last[i].rgba)
+                wrong++;
+        }
+        for (gpu::Texture* texture : textures)
+            gpu::DestroyTexture(texture);
+        gpu::Shutdown();
+        printf("upload threads: %u texture uploads beside %u index and vertex ranges, %u of %u textures wrong\n",
+            Count * Frames, Count * Frames * RangesPerUpload * 2, wrong, Count);
+        return wrong == 0;
     }
 }
 
@@ -672,6 +725,10 @@ int main(int argc, char** argv)
         return BenchFsr(
             uint32_t(atoi(argv[2])), uint32_t(atoi(argv[3])), uint32_t(atoi(argv[4])), uint32_t(atoi(argv[5])));
     const char* directory = argc > 1 ? argv[1] : nullptr;
+    // Vulkan through SDL (macOS over MoltenVK, Linux) asks SDL's video driver for its instance extensions: offscreen,
+    // a headless surface. Metal and D3D12 run without it.
+    if (!SDL_Init(SDL_INIT_VIDEO))
+        printf("no SDL video (%s): Vulkan through SDL cannot start\n", SDL_GetError());
     bool pass = true;
     // 4:3 movie in a 16:9 output (pillarbox), upscaled; the second upload must replace the first.
     pass &= RunCase("pillarbox", 320, 180, { Pattern(64, 48, 0), Pattern(64, 48, 1) }, directory);
@@ -685,8 +742,12 @@ int main(int argc, char** argv)
     pass &= RunCase("fill_4x3", 256, 192, { Pattern(160, 90, 1) }, directory, true);
     pass &= RunCase("fill_wide", 420, 180, { Pattern(160, 90, 0) }, directory, true);
     pass &= RunProducers();
+    pass &= RunUploadThreads();
     pass &= RunFsr(directory);
     pass &= RunFrameGeneration(directory);
     printf("%s\n", pass ? "PASS" : "FAIL");
-    return pass ? 0 : 1;
+    // As the game leaves (no destructor runs): on Vulkan the exit's destructors reach vkDestroySampler after the last
+    // Shutdown destroyed the device ("Invalid device"), and crashed a run that had passed.
+    fflush(stdout);
+    std::_Exit(pass ? 0 : 1);
 }

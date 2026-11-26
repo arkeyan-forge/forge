@@ -1371,7 +1371,7 @@ namespace
     {
         RenderBuffer* buffer;
         uint64_t offset;
-        uint8_t* mapped; // of the upload, unmapped by Commit
+        uint8_t* mapped; // the upload's bytes (AllocateUpload: mapped for the block's life)
         uint32_t rowBytes, rows, pitch;
         uint32_t footprintWidth, footprintHeight, footprintRow;
     };
@@ -1386,19 +1386,20 @@ namespace
         place.rowBytes = (width + blockWidth - 1) / blockWidth * blockSize;
         place.rows = (height + blockWidth - 1) / blockWidth;
         place.pitch = uint32_t(AlignUp(place.rowBytes, UploadRowAlignment));
-        place.offset = AllocateUpload(uint64_t(place.pitch) * place.rows, place.buffer, UploadOffsetAlignment);
+        const UploadRange upload = AllocateUpload(uint64_t(place.pitch) * place.rows, UploadOffsetAlignment);
         if (gpu::framestats::Enabled())
         {
             g_uploads++;
             g_uploadBytes += uint64_t(place.pitch) * place.rows;
         }
-        auto mapped = static_cast<uint8_t*>(place.buffer->map());
-        if (mapped == nullptr)
+        if (upload.memory == nullptr)
         {
             CheckDeviceLost();
             return false;
         }
-        place.mapped = mapped + place.offset;
+        place.buffer = upload.buffer;
+        place.offset = upload.offset;
+        place.mapped = upload.memory;
         // D3D12 wants the footprint of a block-compressed mip in whole blocks (a 2x2 BC mip is copied as 4x4); Metal and
         // Vulkan want the mip's own size.
         place.footprintWidth = width;
@@ -1442,7 +1443,6 @@ void gpu::UploadTexture(Texture* texture, const void* data, uint32_t rowPitch, u
     auto source = static_cast<const uint8_t*>(data);
     for (uint32_t row = 0; row < place.rows; row++)
         memcpy(place.mapped + uint64_t(row) * place.pitch, source + uint64_t(row) * rowPitch, place.rowBytes);
-    place.buffer->unmap();
     QueueUploadCopy(texture, mipLevel, arraySlice, place, nullptr);
 }
 
@@ -1454,12 +1454,7 @@ void gpu::UploadTextureAsync(Texture* texture, uint32_t mipLevel, uint32_t array
     if (g_context == nullptr || texture == nullptr || DeviceLost() || !PlaceUpload(*texture, mipLevel, place))
         return;
     auto done = std::make_shared<std::atomic<bool>>(false);
-    RunTextureJob(
-        [fill = std::move(fill), place] {
-            fill(place.mapped, place.pitch);
-            place.buffer->unmap();
-        },
-        done);
+    RunTextureJob([fill = std::move(fill), place] { fill(place.mapped, place.pitch); }, done);
     QueueUploadCopy(texture, mipLevel, arraySlice, place, done);
 }
 

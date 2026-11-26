@@ -252,17 +252,14 @@ namespace
             // drawn from again (a ring buffer the game streams vertices through).
             if (entry.usedFrame != g_frame)
             {
-                RenderBuffer* buffer;
-                uint64_t offset = AllocateUpload(bytes, buffer, 16);
-                auto mapped = static_cast<uint8_t*>(buffer->map());
-                if (mapped == nullptr)
+                const UploadRange upload = AllocateUpload(bytes, 16);
+                if (upload.memory == nullptr)
                 {
                     gpu::detail::CheckDeviceLost();
                     return {};
                 }
-                Convert(static_cast<const uint8_t*>(data), mapped + offset, key, entry);
-                buffer->unmap();
-                entry.staged = { buffer, offset };
+                Convert(static_cast<const uint8_t*>(data), upload.memory, key, entry);
+                entry.staged = { upload.buffer, upload.offset };
                 g_stagedCurrent.push_back(key);
                 g_stats.staged++;
                 g_stats.stagedBytes += bytes;

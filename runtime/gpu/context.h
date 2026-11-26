@@ -323,8 +323,16 @@ namespace gpu::detail
     uint64_t CompletedFrame();
     // The GPU thread waited for the GPU: the frame before the one it records is finished, and that one if `finished`.
     void ConsumerFrameDone(bool finished);
-    // Upload memory written by producers (vertex data, textures), reused once the GPU finished the producer frame.
-    uint64_t AllocateUpload(uint64_t size, plume::RenderBuffer*& buffer, uint64_t alignment);
+    // Upload memory written by producers (vertex data, textures) and the texture threads, reused once the GPU finished
+    // the producer frame. `memory` is the range's bytes, mapped for its block's life: no caller maps or unmaps it.
+    // Empty (nullptr `memory`) when the block could not be made or mapped.
+    struct UploadRange
+    {
+        plume::RenderBuffer* buffer = nullptr;
+        uint64_t offset = 0;
+        uint8_t* memory = nullptr;
+    };
+    UploadRange AllocateUpload(uint64_t size, uint64_t alignment);
     // Queues the frame's Present and starts the next producer frame; waits while the GPU thread is a frame behind.
     void EndProducerFrame(std::function<void()> present);
     // Since the last call: time the GPU thread spent running commands, producers spent waiting for it, and the texture
