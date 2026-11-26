@@ -26,6 +26,18 @@ namespace wii::ax
         int16_t Clamp16(int64_t sample) { return int16_t(std::clamp<int64_t>(sample, -32768, 32767)); }
         uint16_t Ramp(uint16_t volume, int16_t step) { return uint16_t(std::clamp(int32_t(volume) + step, 0, 0xFFFF)); }
 
+        struct MixField
+        {
+            uint32_t bus;
+            uint32_t channel;
+            uint32_t ramp;
+        };
+        // PB pairs at 20..67: main L/R, aux A L/R, aux B L/R, aux C L/R, main S, aux A/B/C S.
+        // Voice stores L/R/S together per bus; control channel bits are hints, only ramp bits gate the steps.
+        constexpr MixField MixFields[] = { { 0, 0, 0x4 }, { 0, 1, 0x4 }, { 1, 0, 0x40000 }, { 1, 1, 0x40000 },
+            { 2, 0, 0x800000 }, { 2, 1, 0x800000 }, { 3, 0, 0x10000000 }, { 3, 1, 0x10000000 }, { 0, 2, 0x10 },
+            { 1, 2, 0x100000 }, { 2, 2, 0x2000000 }, { 3, 2, 0x40000000 } };
+
         // Lagrange cubic at t in [0, 1), on input times -1, 0, 1, 2. A two-input delay makes it causal.
         // Q15 weights sum to unity exactly; integer construction avoids startup work and floating-point drift.
         constexpr auto MakePhases()
@@ -174,7 +186,15 @@ namespace wii::ax
         voice.volume = Get16(base, block + pb::Volume);
         voice.volumeStep = int16_t(Get16(base, block + pb::VolumeStep));
         voice.playing = Get16(base, block + pb::State) == 1;
-        // Mix gains remain host-side until the parameter block's mix layout has been checked.
+        const uint32_t control = Get32(base, block + pb::MixerControl);
+        uint32_t at = block + pb::Mix;
+        for (const auto& field : MixFields)
+        {
+            Gain& gain = field.bus == 0 ? voice.main[field.channel] : voice.aux[field.bus - 1][field.channel];
+            gain.volume = Get16(base, at);
+            gain.step = (control & field.ramp) != 0 ? int16_t(Get16(base, at + 2)) : 0;
+            at += 4;
+        }
         return voice;
     }
 
@@ -205,7 +225,14 @@ namespace wii::ax
         Put16(base, block + pb::Volume, voice.volume);
         Put16(base, block + pb::VolumeStep, uint16_t(voice.volumeStep));
         Put16(base, block + pb::State, voice.playing);
-        // Mix gains are deliberately excluded, as in ReadVoice.
+        uint32_t at = block + pb::Mix;
+        for (const auto& field : MixFields)
+        {
+            const Gain& gain = field.bus == 0 ? voice.main[field.channel] : voice.aux[field.bus - 1][field.channel];
+            // Disabled ramps read as zero steps, but the CPU's original step must survive DSP write-back.
+            Put16(base, at, gain.volume);
+            at += 4;
+        }
     }
 
     void RenderVoice(const uint8_t* base, Voice& voice, Bus& bus)
@@ -243,13 +270,14 @@ namespace wii::ax
         }
     }
 
-    void FinalMix(const Bus& bus, uint8_t* out384)
+    void FinalMix(const Bus& bus, uint8_t* out384, uint16_t volume)
     {
         for (uint32_t i = 0; i < SamplesPerFrame; ++i)
         {
             const int64_t surround = (int64_t(bus.main[2][i]) * 23170) >> 15;
             for (uint32_t channel = 0; channel < 2; ++channel)
-                Put16(out384, 4 * i + 2 * channel, uint16_t(Clamp16(int64_t(bus.main[channel][i]) + surround)));
+                Put16(out384, 4 * i + 2 * channel,
+                    uint16_t(Clamp16(((int64_t(bus.main[channel][i]) + surround) * volume) >> 15)));
         }
     }
 }

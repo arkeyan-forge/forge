@@ -2,7 +2,9 @@
 // interrupts at its end, and the DSP, which runs AX's task. The AI's interrupt comes from the host's timers every
 // buffer (3 ms); the DSP's task runs on the host: its start at once (AX waits for it in a loop), each command list as
 // its mails come (ax.cpp), then the task's resume, as the DSP's yield back to AX would make it run.
+#include "wii/audio_out.h"
 #include "wii/ax.h"
+#include "wii/memory_map.h"
 #include "wii/os.h"
 #include "ppc_recomp_shared.h"
 #include <chrono>
@@ -25,6 +27,7 @@ namespace wii::os
         {
             uint32_t callback = 0;
             uint32_t next = 0, nextLength = 0;
+            uint32_t playing = 0, playingLength = 0; // the buffer the DMA plays now: the device gets it at its end
             bool running = false;
         } g_ai;
 
@@ -66,6 +69,9 @@ namespace wii::os
         if (g_ai.running || g_ai.nextLength < 4)
             return;
         g_ai.running = true;
+        g_ai.playing = g_ai.next;
+        g_ai.playingLength = g_ai.nextLength;
+        audio_out::Start();
         // 16-bit stereo: 4 bytes a sample, at the DSP's 32 kHz.
         const auto period = std::chrono::nanoseconds(int64_t(g_ai.nextLength / 4) * 1000000000 / ax::SampleRate);
         fprintf(stderr, "[ai] DMA started: %u bytes every %lld us\n", g_ai.nextLength,
@@ -81,7 +87,16 @@ namespace wii::os
 
     void AudioInterrupt(uint8_t* base)
     {
-        if (g_ai.running && g_ai.callback != 0)
+        if (!g_ai.running)
+            return;
+        // The buffer just played goes to the host's device; the DMA goes on with the next one set (the callback sets
+        // the one after, as AX's does with AIInitDMA).
+        const uint32_t played = ax::Cached(g_ai.playing);
+        if (g_ai.playingLength != 0 && InMemory(played, g_ai.playingLength))
+            audio_out::Play(base + played, g_ai.playingLength);
+        g_ai.playing = g_ai.next;
+        g_ai.playingLength = g_ai.nextLength;
+        if (g_ai.callback != 0)
             CallGuest(base, g_ai.callback, 0, 0);
     }
 

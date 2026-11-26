@@ -2,6 +2,7 @@
 // scratch folder; the console's settings. No game data.
 // usage: ArkeyanWiiTest [scratch dir]
 #include "wii/ax.h"
+#include "wii/ax_mix.h"
 #include "wii/boot_info.h"
 #include "wii/executable.h"
 #include "wii/ios.h"
@@ -259,24 +260,25 @@ namespace
         namespace ax = wii::ax;
         namespace pb = wii::ax::pb;
         const uint32_t block = 0x80100000;
+        ax::Bus bus;
         Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x10000, 2); // no converter: one input sample for each output one
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         EXPECT(Get32(block + pb::CurrentAddress) == 0x1000 + 96 && Get16(block + pb::State) == 1);
         Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x8000); // half the rate: 48 samples
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         EXPECT(Get32(block + pb::CurrentAddress) == 0x1000 + 48 && Get16(block + pb::Fraction) == 0);
         Voice(block, ax::Pcm8, 0x1000, 0x2000, 0x18000); // one and a half: 144, the fraction kept
         Set16(block + pb::Fraction, 0x8000);
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         EXPECT(Get32(block + pb::CurrentAddress) == 0x1000 + 144 && Get16(block + pb::Fraction) == 0x8000);
 
         Voice(block, ax::Pcm16, 0x1000, 0x1009, 0x10000); // ends after ten samples
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         EXPECT(Get16(block + pb::State) == 0 && Get32(block + pb::CurrentAddress) == 0x1009);
         Voice(block, ax::Pcm16, 0x1000, 0x1009, 0x10000); // loops to 0x1004: 96 = 10 + 86, 86 = 14 * 6 + 2
         Set16(block + pb::Loops, 1);
         Set32(block + pb::LoopAddress, 0x1004);
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         EXPECT(Get16(block + pb::State) == 1 && Get32(block + pb::CurrentAddress) == 0x1006);
 
         // ADPCM: nibble addresses, two header nibbles at each 16; the header read into the predictor and scale.
@@ -285,7 +287,7 @@ namespace
             g_base[samples + 8 * frame] = uint8_t(0x40 + frame);
         const uint32_t start = (samples & 0x1FFFFFFF) * 2; // the DSP's nibble address of the samples
         Voice(block, ax::Adpcm, start + 2, start + 0x1000, 0x10000);
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         // 96 samples: 14 in frames 0-5, the 7th's first 12 (its header read): the next nibble is 2 + 12 into it.
         EXPECT(
             Get32(block + pb::CurrentAddress) == start + 6 * 16 + 2 + 12 && Get16(block + pb::PredictorScale) == 0x46);
@@ -294,7 +296,7 @@ namespace
         Set32(block + pb::LoopAddress, start + 2);
         Set16(block + pb::LoopPredictorScale, 0x77);
         Set16(block + pb::LoopHistory1, 0x1234);
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         // The loop's history, then the samples decoded from it (zero coefficients, zero nibbles: silence).
         EXPECT(Get16(block + pb::History1) == 0 && Get16(block + pb::State) == 1);
         EXPECT(Get16(block + pb::PredictorScale) == 0x77); // past the header: the loop state's, not read again
@@ -302,14 +304,14 @@ namespace
         Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x10000); // a ramp: the volume's step for each of the 96 samples
         Set16(block + pb::Volume, 0x1000);
         Set16(block + pb::VolumeStep, uint16_t(-16));
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         EXPECT(Get16(block + pb::Volume) == 0x1000 - 16 * 96);
         Set16(block + pb::VolumeStep, uint16_t(-0x100));
-        ax::AdvanceVoice(g_base, block);
+        ax::AdvanceVoice(g_base, block, bus);
         EXPECT(Get16(block + pb::Volume) == 0); // never below silence
         Voice(block, ax::Pcm16, 0x1000, 0x2000, 0x10000);
         Set16(block + pb::State, 0);
-        ax::AdvanceVoice(g_base, block); // stopped: left as it is
+        ax::AdvanceVoice(g_base, block, bus); // stopped: left as it is
         EXPECT(Get32(block + pb::CurrentAddress) == 0x1000);
 
         // A list: the studio, the voices (two linked blocks, the second stopped), an aux bus, the final mix, the end.

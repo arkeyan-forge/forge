@@ -36,6 +36,11 @@ namespace
         g_base[at + 1] = uint8_t(value);
     }
     uint16_t Get16(uint32_t at) { return uint16_t(uint16_t(g_base[at]) << 8 | g_base[at + 1]); }
+    void Put32(uint32_t at, uint32_t value)
+    {
+        Put16(at, uint16_t(value >> 16));
+        Put16(at + 2, uint16_t(value));
+    }
     ax::Voice MakeVoice(ax::Format format, uint32_t count)
     {
         ax::Voice voice;
@@ -93,7 +98,8 @@ namespace
         EXPECT(Get16(Block + 168) == 0x2345 && Get16(Block + 170) == 0xFEDC);
         EXPECT(Get16(Block + 180) == 0x32 && int16_t(Get16(Block + 182)) == -23456);
         EXPECT(int16_t(Get16(Block + 184)) == 12345);
-        EXPECT(Get16(Block) == 0xA5A5 && Get16(Block + 20) == 0xA5A5 && Get16(Block + 104) == 0xA5A5);
+        EXPECT(Get16(Block) == 0xA5A5 && Get16(Block + 12) == 0xA5A5 && Get16(Block + 14) == 0xA5A5);
+        EXPECT(Get16(Block + 20) == 0x8000 && Get16(Block + 68) == 0xA5A5 && Get16(Block + 104) == 0xA5A5);
         EXPECT(Get16(Block + 158) == 0xA5A5 && Get16(Block + 186) == 0xA5A5);
         // Independent bytes keep a symmetric read/write mistake from hiding a wrong field offset.
         Put16(Block + 112, ax::Pcm8);
@@ -113,9 +119,181 @@ namespace
             EXPECT(read.lastInputs[i] == original.lastInputs[i]);
             EXPECT(Get16(Block + 172 + uint32_t(2 * i)) == uint16_t(original.lastInputs[i]));
         }
-        EXPECT(read.main[0].volume == 0 && read.aux[2][2].volume == 0);
+        EXPECT(read.main[0].volume == 0x8000 && read.aux[2][2].volume == 0);
         EXPECT(!ax::ReadVoice(g_base, wii::Mem1Size).playing);
         ax::WriteVoice(g_base, wii::Mem1Size, original);
+    }
+
+    void MixParameterBlocks()
+    {
+        constexpr uint32_t Ramps[] = { 0x4, 0x4, 0x40000, 0x40000, 0x800000, 0x800000, 0x10000000, 0x10000000, 0x10,
+            0x100000, 0x2000000, 0x40000000 };
+        FillPcm(1000, 16384);
+        for (uint32_t control : { 0u, 0x4u, 0x10u, 0x40000u, 0x100000u, 0x800000u, 0x2000000u, 0x10000000u, 0x40000000u,
+                 0x2D6B000Bu, 0x7FFFFFFFu })
+        {
+            memset(g_base + Block, 0xA5, ax::BlockSize);
+            ax::WriteVoice(g_base, Block, MakeVoice(ax::Pcm16, 1000));
+            Put32(Block + 12, control);
+            for (uint32_t pair = 0; pair < 12; ++pair)
+            {
+                Put16(Block + 20 + 4 * pair, uint16_t(1000 * (pair + 1)));
+                Put16(Block + 22 + 4 * pair, uint16_t(int16_t(pair % 2 ? -200 : 1000)));
+            }
+            ax::Voice voice = ax::ReadVoice(g_base, Block);
+            const std::array<ax::Gain, 12> gains = { voice.main[0], voice.main[1], voice.aux[0][0], voice.aux[0][1],
+                voice.aux[1][0], voice.aux[1][1], voice.aux[2][0], voice.aux[2][1], voice.main[2], voice.aux[0][2],
+                voice.aux[1][2], voice.aux[2][2] };
+            for (uint32_t pair = 0; pair < 12; ++pair)
+            {
+                EXPECT(gains[pair].volume == 1000 * (pair + 1));
+                EXPECT(gains[pair].step == ((control & Ramps[pair]) ? (pair % 2 ? -200 : 1000) : 0));
+            }
+            ax::Bus bus;
+            ax::RenderVoice(g_base, voice, bus);
+            ax::WriteVoice(g_base, Block, voice);
+            for (uint32_t pair = 0; pair < 12; ++pair)
+            {
+                const int expected = std::clamp(int(gains[pair].volume) + 96 * gains[pair].step, 0, 65535);
+                EXPECT(Get16(Block + 20 + 4 * pair) == expected);
+                EXPECT(int16_t(Get16(Block + 22 + 4 * pair)) == (pair % 2 ? -200 : 1000));
+            }
+            EXPECT(Get16(Block + 12) == uint16_t(control >> 16) && Get16(Block + 14) == uint16_t(control));
+            EXPECT(Get16(Block + 68) == 0xA5A5);
+        }
+    }
+
+    void CommandListOutput()
+    {
+        constexpr uint32_t List = 0x80110000, Output = 0x80120000, Second = Block + 0x200;
+        const auto prepare = [&](uint16_t command, uint16_t volume, uint32_t output = Output) {
+            memset(g_base + Block, 0, ax::BlockSize);
+            ax::Voice voice = MakeVoice(ax::Pcm16, 96);
+            ax::WriteVoice(g_base, Block, voice);
+            // Independent PB bytes exercise the command parser and mixer together, with channel hint bits clear.
+            Put16(Block + 20, 0x4000);
+            Put16(Block + 24, 0x2000);
+            for (uint32_t at : { 28u, 32u, 36u, 40u, 44u, 48u, 56u, 60u, 64u })
+                Put16(Block + at, 0x8000);
+            Put16(Block + 52, 0x1000);
+            Put16(List, 4);
+            Put32(List + 2, Block & 0x1FFFFFFF);
+            Put16(List + 6, command);
+            Put16(List + 8, volume);
+            Put32(List + 10, 0);
+            Put32(List + 14, output & 0x1FFFFFFF);
+            Put16(List + 18, 14);
+            memset(g_base + Output - 1, 0xA5, 386);
+        };
+        for (uint16_t command : { 11, 12 })
+        {
+            for (uint16_t volume : { 0, 0x4000, 0x8000, 0xFFFF })
+            {
+                FillPcm(96, 16384);
+                prepare(command, volume);
+                const ax::Frame frame = ax::RunCommandList(g_base, List & 0x1FFFFFFF);
+                EXPECT(frame.complete && frame.voices == 1 && frame.playing == 1 && frame.output == Output);
+                for (uint32_t i = 0; i < 96; ++i)
+                {
+                    // Surround: (16384 * 0x1000 / 32768) * 23170 / 32768 = 1448.
+                    EXPECT(Get16(Output + 4 * i) == (((8192 + 1448) * uint32_t(volume)) >> 15));
+                    EXPECT(Get16(Output + 4 * i + 2) == (((4096 + 1448) * uint32_t(volume)) >> 15));
+                }
+                EXPECT(g_base[Output - 1] == 0xA5 && g_base[Output + 384] == 0xA5);
+                EXPECT(Get16(Block + 16) == 0);
+            }
+        }
+
+        FillPcm(96, 16384);
+        prepare(11, 0x8000);
+        Put32(Block + 12, 0x4);
+        Put16(Block + 22, 64);
+        Put16(Block + 26, uint16_t(-32));
+        Put16(Block + 54, 1000); // surround's ramp bit is clear
+        ax::RunCommandList(g_base, List);
+        for (uint32_t i = 0; i < 96; ++i)
+        {
+            EXPECT(Get16(Output + 4 * i) == 8192 + 32 * i + 1448);
+            EXPECT(Get16(Output + 4 * i + 2) == 4096 - 16 * i + 1448);
+        }
+        EXPECT(Get16(Block + 20) == 0x4000 + 96 * 64 && Get16(Block + 24) == 0x2000 - 96 * 32);
+        EXPECT(Get16(Block + 22) == 64 && Get16(Block + 26) == uint16_t(-32));
+        EXPECT(Get16(Block + 52) == 0x1000 && Get16(Block + 54) == 1000);
+
+        prepare(12, 0x8000);
+        for (uint32_t pair = 0; pair < 12; ++pair)
+            Put16(Block + 20 + 4 * pair, 0);
+        ax::RunCommandList(g_base, List);
+        for (uint32_t i = 0; i < 384; ++i)
+            EXPECT(g_base[Output + i] == 0);
+
+        prepare(11, 0x8000);
+        memset(g_base + Second, 0, ax::BlockSize);
+        ax::Voice muted = MakeVoice(ax::Pcm16, 96);
+        muted.main[0].volume = 0;
+        ax::WriteVoice(g_base, Second, muted);
+        Put32(Block, Second & 0x1FFFFFFF);
+        const ax::Frame withMuted = ax::RunCommandList(g_base, List);
+        EXPECT(withMuted.complete && withMuted.voices == 2 && withMuted.playing == 2);
+        for (uint32_t i = 0; i < 96; ++i)
+        {
+            EXPECT(Get16(Output + 4 * i) == 9640);
+            EXPECT(Get16(Output + 4 * i + 2) == 5544);
+        }
+
+        for (uint16_t volume : { 0x4000, 0x8000 })
+        {
+            prepare(11, volume);
+            for (uint32_t i = 0; i < 96; ++i)
+                Put16(ax::Cached(Data + 2 * i), uint16_t(i % 2 ? -24000 : 24000));
+            for (uint32_t block : { Block, Second })
+            {
+                memset(g_base + block, 0, ax::BlockSize);
+                ax::Voice voice = MakeVoice(ax::Pcm16, 96);
+                voice.main[1].volume = 0x8000;
+                ax::WriteVoice(g_base, block, voice);
+            }
+            Put32(Block, Second & 0x1FFFFFFF);
+            const ax::Frame frame = ax::RunCommandList(g_base, List);
+            EXPECT(frame.complete && frame.voices == 2 && frame.playing == 2);
+            for (uint32_t i = 0; i < 96; ++i)
+            {
+                const int expected = volume == 0x4000 ? (i % 2 ? -24000 : 24000) : (i % 2 ? -32768 : 32767);
+                EXPECT(int16_t(Get16(Output + 4 * i)) == expected);
+                EXPECT(int16_t(Get16(Output + 4 * i + 2)) == expected);
+            }
+        }
+
+        // A stopped voice leaves the next frame silent and its PB untouched, even with enabled ramps.
+        Put32(Block + 12, 0x4);
+        Put16(Block + 22, 64);
+        std::array<uint8_t, ax::BlockSize> stopped{};
+        memcpy(stopped.data(), g_base + Block, stopped.size());
+        const ax::Frame silent = ax::RunCommandList(g_base, List);
+        EXPECT(silent.complete && silent.playing == 0);
+        EXPECT(memcmp(stopped.data(), g_base + Block, stopped.size()) == 0);
+        for (uint32_t i = 0; i < 384; ++i)
+            EXPECT(g_base[Output + i] == 0);
+
+        for (uint32_t output : { wii::Mem1Cached + wii::Mem1Size - 382, wii::Mem1Cached + wii::Mem1Size,
+                 wii::Mem2Cached + wii::Mem2Size, 0x9FFFFFFEu })
+        {
+            prepare(11, 0x8000, output);
+            const uint32_t edge = wii::Mem1Cached + wii::Mem1Size - 384;
+            memset(g_base + edge, 0x5A, 384);
+            const ax::Frame frame = ax::RunCommandList(g_base, List);
+            EXPECT(frame.complete && frame.output == output);
+            for (uint32_t i = 0; i < 384; ++i)
+            {
+                EXPECT(g_base[Output + i] == 0xA5);
+                EXPECT(g_base[edge + i] == 0x5A);
+            }
+        }
+        FillPcm(96, 16384);
+        prepare(12, 0x8000, 0x90010000);
+        const ax::Frame mem2 = ax::RunCommandList(g_base, List);
+        EXPECT(mem2.complete && mem2.output == 0x90010000);
+        EXPECT(Get16(mem2.output) == 9640 && Get16(mem2.output + 382) == 5544);
     }
 
     void PcmAndStops()
@@ -401,9 +579,7 @@ namespace
                     }
                     // Reconstructing from a PB between frames must retain the converter's full input history.
                     ax::WriteVoice(g_base, Block, voice);
-                    const auto main = voice.main[0];
                     voice = ax::ReadVoice(g_base, Block);
-                    voice.main[0] = main;
                 }
                 const double expectedCrossings = double(Frames * 96 - 32) * effectiveRatio / (65536 * 64);
                 EXPECT(std::abs(crossings - expectedCrossings) < 1.5);
@@ -609,6 +785,8 @@ int main()
         return 1;
     }
     ParameterBlocks();
+    MixParameterBlocks();
+    CommandListOutput();
     PcmAndStops();
     AdpcmKnownAndLoops();
     AdpcmSine();

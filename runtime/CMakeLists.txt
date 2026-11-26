@@ -850,16 +850,19 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # --disc <image.rvz>, a real disc's files are listed and its hashes checked.
 # The Wii host's pieces (docs/runtime/wii/): its address space, the executable's loader, the boot information, the
 # guest's messages.
-add_library(ArkeyanWii STATIC wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp wii/gx_fifo.cpp
-    wii/gx_texture.cpp wii/gx_vertex.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp wii/processor.cpp
-    wii/remote.cpp wii/settings.cpp)
+add_library(ArkeyanWii STATIC wii/audio_out.cpp wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp
+    wii/gx_fifo.cpp wii/gx_texture.cpp wii/gx_vertex.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp
+    wii/processor.cpp wii/remote.cpp wii/settings.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
-target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles)
+target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles PRIVATE SDL3::SDL3-static)
 # Synthetic executables in a mapped address space, the NAND in a scratch folder: ./ArkeyanWiiTest [scratch dir]
 add_executable(ArkeyanWiiTest wii/wii_test.cpp)
 target_link_libraries(ArkeyanWiiTest PRIVATE ArkeyanWii)
 add_executable(ArkeyanAxMixTest wii/ax_mix_test.cpp)
 target_link_libraries(ArkeyanAxMixTest PRIVATE ArkeyanWii)
+# The host's sound queue on SDL's dummy driver: ./ArkeyanWiiAudioOutTest
+add_executable(ArkeyanWiiAudioOutTest wii/audio_out_test.cpp)
+target_link_libraries(ArkeyanWiiAudioOutTest PRIVATE ArkeyanWii)
 # GX's FIFO: the write-gather pipe's lines, the command processor on hand-made commands: ./ArkeyanGxFifoTest
 add_executable(ArkeyanGxFifoTest wii/gx_fifo_test.cpp)
 target_link_libraries(ArkeyanGxFifoTest PRIVATE ArkeyanWii)
