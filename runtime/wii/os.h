@@ -57,6 +57,10 @@ namespace wii::os
     // engine's token register, which GXReadDrawSync reads): at once, until the host draws.
     void DrawSyncReached(uint8_t* base, uint16_t token);
     void StartRetrace(uint8_t* base);
+    // The remotes (remote.h): WPADProbe(remote, type) finds remote 1 alone, a remote with no extension;
+    // KPADRead(remote, statuses, length) gives remote 1's one sample, none for the others.
+    void WpadProbe(PPCContext& ctx, uint8_t* base);
+    void KpadRead(PPCContext& ctx, uint8_t* base);
     // The audio interface's interrupt, every `period` from StartAudio to StopAudio (AudioInterrupt, an event).
     void StartAudio(uint8_t* base, std::chrono::nanoseconds period);
     void StopAudio();

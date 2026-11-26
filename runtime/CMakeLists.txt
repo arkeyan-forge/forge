@@ -852,7 +852,7 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # guest's messages.
 add_library(ArkeyanWii STATIC wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp wii/gx_fifo.cpp
     wii/gx_texture.cpp wii/gx_vertex.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp wii/processor.cpp
-    wii/settings.cpp)
+    wii/remote.cpp wii/settings.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
 target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles)
 # Synthetic executables in a mapped address space, the NAND in a scratch folder: ./ArkeyanWiiTest [scratch dir]
@@ -870,6 +870,9 @@ target_link_libraries(ArkeyanGxVertexTest PRIVATE ArkeyanWii)
 # The GX texture formats decoded from pictures the test encodes: ./ArkeyanGxTextureTest
 add_executable(ArkeyanGxTextureTest wii/gx_texture_test.cpp)
 target_link_libraries(ArkeyanGxTextureTest PRIVATE ArkeyanWii)
+# Remote 1's samples and the test script's presses: ./ArkeyanWiiRemoteTest
+add_executable(ArkeyanWiiRemoteTest wii/remote_test.cpp)
+target_link_libraries(ArkeyanWiiRemoteTest PRIVATE ArkeyanWii)
 
 add_executable(ArkeyanRvzTest disc/rvz_test.cpp)
 target_include_directories(ArkeyanRvzTest PRIVATE .)

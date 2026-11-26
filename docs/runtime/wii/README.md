@@ -21,6 +21,7 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 | GX textures: tiled console formats decoded to linear RGBA8 | done: [gx_textures.md](gx_textures.md) |
 | A module loaded at run time (an RSO): linked offline where the host places it, translated with the game | done: [modules.md](modules.md) |
 | GX: the write-gather pipe, the FIFO, the command processor's state and draws (not drawn yet) | started: [gx.md](gx.md) |
+| The remotes: remote 1 answered by the host, scripted presses for tests | started: [remotes.md](remotes.md) |
 | Everything else | not started (#82) |
 
 ## Where the code is
@@ -30,14 +31,15 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 `XenonRecomp/recompiler_750cl.inl` ([`patches/xenonrecomp.patch`](../../../patches/xenonrecomp.patch)), on with the
 config's `paired_singles`. The host: [`runtime/wii/`](../../../runtime/wii/) (`memory_map`, `executable`, `boot_info`,
 `os`, `processor`, `threads`, `timers`, `ios`, `ios_calls`, `ios_devices`, `ios_disc`, `ios_nand`, `nand`, `settings`,
-`audio`, `ax`, `module`, `gx_fifo`, `gather_pipe.h`, `main`); the module's link: [`tools/rso_link.py`](../../../tools/rso_link.py), the game's bindings in `games/racing/` (`addresses.h`, `hooks.cpp`).
+`audio`, `ax`, `module`, `gx_fifo`, `gather_pipe.h`, `remote`, `main`); the module's link: [`tools/rso_link.py`](../../../tools/rso_link.py), the game's bindings in `games/racing/` (`addresses.h`, `hooks.cpp`).
 
 ## How to test it
 `ArkeyanRvzTest` (in `ctest` and `tools/test_all.sh`) builds synthetic images; `ArkeyanRvzTest --disc <image.rvz>`
 lists a real disc's files and checks its hashes. `ArkeyanXenonRecompTest` and `ArkeyanPpcDecoderTest`: one sample per
 750CL instruction, translated and run on the host. `ArkeyanWiiTest [scratch dir]`: the address space's mirrors, synthetic DOLs and ELFs,
 the boot information, the processor, IOS, the NAND in a scratch folder, SYSCONF and `setting.txt`, AX's command lists, the module's area and link hash.
-`ArkeyanGxFifoTest`: the write-gather pipe's lines and GX's commands ([gx.md](gx.md)).
+`ArkeyanGxFifoTest`: the write-gather pipe's lines and GX's commands ([gx.md](gx.md)). `ArkeyanWiiRemoteTest`: remote 1's
+samples and the test script ([remotes.md](remotes.md)).
 `ArkeyanWiiRuntime <disc.rvz> <NAND folder>`: the boot, on the real disc (a scratch NAND folder for tests).
 
 ## Gotchas
@@ -50,6 +52,7 @@ the boot information, the processor, IOS, the NAND in a scratch folder, SYSCONF 
 - [gx_textures.md](gx_textures.md): GX texture tiles, palettes and CMPR decoded to RGBA8.
 - [modules.md](modules.md): an RSO module, linked and translated where the host loads it.
 - [gx.md](gx.md): the write-gather pipe, GX's FIFO and the command processor.
+- [remotes.md](remotes.md): remote 1 answered by the host, scripted presses.
 - [memory_boot.md](memory_boot.md): the host's address space, the executable, the boot information, the first boot.
 - [threads.md](threads.md): one processor between the game's threads, events, the timers.
 - [ios.md](ios.md): IOS answered by the host, its devices.

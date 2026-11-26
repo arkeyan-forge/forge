@@ -122,6 +122,8 @@ PPC_FUNC(GAME_HOOK(WUDInit))
     started = true;
 }
 PPC_FUNC(GAME_HOOK(WUDGetStatus)) { ctx.r3.u64 = 3; } // set up: the remotes' library ready, none connected
+PPC_FUNC(GAME_HOOK(WPADProbe)) { wii::os::WpadProbe(ctx, base); }
+PPC_FUNC(GAME_HOOK(KPADRead)) { wii::os::KpadRead(ctx, base); }
 PPC_FUNC(GAME_HOOK(GXDrawDone)) { wii::os::Skip(ctx, "GXDrawDone"); }
 PPC_FUNC(GAME_HOOK(GXWaitDrawDone)) { wii::os::Skip(ctx, "GXWaitDrawDone"); }
 PPC_FUNC(GAME_HOOK(AIInit)) { wii::os::Skip(ctx, "AIInit"); }
