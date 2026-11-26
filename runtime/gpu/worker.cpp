@@ -58,9 +58,13 @@ namespace
     std::vector<uint8_t*> g_freeChunks;
 
     // Producer upload memory, tagged with the producer frame that last used it: reusable once the GPU finished it.
+    // Mapped once, when made: the render thread and the texture threads write into one block at the same time, and a
+    // map or unmap per upload raced on Vulkan (VMA does not lock a buffer's map count), which unmapped the block under
+    // the render thread's writes.
     struct UploadBlock
     {
         std::unique_ptr<RenderBuffer> buffer;
+        uint8_t* memory = nullptr;
         uint64_t capacity = 0;
         uint64_t used = 0;
         uint64_t frame = 0;
@@ -328,7 +332,7 @@ void gpu::detail::ConsumerFrameDone(bool finished)
         g_completedFrame = completed;
 }
 
-uint64_t gpu::detail::AllocateUpload(uint64_t size, RenderBuffer*& buffer, uint64_t alignment)
+gpu::detail::UploadRange gpu::detail::AllocateUpload(uint64_t size, uint64_t alignment)
 {
     uint64_t frame = g_producerFrame;
     if (g_uploadCurrent < g_uploadBlocks.size())
@@ -338,8 +342,7 @@ uint64_t gpu::detail::AllocateUpload(uint64_t size, RenderBuffer*& buffer, uint6
         if (block.frame == frame && offset + size <= block.capacity)
         {
             block.used = offset + size;
-            buffer = block.buffer.get();
-            return offset;
+            return { block.buffer.get(), offset, block.memory + offset };
         }
     }
     uint64_t completed = g_completedFrame.load();
@@ -360,14 +363,16 @@ uint64_t gpu::detail::AllocateUpload(uint64_t size, RenderBuffer*& buffer, uint6
         block.buffer = g_context->device->createBuffer(RenderBufferDesc::UploadBuffer(
             block.capacity, RenderBufferFlag::VERTEX | RenderBufferFlag::INDEX | RenderBufferFlag::CONSTANT |
                                 RenderBufferFlag::DEVICE_ADDRESSABLE));
+        block.memory = block.buffer != nullptr ? static_cast<uint8_t*>(block.buffer->map()) : nullptr;
+        if (block.memory == nullptr)
+            return {};
         g_uploadBlocks.push_back(std::move(block));
         g_uploadCurrent = g_uploadBlocks.size() - 1;
     }
     UploadBlock& block = g_uploadBlocks[g_uploadCurrent];
     block.frame = frame;
     block.used = size;
-    buffer = block.buffer.get();
-    return 0;
+    return { block.buffer.get(), 0, block.memory };
 }
 
 void gpu::detail::EndProducerFrame(std::function<void()> present)
@@ -426,6 +431,8 @@ void gpu::detail::TakeWorkerTimes(WorkerTimes& times)
 
 void gpu::detail::ShutdownUploads()
 {
+    for (UploadBlock& block : g_uploadBlocks)
+        block.buffer->unmap();
     g_uploadBlocks.clear();
     g_uploadCurrent = SIZE_MAX;
 }
