@@ -2,8 +2,8 @@
 
 // The DSP's side of AX, the SDK's audio library, run by the host (docs/runtime/wii/audio.md): each 3 ms frame, AX
 // sends the DSP a command list (the studio, the voices' parameter blocks, the aux buses, the output buffer); the
-// host runs it. For now the voices advance (their positions, their end or their loop, their volume ramps) and the
-// output stays silent. The layouts are the SDK's own: its command list builder (__AXNextFrame) and its voice code
+// host runs it. Voices render into a scratch bus until the command list's buffers and host output are connected.
+// The layouts are the SDK's own: its command list builder (__AXNextFrame) and its voice code
 // (AXSetVoice*, __AXServiceVPB) in the game.
 #include <cstdint>
 
@@ -27,11 +27,13 @@ namespace wii::ax
         constexpr uint32_t LoopAddress = 114; // 32 bits each, in the format's units (nibbles, samples, bytes)
         constexpr uint32_t EndAddress = 118;
         constexpr uint32_t CurrentAddress = 122;
+        constexpr uint32_t Coefficients = 126; // 8 pairs: history 1, then history 2 (signed 1.11)
         constexpr uint32_t PredictorScale = 160; // ADPCM: the frame header in use, the last two samples
         constexpr uint32_t History1 = 162;
         constexpr uint32_t History2 = 164;
         constexpr uint32_t Ratio = 166;    // 32 bits: input samples for each output one, 16.16
         constexpr uint32_t Fraction = 170; // the converter's position between two input samples
+        constexpr uint32_t LastInputs = 172; // four signed input samples, oldest first
         constexpr uint32_t LoopPredictorScale = 180; // ADPCM: the state the loop starts from (not a stream's)
         constexpr uint32_t LoopHistory1 = 182;
         constexpr uint32_t LoopHistory2 = 184;
