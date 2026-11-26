@@ -1,6 +1,8 @@
 #include "wii/ax.h"
 #include "wii/ax_mix.h"
 #include "wii/memory_map.h"
+#include <algorithm>
+#include <iterator>
 
 namespace wii::ax
 {
@@ -24,18 +26,25 @@ namespace wii::ax
         constexpr uint32_t MostVoices = 512; // a list longer than any AX makes: a loop in the links
     } // namespace
 
-    void AdvanceVoice(uint8_t* base, uint32_t block)
+    void AdvanceVoice(uint8_t* base, uint32_t block, Bus& bus)
     {
         Voice voice = ReadVoice(base, block);
         if (!voice.playing)
             return;
-        Bus scratch;
-        RenderVoice(base, voice, scratch);
+        RenderVoice(base, voice, bus);
         WriteVoice(base, block, voice);
     }
 
     Frame RunCommandList(uint8_t* base, uint32_t address)
     {
+        // DSP lists run synchronously. Thread-local storage keeps the 4608-byte bus off guest threads' small stacks
+        // without allocating per frame or sharing accumulators between host threads.
+        static thread_local Bus bus;
+        for (auto& samples : bus.main)
+            std::fill(std::begin(samples), std::end(samples), 0);
+        for (auto& channels : bus.aux)
+            for (auto& samples : channels)
+                std::fill(std::begin(samples), std::end(samples), 0);
         Frame frame;
         uint32_t at = Cached(address);
         for (int commands = 0; commands < 64 && InMemory(at, 2); commands++)
@@ -62,12 +71,16 @@ namespace wii::ax
                     frame.voices++;
                     if (Get16(base, block + pb::State) == 1)
                         frame.playing++;
-                    AdvanceVoice(base, block);
+                    AdvanceVoice(base, block, bus);
                     block = Get32(base, block + pb::Next);
                 }
             }
             else if (command == 11 || command == 12)
+            {
                 frame.output = Cached(Get32(base, arguments + 6));
+                if (InMemory(frame.output, SamplesPerFrame * 4))
+                    FinalMix(bus, base + frame.output, Get16(base, arguments));
+            }
             at = arguments + uint32_t(ArgumentWords[command]) * 2;
         }
         return frame;
