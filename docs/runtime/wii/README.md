@@ -18,6 +18,7 @@ instructions, the game's executable, the operating system, the GX renderer, the 
 | IOS: the calls, the state module, the disc drive | done: [ios.md](ios.md) |
 | The NAND (`/dev/fs`, in a host folder), ES, the console's settings (SYSCONF, `setting.txt`) | done: [ios.md](ios.md) |
 | Audio: the audio interface's DMA, the DSP running AX's task, its command lists (the voices advanced, silent) | started: [audio.md](audio.md) |
+| GX textures: tiled console formats decoded to linear RGBA8 | done: [gx_textures.md](gx_textures.md) |
 | A module loaded at run time (an RSO): linked offline where the host places it, translated with the game | done: [modules.md](modules.md) |
 | Everything else | not started (#82) |
 
@@ -44,6 +45,7 @@ the boot information, the processor, IOS, the NAND in a scratch folder, SYSCONF 
 ## Pages
 - [disc_rvz.md](disc_rvz.md): the RVZ image, the Wii disc and its hash tree.
 - [audio.md](audio.md): the audio interface, the DSP and AX's command lists.
+- [gx_textures.md](gx_textures.md): GX texture tiles, palettes and CMPR decoded to RGBA8.
 - [modules.md](modules.md): an RSO module, linked and translated where the host loads it.
 - [memory_boot.md](memory_boot.md): the host's address space, the executable, the boot information, the first boot.
 - [threads.md](threads.md): one processor between the game's threads, events, the timers.

@@ -850,8 +850,8 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # --disc <image.rvz>, a real disc's files are listed and its hashes checked.
 # The Wii host's pieces (docs/runtime/wii/): its address space, the executable's loader, the boot information, the
 # guest's messages.
-add_library(ArkeyanWii STATIC wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp
-    wii/module.cpp wii/processor.cpp wii/settings.cpp)
+add_library(ArkeyanWii STATIC wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp wii/gx_texture.cpp
+    wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp wii/processor.cpp wii/settings.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
 target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles)
 # Synthetic executables in a mapped address space, the NAND in a scratch folder: ./ArkeyanWiiTest [scratch dir]
@@ -859,6 +859,10 @@ add_executable(ArkeyanWiiTest wii/wii_test.cpp)
 target_link_libraries(ArkeyanWiiTest PRIVATE ArkeyanWii)
 add_executable(ArkeyanAxMixTest wii/ax_mix_test.cpp)
 target_link_libraries(ArkeyanAxMixTest PRIVATE ArkeyanWii)
+
+# The GX texture formats decoded from pictures the test encodes: ./ArkeyanGxTextureTest
+add_executable(ArkeyanGxTextureTest wii/gx_texture_test.cpp)
+target_link_libraries(ArkeyanGxTextureTest PRIVATE ArkeyanWii)
 
 add_executable(ArkeyanRvzTest disc/rvz_test.cpp)
 target_include_directories(ArkeyanRvzTest PRIVATE .)
