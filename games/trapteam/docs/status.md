@@ -235,6 +235,11 @@ turns the ring that way. The menus are run by the script as Giants' are, with th
 [input.md](../../../docs/runtime/xbox360/input.md), "Script menus". Test: `tools/regress/trapteam_menu_mouse.sh <disc>`.
 Not tried: the pause ring's pages (options, the collection), the shops, the Skylanders Academy.
 
+## Skipping spoken lines (2026-11-27) [TrapTeam] [V]
+In a cutscene the game keeps unskippable (Buzz's talk and Sheep Creep's introduction in `level_313_tutorial`), Y skips
+the line being spoken and the cutscene plays fast to the next one; a cutscene the game skips itself is left to it.
+How: [dialogue_skip.md](../../../docs/engines/alchemy/dialogue_skip.md).
+
 ## Where to start
 - Build: `cmake -S . -B build-trapteam -G Ninja -DCMAKE_BUILD_TYPE=Release -DARKEYAN_GAME=trapteam`, then
   `nice ninja -j4 -C build-trapteam ArkeyanRuntime` (the executable is `Skylanders Trap Team`). `private/trapteam/ppc/` is made by

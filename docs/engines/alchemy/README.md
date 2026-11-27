@@ -58,6 +58,7 @@ game (`tools/xmatch.py`, [sigmatch](../../tools/toolchain/sigmatch.md); [../../t
 | Page | Answers |
 |---|---|
 | [lzma.md](lzma.md) | The LZMA SDK's decoder loop as host code: how it was found, checked and measured |
+| [dialogue_skip.md](dialogue_skip.md) | Skipping a spoken line of a cutscene the game keeps unskippable (Trap Team) |
 | [games/giants/docs/boot.md](../../../games/giants/docs/boot.md) | What broke on the way to the title and to Chapter 1, the D3D address table, imports, the portal prompt |
 | [games/giants/docs/shaders.md](../../../games/giants/docs/shaders.md) | Where the shaders are, the IGA v8 and IGZ v6 formats, the extractor |
 | [games/giants/docs/art.md](../../../games/giants/docs/art.md) | Logo, background, portraits; the IGA name table, IGZ objects, picture formats |

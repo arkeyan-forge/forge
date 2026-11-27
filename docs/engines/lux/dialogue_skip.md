@@ -51,6 +51,6 @@ Measured (`ssa_dialogue_skip.sh`): B at 45 s closes Hugo's line, the level's sav
 
 ## Not done yet
 
-- The Alchemy games (Giants to Imaginators, e.g. Trap Team's Sheep Creep introduction): their dialogue code is not
-  mapped yet.
+- The Alchemy games: Trap Team is done, Giants needs nothing, the three others are still to check
+  ([../alchemy/dialogue_skip.md](../alchemy/dialogue_skip.md)).
 - Lines while the player is in control stay as the game plays them (B attacks there).
