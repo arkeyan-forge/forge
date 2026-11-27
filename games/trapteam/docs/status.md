@@ -227,6 +227,14 @@ not report the old view on MoltenVK (bindless heaps). The owner's check: [test_0
   (`level_313_tutorial`). The header written after the Nightmare run has the same option bits as a Medium run's. Unit:
   `ArkeyanNightmareGateTest`.
 
+## The mouse in the game's menus (2026-11-26) [V]
+The pointer works in the game's own menus whatever the mouse switch says: the title and its notices, the save slots, the
+difficulty, the mode menu and the pause menu. On a page of boxes hover moves the focus and a click picks the item; the
+pause and mode menus are rings of 3D objects, so there a click in the middle picks the centred item and one on a side
+turns the ring that way. The menus are run by the script as Giants' are, with the same objects and other vtables:
+[input.md](../../../docs/runtime/xbox360/input.md), "Script menus". Test: `tools/regress/trapteam_menu_mouse.sh <disc>`.
+Not tried: the pause ring's pages (options, the collection), the shops, the Skylanders Academy.
+
 ## Where to start
 - Build: `cmake -S . -B build-trapteam -G Ninja -DCMAKE_BUILD_TYPE=Release -DARKEYAN_GAME=trapteam`, then
   `nice ninja -j4 -C build-trapteam ArkeyanRuntime` (the executable is `Skylanders Trap Team`). `private/trapteam/ppc/` is made by
