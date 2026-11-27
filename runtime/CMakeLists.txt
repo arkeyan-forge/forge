@@ -364,6 +364,10 @@ add_executable(ArkeyanToyboxWheelKeysTest host/toybox/wheel_keys_test.cpp)
 target_include_directories(ArkeyanToyboxWheelKeysTest PRIVATE .)
 target_link_libraries(ArkeyanToyboxWheelKeysTest PRIVATE SDL3::SDL3-static)
 
+# The pad's stick aiming the quick swap wheel, its release a cancel (host/toybox/wheel_stick.h): ./ArkeyanToyboxWheelStickTest
+add_executable(ArkeyanToyboxWheelStickTest host/toybox/wheel_stick_test.cpp)
+target_include_directories(ArkeyanToyboxWheelStickTest PRIVATE .)
+
 # The Toy Box grids' scroll: the least that shows the cursor, a section's header at the top (host/toybox/grid.h): ./ArkeyanToyboxGridTest
 add_executable(ArkeyanToyboxGridTest host/toybox/grid_test.cpp host/toybox/grid.cpp)
 target_include_directories(ArkeyanToyboxGridTest PRIVATE .)
