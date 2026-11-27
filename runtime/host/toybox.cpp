@@ -23,6 +23,7 @@
 #include "host/toybox/keys.h"
 #include "host/toybox/look.h"
 #include "host/toybox/wheel_keys.h"
+#include "host/toybox/wheel_stick.h"
 #include "host/toybox_remote.h"
 #include "vfs.h"
 #include <SDL3/SDL.h>
@@ -49,7 +50,6 @@ namespace
 {
     constexpr uint64_t HoldForWheel = toybox::pad::HoldForWheel;
     constexpr uint64_t RepeatDelay = 400'000'000, RepeatPeriod = 80'000'000;
-    constexpr int StickAim = 16000;                 // stick tilt that aims the wheel
 
     SDL_Window* g_window;
     bool g_enabled;
@@ -80,6 +80,7 @@ namespace
     toybox::pad::State g_padBindings;
     bool g_wheelByPad;         // the wheel closes when View is released
     toybox::WheelKeys g_wheelKeys; // the stick keys pressed while the wheel is open
+    toybox::WheelStick g_wheelStick; // the pad's stick aiming the wheel
     bool g_swallow;            // the game gets nothing until every button is released
 
     // Keyboard. The Toy Box's keys (ToyboxSetKeys): the saved key opens it; while the Tab alias is on, Tab does too (tap: the Toy Box,
@@ -965,6 +966,8 @@ void ToyboxFilterGamepad(GamepadState& state, const GamepadState* raw, const Run
     const auto context = !model.open                     ? toybox::pad::Context::Playing
                          : model.screen == Screen::Wheel ? toybox::pad::Context::Wheel
                                                          : toybox::pad::Context::Overlay;
+    if (context != toybox::pad::Context::Wheel)
+        g_wheelStick.Reset();
     const auto shortcut = g_padBindings.Step(bindings.toyboxPad, physical, bindings.padMap, now, context);
 
     uint16_t buttons = state.buttons;
@@ -1021,8 +1024,8 @@ void ToyboxFilterGamepad(GamepadState& state, const GamepadState* raw, const Run
                            std::max(std::abs(physical.thumbLX), std::abs(physical.thumbLY));
         const int16_t sx = right ? physical.thumbRX : physical.thumbLX,
                       sy = right ? physical.thumbRY : physical.thumbLY;
-        float x = sx / 32767.0f, y = sy / 32767.0f;
-        if (std::abs(sx) > StickAim || std::abs(sy) > StickAim)
+        float x = 0, y = 0;
+        if (g_wheelStick.Step(sx, sy, x, y))
             model.AimWheel(PlaceOf(x, y));
         uint16_t dpad = physical.buttons & (Button::DpadUp | Button::DpadDown | Button::DpadLeft | Button::DpadRight);
         if (dpad != 0)

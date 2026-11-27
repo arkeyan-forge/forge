@@ -391,8 +391,10 @@ on its remap target, and releasing it confirms the wheel.
   seat's recent figures in this game and keep them. An empty place is a dashed ring, with no words.
 - Each place shows the figure's picture, name and **the card's level line** ("Level 6"), or "playing now", or "P2: swap
   players".
-- Aim with the stick, the d-pad, the arrows or 1-8; once aimed, the stick springing back keeps the aim. Release View/Tab,
-  A or Enter swaps; B/Escape or never aiming cancels. Y/F3: the seat's full list; LB/RB: the other seats; X/F2 held
+- Aim with the stick, the d-pad, the arrows or 1-8. The stick coming back to rest (under 0.3 of a tilt) aims the centre
+  once, so letting it snap back cancels; a stick left at rest never clears what the d-pad or keys aimed
+  (`toybox::WheelStick`, `ArkeyanToyboxWheelStickTest`). Release View/Tab, A or Enter swaps; B/Escape, the centre or
+  never aiming cancels. Y/F3: the seat's full list; LB/RB: the other seats; X/F2 held
   0.6 s pins the current figure there.
 - The wheel does not pause the game; the player's input is withheld from the game while it is open.
 - Only a pad's own sticks and d-pad aim the wheel, never those the keyboard bindings make: a game key held when it
