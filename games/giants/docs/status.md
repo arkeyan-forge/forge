@@ -49,7 +49,7 @@ Feature by feature against SSA: [parity.md](parity.md); what is left: [100.md](1
 The pointer works in the game's own menus whatever the mouse switch says: the title screens, the notices, CHOOSE PLAY,
 the save slots, the difficulty, the pause menu and its pages. Hover moves the focus (not in the pause carousel), a
 click picks the item; the focus moves by d-pad presses since the game's script takes no other request. How the menus
-are read: [input.md](../../../docs/runtime/xbox360/input.md), "Giants' menus". Test:
+are read: [input.md](../../../docs/runtime/xbox360/input.md), "Script menus". Test:
 `tools/regress/giants_menu_mouse.sh <disc>`. Not tried: Battle Mode's menus, the collection pages' grids, shops.
 
 ## Difficulty (2026-10-28) [Giants] [V]

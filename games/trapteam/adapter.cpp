@@ -3,6 +3,7 @@
 // Alchemy games, and SKY_LEVEL redirects the first level's two files (level\level_313_tutorial.arc and .bld, as Giants'
 // tutorial) to the level asked for. Its button glyphs are the cells of one colour atlas (games/trapteam/docs/glyphs.md). fullScene: the 3D scene at the frame's 1280x720 instead of the console's 1040x620 (ultrawide.cpp).
 #include "game.h"
+#include "script_menu.h"
 #include "trapteam.h"
 
 namespace
@@ -111,7 +112,7 @@ namespace
 
     // The mouse once on: attack 1 on the left button, attack 2 on the right (Arkeyan Launcher's rows name them so).
     constexpr mouse::Default MouseDefaults[] = { { "x", mouse::Left }, { "b", mouse::Right } };
-    // The front end: the game's own menus, where the mouse does nothing.
+    // The front end: the game's own menus.
     constexpr std::string_view MenuLevels[] = { "title" };
     // The two start-up logos, Giants' own names (the story movies follow, fmv1 first): skip_intro_movies.
     constexpr std::string_view IntroMovies[] = { "atvinewlogo_640", "tfb_logo_640x456" };
@@ -121,7 +122,7 @@ namespace
     const game::Adapter g_adapter = { g_gameInfo, nullptr, true, trapteam::SetVoiceLanguage, GlyphTextures, IntroMovies,
         true, trapteam::SetTextLanguage, { "\\level\\level_313_tutorial", std::string_view("\0.", 2) }, {}, true,
         { 1280, 720 }, AlchemySetNightmareFromStart, game::LevelArcOfFile, 60, RippleSimulation, InputRows,
-        MouseDefaults, MenuLevels };
+        MouseDefaults, MenuLevels, 0, {}, 0, {}, true, false, 0.5f, scriptmenu::MenuOpen, true };
 }
 
 const game::Adapter& game::Current() { return g_adapter; }
