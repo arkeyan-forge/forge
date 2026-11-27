@@ -25,6 +25,9 @@ namespace alchemymenu
         uint32_t focused = 0; // the focused item's id, 0 when not known
         bool scrolls = false; // a carousel: the focus scrolls the items, so a pointer at rest would chase them
         std::span<const Item> items;
+        // A carousel whose items have no box on screen (Trap Team's pause menu): a click in the middle third picks the
+        // centred item, one in a side third turns it one step that way.
+        bool turns = false;
     };
 
     class Driver

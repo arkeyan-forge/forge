@@ -514,6 +514,11 @@ target_include_directories(ArkeyanFrameLimiterTest PRIVATE .)
 add_executable(ArkeyanDialogueSkipTest ${CMAKE_SOURCE_DIR}/engines/lux/tests/dialogue_skip_test.cpp)
 target_include_directories(ArkeyanDialogueSkipTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/lux)
 
+# The Alchemy games' spoken-line skip: which presses skip a line, the game's own skip, the fast run's end
+# (engines/alchemy/dialogue_skip.h; no game data): ./ArkeyanAlchemyDialogueSkipTest
+add_executable(ArkeyanAlchemyDialogueSkipTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/dialogue_skip_test.cpp)
+target_include_directories(ArkeyanAlchemyDialogueSkipTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
+
 # The texts that name the Start button, shown as its picture (engines/alchemy/prompt_text.h; no game data): ./ArkeyanPromptTextTest
 add_executable(ArkeyanPromptTextTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/prompt_text_test.cpp)
 target_include_directories(ArkeyanPromptTextTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
@@ -854,22 +859,32 @@ target_link_libraries(ArkeyanVfsTest PRIVATE ArkeyanHostFiles)
 # --disc <image.rvz>, a real disc's files are listed and its hashes checked.
 # The Wii host's pieces (docs/runtime/wii/): its address space, the executable's loader, the boot information, the
 # guest's messages.
-add_library(ArkeyanWii STATIC wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp wii/gx_fifo.cpp
-    wii/gx_texture.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp wii/processor.cpp wii/settings.cpp)
+add_library(ArkeyanWii STATIC wii/audio_out.cpp wii/ax.cpp wii/ax_mix.cpp wii/boot_info.cpp wii/executable.cpp
+    wii/gx_fifo.cpp wii/gx_texture.cpp wii/gx_vertex.cpp wii/ios.cpp wii/memory_map.cpp wii/nand.cpp wii/module.cpp
+    wii/processor.cpp wii/remote.cpp wii/settings.cpp)
 target_include_directories(ArkeyanWii PUBLIC .)
-target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles)
+target_link_libraries(ArkeyanWii PUBLIC ArkeyanHostFiles PRIVATE SDL3::SDL3-static)
 # Synthetic executables in a mapped address space, the NAND in a scratch folder: ./ArkeyanWiiTest [scratch dir]
 add_executable(ArkeyanWiiTest wii/wii_test.cpp)
 target_link_libraries(ArkeyanWiiTest PRIVATE ArkeyanWii)
 add_executable(ArkeyanAxMixTest wii/ax_mix_test.cpp)
 target_link_libraries(ArkeyanAxMixTest PRIVATE ArkeyanWii)
+# The host's sound queue on SDL's dummy driver: ./ArkeyanWiiAudioOutTest
+add_executable(ArkeyanWiiAudioOutTest wii/audio_out_test.cpp)
+target_link_libraries(ArkeyanWiiAudioOutTest PRIVATE ArkeyanWii)
 # GX's FIFO: the write-gather pipe's lines, the command processor on hand-made commands: ./ArkeyanGxFifoTest
 add_executable(ArkeyanGxFifoTest wii/gx_fifo_test.cpp)
 target_link_libraries(ArkeyanGxFifoTest PRIVATE ArkeyanWii)
+# GX's vertices decoded and its primitives as triangle lists: ./ArkeyanGxVertexTest
+add_executable(ArkeyanGxVertexTest wii/gx_vertex_test.cpp)
+target_link_libraries(ArkeyanGxVertexTest PRIVATE ArkeyanWii)
 
 # The GX texture formats decoded from pictures the test encodes: ./ArkeyanGxTextureTest
 add_executable(ArkeyanGxTextureTest wii/gx_texture_test.cpp)
 target_link_libraries(ArkeyanGxTextureTest PRIVATE ArkeyanWii)
+# Remote 1's samples and the test script's presses: ./ArkeyanWiiRemoteTest
+add_executable(ArkeyanWiiRemoteTest wii/remote_test.cpp)
+target_link_libraries(ArkeyanWiiRemoteTest PRIVATE ArkeyanWii)
 
 add_executable(ArkeyanRvzTest disc/rvz_test.cpp)
 target_include_directories(ArkeyanRvzTest PRIVATE .)

@@ -46,6 +46,9 @@ namespace game
 // come with the host's input.
 #define GAME_HOOK_WUDInit sub_802B58B0
 #define GAME_HOOK_WUDGetStatus sub_802B5C20
+// The remotes' library the game reads them through: remote 1 from the host's input (runtime/wii/remote.h).
+#define GAME_HOOK_WPADProbe sub_802A4F60
+#define GAME_HOOK_KPADRead sub_8029BC70
 
 // The timers: the decrementer the alarms set, and VI's start, after which its retrace interrupt runs.
 #define GAME_HOOK_PPCMtdec sub_8027AA20

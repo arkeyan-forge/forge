@@ -83,7 +83,13 @@ namespace alchemymenu
         if (pointer.inside)
         {
             const uint32_t under = page != nullptr ? Hit(page->items, pointer.x, pointer.y) : 0;
-            if (pointer.clicks > 0 && (page == nullptr || page->items.size() <= 1))
+            if (pointer.clicks > 0 && page != nullptr && page->turns)
+            {
+                Drop();
+                constexpr float Third = 1280.0f / 3;
+                press = pointer.x < Third ? DpadLeft : pointer.x >= 2 * Third ? DpadRight : A;
+            }
+            else if (pointer.clicks > 0 && (page == nullptr || page->items.size() <= 1))
             {
                 // No page (a title screen), a notice or a single button: a click anywhere is its A.
                 Drop();

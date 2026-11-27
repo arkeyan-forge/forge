@@ -75,6 +75,12 @@
 // reference and calls the value's getter. Found from the difficulty menu's runs (games/trapteam/docs/status.md, "Nightmare"):
 // the records of the menu's "allow nightmare" and the title's "allow nightmare difficulty" both name it as their getter (+0x0C).
 #define GAME_HOOK_ScriptVariable_Get sub_82279198
+// Spoken lines (engines/alchemy/dialogue_skip.cpp): Giants' three functions. The play matches Giants' (xmatch shape 0.82,
+// the same fallback to the stop); the stop and the setter were found through the callers they share with Giants'. The
+// setter's arguments come by reference: its record is *r4 and its value *r3.
+#define GAME_HOOK_Sound_Play sub_822266E0
+#define GAME_HOOK_Sound_Stop sub_82225468
+#define GAME_HOOK_ScriptValue_Set sub_82251170
 
 namespace game
 {
@@ -119,6 +125,14 @@ namespace game
     constexpr uint32_t VramCopyFlags[] = { 0x8285D401, 0x8285D402, 0x8285D403 };
     // The running script (ScriptVariable_Get's lis 0x8285 / lwz -8768): its values' list at +20.
     constexpr uint32_t ScriptContext = 0x8284DDC0;
+    // Spoken lines: _gameLogicScale (the float Giants' sub_821DE998 sets, here sub_82281EF0), the cutscene skip button
+    // and the setter's argument convention (above).
+    constexpr uint32_t GameLogicScale = 0x82826248;
+    constexpr uint16_t DialogueSkipButton = 0x8000;
+    constexpr bool ScriptArgumentsByReference = true;
+    constexpr uint32_t ScriptNameOffset = 1; // the name pointer is one character in (as ScriptVariableName's)
+    // A tfbSoundInfoImpl's properties word (its category getter, sub_82221DC0) and its playback, set while it plays.
+    constexpr uint32_t SoundProperties = 0x30, SoundPlayback = 0x54;
 }
 
 // Bink's async decode thread polls its mailbox (engines/alchemy/bink_poll.cpp): (thread, wait, out, size) -> 0 while no

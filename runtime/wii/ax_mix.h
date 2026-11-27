@@ -34,7 +34,7 @@ namespace wii::ax
         int16_t lastInputs[4]{};
         uint16_t volume = 0;
         int16_t volumeStep = 0;
-        Gain main[3]{};
+        Gain main[3]{}; // L, R, S; likewise for each aux bus
         Gain aux[3][3]{};
         bool playing = false;
         bool looped = false; // in the last frame rendered: it reached its end and went back to its loop
@@ -49,5 +49,5 @@ namespace wii::ax
     Voice ReadVoice(const uint8_t* base, uint32_t block);
     void WriteVoice(uint8_t* base, uint32_t block, const Voice& voice);
     void RenderVoice(const uint8_t* base, Voice& voice, Bus& bus);
-    void FinalMix(const Bus& bus, uint8_t* out384);
+    void FinalMix(const Bus& bus, uint8_t* out384, uint16_t volume = 0x8000);
 }

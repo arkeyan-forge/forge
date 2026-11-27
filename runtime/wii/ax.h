@@ -2,7 +2,7 @@
 
 // The DSP's side of AX, the SDK's audio library, run by the host (docs/runtime/wii/audio.md): each 3 ms frame, AX
 // sends the DSP a command list (the studio, the voices' parameter blocks, the aux buses, the output buffer); the
-// host runs it. Voices render into a scratch bus until the command list's buffers and host output are connected.
+// host runs it, mixing the voices into the frame's output buffer.
 // The layouts are the SDK's own: its command list builder (__AXNextFrame) and its voice code
 // (AXSetVoice*, __AXServiceVPB) in the game.
 #include <cstdint>
@@ -18,8 +18,10 @@ namespace wii::ax
     {
         constexpr uint32_t Next = 0;     // the next block's address (32 bits), 0 for the last
         constexpr uint32_t Source = 8;   // the rate converter: 0 polyphase, 1 linear, 2 none
+        constexpr uint32_t MixerControl = 12; // 32 bits: channel hints and gain ramp enables
         constexpr uint32_t State = 16;   // 1 playing, 0 stopped
         constexpr uint32_t Type = 18;    // 1 a stream: the CPU keeps its loop and end addresses
+        constexpr uint32_t Mix = 20; // twelve pairs: unsigned gain, signed step
         constexpr uint32_t Volume = 106; // the envelope: its volume, then its signed step for each sample
         constexpr uint32_t VolumeStep = 108;
         constexpr uint32_t Loops = 110;
@@ -61,6 +63,7 @@ namespace wii::ax
     // Runs the command list at `address` (`base`: the guest's memory, address A at base + A).
     Frame RunCommandList(uint8_t* base, uint32_t address);
 
-    // A voice's frame: its position advanced by one frame of output at its rate, stopped at its end unless it loops.
-    void AdvanceVoice(uint8_t* base, uint32_t block);
+    struct Bus;
+    // A voice's frame, accumulated into the shared bus, with its updated state written back to the parameter block.
+    void AdvanceVoice(uint8_t* base, uint32_t block, Bus& bus);
 }

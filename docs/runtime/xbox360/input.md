@@ -90,7 +90,7 @@ game-menu pointer), `ArkeyanAlchemyMenuTest`, `ArkeyanJuiceMenuTest`, `ArkeyanSe
   carries over into the next menu. Out of the menus nothing changes; a game without `menuPointer` behaves as before. The log says
   `[mouse] game menu pointer on` / `off`. In an online session or a recording (`netplay::Enabled`, `State::session`) it stays
   out and the pads drive the menus: the focus its hook writes would move one game's menu only. The menu hooks are per game:
-  Spyro's Adventure's, Giants' and the Juice menus (Swap Force) below; the other games have none yet.
+  Spyro's Adventure's, the script menus (Giants, Trap Team) and the Juice menus (Swap Force) below; the other games have none yet.
 - **Spyro's Adventure's menus** (`games/ssa/menus.cpp`, `menu_pointer.{h,cpp}`, hooked after the UI copies the pads,
   `GAME_HOOK_Ui_ReadPads`): the UI manager holds nine menus, each a tree of pages; a page that takes input holds a tree of items, the
   focused one, and up/down/left/right links between items by id. A page with the focus is a menu, one without but with its own
@@ -103,22 +103,30 @@ game-menu pointer), `ArkeyanAlchemyMenuTest`, `ArkeyanJuiceMenuTest`, `ArkeyanSe
   (`PressButtons`, `host/input.h`): the title's Press START also starts the game's session from the pads. The log says
   `[menu] focus <item id>` and `[menu] accept`. Test: `ArkeyanSsaMenuTest`, `tools/regress/ssa_menu_mouse.sh <disc>` (title to
   `level_027` with clicks, then hover and a click in the pause menu). Back has no mouse button: B on the keys or a pad.
-- **Giants' menus** (`games/giants/menus.cpp`, `engines/alchemy/menu_pointer.{h,cpp}`): the game's script runs them
-  (`Menus.ai`), so they are read from the script's variables, as the portal prompt is, on a thread of their own that a
-  scan of the physical heap points to them. `current menu` holds the page on screen (a `Menu Page Info`), 0 in play:
-  that is `MenuOpen` (kept 300 ms across a change of page). Its `items` are `Menu Item Info`s; each item's box is its
-  `container sprite`'s top left on the canvas (+0x3C, +0x44) and its size (+0xB4, +0xB8) times 1.5 (the art is drawn
-  for 480 lines); `unselectable` ones are left out. The focused item is the one a menu's `selection cur` holds (each
-  menu's highlight has its own: the reader takes the one that holds an item of the page). The script takes no focus
-  request from outside, so the focus moves by d-pad presses on player 1's controller (`PressButtons`, 250 ms apart),
-  each towards the item along the larger distance between their centres (the other axis once if the focus did not
-  move, then it gives up), and Accept is A. Hover moves the focus, except in a carousel (the pause menu, a
-  `Menu - Scrolling - Page Scroll Info` in the page's `extra data`): the focus scrolls it at its ends, which would pull
-  the items from under a pointer at rest, so there a click picks the item (the focus, then A). No page (the title's
-  Press A screens), a page with a single item or none (a notice): a click anywhere is A. The log says `[menu] page
-  <address>: <n> items` with each item's box, `[menu] focus: d-pad <buttons> from <item>` and `[menu] accept`. Test:
+- **Script menus** (Giants, Trap Team; `engines/alchemy/script_menu.{h,cpp}`, `menu_pointer.{h,cpp}`, started by
+  `games/{giants,trapteam}/menus.cpp` with the game's vtables): the game's script runs them (`Menus.ai`), so they are read
+  from the script's variables, as the portal prompt is, on a thread of their own that a scan of the physical heap points to
+  them. Both games keep the same objects (a variable's name at +8, its value at +0x1C; a structure's members at +0x18, its
+  type at +0x1C; Trap Team tags the low bit of a name's pointer); only the vtables, the type names and the sprite's size
+  offset differ. `current menu` holds the page on screen (Giants' `Menu Page Info`, Trap Team's `Menu - Page Info`), 0 in
+  play: that is `MenuOpen` (kept 300 ms across a change of page). Its `items` are `Menu Item Info`s (`Menu - Item Info`);
+  each item's box is its `container sprite`'s top left on the canvas (+0x3C, +0x44) and its size (Giants +0xB4, +0xB8;
+  Trap Team +0xBC, +0xC0) times 1.5 (the art is drawn for 480 lines); `unselectable` ones are left out. The focused item
+  is the one a menu's `selection cur` holds (each menu's highlight has its own: the reader takes the one that holds an
+  item of the page). The script takes no focus request from outside, so the focus moves by d-pad presses on player 1's
+  controller (`PressButtons`, 250 ms apart), each towards the item along the larger distance between their centres (the
+  other axis once if the focus did not move, then it gives up), and Accept is A. Hover moves the focus, except in a
+  carousel (Giants' pause menu, a `Menu - Scrolling - Page Scroll Info` in the page's `extra data`): the focus scrolls it
+  at its ends, which would pull the items from under a pointer at rest, so there a click picks the item (the focus, then
+  A). Trap Team's pause menu and its mode menu are rings of 3D objects: their items' sprites sit at the canvas centre with
+  no size, so a page with two items or more and no box is turned by its sides (`alchemymenu::Page::turns`): a click in the
+  middle third of the canvas is A on the centred item, one in the left or right third presses Left or Right; hovering
+  does nothing. No page (the title's Press A screens), a page with a single item or none (a notice): a click anywhere is
+  A. The log says `[menu] page <address>: <n> items` with each item's box (`, a carousel turned by its sides` for a
+  ring), `[menu] focus: d-pad <buttons> from <item>`, `[menu] turn: d-pad <buttons>` and `[menu] accept`. Test:
   `ArkeyanAlchemyMenuTest`, `tools/regress/giants_menu_mouse.sh <disc>` (title to the tutorial with clicks and a hover,
-  then a click on Settings in the pause menu). Back has no mouse button.
+  then a click on Settings in the pause menu), `tools/regress/trapteam_menu_mouse.sh <disc>` (title to the tutorial with
+  clicks and a hover on the save slots, then the pause ring turned right and left). Back has no mouse button.
 - **Juice menus** (Swap Force; `engines/alchemy/juice_menu.{h,cpp}`, `juice_pointer.cpp`, started by `games/swapforce/menus.cpp`):
   every page is a Juice list (`igJuiceList`) of items, each with a box (`_min`, `_max`) in the list's scroll placeable, under a
   tree of placeables. A placeable maps a point of its own space to its parent's: its pivot (a fraction of its `_extent`) sits at

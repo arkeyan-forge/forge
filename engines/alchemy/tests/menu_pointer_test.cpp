@@ -154,6 +154,23 @@ namespace
         Driver::Pointer off;
         EXPECT(driver.Step(off, &next, 1200) == 0);
     }
+
+    // Trap Team's pause menu: 3D objects turning in a ring, no box on screen. The middle third picks the centred one,
+    // the sides turn the ring one step; hovering does nothing.
+    void TurningCarousel()
+    {
+        Driver driver;
+        Page page = { 0x500, 31, true, {}, true };
+        EXPECT(driver.Step(At(640, 360), &page, 0) == 0);
+        EXPECT(driver.Step(At(1100, 300), &page, 10) == 0);
+        EXPECT(driver.Step(At(1100, 300, 1), &page, 20) == Right);
+        EXPECT(driver.Step(At(150, 400, 1), &page, 300) == Left);
+        EXPECT(driver.Step(At(640, 500, 1), &page, 600) == A);
+        // The thirds' edges: 1280 / 3 apart.
+        EXPECT(driver.Step(At(420, 360, 1), &page, 900) == Left);
+        EXPECT(driver.Step(At(430, 360, 1), &page, 1200) == A);
+        EXPECT(driver.Step(At(860, 360, 1), &page, 1500) == Right);
+    }
 }
 
 int main()
@@ -166,6 +183,7 @@ int main()
     NoticeAndNoPage();
     StuckFocus();
     UnknownFocusAndNewPage();
+    TurningCarousel();
     printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }
