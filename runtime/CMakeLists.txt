@@ -510,6 +510,11 @@ target_include_directories(ArkeyanFrameLimiterTest PRIVATE .)
 add_executable(ArkeyanDialogueSkipTest ${CMAKE_SOURCE_DIR}/engines/lux/tests/dialogue_skip_test.cpp)
 target_include_directories(ArkeyanDialogueSkipTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/lux)
 
+# The Alchemy games' spoken-line skip: which presses skip a line, the game's own skip, the fast run's end
+# (engines/alchemy/dialogue_skip.h; no game data): ./ArkeyanAlchemyDialogueSkipTest
+add_executable(ArkeyanAlchemyDialogueSkipTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/dialogue_skip_test.cpp)
+target_include_directories(ArkeyanAlchemyDialogueSkipTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
+
 # The texts that name the Start button, shown as its picture (engines/alchemy/prompt_text.h; no game data): ./ArkeyanPromptTextTest
 add_executable(ArkeyanPromptTextTest ${CMAKE_SOURCE_DIR}/engines/alchemy/tests/prompt_text_test.cpp)
 target_include_directories(ArkeyanPromptTextTest PRIVATE ${CMAKE_SOURCE_DIR}/engines/alchemy)
