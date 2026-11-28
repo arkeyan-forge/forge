@@ -80,8 +80,52 @@ and NBT encodings, all eight texture shifts, explicit and default matrices, both
 MEM2, and rejected out-of-memory attributes. Each decode case checks its byte size against `VertexSize`; primitive
 tests check the lists, their winding, offsets and short counts. No game data or renderer is needed.
 
-**Not yet**: the draws drawn (the vertices transformed, TEV, the textures, the EFB copies to the frame
-buffer), the draw-done and token interrupts (`GXDrawDone`, `GXWaitDrawDone` skipped; `GXSetDrawSync`'s token written
+## Software renderer
+The first renderer draws on the CPU, for correctness before speed (`runtime/wii/gx_raster.{h,cpp}`, `gx_efb.{h,cpp}`,
+`video.{h,cpp}`). The command processor hands it each draw (`onDraw`) and each BP write (`onBp`: the TEV's colour and
+konst registers share BP `0xE0`-`0xE7`, bit 23 choosing the bank).
+
+- **The EFB** (`wii::gx::Efb`): 640 x 528 colours (RGBA8) and 24-bit depths, as the console's embedded frame buffer.
+- **A draw**: its vertices decoded ([Vertices](#vertices)), transformed by the position matrix (XF `pmi * 4`), the
+  projection (XF `0x1020`-`0x1026`) and the viewport (`0x101A`-`0x101F`, its 342 offset), the colour channels (XF
+  `0x100C`, `0x100E`: the material from the vertex or the register, no lighting yet) and the texture coordinates
+  (XF `0x103F`, `0x1040`); each triangle culled (BP `0x00` bits 14-15), clipped to the scissor (BP `0x20`, `0x21`) and
+  rasterised; per pixel the TEV stages (BP `0xC0`/`0xC1`, their order `0x28`, konst selections `0xF6`), the alpha test
+  (`0xF3`), the depth test and update (`0x40`) and the blend (`0x41`). Textures (BP `0x80`, `0x88`, `0x94`, `+0xA0` for
+  maps 4-7) are decoded once a draw ([gx_textures.md](gx_textures.md)) and sampled nearest.
+- **The EFB copy** (BP `0x52` with its "to the XFB" bit, `0x4000`): the source (`0x49`, `0x4A`) converted to YUYV
+  (BT.601, video range) at the destination (`0x4B`, in 32-byte units; the stride `0x4D`), scaled in height by `0x4E`
+  (256 / scale) when bit `0x400` is set, then the EFB cleared to `0x4F`-`0x51` when bit `0x800` is. A copy to a texture
+  is not made yet.
+- **The window** (`wii::video`): `VISetNextFrameBuffer`'s frame buffer, its size the last display copy's to it,
+  converted back to RGBA and shown through the host's GPU layer (Metal on the Mac); `video::Pump` reads the window's
+  events and remote 1's buttons ([remotes.md](remotes.md)) on the main thread. `SKY_WII_FRAMES=<folder>` writes frames
+  1-3 and every 60th there as PPM pictures, for the tests (they hold the game's pictures: keep them in `private/`).
+
+The position matrix and projection retain each vertex's clip-space `(x, y, z, w)` before the perspective divide.
+Perspective triangles are clipped with Sutherland-Hodgman against GX's near plane (`z + w >= 0`) and a positive-w
+guard (`w > 1e-6`); colours and texture coordinates are interpolated linearly in clip space at intersections.
+Fixed arrays hold the polygon without allocating per triangle. The polygon is divided by w, mapped to the viewport,
+culled and drawn as a triangle fan, with perspective-correct colour and texture interpolation. Orthographic
+projections (`w = 1`) keep their existing path without near clipping. The triangle and cull counters count input
+triangles, including those split into a fan; a triangle removed by clipping produces no pixels.
+
+GX's clip-space depth from `-w` to `0` maps to the viewport's depth range. Both transformed vertex depths and the
+interpolated pixel depth are clamped to `0..0xFFFFFF`, the latter before comparison and writing to the EFB. This
+keeps far-plane roundoff from rejecting pixels against a buffer cleared to `0xFFFFFF` with a less-or-equal test.
+
+`ArkeyanGxRasterTest` (in `ctest`) feeds synthetic GX commands and vertices in mapped memory to the software
+rasteriser. It checks identity position matrices with perspective and orthographic projection, the viewport's 342
+offset and depth mapping, flat and interpolated vertex colours, exact triangle and additive quad coverage, both
+windings under every cull mode, inclusive scissor bounds, depth comparison and disabled depth updates, alpha
+rejection, source-alpha blending, all four TEV konst colours through BP's shared register banks, and raster counters.
+Clipping cases cover a vertex behind or on the eye plane, a triangle wholly behind the eye or outside the near
+plane, the positive-w guard, both windings and every cull mode after clipping, and colour and texture interpolation
+across new vertices. A far-plane triangle checks every pixel for holes with less-or-equal comparison, with depth
+updates both enabled and disabled.
+
+**Not yet**: lighting, the indirect texture stages, filtering and mipmaps, the EFB copies to textures, the GPU renderer;
+the draw-done and token interrupts (`GXDrawDone`, `GXWaitDrawDone` skipped; `GXSetDrawSync`'s token written
 back by its hook), an unlinked GP FIFO (a game that fills one FIFO while the GP reads another).
 
 ## How far it boots [V] (2026-11-25)

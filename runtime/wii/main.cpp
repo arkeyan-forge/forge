@@ -11,6 +11,7 @@
 #include "wii/ios_nand.h"
 #include "wii/nand.h"
 #include "wii/settings.h"
+#include "wii/video.h"
 #include "wii/memory_map.h"
 #include "wii/os.h"
 #include <chrono>
@@ -190,6 +191,8 @@ int main(int argc, char** argv)
     if (!LoadGame(argv[1], argv[2], base, entry))
         return 1;
     g_base = base;
+    if (!wii::video::Start("Arkeyan (Wii)", base))
+        return 1;
     // The game's first thread, on a host stack deep enough for the translated code's calls.
     PlatformStartThread(64 << 20, [base, entry] {
         wii::os::StartProcessor();
@@ -200,7 +203,15 @@ int main(int argc, char** argv)
         fprintf(stderr, "[wii] the entry returned\n");
         wii::StopBoot(1);
     });
+    // The main thread keeps the window's events (SDL wants them there) until the game stops or the window closes.
     std::unique_lock lock(g_stopMutex);
-    g_stopped.wait(lock, [] { return g_stop; });
+    while (!g_stopped.wait_for(lock, std::chrono::milliseconds(10), [] { return g_stop; }))
+    {
+        lock.unlock();
+        const bool open = wii::video::Pump();
+        lock.lock();
+        if (!open)
+            return 0;
+    }
     return g_stopCode;
 }

@@ -78,7 +78,14 @@ after 115 gathered lines (1,011 commands, a draw of 4 vertices, 2 EFB copies), t
 manager finds remote 1 and reads one sample a frame. With `SKY_WII_PRESS=A@60+5` the game leaves the wrist-strap
 screen: by frame 600 it draws the language menu (106 draws, 20 display lists a frame, where the strap screen has 3).
 
+## The first frames [V] (2026-11-26)
+With the software renderer ([gx.md](../../../docs/runtime/wii/gx.md)) and `SKY_WII_PRESS=A@60+5,A@1400+5` (A on the
+strap screen, then on the language menu): the wrist-strap screen, the copyright screen, the loading screen, the
+language menu, the Activision movie and the title screen ("Press Any Button", its sky of clouds), as they should look,
+at about 7 frames a second on the CPU, in a window (Metal on the Mac).
+
 ## Next
-1. GX: the draws drawn (vertices, TEV, textures, the EFB copy to the frame buffer), the frames shown.
-2. The audio's mix and the host's output; EXI, SI (the GameCube controllers), the remotes.
-3. The `*_as_local` options; the frame rate (600 frames in a minute, the retrace's 59.94 a second the target).
+1. The GPU renderer (the frame rate), the EFB copies to textures.
+2. The audio's aux buses and effects; EXI, SI (the GameCube controllers), the remotes' pointer and extensions (the Wii
+   Wheel).
+3. The `*_as_local` options; the frame rate (the retrace's 59.94 a second the target).

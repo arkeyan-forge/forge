@@ -96,6 +96,7 @@ namespace wii::gx
 
         uint32_t Cp(uint8_t index) const { return cpRegisters[index]; }
         uint32_t Bp(uint8_t index) const { return bpRegisters[index]; }
+        const uint32_t* BpRegisters() const { return bpRegisters; }
         uint32_t Xf(uint16_t address) const { return address < sizeof(xfMemory) / 4 ? xfMemory[address] : 0; }
         const Stats& Counters() const { return stats; }
         void ResetCounters() { stats = {}; }

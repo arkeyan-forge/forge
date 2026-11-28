@@ -21,8 +21,18 @@ addresses in `games/<id>/addresses.h`).
 - The buttons are WPAD's bits: Left 0x0001, Right 0x0002, Down 0x0004, Up 0x0008, + 0x0010, 2 0x0100, 1 0x0200,
   B 0x0400, A 0x0800, - 0x1000, Home 0x8000.
 
-The host's buttons (`Remote::SetHostButtons`, from any thread) add to the script's: nothing sets them yet, since the
-host has no window to read the keyboard and controllers from; they come with the renderer's window.
+The host's keyboard and first controller give remote 1's buttons, the remote held upright, each time the window's
+events are read ([`runtime/wii/video.cpp`](../../../runtime/wii/video.cpp)); they add to the script's:
+
+| Remote | Keyboard | Controller |
+|---|---|---|
+| A | Return | south (A, cross) |
+| B | Backspace | east |
+| 1 | 1 | west |
+| 2 | 2 | north |
+| + / - | = / - | Start / Back |
+| Home | H | Guide |
+| D-pad | arrows | D-pad |
 
 ## Pressing a button in a test
 `SKY_WII_PRESS=<presses>` adds scripted presses, counted in remote 1's reads (one per frame in the game's loop):
